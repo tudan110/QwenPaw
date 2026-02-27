@@ -5,7 +5,6 @@
 [![GitHub 仓库](https://img.shields.io/badge/GitHub-仓库-black.svg?logo=github)](https://github.com/agentscope-ai/CoPaw)
 [![文档](https://img.shields.io/badge/文档-在线-green.svg?logo=readthedocs&label=Docs)](https://copaw.agentscope.io/)
 [![Python 版本](https://img.shields.io/badge/python-3.10%20~%20%3C3.14-blue.svg?logo=python&label=Python)](https://www.python.org/downloads/)
-[![魔搭创空间](https://img.shields.io/badge/魔搭-一键配置-orange.svg?label=魔搭)](https://modelscope.cn/studios/fork?target=AgentScope/CoPaw)
 [![最后提交](https://img.shields.io/github/last-commit/agentscope-ai/CoPaw)](https://github.com/agentscope-ai/CoPaw)
 [![许可证](https://img.shields.io/badge/license-Apache%202.0-red.svg?logo=apache&label=%E8%AE%B8%E5%8F%AF%E8%AF%81)](LICENSE)
 [![代码风格](https://img.shields.io/badge/code%20style-black-black.svg?logo=python&label=%E4%BB%A3%E7%A0%81%E9%A3%8E%E6%A0%BC)](https://github.com/psf/black)
@@ -15,7 +14,7 @@
 [![Discord](https://img.shields.io/badge/Discord-Join_Us-blueviolet.svg?logo=discord)](https://discord.gg/eYMpfnkG8h)
 [![钉钉群](https://img.shields.io/badge/DingTalk-Join_Us-orange.svg)](https://qr.dingtalk.com/action/joingroup?code=v1,k1,OmDlBXpjW+I2vWjKDsjvI9dhcXjGZi3bQiojOq3dlDw=&_dt_no_comment=1&origin=11)
 
-[[文档](https://copaw.agentscope.io/)] [[魔搭一键配置](https://modelscope.cn/studios/fork?target=AgentScope/CoPaw)] [[English](README.md)]
+[[文档](https://copaw.agentscope.io/)] [[English](README.md)]
 
 <p align="center">
   <img src="https://img.alicdn.com/imgextra/i1/O1CN01tvT5rg1JHQNRP8tXR_!!6000000001003-2-tps-1632-384.png" alt="CoPaw Logo" width="120">
@@ -72,7 +71,21 @@
 
 ## 快速开始
 
-### 一键安装（推荐）
+### pip 安装 (推荐)
+
+如果你习惯自行管理 Python 环境：
+
+```bash
+pip install copaw
+copaw init --defaults
+copaw app
+```
+
+在浏览器打开 **http://127.0.0.1:8088/** 即可使用控制台（与 CoPaw 对话、配置 Agent）。若要在钉钉、飞书、QQ 等 app 内对话，请在 [文档](https://copaw.agentscope.io/docs/channels) 中接入频道。
+
+![Console](https://img.alicdn.com/imgextra/i4/O1CN01jQ8IKh1oWJL5C0v5x_!!6000000005232-2-tps-3494-1644.png)
+
+### 一键安装（beta，持续完善中）
 
 无需预装 Python — 安装脚本自动处理一切：
 
@@ -144,19 +157,6 @@ copaw uninstall --purge  # 删除所有内容
 
 </details>
 
-### 或者：pip 安装
-
-如果你更习惯自行管理 Python 环境：
-
-```bash
-pip install copaw
-copaw init --defaults
-copaw app
-```
-
-在浏览器打开 **http://127.0.0.1:8088/** 即可使用控制台（与 CoPaw 对话、配置 Agent）。若要在钉钉、飞书、QQ 等 app 内对话，请在 [文档](https://copaw.agentscope.io/docs/channels) 中接入频道。
-
-![Console](https://img.alicdn.com/imgextra/i4/O1CN01jQ8IKh1oWJL5C0v5x_!!6000000005232-2-tps-3494-1644.png)
 
 ### 使用 Docker
 

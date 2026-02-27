@@ -5,7 +5,6 @@
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-black.svg?logo=github)](https://github.com/agentscope-ai/CoPaw)
 [![Documentation](https://img.shields.io/badge/Docs-Website-green.svg?logo=readthedocs&label=Docs)](https://copaw.agentscope.io/)
 [![Python Version](https://img.shields.io/badge/python-3.10%20~%20%3C3.14-blue.svg?logo=python&label=Python)](https://www.python.org/downloads/)
-[![ModelScope](https://img.shields.io/badge/ModelScope-One--click-orange.svg?label=ModelScope)](https://modelscope.cn/studios/fork?target=AgentScope/CoPaw)
 [![Last Commit](https://img.shields.io/github/last-commit/agentscope-ai/CoPaw)](https://github.com/agentscope-ai/CoPaw)
 [![License](https://img.shields.io/badge/license-Apache%202.0-red.svg?logo=apache&label=License)](LICENSE)
 [![Code Style](https://img.shields.io/badge/code%20style-black-black.svg?logo=python&label=CodeStyle)](https://github.com/psf/black)
@@ -72,7 +71,21 @@ Your Personal AI Assistant; easy to install, deploy on your own machine or on th
 
 ## Quick Start
 
-### One-line install (recommended)
+### pip install (recommended)
+
+If you prefer managing Python yourself:
+
+```bash
+pip install copaw
+copaw init --defaults
+copaw app
+```
+
+Then open **http://127.0.0.1:8088/** in your browser for the Console (chat with CoPaw, configure the agent). To talk in DingTalk, Feishu, QQ, etc., add a channel in the [docs](https://copaw.agentscope.io/docs/channels).
+
+![Console](https://img.alicdn.com/imgextra/i4/O1CN01jQ8IKh1oWJL5C0v5x_!!6000000005232-2-tps-3494-1644.png)
+
+### One-line install (beta, continuously improving)
 
 No Python required — the installer handles everything:
 
@@ -144,19 +157,6 @@ copaw uninstall --purge  # removes everything
 
 </details>
 
-### Alternative: pip install
-
-If you prefer managing Python yourself:
-
-```bash
-pip install copaw
-copaw init --defaults
-copaw app
-```
-
-Then open **http://127.0.0.1:8088/** in your browser for the Console (chat with CoPaw, configure the agent). To talk in DingTalk, Feishu, QQ, etc., add a channel in the [docs](https://copaw.agentscope.io/docs/channels).
-
-![Console](https://img.alicdn.com/imgextra/i4/O1CN01jQ8IKh1oWJL5C0v5x_!!6000000005232-2-tps-3494-1644.png)
 
 ### Using Docker
 
