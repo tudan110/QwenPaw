@@ -134,8 +134,6 @@ copaw models remove-local <model_id> --yes   # skip confirmation
 | `--source`  | `-s`  | `huggingface` | Download source (`huggingface` or `modelscope`)                       |
 | `--file`    | `-f`  | _(auto)_      | Specific filename. If omitted, auto-selects (prefers Q4_K_M for GGUF) |
 
-> For a full walkthrough see [Local Models](./local-models).
-
 #### Ollama models
 
 CoPaw integrates with Ollama to run models locally. Models are dynamically loaded from your Ollama daemon — install Ollama first from [ollama.com](https://ollama.com).
@@ -423,5 +421,4 @@ See [Config & Working Directory](./config) for full details.
 - [Channels](./channels) — DingTalk, Feishu, iMessage, Discord, QQ setup
 - [Heartbeat](./heartbeat) — Scheduled check-in / digest
 - [Skills](./skills) — Built-in and custom skills
-- [Local Models](./local-models) — Run models locally with llama.cpp or MLX
 - [Config & Working Directory](./config) — Working directory and config.json

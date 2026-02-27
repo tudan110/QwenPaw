@@ -124,8 +124,6 @@ copaw models remove-local <model_id> --yes   # 跳过确认
 | `--source`  | `-s` | `huggingface` | 下载源（`huggingface` 或 `modelscope`）        |
 | `--file`    | `-f` | _（自动）_    | 指定文件名。省略时自动选择（GGUF 优先 Q4_K_M） |
 
-> 完整说明请看 [本地模型](./local-models)。
-
 #### Ollama 模型
 
 CoPaw 集成 Ollama 以在本地运行模型。模型从 Ollama 守护进程动态加载——请先从 [ollama.com](https://ollama.com) 安装 Ollama。
@@ -409,5 +407,4 @@ copaw --host 0.0.0.0 --port 9090 cron list
 - [频道配置](./channels) —— 钉钉、飞书、iMessage、Discord、QQ 详细步骤
 - [心跳](./heartbeat) —— 定时自检/摘要
 - [技能](./skills) —— 内置技能与自定义技能
-- [本地模型](./local-models) —— 通过 llama.cpp 或 MLX 运行本地模型
 - [配置与工作目录](./config) —— 工作目录与 config.json
