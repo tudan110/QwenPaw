@@ -124,6 +124,7 @@ const DOC_SLUGS: DocEntry[] = [
   { slug: "console", titleKey: "docs.console" },
   { slug: "channels", titleKey: "docs.channels" },
   { slug: "skills", titleKey: "docs.skills" },
+  { slug: "mcp", titleKey: "docs.mcp" },
   {
     slug: "memory",
     titleKey: "docs.memory",
@@ -154,6 +155,7 @@ const DOC_TITLES: Record<Lang, Record<string, string>> = {
     "docs.cli": "CLI",
     "docs.console": "控制台",
     "docs.skills": "Skills",
+    "docs.mcp": "MCP",
     "docs.memory": "记忆",
     "docs.compact": "压缩",
     "docs.config": "配置与工作目录",
@@ -169,6 +171,7 @@ const DOC_TITLES: Record<Lang, Record<string, string>> = {
     "docs.cli": "CLI",
     "docs.console": "Console",
     "docs.skills": "Skills",
+    "docs.mcp": "MCP",
     "docs.memory": "Memory",
     "docs.compact": "Compaction",
     "docs.config": "Config & working dir",
