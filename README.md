@@ -186,7 +186,7 @@ If you use a **cloud LLM** (e.g. DashScope, ModelScope), you must set an API key
 
 Tools that need extra keys (e.g. `TAVILY_API_KEY` for web search) can be set in Console **Settings → Environment variables**, or see [Config](https://copaw.agentscope.io/docs/config) for details.
 
-> **Using local models only?** If you use [Local Models](#-local-models) (llama.cpp or MLX), you do **not** need any API key.
+> **Using local models only?** If you use [Local Models](#local-models) (llama.cpp or MLX), you do **not** need any API key.
 
 
 ## Local Models

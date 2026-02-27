@@ -187,7 +187,7 @@ docker run -p 8088:8088 -v copaw-data:/app/working agentscope/copaw:latest
 
 其他工具所需密钥（如网页搜索的 `TAVILY_API_KEY`）可在控制台 **设置 → 环境变量** 中配置，详见 [配置](https://copaw.agentscope.io/docs/config)。
 
-> **仅用本地模型？** 若使用 [本地模型](#-本地模型)（llama.cpp 或 MLX），则**无需**任何 API Key。
+> **仅用本地模型？** 若使用 [本地模型](#本地模型)（llama.cpp 或 MLX），则**无需**任何 API Key。
 
 ----
 
