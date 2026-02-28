@@ -682,6 +682,8 @@ button {
 .docs-layout .docs-sidebar {
   flex-shrink: 0;
   margin-left: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .docs-search-result:hover {

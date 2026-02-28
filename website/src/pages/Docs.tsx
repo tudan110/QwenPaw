@@ -16,6 +16,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import rehypeRaw from "rehype-raw";
 import {
   BookOpen,
   Menu,
@@ -182,10 +183,13 @@ const DOC_SLUGS: DocEntry[] = [
 ];
 
 /** Collect all valid slugs (parents + children). */
-const ALL_SLUGS = DOC_SLUGS.flatMap((d) => [
-  d.slug,
-  ...(d.children?.map((c) => c.slug) ?? []),
-]);
+const ALL_SLUGS = [
+  ...DOC_SLUGS.flatMap((d) => [
+    d.slug,
+    ...(d.children?.map((c) => c.slug) ?? []),
+  ]),
+  "comparison", // Hidden page, accessible only via FAQ link
+];
 
 const DOC_TITLES: Record<Lang, Record<string, string>> = {
   zh: {
@@ -492,7 +496,7 @@ export function Docs({ config, lang, onLangClick }: DocsProps) {
                       {faqData.intro ? (
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm]}
-                          rehypePlugins={[rehypeHighlight]}
+                          rehypePlugins={[rehypeRaw, rehypeHighlight]}
                         >
                           {faqData.intro}
                         </ReactMarkdown>
@@ -559,7 +563,7 @@ export function Docs({ config, lang, onLangClick }: DocsProps) {
                                 >
                                   <ReactMarkdown
                                     remarkPlugins={[remarkGfm]}
-                                    rehypePlugins={[rehypeHighlight]}
+                                    rehypePlugins={[rehypeRaw, rehypeHighlight]}
                                   >
                                     {item.answer}
                                   </ReactMarkdown>
@@ -574,7 +578,7 @@ export function Docs({ config, lang, onLangClick }: DocsProps) {
                     <LangContext.Provider value={lang}>
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeHighlight]}
+                        rehypePlugins={[rehypeRaw, rehypeHighlight]}
                         components={{
                           pre: ({ children, ...props }) => {
                             const langCtx = useContext(LangContext);
