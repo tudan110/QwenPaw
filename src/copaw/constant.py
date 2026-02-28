@@ -47,12 +47,12 @@ CUSTOM_CHANNELS_DIR = WORKING_DIR / "custom_channels"
 MODELS_DIR = WORKING_DIR / "models"
 
 # Memory compaction configuration
-MEMORY_COMPACT_THRESHOLD = int(
-    os.environ.get("COPAW_MEMORY_COMPACT_THRESHOLD", "100000"),
+MEMORY_COMPACT_KEEP_RECENT = int(
+    os.environ.get("COPAW_MEMORY_COMPACT_KEEP_RECENT", "3"),
 )
 
-MEMORY_COMPACT_KEEP_RECENT = int(
-    os.environ.get("COPAW_MEMORY_COMPACT_KEEP_RECENT", "5"),
+MEMORY_COMPACT_RATIO = float(
+    os.environ.get("COPAW_MEMORY_COMPACT_RATIO", "0.7"),
 )
 
 DASHSCOPE_BASE_URL = os.environ.get(

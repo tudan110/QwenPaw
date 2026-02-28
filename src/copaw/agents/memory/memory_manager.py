@@ -16,12 +16,14 @@ import platform
 from pathlib import Path
 from typing import Any
 
+from agentscope._utils._common import _save_base64_data
 from agentscope.agent import ReActAgent
-from agentscope.formatter import DashScopeChatFormatter, FormatterBase
+from agentscope.formatter import DashScopeChatFormatter
 from agentscope.formatter._dashscope_formatter import (
     _format_dashscope_media_block,
     _reformat_messages,
 )
+from agentscope.formatter._formatter_base import FormatterBase
 from agentscope.message import (
     ImageBlock,
     AudioBlock,
@@ -38,9 +40,33 @@ from ..tools import (
     write_file,
     edit_file,
 )
+from ..utils.tool_message_utils import _truncate_text as _truncate_text_impl
 from ...config.utils import load_config
 
 logger = logging.getLogger(__name__)
+
+# Default max length for text truncation
+_DEFAULT_MAX_FORMATTER_TEXT_LENGTH = 4000
+
+
+def _truncate_text(text: str, max_length: int | None = None) -> str:
+    """Truncate text to max length, keeping head and tail portions.
+
+    Args:
+        text: The text to truncate
+        max_length: Maximum allowed length (from env or default 4000)
+
+    Returns:
+        Truncated text with middle replaced by [...truncated...]
+    """
+    if max_length is None:
+        max_length = int(
+            os.environ.get(
+                "MAX_FORMATTER_TEXT_LENGTH",
+                _DEFAULT_MAX_FORMATTER_TEXT_LENGTH,
+            ),
+        )
+    return _truncate_text_impl(text, max_length)
 
 
 class TimestampedDashScopeChatFormatter(DashScopeChatFormatter):
@@ -54,29 +80,74 @@ class TimestampedDashScopeChatFormatter(DashScopeChatFormatter):
     def convert_tool_result_to_string(
         output: str | list[dict],
     ) -> tuple[str, list[tuple[str, dict]]]:
-        """Extend parent class to support file blocks."""
+        """Convert tool result to string with file block support.
+
+        Extends base class to:
+        - Support file blocks
+        - Handle invalid blocks gracefully (log warning instead of raising)
+        """
         if isinstance(output, str):
             return output, []
 
-        # Try parent class method first
-        try:
-            return DashScopeChatFormatter.convert_tool_result_to_string(output)
-        except ValueError as e:
-            if "Unsupported block type: file" not in str(e):
-                raise
+        textual_output = []
+        multimodal_data = []
 
-            # Handle output containing file blocks
-            textual_output = []
-            multimodal_data = []
-
-            for block in output:
+        for block in output:
+            try:
                 if not isinstance(block, dict) or "type" not in block:
-                    raise ValueError(
-                        f"Invalid block: {block}, "
-                        "expected a dict with 'type' key",
-                    ) from e
+                    logger.warning(
+                        "Invalid block: %s, expected a dict with 'type' key, "
+                        "skipped.",
+                        block,
+                    )
+                    continue
 
-                if block["type"] == "file":
+                block_type = block["type"]
+
+                if block_type == "text":
+                    textual_output.append(block["text"])
+
+                elif block_type in ["image", "audio", "video"]:
+                    if "source" not in block:
+                        logger.warning(
+                            "Invalid %s block: %s, 'source' key is required, "
+                            "skipped.",
+                            block_type,
+                            block,
+                        )
+                        continue
+
+                    source = block["source"]
+                    if source["type"] == "url":
+                        textual_output.append(
+                            f"The returned {block_type} can be found "
+                            f"at: {source['url']}",
+                        )
+                        path_multimodal_file = source["url"]
+
+                    elif source["type"] == "base64":
+                        path_multimodal_file = _save_base64_data(
+                            source["media_type"],
+                            source["data"],
+                        )
+                        textual_output.append(
+                            f"The returned {block_type} can be found "
+                            f"at: {path_multimodal_file}",
+                        )
+
+                    else:
+                        logger.warning(
+                            "Invalid %s source type: %s, expected 'url' or "
+                            "'base64', skipped.",
+                            block_type,
+                            source.get("type"),
+                        )
+                        continue
+
+                    multimodal_data.append((path_multimodal_file, block))
+
+                elif block_type == "file":
+                    # Handle file blocks
                     file_path = block.get("path", "") or block.get("url", "")
                     file_name = block.get("name", file_path)
 
@@ -85,26 +156,30 @@ class TimestampedDashScopeChatFormatter(DashScopeChatFormatter):
                         f"can be found at: {file_path}",
                     )
                     multimodal_data.append((file_path, block))
-                else:
-                    # Delegate other block types to parent class
-                    (
-                        text,
-                        data,
-                    ) = DashScopeChatFormatter.convert_tool_result_to_string(
-                        [block],
-                    )
-                    textual_output.append(text)
-                    multimodal_data.extend(data)
 
-            if len(textual_output) == 0:
-                return "", multimodal_data
-            elif len(textual_output) == 1:
-                return textual_output[0], multimodal_data
-            else:
-                return (
-                    "\n".join("- " + _ for _ in textual_output),
-                    multimodal_data,
+                else:
+                    # Unknown block type: log warning and discard
+                    logger.warning(
+                        "Unsupported block type '%s' in tool result, skipped.",
+                        block_type,
+                    )
+
+            except Exception as e:
+                logger.warning(
+                    "Failed to process block %s: %s, skipped.",
+                    block,
+                    e,
                 )
+
+        if len(textual_output) == 0:
+            return "", multimodal_data
+        elif len(textual_output) == 1:
+            return textual_output[0], multimodal_data
+        else:
+            return (
+                "\n".join("- " + _ for _ in textual_output),
+                multimodal_data,
+            )
 
     async def _format(
         self,
@@ -138,7 +213,7 @@ class TimestampedDashScopeChatFormatter(DashScopeChatFormatter):
                 if typ == "text":
                     content_blocks.append(
                         {
-                            "text": block.get("text"),
+                            "text": _truncate_text(block.get("text", "")),
                         },
                     )
 
@@ -169,6 +244,9 @@ class TimestampedDashScopeChatFormatter(DashScopeChatFormatter):
                         textual_output,
                         multimodal_data,
                     ) = self.convert_tool_result_to_string(block["output"])
+
+                    # Truncate tool result text
+                    textual_output = _truncate_text(textual_output)
 
                     # First add the tool result message in DashScope API format
                     formatted_msgs.append(

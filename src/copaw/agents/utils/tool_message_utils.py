@@ -205,3 +205,36 @@ def _sanitize_tool_messages(msgs: list) -> list:
 
     logger.debug("Sanitizing tool messages: fixing order/pairing issues")
     return _remove_unpaired_tool_messages(_reorder_tool_results(msgs))
+
+
+def _truncate_text(text: str, max_length: int) -> str:
+    """Truncate text to max length, keeping head and tail portions.
+
+    Args:
+        text: The text to truncate
+        max_length: Maximum allowed length
+
+    Returns:
+        Truncated text with middle replaced by [...truncated...]
+    """
+    text = str(text) if text else ""
+    if not text:
+        return text
+
+    if len(text) <= max_length:
+        return text
+
+    half_length = max_length // 2
+    truncated_chars = len(text) - max_length
+    logger.info(
+        "Text truncated: original %d chars, kept head %d + tail %d, "
+        "removed %d chars.",
+        len(text),
+        half_length,
+        half_length,
+        truncated_chars,
+    )
+    return (
+        f"{text[:half_length]}\n\n[...truncated {truncated_chars} "
+        f"chars...]\n\n{text[-half_length:]}"
+    )
