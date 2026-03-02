@@ -103,3 +103,19 @@ export interface OllamaDownloadTaskResponse {
   error: string | null;
   result: OllamaModelResponse | null;
 }
+
+/* ---- Test Connection ---- */
+
+export interface TestConnectionResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface TestProviderRequest {
+  api_key?: string;
+  base_url?: string;
+}
+
+export interface TestModelRequest {
+  model_id: string;
+}
