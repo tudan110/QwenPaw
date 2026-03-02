@@ -52,6 +52,15 @@ class QQConfig(BaseChannelConfig):
     client_secret: str = ""
 
 
+class TelegramConfig(BaseChannelConfig):
+    """Telegram channel: bot_token from BotFather; optional proxy."""
+
+    bot_token: str = ""
+    http_proxy: str = ""
+    http_proxy_auth: str = ""
+    show_typing: Optional[bool] = None
+
+
 class ConsoleConfig(BaseChannelConfig):
     """Console channel: prints agent responses to stdout."""
 
@@ -68,6 +77,7 @@ class ChannelConfig(BaseModel):
     dingtalk: DingTalkConfig = DingTalkConfig()
     feishu: FeishuConfig = FeishuConfig()
     qq: QQConfig = QQConfig()
+    telegram: TelegramConfig = TelegramConfig()
     console: ConsoleConfig = ConsoleConfig()
 
 
@@ -255,5 +265,6 @@ ChannelConfigUnion = Union[
     DingTalkConfig,
     FeishuConfig,
     QQConfig,
+    TelegramConfig,
     ConsoleConfig,
 ]
