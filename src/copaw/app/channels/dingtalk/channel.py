@@ -88,11 +88,13 @@ class DingTalkChannel(BaseChannel):
         media_dir: str = "~/.copaw/media",
         on_reply_sent: OnReplySent = None,
         show_tool_details: bool = True,
+        filter_tool_messages: bool = False,
     ):
         super().__init__(
             process,
             on_reply_sent=on_reply_sent,
             show_tool_details=show_tool_details,
+            filter_tool_messages=filter_tool_messages,
         )
         self.enabled = enabled
         self.client_id = client_id
@@ -143,6 +145,7 @@ class DingTalkChannel(BaseChannel):
         config: DingTalkChannelConfig,
         on_reply_sent: OnReplySent = None,
         show_tool_details: bool = True,
+        filter_tool_messages: bool = False,
     ) -> "DingTalkChannel":
         return cls(
             process=process,
@@ -153,6 +156,7 @@ class DingTalkChannel(BaseChannel):
             media_dir=config.media_dir or "~/.copaw/media",
             on_reply_sent=on_reply_sent,
             show_tool_details=show_tool_details,
+            filter_tool_messages=filter_tool_messages,
         )
 
     # ---------------------------
