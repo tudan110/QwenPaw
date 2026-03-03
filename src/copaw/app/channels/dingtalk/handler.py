@@ -45,12 +45,14 @@ class DingTalkChannelHandler(dingtalk_stream.ChatbotHandler):
         enqueue_callback: Optional[Callable[[Any], None]],
         bot_prefix: str,
         download_url_fetcher,
+        try_accept_message: Optional[Callable[[str], bool]] = None,
     ):
         super().__init__()
         self._main_loop = main_loop
         self._enqueue_callback = enqueue_callback
         self._bot_prefix = bot_prefix
         self._download_url_fetcher = download_url_fetcher
+        self._try_accept_message = try_accept_message
 
     def _emit_native_threadsafe(self, native: dict) -> None:
         if self._enqueue_callback:
@@ -165,7 +167,18 @@ class DingTalkChannelHandler(dingtalk_stream.ChatbotHandler):
         return content
 
     async def process(self, callback: CallbackMessage) -> tuple[int, str]:
+        # pylint: disable=too-many-branches,too-many-statements
         try:
+            # Raw msgId from channel callback for dedup (not assigned id).
+            raw_data = getattr(callback, "data", None) or {}
+            raw_msg_id = str(
+                raw_data.get("msgId") or raw_data.get("msg_id") or "",
+            ).strip()
+            logger.info(
+                "dingtalk raw callback: msgId=%r keys=%s",
+                raw_msg_id or "(empty)",
+                list(raw_data.keys()) if isinstance(raw_data, dict) else "?",
+            )
             incoming_message = ChatbotMessage.from_dict(callback.data)
 
             logger.debug(
@@ -224,6 +237,8 @@ class DingTalkChannelHandler(dingtalk_stream.ChatbotHandler):
             }
             if conversation_id:
                 meta["conversation_id"] = conversation_id
+            if raw_msg_id:
+                meta["message_id"] = raw_msg_id
             sw = getattr(incoming_message, "sessionWebhook", None) or getattr(
                 incoming_message,
                 "session_webhook",
@@ -257,12 +272,30 @@ class DingTalkChannelHandler(dingtalk_stream.ChatbotHandler):
                     "dingtalk recv: no sessionWebhook on incoming_message",
                 )
 
+            # Dedup by message_id only.
+            if self._try_accept_message and not self._try_accept_message(
+                raw_msg_id,
+            ):
+                logger.info(
+                    "dingtalk duplicate ignored: raw_msg_id=%r from=%s",
+                    raw_msg_id,
+                    sender,
+                )
+                self.reply_text(" ", incoming_message)
+                return dingtalk_stream.AckMessage.STATUS_OK, "ok"
+
+            logger.info(
+                "dingtalk accept: raw_msg_id=%r",
+                raw_msg_id or "(empty)",
+            )
             native = {
                 "channel_id": "dingtalk",
                 "sender_id": sender,
                 "content_parts": parts_to_send,
                 "meta": meta,
             }
+            if raw_msg_id:
+                native["message_id"] = raw_msg_id
             if sw:
                 native["session_webhook"] = sw
             logger.info(
