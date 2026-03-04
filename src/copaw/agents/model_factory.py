@@ -16,6 +16,13 @@ from typing import TYPE_CHECKING, Optional, Sequence, Tuple, Type
 from agentscope.formatter import FormatterBase, OpenAIChatFormatter
 from agentscope.model import ChatModelBase, OpenAIChatModel
 
+try:
+    from agentscope.formatter import AnthropicChatFormatter
+    from agentscope.model import AnthropicChatModel
+except ImportError:  # pragma: no cover - compatibility fallback
+    AnthropicChatFormatter = None
+    AnthropicChatModel = None
+
 from .utils.tool_message_utils import _sanitize_tool_messages
 from ..local_models import create_local_chat_model
 from ..providers import (
@@ -35,6 +42,8 @@ logger = logging.getLogger(__name__)
 _CHAT_MODEL_FORMATTER_MAP: dict[Type[ChatModelBase], Type[FormatterBase]] = {
     OpenAIChatModel: OpenAIChatFormatter,
 }
+if AnthropicChatModel is not None and AnthropicChatFormatter is not None:
+    _CHAT_MODEL_FORMATTER_MAP[AnthropicChatModel] = AnthropicChatFormatter
 
 
 def _get_formatter_for_chat_model(
@@ -288,6 +297,19 @@ def _create_remote_model_instance(
         model_name = "qwen3-max"
         api_key = os.getenv("DASHSCOPE_API_KEY", "")
         base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+    # The Anthropic SDK uses a base_url without the "/v1" suffix (it adds
+    # the versioned path internally), unlike OpenAI-compatible providers.
+    # Strip the trailing "/v1" to avoid a doubled path
+    # (e.g. "/v1/v1/messages").
+    if (
+        AnthropicChatModel is not None
+        and issubclass(chat_model_class, AnthropicChatModel)
+        and base_url
+    ):
+        base_url = base_url.rstrip("/")
+        if base_url.endswith("/v1"):
+            base_url = base_url[:-3]
 
     # Instantiate model
     model = chat_model_class(
