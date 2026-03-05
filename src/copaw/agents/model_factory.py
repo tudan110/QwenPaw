@@ -10,6 +10,7 @@ Example:
 """
 
 
+import json
 import logging
 import os
 from typing import TYPE_CHECKING, Optional, Sequence, Tuple, Type, Any
@@ -383,12 +384,32 @@ def _create_remote_model_instance(
         if base_url.endswith("/v1"):
             base_url = base_url[:-3]
 
+    dashscope_base_urls = [
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "https://coding.dashscope.aliyuncs.com/v1",
+    ]
+
+    client_kwargs = {"base_url": base_url}
+
+    if base_url in dashscope_base_urls:
+        client_kwargs["default_headers"] = {
+            "x-dashscope-agentapp": json.dumps(
+                {
+                    "agentType": "CoPaw",
+                    "deployType": "UnKnown",
+                    "moduleCode": "model",
+                    "agentCode": "UnKnown",
+                },
+                ensure_ascii=False,
+            ),
+        }
+
     # Instantiate model
     model = chat_model_class(
         model_name,
         api_key=api_key,
         stream=True,
-        client_kwargs={"base_url": base_url},
+        client_kwargs=client_kwargs,
     )
 
     return model
