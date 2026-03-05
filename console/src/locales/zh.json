@@ -441,6 +441,7 @@
     "discoverModels": "自动获取模型",
     "discoverModelsFailed": "自动获取模型失败",
     "modelTestFailed": "模型验证失败，请检查模型ID是否正确",
+    "modelTestFailedConfirm": "模型连接测试失败：{{message}}。是否仍要添加此模型？",
     "autoDiscoveredAndAdded": "已自动获取 {{count}} 个模型，并新增 {{added}} 个到可选列表",
     "autoDiscoveredNoNew": "已自动获取 {{count}} 个模型，当前列表已是最新",
     "autoDiscoverFailed": "自动获取模型失败，可在模型管理中手动添加"
