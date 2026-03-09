@@ -168,16 +168,25 @@ class AgentsRunningConfig(BaseModel):
             "Maximum input length (tokens) for the model context window"
         ),
     )
+
     memory_compact_ratio: float = Field(
-        default=0.7,
+        default=0.75,
         ge=0.01,
         le=0.99,
-        description=("Ratio of memory to compact when memory is full"),
+        description="Ratio of memory to compact when memory is full",
     )
+
+    memory_reserve_ratio: float = Field(
+        default=0.1,
+        ge=0.01,
+        description="Ratio of memory to reserve when compact memory",
+    )
+
     enable_tool_result_compact: bool = Field(
         default=False,
-        description=("Whether to compact tool result messages in memory"),
+        description="Whether to compact tool result messages in memory",
     )
+
     tool_result_compact_keep_n: int = Field(
         default=5,
         ge=1,
@@ -185,14 +194,15 @@ class AgentsRunningConfig(BaseModel):
             "Number of tool result messages to keep in memory when compacting"
         ),
     )
-    memory_compact_reserve: int = Field(
-        default=10000,
-        ge=1000,
-        description=("Number of tokens to reserve in memory for tool results"),
-    )
+
+    @property
+    def memory_compact_reserve(self) -> int:
+        """Memory compact reserve size (tokens)."""
+        return int(self.max_input_length * self.memory_reserve_ratio)
 
     @property
     def memory_compact_threshold(self) -> int:
+        """Memory compact threshold size (tokens)."""
         return int(self.max_input_length * self.memory_compact_ratio)
 
 
