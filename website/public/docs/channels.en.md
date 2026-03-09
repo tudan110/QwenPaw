@@ -486,6 +486,70 @@ It is recommended to configure the following in `@BotFather`:
 
 ---
 
+## MQTT
+
+### About
+
+Currently, only text and JSON format messages are supported.
+
+JSON message format
+
+```
+{
+  "text": "...",
+  "redirect_client_id": "..."
+}
+```
+
+### Basic Configuration
+
+| Description     | Field           | Required field | Example                 |
+| --------------- | --------------- | -------------- | ----------------------- |
+| MQTT Host       | host            | Y              | 127.0.0.1               |
+| MQTT Port       | port            | Y              | 1883                    |
+| Transport       | transport       | Y              | tcp                     |
+| Clean Session   | clean_session   | Y              | true                    |
+| QoS             | qos             | Y              | 2                       |
+| MQTT Username   | username        | N              |                         |
+| MQTT Password   | password        | N              |                         |
+| Subscribe Topic | subscribe_topic | Y              | server/+/up             |
+| Publish Topic   | publish_topic   | Y              | client/{client_id}/down |
+| TLS Enabled     | tls_enabled     | N              | false                   |
+| TLS CA Certs    | tls_ca_certs    | N              | /tsl/ca.pem             |
+| TLS Certfile    | tls_certfile    | N              | /tsl/client.pem         |
+| TLS Keyfile     | tls_keyfile     | N              | /tsl/client.key         |
+
+### Topic
+
+1. Simple subscription and push
+
+   | subscribe_topic | publish_topic |
+   | --------------- | ------------- |
+   | server          | client        |
+
+2. Fuzzy match subscription and automatic push
+
+   Subscribe to the wildcard topic `/server/+/up`. Messages will be automatically pushed to the corresponding topic based on the client's `client_id`. For example, after a client pushes a message to `/server/client_a/up`, OpenClaw will push the message to `/client/client_b/down` after processing.
+
+   | subscribe_topic | publish_topic           |
+   | --------------- | ----------------------- |
+   | server/+/up     | client/{client_id}/down |
+
+3. Redirected topic push
+
+   The message sent is in JSON format. The subscription topic is `server/client_a/up`, and the push topic is `client/client_a/down`.
+
+   ```json
+   {
+     "text": "Tell me a joke, return the result in plain text",
+     "redirect_client_id": "client_b"
+   }
+   ```
+
+   Messages will be pushed to `client/client_b/down` based on the `redirect_client_id` attribute, enabling cross-topic push. In IoT scenarios, with OpenClaw as the core, autonomous message pushing between multiple devices can be achieved according to individual requirements.
+
+---
+
 ## Appendix
 
 ### Config overview

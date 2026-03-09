@@ -482,6 +482,70 @@
 
 ---
 
+## MQTT
+
+### 介绍
+
+当前仅支持了文本和JSON格式消息。
+
+JSON消息格式
+
+```
+{
+  "text": "...",
+  "redirect_client_id": "..."
+}
+```
+
+### 基础配置
+
+| 描述                    | 属性            | 必须项 | 举例                    |
+| ----------------------- | --------------- | ------ | ----------------------- |
+| 连接地址                | host            | Y      | 127.0.0.1               |
+| 连接端口                | port            | Y      | 1883                    |
+| 协议                    | transport       | Y      | tcp                     |
+| 清除会话                | clean_session   | Y      | true                    |
+| 服务质量 / 消息投递等级 | qos             | Y      | 2                       |
+| 用户名                  | username        | N      |                         |
+| 密码                    | password        | N      |                         |
+| 订阅主题                | subscribe_topic | Y      | server/+/up             |
+| 推送主题                | publish_topic   | Y      | client/{client_id}/down |
+| 开启加密                | tls_enabled     | N      | false                   |
+| CA 根证书               | tls_ca_certs    | N      | /tsl/ca.pem             |
+| 客户端 证书文件         | tls_certfile    | N      | /tsl/client.pem         |
+| 客户端私钥文件          | tls_keyfile     | N      | /tsl/client.key         |
+
+### 主题
+
+1. 简单订阅和推送
+
+   | subscribe_topic | publish_topic |
+   | --------------- | ------------- |
+   | server          | client        |
+
+2. 模糊匹配订阅和自动推送
+
+   模糊订阅全server/+/up主题，根据客户端的client_id自动推送到对应的主题，例如客户端向`/server/client_a/up`推送，OpenClaw处理完后，将会向`/client/client_b/down`推送消息。
+
+   | subscribe_topic | publish_topic           |
+   | --------------- | ----------------------- |
+   | server/+/up     | client/{client_id}/down |
+
+3. 重定向主题推送
+
+   发送消息为JSON格式，订阅主题为`server/client_a/up`，推送主题为`client/client_a/down`
+
+   ```json
+   {
+     "text": "讲个笑话，直接回复文本即可。",
+     "redirect_client_id": "client_b"
+   }
+   ```
+
+   消息会根据redirect_client_id属性，推送至 `client/client_b/down`，从而实现跨主题推送。在物联网场景，可以做到以OpenClaw为核心，根据个人需求，多设备间自主推送消息。
+
+---
+
 ## 附录
 
 ### 配置总览
