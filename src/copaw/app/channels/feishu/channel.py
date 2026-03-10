@@ -31,6 +31,7 @@ from agentscope_runtime.engine.schemas.agent_schemas import (
     # AudioContent,
     FileContent,
     ImageContent,
+    RunStatus,
     TextContent,
 )
 
@@ -1230,10 +1231,13 @@ class FeishuChannel(BaseChannel):
         receive_id: str,
         msg_type: str,
         content: str,
-    ) -> bool:
-        """Send one message (post, image, or file) via lark client."""
+    ) -> Optional[str]:
+        """Send one message (post, image, or file) via lark client.
+
+        Returns the message_id on success, None on failure.
+        """
         if not self._client:
-            return False
+            return None
         logger.info(
             "feishu _send_message_sync: msg_type=%s receive_id_type=%s "
             "content_len=%s",
@@ -1263,24 +1267,31 @@ class FeishuChannel(BaseChannel):
                     getattr(resp, "code", ""),
                     getattr(resp, "msg", ""),
                 )
-                return False
-            logger.info(
-                "feishu _send_message_sync ok: msg_type=%s",
-                msg_type,
+                return None
+            msg_id = (
+                getattr(resp.data, "message_id", None) if resp.data else None
             )
-            return True
+            logger.info(
+                "feishu _send_message_sync ok: msg_type=%s msg_id=%s",
+                msg_type,
+                (msg_id or "")[:24],
+            )
+            return msg_id
         except Exception:
             logger.exception("feishu _send_message_sync failed")
-            return False
+            return None
 
     async def _send_text(
         self,
         receive_id_type: str,
         receive_id: str,
         body: str,
-    ) -> bool:
+    ) -> Optional[str]:
         """Send text as post (md) or interactive card (when body has tables).
-        Body already has bot_prefix if needed."""
+
+        Returns the message_id on success, None on failure.
+        Body already has bot_prefix if needed.
+        """
         has_table = bool(re.search(r"^\s*\|", body, re.MULTILINE))
         loop = asyncio.get_running_loop()
         if has_table:
@@ -1358,8 +1369,11 @@ class FeishuChannel(BaseChannel):
         receive_id_type: str,
         receive_id: str,
         part: OutgoingContentPart,
-    ) -> bool:
-        """Upload image and send as msg_type=image (image_key) per API."""
+    ) -> Optional[str]:
+        """Upload image and send as msg_type=image (image_key) per API.
+
+        Returns the message_id on success, None on failure.
+        """
         logger.info(
             "feishu _send_image: part type=%s",
             getattr(part, "type", None),
@@ -1369,7 +1383,7 @@ class FeishuChannel(BaseChannel):
             logger.info(
                 "feishu _send_image: no image data, skip (url/base64/path)",
             )
-            return False
+            return None
         loop = asyncio.get_running_loop()
         image_key = await loop.run_in_executor(
             None,
@@ -1379,7 +1393,7 @@ class FeishuChannel(BaseChannel):
             logger.info(
                 "feishu _send_image: upload failed, no image_key",
             )
-            return False
+            return None
         logger.info(
             "feishu _send_image: upload ok image_key=%s",
             image_key[:24] if image_key else "",
@@ -1458,8 +1472,11 @@ class FeishuChannel(BaseChannel):
         receive_id_type: str,
         receive_id: str,
         part: OutgoingContentPart,
-    ) -> bool:
-        """Upload file and send file message (msg_type=file, file_key)."""
+    ) -> Optional[str]:
+        """Upload file and send file message (msg_type=file, file_key).
+
+        Returns the message_id on success, None on failure.
+        """
         logger.info(
             "feishu _send_file: part type=%s",
             getattr(part, "type", None),
@@ -1469,13 +1486,13 @@ class FeishuChannel(BaseChannel):
             logger.info(
                 "feishu _send_file: no path/url/base64, skip",
             )
-            return False
+            return None
         file_key = await self._upload_file(path_or_url)
         if not file_key:
             logger.info(
                 "feishu _send_file: upload failed, no file_key",
             )
-            return False
+            return None
         logger.info(
             "feishu _send_file: upload ok file_key=%s",
             file_key[:24] if file_key else "",
@@ -1567,15 +1584,19 @@ class FeishuChannel(BaseChannel):
             )
         return recv
 
-    async def send_content_parts(
+    async def send_content_parts(  # type: ignore[override]
         self,
         to_handle: str,
         parts: List[OutgoingContentPart],
         meta: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Send text as post (md), then images, then files."""
+    ) -> Optional[str]:
+        """Send text as post (md), then images, then files.
+
+        Returns the message_id of the last successfully sent message,
+        or None if nothing was sent.
+        """
         if not self.enabled:
-            return
+            return None
         recv = await self._get_receive_for_send(to_handle, meta)
         if not recv:
             logger.warning(
@@ -1584,7 +1605,7 @@ class FeishuChannel(BaseChannel):
                 "dispatch.meta.feishu_receive_id)",
                 to_handle[:50] if to_handle else "",
             )
-            return
+            return None
         receive_id_type, receive_id = recv
         logger.info(
             "feishu send_content_parts: resolved receive_id_type=%s "
@@ -1627,35 +1648,93 @@ class FeishuChannel(BaseChannel):
         )
         if prefix and body:
             body = prefix + body
+        last_message_id: Optional[str] = None
         if body:
-            await self._send_text(receive_id_type, receive_id, body)
+            last_message_id = await self._send_text(
+                receive_id_type,
+                receive_id,
+                body,
+            )
         for part in media_parts:
             pt = getattr(part, "type", None)
             if pt == ContentType.IMAGE:
-                ok = await self._send_image(
+                msg_id = await self._send_image(
                     receive_id_type,
                     receive_id,
                     part,
                 )
                 logger.info(
                     "feishu send_content_parts: image sent ok=%s",
-                    ok,
+                    bool(msg_id),
                 )
+                if msg_id:
+                    last_message_id = msg_id
             elif pt in (
                 ContentType.FILE,
                 ContentType.VIDEO,
                 ContentType.AUDIO,
             ):
-                ok = await self._send_file(
+                msg_id = await self._send_file(
                     receive_id_type,
                     receive_id,
                     part,
                 )
                 logger.info(
                     "feishu send_content_parts: file sent ok=%s type=%s",
-                    ok,
+                    bool(msg_id),
                     pt,
                 )
+                if msg_id:
+                    last_message_id = msg_id
+        return last_message_id
+
+    async def _run_process_loop(
+        self,
+        request: Any,
+        to_handle: str,
+        send_meta: Dict[str, Any],
+    ) -> None:
+        """Override to track the last sent message_id across all events
+        and add a DONE reaction after the full reply is complete.
+        """
+        last_message_id: Optional[str] = None
+        last_response = None
+        try:
+            async for event in self._process(request):
+                obj = getattr(event, "object", None)
+                status = getattr(event, "status", None)
+                if obj == "message" and status == RunStatus.Completed:
+                    parts = self._message_to_content_parts(event)
+                    if parts:
+                        msg_id = await self.send_content_parts(
+                            to_handle,
+                            parts,
+                            send_meta,
+                        )
+                        if msg_id:
+                            last_message_id = msg_id
+                elif obj == "response":
+                    last_response = event
+                    await self.on_event_response(request, event)
+            err_msg = self._get_response_error_message(last_response)
+            if err_msg:
+                await self._on_consume_error(
+                    request,
+                    to_handle,
+                    f"Error: {err_msg}",
+                )
+            elif last_message_id:
+                await self._add_reaction(last_message_id, "DONE")
+            if self._on_reply_sent:
+                args = self.get_on_reply_sent_args(request, to_handle)
+                self._on_reply_sent(self.channel, *args)
+        except Exception:
+            logger.exception("channel consume_one failed")
+            await self._on_consume_error(
+                request,
+                to_handle,
+                "An error occurred while processing your request.",
+            )
 
     async def send(
         self,
