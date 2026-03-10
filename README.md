@@ -288,7 +288,7 @@ Then open **http://127.0.0.1:8088/** for the Console. Config, memory, and skills
 >   --add-host=host.docker.internal:host-gateway \
 >   -v copaw-data:/app/working agentscope/copaw:latest
 > ```
-> Then in CoPaw **Settings → Models → Ollama**, change the Base URL to `http://host.docker.internal:11434/v1` or your corresponding port.
+> Then in CoPaw **Settings → Models → Ollama**, change the Base URL to `http://host.docker.internal:11434` or your corresponding port.
 >
 > **Option B** — Host networking (Linux only):
 > ```bash

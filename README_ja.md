@@ -288,7 +288,7 @@ docker run -p 127.0.0.1:8088:8088 -v copaw-data:/app/working agentscope/copaw:la
 >   --add-host=host.docker.internal:host-gateway \
 >   -v copaw-data:/app/working agentscope/copaw:latest
 > ```
-> その後、CoPawの **Settings → Models → Ollama** で、Base URLを `http://host.docker.internal:11434/v1` または対応するポートに変更してください。
+> その後、CoPawの **Settings → Models → Ollama** で、Base URLを `http://host.docker.internal:11434` または対応するポートに変更してください。
 >
 > **方法B** — ホストネットワーク（Linuxのみ）：
 > ```bash
