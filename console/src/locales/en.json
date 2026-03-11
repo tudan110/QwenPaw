@@ -19,7 +19,8 @@
     "loading": "Loading...",
     "copied": "Copied to clipboard",
     "copyFailed": "Failed to copy to clipboard",
-    "contentPlaceholder": "Enter content..."
+    "contentPlaceholder": "Enter content...",
+    "close": "Close"
   },
   "nav": {
     "chat": "Chat",
@@ -37,6 +38,7 @@
     "settings": "Settings",
     "models": "Models",
     "environments": "Environments",
+    "security": "Security",
     "tokenUsage": "Token Usage"
   },
   "workspace": {
@@ -574,5 +576,66 @@
     "description": "I am a helpful assistant that can help you with your questions.",
     "prompt1": "Let's start a new journey!",
     "prompt2": "Can you tell me what skills you have?"
+  },
+  "security": {
+    "title": "Tool Guard",
+    "description": "Configure security scanning for tool calls. Dangerous operations will require your explicit approval before execution.",
+    "enabled": "Enable Tool Guard",
+    "enabledTooltip": "When enabled, tool calls are scanned for dangerous patterns before execution",
+    "guardedTools": "Guarded Tools",
+    "guardedToolsTooltip": "Tools that require approval when dangerous patterns are detected. Leave empty to use the built-in default set.",
+    "guardedToolsPlaceholder": "Select tools or type custom tool names",
+    "deniedTools": "Denied Tools",
+    "deniedToolsTooltip": "Tools that are always rejected without asking for approval",
+    "deniedToolsPlaceholder": "Select tools to always deny",
+    "saveSuccess": "Tool guard settings saved",
+    "saveFailed": "Failed to save tool guard settings",
+    "loadFailed": "Failed to load tool guard settings",
+    "rules": {
+      "title": "Detection Rules",
+      "description": "Rules define regex patterns that trigger security alerts. Built-in rules can be disabled; custom rules can be added, edited, or deleted.",
+      "id": "Rule ID",
+      "severity": "Severity",
+      "descriptionCol": "Description",
+      "source": "Source",
+      "actions": "Actions",
+      "builtin": "Built-in",
+      "custom": "Custom",
+      "enable": "Enable",
+      "disable": "Disable",
+      "edit": "Edit",
+      "delete": "Delete",
+      "add": "Add Rule",
+      "addTitle": "Add Custom Rule",
+      "editTitle": "Edit Custom Rule",
+      "ruleId": "Rule ID",
+      "ruleIdRequired": "Rule ID is required",
+      "duplicateId": "A rule with this ID already exists",
+      "tools": "Target Tools",
+      "toolsPlaceholder": "Leave empty to match all tools",
+      "params": "Target Parameters",
+      "paramsPlaceholder": "Leave empty to match all parameters",
+      "severityLabel": "Severity",
+      "categoryLabel": "Category",
+      "patterns": "Regex Patterns",
+      "patternsRequired": "At least one pattern is required",
+      "patternsTooltip": "One regex per line. Matched against tool parameter values (case-insensitive).",
+      "excludePatterns": "Exclude Patterns",
+      "excludePatternsTooltip": "One regex per line. If any matches, the rule is skipped for that value.",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "What does this rule detect?",
+      "remediationLabel": "Remediation",
+      "remediationPlaceholder": "Suggested action when this rule triggers",
+      "preview": "Preview",
+      "previewTitle": "Rule Details",
+      "actionLabel": "Action",
+      "actionApproval": "Require Approval",
+      "allTools": "All tools",
+      "allParams": "All parameters",
+      "descriptions": {
+        "TOOL_CMD_DANGEROUS_RM": "Detects 'rm' command that may cause data loss",
+        "TOOL_CMD_DANGEROUS_MV": "Detects 'mv' command that may move or overwrite files unexpectedly"
+      }
+    }
   }
 }

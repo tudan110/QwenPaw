@@ -19,6 +19,7 @@ import { ollamaModelApi } from "./modules/ollamaModel";
 import { mcpApi } from "./modules/mcp";
 import { tokenUsageApi } from "./modules/tokenUsage";
 import { toolsApi } from "./modules/tools";
+import { securityApi } from "./modules/security";
 
 export const api = {
   // Root
@@ -67,6 +68,9 @@ export const api = {
   ...tokenUsageApi,
   // Tools
   ...toolsApi,
+
+  // Security
+  ...securityApi,
 };
 
 export default api;

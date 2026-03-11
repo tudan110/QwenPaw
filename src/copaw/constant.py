@@ -177,3 +177,14 @@ LLM_BACKOFF_CAP = EnvVarLoader.get_float(
     10.0,
     min_value=0.5,
 )
+
+# Tool guard approval timeout (seconds).
+try:
+    TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS = max(
+        float(
+            os.environ.get("COPAW_TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS", "600"),
+        ),
+        1.0,
+    )
+except (TypeError, ValueError):
+    TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS = 600.0

@@ -442,6 +442,40 @@ class ToolsConfig(BaseModel):
     )
 
 
+class ToolGuardRuleConfig(BaseModel):
+    """A single user-defined guard rule (stored in config.json)."""
+
+    id: str
+    tools: List[str] = Field(default_factory=list)
+    params: List[str] = Field(default_factory=list)
+    category: str = "command_injection"
+    severity: str = "HIGH"
+    patterns: List[str] = Field(default_factory=list)
+    exclude_patterns: List[str] = Field(default_factory=list)
+    description: str = ""
+    remediation: str = ""
+
+
+class ToolGuardConfig(BaseModel):
+    """Tool guard settings under ``security.tool_guard``.
+
+    ``guarded_tools``: ``None`` → use built-in default set; empty list → guard
+    nothing; non-empty list → guard only those tools.
+    """
+
+    enabled: bool = True
+    guarded_tools: Optional[List[str]] = None
+    denied_tools: List[str] = Field(default_factory=list)
+    custom_rules: List[ToolGuardRuleConfig] = Field(default_factory=list)
+    disabled_rules: List[str] = Field(default_factory=list)
+
+
+class SecurityConfig(BaseModel):
+    """Top-level ``security`` section in config.json."""
+
+    tool_guard: ToolGuardConfig = Field(default_factory=ToolGuardConfig)
+
+
 class Config(BaseModel):
     """Root config (config.json)."""
 
@@ -451,7 +485,7 @@ class Config(BaseModel):
     last_api: LastApiConfig = LastApiConfig()
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
     last_dispatch: Optional[LastDispatchConfig] = None
-    # When False, channel output hides tool call/result details (show "...").
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
     show_tool_details: bool = True
 
 
