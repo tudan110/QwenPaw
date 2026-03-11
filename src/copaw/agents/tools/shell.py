@@ -18,6 +18,23 @@ from copaw.constant import WORKING_DIR
 from .utils import truncate_shell_output
 
 
+def _kill_process_tree_win32(pid: int) -> None:
+    """Kill a process and all its descendants on Windows via taskkill.
+
+    Uses ``taskkill /F /T`` which forcefully terminates the entire process
+    tree, including grandchild processes that ``Popen.kill()`` would miss.
+    """
+    try:
+        subprocess.call(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+    except Exception:
+        pass
+
+
 def _execute_subprocess_sync(
     cmd: str,
     cwd: str,
@@ -28,6 +45,11 @@ def _execute_subprocess_sync(
 
     This function runs in a separate thread to avoid Windows asyncio
     subprocess limitations.
+
+    Uses ``Popen`` directly instead of ``subprocess.run`` because the
+    latter's internal cleanup after a timeout calls ``communicate()``
+    **without** a timeout, which hangs when descendant processes still
+    hold the pipe handles open (e.g. ``notepad.exe``, ``cmd /k pause``).
 
     Args:
         cmd (`str`):
@@ -46,27 +68,55 @@ def _execute_subprocess_sync(
             return code will be -1 and stderr will contain timeout information.
     """
     try:
-        result = subprocess.run(
+        with subprocess.Popen(
             cmd,
             shell=True,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=False,
             cwd=cwd,
-            timeout=timeout,
             env=env,
-            check=True,
-        )
-        return (
-            result.returncode,
-            smart_decode(result.stdout),
-            smart_decode(result.stderr),
-        )
-    except subprocess.TimeoutExpired:
-        return (
-            -1,
-            "",
-            f"Command execution exceeded the timeout of {timeout} seconds.",
-        )
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+        ) as proc:
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+                return (
+                    proc.returncode,
+                    smart_decode(stdout),
+                    smart_decode(stderr),
+                )
+            except subprocess.TimeoutExpired:
+                _kill_process_tree_win32(proc.pid)
+
+                # Try to drain remaining output after the tree has been killed.
+                # The second communicate() should return quickly now that all
+                # writers are dead.  Guard with a timeout just in case.
+                try:
+                    stdout, stderr = proc.communicate(timeout=5)
+                    stdout_str = smart_decode(stdout)
+                    stderr_str = smart_decode(stderr)
+                except (subprocess.TimeoutExpired, OSError, ValueError):
+                    stdout_str, stderr_str = "", ""
+                    # Force-close pipes to unblock any lingering reader threads
+                    # spawned by the first communicate() call.
+                    for pipe in (proc.stdout, proc.stderr, proc.stdin):
+                        if pipe:
+                            try:
+                                pipe.close()
+                            except OSError:
+                                pass
+                    try:
+                        proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        pass
+
+                timeout_msg = f"Command execution exceeded the timeout of {timeout} seconds."
+                if stderr_str:
+                    stderr_str = f"{stderr_str}\n{timeout_msg}"
+                else:
+                    stderr_str = timeout_msg
+                return -1, stdout_str, stderr_str
+
     except Exception as e:
         return -1, "", str(e)
 
