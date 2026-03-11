@@ -36,7 +36,8 @@
     "agentConfig": "Configuration",
     "settings": "Settings",
     "models": "Models",
-    "environments": "Environments"
+    "environments": "Environments",
+    "tokenUsage": "Token Usage"
   },
   "workspace": {
     "title": "WorkSpace",
@@ -322,6 +323,22 @@
     "variables": "variables",
     "showValue": "Show value",
     "hideValue": "Hide value"
+  },
+  "tokenUsage": {
+    "title": "Token Usage",
+    "description": "View LLM token consumption over time, by date and model.",
+    "totalTokens": "Total Tokens",
+    "totalCalls": "Total Calls",
+    "promptTokens": "Prompt Tokens",
+    "completionTokens": "Completion Tokens",
+    "byModel": "By Model",
+    "byDate": "By Date",
+    "provider": "Provider",
+    "model": "Model",
+    "date": "Date",
+    "refresh": "Refresh",
+    "loadFailed": "Failed to load token usage",
+    "noData": "No token usage data in the selected period"
   },
   "models": {
     "llmConfiguration": "LLM Configuration",

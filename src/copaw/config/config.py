@@ -431,6 +431,11 @@ class ToolsConfig(BaseModel):
                 enabled=True,
                 description="Get current date and time",
             ),
+            "get_token_usage": BuiltinToolConfig(
+                name="get_token_usage",
+                enabled=True,
+                description="Get llm token usage",
+            ),
         },
     )
 

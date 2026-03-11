@@ -320,6 +320,22 @@
     "showValue": "値を表示",
     "hideValue": "値を非表示"
   },
+  "tokenUsage": {
+    "title": "Token 使用量",
+    "description": "日付・モデル別の LLM Token 使用量を確認します。",
+    "totalTokens": "合計 Token 数",
+    "totalCalls": "総呼び出し回数",
+    "promptTokens": "入力 Token",
+    "completionTokens": "出力 Token",
+    "byModel": "モデル別",
+    "byDate": "日付別",
+    "provider": "プロバイダー",
+    "model": "モデル",
+    "date": "日付",
+    "refresh": "更新",
+    "loadFailed": "Token 使用量の読み込みに失敗しました",
+    "noData": "選択期間に Token 使用データがありません"
+  },
   "models": {
     "llmConfiguration": "LLM設定",
     "providersTitle": "プロバイダー",
