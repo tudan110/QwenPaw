@@ -19,6 +19,7 @@ const CHANNELS_WITH_ACCESS_CONTROL: ChannelKey[] = [
   "dingtalk",
   "discord",
   "feishu",
+  "wecom",
   "mattermost",
   "matrix",
   "xiaoyi",
@@ -434,6 +435,35 @@ export function ChannelDrawer({
               label={t("channels.welcomeGreeting")}
             >
               <Input.TextArea rows={2} />
+            </Form.Item>
+          </>
+        );
+      case "wecom":
+        return (
+          <>
+            <Form.Item
+              name="bot_id"
+              label="Bot ID"
+              rules={[{ required: true, message: "Please input Bot ID" }]}
+            >
+              <Input placeholder="Bot ID from WeCom backend" />
+            </Form.Item>
+            <Form.Item
+              name="secret"
+              label="Secret"
+              rules={[{ required: true, message: "Please input Secret" }]}
+            >
+              <Input.Password placeholder="Secret from WeCom backend" />
+            </Form.Item>
+            <Form.Item name="media_dir" label="Media Dir">
+              <Input placeholder="~/.copaw/media" />
+            </Form.Item>
+            <Form.Item
+              name="welcome_text"
+              label={t("channels.welcomeText")}
+              tooltip={t("channels.welcomeTextTooltip")}
+            >
+              <Input placeholder={t("channels.welcomeTextPlaceholder")} />
             </Form.Item>
           </>
         );

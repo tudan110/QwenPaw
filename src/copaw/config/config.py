@@ -102,6 +102,16 @@ class ConsoleConfig(BaseChannelConfig):
     enabled: bool = True
 
 
+class WecomConfig(BaseChannelConfig):
+    """WeCom (Enterprise WeChat) AI Bot channel config."""
+
+    bot_id: str = ""
+    secret: str = ""
+    media_dir: str = "~/.copaw/media"
+    welcome_text: str = ""
+    max_reconnect_attempts: int = -1
+
+
 class MatrixConfig(BaseChannelConfig):
     """Matrix channel configuration."""
 
@@ -150,6 +160,7 @@ class ChannelConfig(BaseModel):
     console: ConsoleConfig = ConsoleConfig()
     matrix: MatrixConfig = MatrixConfig()
     voice: VoiceChannelConfig = VoiceChannelConfig()
+    wecom: WecomConfig = WecomConfig()
     xiaoyi: XiaoYiConfig = XiaoYiConfig()
 
 
@@ -512,5 +523,6 @@ ChannelConfigUnion = Union[
     ConsoleConfig,
     MatrixConfig,
     VoiceChannelConfig,
+    WecomConfig,
     XiaoYiConfig,
 ]
