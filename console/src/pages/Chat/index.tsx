@@ -341,7 +341,7 @@ export default function ChatPage() {
         console.warn("Failed to get selected agent from storage:", error);
       }
 
-      return fetch(defaultConfig?.api?.baseURL || getApiUrl("/agent/process"), {
+      return fetch(defaultConfig?.api?.baseURL || getApiUrl("/console/chat"), {
         method: "POST",
         headers,
         body: JSON.stringify(requestBody),
