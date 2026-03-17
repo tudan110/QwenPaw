@@ -36,6 +36,7 @@ import {
   Copy,
   Check,
   BarChart3,
+  Mic,
   Bot,
 } from "lucide-react";
 import api from "../api";
@@ -69,6 +70,7 @@ const KEY_TO_PATH: Record<string, string> = {
   "agent-config": "/agent-config",
   security: "/security",
   "token-usage": "/token-usage",
+  "voice-transcription": "/voice-transcription",
 };
 
 const UPDATE_MD: Record<string, string> = {
@@ -357,6 +359,11 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
           key: "token-usage",
           label: t("nav.tokenUsage"),
           icon: <BarChart3 size={16} />,
+        },
+        {
+          key: "voice-transcription",
+          label: t("nav.voiceTranscription"),
+          icon: <Mic size={16} />,
         },
       ],
     },
