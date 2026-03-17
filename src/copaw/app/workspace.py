@@ -21,7 +21,7 @@ from .mcp import MCPClientManager
 from .crons.manager import CronManager
 from .crons.repo.json_repo import JsonJobRepository
 from ..agents.memory import MemoryManager
-from ..config.config import load_agent_config, AgentsRunningConfig
+from ..config.config import load_agent_config
 
 if TYPE_CHECKING:
     from .channels.base import BaseChannel
@@ -130,63 +130,72 @@ class Workspace:
             # IMPORTANT: Create MemoryManager BEFORE runner.start() to prevent
             # init_handler from creating a duplicate MemoryManager
             async def init_memory():
-                # Get running config for memory manager
-                running_config = agent_config.running
-
-                if running_config is None:
-                    running_config = AgentsRunningConfig()
-
-                self._memory_manager = MemoryManager(
-                    working_dir=str(self.workspace_dir),
-                    max_input_length=running_config.max_input_length,
-                    memory_compact_ratio=running_config.memory_compact_ratio,
-                    memory_reserve_ratio=running_config.memory_reserve_ratio,
-                    language=agent_config.language,
-                )
-                # Assign to runner BEFORE starting runner
-                self._runner.memory_manager = self._memory_manager
-                await self._memory_manager.start()
-                logger.debug(
-                    f"MemoryManager started for agent: {self.agent_id}",
-                )
+                try:
+                    self._memory_manager = MemoryManager(
+                        working_dir=str(self.workspace_dir),
+                        agent_config=agent_config,
+                    )
+                    # Assign to runner BEFORE starting runner
+                    self._runner.memory_manager = self._memory_manager
+                    await self._memory_manager.start()
+                    logger.debug(
+                        f"MemoryManager started for agent: {self.agent_id}",
+                    )
+                except Exception as e:
+                    logger.exception(
+                        f"Failed to initialize MemoryManager for agent "
+                        f"{self.agent_id}: {e}",
+                    )
 
             async def init_mcp():
-                self._mcp_manager = MCPClientManager()
-                if agent_config.mcp:
-                    try:
-                        await self._mcp_manager.init_from_config(
-                            agent_config.mcp,
-                        )
-                        logger.debug(
-                            f"MCP clients initialized for agent: "
-                            f"{self.agent_id}",
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to initialize MCP for agent "
-                            f"{self.agent_id}: {e}",
-                        )
-                self._runner.set_mcp_manager(self._mcp_manager)
+                try:
+                    self._mcp_manager = MCPClientManager()
+                    if agent_config.mcp:
+                        try:
+                            await self._mcp_manager.init_from_config(
+                                agent_config.mcp,
+                            )
+                            logger.debug(
+                                f"MCP clients initialized for agent: "
+                                f"{self.agent_id}",
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to initialize MCP for agent "
+                                f"{self.agent_id}: {e}",
+                            )
+                    self._runner.set_mcp_manager(self._mcp_manager)
+                except Exception as e:
+                    logger.exception(
+                        f"Failed to initialize MCPClientManager for agent "
+                        f"{self.agent_id}: {e}",
+                    )
 
             async def init_chat():
-                from .runner.manager import ChatManager
-                from .runner.repo.json_repo import JsonChatRepository
+                try:
+                    from .runner.manager import ChatManager
+                    from .runner.repo.json_repo import JsonChatRepository
 
-                chats_path = str(self.workspace_dir / "chats.json")
-                chat_repo = JsonChatRepository(chats_path)
-                self._chat_manager = ChatManager(repo=chat_repo)
-                self._runner.set_chat_manager(self._chat_manager)
-                logger.info(
-                    f"ChatManager started for agent {self.agent_id}: "
-                    f"chats.json={chats_path}",
-                )
-
-            # Run Memory, MCP, and Chat initialization concurrently
-            await asyncio.gather(init_memory(), init_mcp(), init_chat())
+                    chats_path = str(self.workspace_dir / "chats.json")
+                    chat_repo = JsonChatRepository(chats_path)
+                    self._chat_manager = ChatManager(repo=chat_repo)
+                    self._runner.set_chat_manager(self._chat_manager)
+                    logger.info(
+                        f"ChatManager started for agent {self.agent_id}: "
+                        f"chats.json={chats_path}",
+                    )
+                except Exception as e:
+                    logger.exception(
+                        f"Failed to initialize ChatManager for agent "
+                        f"{self.agent_id}: {e}",
+                    )
 
             # Now start the runner (after MemoryManager is set)
             await self._runner.start()
             logger.debug(f"Runner started for agent: {self.agent_id}")
+
+            # Run Memory, MCP, and Chat initialization concurrently
+            await asyncio.gather(init_memory(), init_mcp(), init_chat())
 
             # Set up restart callback for /daemon restart command
             from .workspace_restart import create_restart_callback
