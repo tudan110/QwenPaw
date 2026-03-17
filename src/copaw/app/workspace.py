@@ -213,10 +213,23 @@ class Workspace:
 
                 temp_config = Config(channels=agent_config.channels)
 
+                # Create a closure to bind agent_id to update_last_dispatch
+                def on_last_dispatch_with_agent_id(
+                    channel: str,
+                    user_id: str,
+                    session_id: str,
+                ) -> None:
+                    update_last_dispatch(
+                        channel=channel,
+                        user_id=user_id,
+                        session_id=session_id,
+                        agent_id=self.agent_id,
+                    )
+
                 self._channel_manager = ChannelManager.from_config(
                     process=make_process_from_runner(self._runner),
                     config=temp_config,
-                    on_last_dispatch=update_last_dispatch,
+                    on_last_dispatch=on_last_dispatch_with_agent_id,
                     workspace_dir=self.workspace_dir,
                 )
                 await self._channel_manager.start_all()
@@ -224,7 +237,7 @@ class Workspace:
                     f"ChannelManager started for agent: {self.agent_id}",
                 )
 
-            # 5. Start CronManager (always create for API access)
+            # 5. Start CronManager (always start for API access and cron jobs)
             job_repo = JsonJobRepository(
                 str(self.workspace_dir / "jobs.json"),
             )
@@ -233,18 +246,21 @@ class Workspace:
                 runner=self._runner,
                 channel_manager=self._channel_manager,
                 timezone="UTC",
+                agent_id=self.agent_id,
             )
-            # Only start background tasks if heartbeat is enabled
-            if agent_config.heartbeat and agent_config.heartbeat.enabled:
-                await self._cron_manager.start()
-                logger.debug(
-                    f"CronManager started with heartbeat: {self.agent_id}",
-                )
-            else:
-                logger.debug(
-                    f"CronManager created (heartbeat disabled): "
-                    f"{self.agent_id}",
-                )
+            # Always start CronManager (it will register cron jobs and
+            # optionally add heartbeat based on config)
+            await self._cron_manager.start()
+
+            heartbeat_status = (
+                "enabled"
+                if (agent_config.heartbeat and agent_config.heartbeat.enabled)
+                else "disabled"
+            )
+            logger.debug(
+                f"CronManager started for agent {self.agent_id} "
+                f"(heartbeat: {heartbeat_status})",
+            )
 
             # 6. Start config watchers for hot-reload (non-blocking)
             await self._start_config_watchers()
