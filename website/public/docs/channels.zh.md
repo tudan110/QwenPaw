@@ -440,12 +440,6 @@
 
 ## 企业微信
 
-### 注意事项
-
-> **SDK 说明**：企业微信频道当前使用的是第三方 SDK [wecom-aibot-sdk 1.0.3](https://pypi.org/project/wecom-aibot-sdk/)。待企业微信官方发布正式 SDK 后，我们将及时跟进更新。
-
-> **Python 版本**：受 SDK 限制，建议将 Python 版本升级至 **3.11 及以上**，以确保功能正常运行。
-
 ### 创建新企业
 
 个人使用者可以访问[企业微信官网](https://work.weixin.qq.com)注册账号，创建新企业，成为企业管理员。
