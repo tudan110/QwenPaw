@@ -401,7 +401,10 @@ export function normalizeRemoteHistoryMessages(
     if (message.role === "assistant" && message.type === "reasoning") {
       const block = buildThinkingBlock(message);
       if (block.content) {
-        activeAgentMessage.processBlocks.push(block);
+        activeAgentMessage.processBlocks = mergeProcessBlocks(
+          activeAgentMessage.processBlocks,
+          [block],
+        );
       }
       continue;
     }
@@ -409,7 +412,10 @@ export function normalizeRemoteHistoryMessages(
     if (message.type === "plugin_call" || message.type === "plugin_call_output") {
       const block = buildToolBlock(message);
       if (block.content) {
-        activeAgentMessage.processBlocks.push(block);
+        activeAgentMessage.processBlocks = mergeProcessBlocks(
+          activeAgentMessage.processBlocks,
+          [block],
+        );
       }
       continue;
     }
@@ -451,18 +457,23 @@ export function buildThinkingBlock(message: any) {
 export function buildToolBlock(message: any) {
   const payload = extractMessageDataPayload(message);
   const toolName = payload?.name || "tool";
-  const title =
-    message.type === "plugin_call_output" ? `${toolName} · 输出` : toolName;
-  const icon =
-    message.type === "plugin_call_output" ? "fa-file-lines" : "fa-screwdriver-wrench";
+  const toolCallId = payload?.call_id || payload?.tool_call_id || payload?.id || "";
+  const inputContent =
+    message.type === "plugin_call" ? normalizeToolPayload(payload?.arguments) : "";
+  const outputContent =
+    message.type === "plugin_call_output" ? normalizeToolPayload(payload?.output) : "";
 
   return {
     id: message.id || `${message.type}-${Date.now()}`,
     kind: "tool",
-    title,
-    subtitle: message.type === "plugin_call_output" ? "工具结果" : "工具调用",
-    icon,
-    content: formatToolBlockContent(message.type, payload),
+    title: toolName,
+    subtitle: "工具调用",
+    icon: "fa-screwdriver-wrench",
+    toolName,
+    toolCallId,
+    inputContent,
+    outputContent,
+    content: inputContent || outputContent || toolName,
   };
 }
 
@@ -472,28 +483,73 @@ function extractMessageDataPayload(message: any) {
   return dataItem?.data || null;
 }
 
-function formatToolBlockContent(type: string, payload: any) {
-  if (!payload) {
-    return "";
+export function mergeProcessBlocks(existingBlocks: any[] = [], incomingBlocks: any[] = []) {
+  return incomingBlocks.reduce((mergedBlocks, incomingBlock) => {
+    if (!incomingBlock) {
+      return mergedBlocks;
+    }
+
+    if (incomingBlock.kind !== "tool") {
+      return mergedBlocks.some((item) => item.id === incomingBlock.id)
+        ? mergedBlocks
+        : [...mergedBlocks, incomingBlock];
+    }
+
+    const targetIndex = findMatchingToolBlockIndex(mergedBlocks, incomingBlock);
+    if (targetIndex === -1) {
+      return mergedBlocks.some((item) => item.id === incomingBlock.id)
+        ? mergedBlocks
+        : [...mergedBlocks, incomingBlock];
+    }
+
+    const nextBlocks = [...mergedBlocks];
+    nextBlocks[targetIndex] = mergeToolTraceBlock(nextBlocks[targetIndex], incomingBlock);
+    return nextBlocks;
+  }, [...existingBlocks]);
+}
+
+function findMatchingToolBlockIndex(blocks: any[], incomingBlock: any) {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const candidate = blocks[index];
+    if (candidate?.kind !== "tool") {
+      continue;
+    }
+
+    const candidateKey = candidate.toolCallId || candidate.toolName || candidate.title;
+    const incomingKey =
+      incomingBlock.toolCallId || incomingBlock.toolName || incomingBlock.title;
+    if (!candidateKey || !incomingKey || candidateKey !== incomingKey) {
+      continue;
+    }
+
+    if (incomingBlock.inputContent && candidate.inputContent) {
+      continue;
+    }
+    if (incomingBlock.outputContent && candidate.outputContent) {
+      continue;
+    }
+
+    return index;
   }
 
-  if (type === "plugin_call_output") {
-    const normalizedOutput = normalizeToolPayload(payload.output);
-    return [
-      payload.name ? `**工具**：\`${payload.name}\`` : "",
-      normalizedOutput ? `\n${normalizedOutput}` : "",
-    ]
-      .join("\n")
-      .trim();
-  }
+  return -1;
+}
 
-  const normalizedArguments = normalizeToolPayload(payload.arguments);
-  return [
-    payload.name ? `**工具**：\`${payload.name}\`` : "",
-    normalizedArguments ? `\n${normalizedArguments}` : "",
-  ]
-    .join("\n")
-    .trim();
+function mergeToolTraceBlock(existingBlock: any, incomingBlock: any) {
+  const inputContent = existingBlock.inputContent || incomingBlock.inputContent || "";
+  const outputContent = existingBlock.outputContent || incomingBlock.outputContent || "";
+
+  return {
+    ...existingBlock,
+    title: existingBlock.title || incomingBlock.title,
+    subtitle: "工具调用",
+    icon: "fa-screwdriver-wrench",
+    toolName: existingBlock.toolName || incomingBlock.toolName,
+    toolCallId: existingBlock.toolCallId || incomingBlock.toolCallId,
+    inputContent,
+    outputContent,
+    content: inputContent || outputContent || existingBlock.content || incomingBlock.content,
+  };
 }
 
 function normalizeToolPayload(rawValue: any) {

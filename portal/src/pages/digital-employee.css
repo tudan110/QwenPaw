@@ -956,6 +956,15 @@
   border: 1px solid #223049;
 }
 
+.portal-digital-employee.theme-dark .message-copy-btn {
+  color: #94a3b8;
+}
+
+.portal-digital-employee.theme-dark .message-copy-btn:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: #e2e8f0;
+}
+
 .portal-digital-employee.theme-dark .streaming-text,
 .portal-digital-employee.theme-dark .markdown-bubble,
 .portal-digital-employee.theme-dark .tasks-welcome-title,
@@ -1101,6 +1110,30 @@
 .portal-digital-employee.theme-dark .trace-body {
   border-top-color: #223049;
   color: #dbe7f5;
+}
+
+.portal-digital-employee.theme-dark .tool-trace-panel {
+  background: #141b2d;
+  border-color: #2a3b56;
+}
+
+.portal-digital-employee.theme-dark .tool-trace-panel-header {
+  background: rgba(148, 163, 184, 0.08);
+  color: #cbd5e1;
+}
+
+.portal-digital-employee.theme-dark .tool-trace-copy-btn {
+  color: #94a3b8;
+}
+
+.portal-digital-employee.theme-dark .tool-trace-copy-btn:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .tool-trace-code {
+  background: #0f172a;
+  color: #e2e8f0;
 }
 
 .portal-digital-employee.theme-dark .trace-body .markdown-bubble,
@@ -2311,9 +2344,40 @@
 }
 
 .portal-digital-employee .message.agent .message-bubble {
-  border-bottom-left-radius: 4px;
   background: linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
   border: 1px solid rgba(59, 130, 246, 0.08);
+}
+
+.portal-digital-employee .message-copy-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 6px;
+  padding-left: 2px;
+}
+
+.portal-digital-employee .message-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.portal-digital-employee .message-copy-btn:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .message-copy-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .portal-digital-employee .streaming-bubble {
@@ -2535,6 +2599,96 @@
   border: none;
   box-shadow: none;
   padding: 0;
+}
+
+.portal-digital-employee .tool-trace-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.portal-digital-employee .tool-trace-panel {
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.portal-digital-employee .tool-trace-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.portal-digital-employee .tool-trace-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.portal-digital-employee .tool-trace-copy-btn:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .tool-trace-copy-icon {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  stroke: none;
+}
+
+.portal-digital-employee .message-copy-icon {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  stroke: none;
+}
+
+.portal-digital-employee .tool-trace-copy-icon.copy,
+.portal-digital-employee .message-copy-icon.copy {
+  fill: currentColor;
+}
+
+.portal-digital-employee .tool-trace-copy-icon.success,
+.portal-digital-employee .message-copy-icon.success {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.portal-digital-employee .tool-trace-panel-body {
+  padding: 0;
+}
+
+.portal-digital-employee .tool-trace-code {
+  margin: 0;
+  padding: 14px 16px;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(15, 23, 42, 0.04);
+  color: var(--text-primary);
+  font: 12px/1.7 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
 .portal-digital-employee .workflow-container {

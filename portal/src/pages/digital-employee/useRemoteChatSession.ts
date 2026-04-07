@@ -21,6 +21,7 @@ import {
   createRemoteSessionId,
   createUserMessage,
   extractCopawMessageText,
+  mergeProcessBlocks,
   normalizeRemoteHistoryMessages,
   normalizeRemoteSessions,
 } from "./helpers";
@@ -234,13 +235,11 @@ export function useRemoteChatSession({
 
         if (nextBlocks?.length) {
           const existingBlocks = nextMessage.processBlocks || [];
-          const existingIds = new Set(existingBlocks.map((item: any) => item.id));
-          const mergedBlocks = [
-            ...existingBlocks,
-            ...nextBlocks.filter((item: any) => !existingIds.has(item.id)),
-          ];
+          const mergedBlocks = mergeProcessBlocks(existingBlocks, nextBlocks);
 
           if (mergedBlocks.length !== existingBlocks.length) {
+            nextMessage = { ...nextMessage, processBlocks: mergedBlocks };
+          } else if (mergedBlocks !== existingBlocks) {
             nextMessage = { ...nextMessage, processBlocks: mergedBlocks };
           }
         }

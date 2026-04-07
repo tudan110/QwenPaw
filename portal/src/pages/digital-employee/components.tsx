@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { employeeStepDescriptions } from "../../data/portalData";
@@ -203,6 +203,8 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   onTicketRefresh,
   ticketActionNotice,
 }: any) {
+  const [messageCopied, setMessageCopied] = useState(false);
+  const messageCopyResetTimerRef = useRef<number | null>(null);
   const hasWorkorders =
     Boolean(message.workorders?.length) ||
     Boolean(message.workordersLoading) ||
@@ -213,6 +215,31 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     Boolean(effectiveDisposalOperation) &&
     effectiveDisposalOperation.status !== "success" &&
     !message.hideDisposalOperation;
+
+  useEffect(
+    () => () => {
+      if (messageCopyResetTimerRef.current) {
+        window.clearTimeout(messageCopyResetTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const handleMessageCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(String(message.content || "").trim());
+      setMessageCopied(true);
+      if (messageCopyResetTimerRef.current) {
+        window.clearTimeout(messageCopyResetTimerRef.current);
+      }
+      messageCopyResetTimerRef.current = window.setTimeout(() => {
+        setMessageCopied(false);
+        messageCopyResetTimerRef.current = null;
+      }, 1600);
+    } catch (error) {
+      console.error("Failed to copy assistant message:", error);
+    }
+  };
 
   return (
     <div className={message.type === "user" ? "message user" : "message agent"}>
@@ -241,7 +268,11 @@ export const ChatMessageItem = memo(function ChatMessageItem({
                   ) : null}
                 </summary>
                 <div className="trace-body">
-                  <MessageMarkdown content={block.content} />
+                  {block.kind === "tool" ? (
+                    <ToolTraceBlock block={block} />
+                  ) : (
+                    <MessageMarkdown content={block.content} />
+                  )}
                 </div>
               </details>
             ))}
@@ -278,6 +309,20 @@ export const ChatMessageItem = memo(function ChatMessageItem({
               isStreaming={isStreamingMessage}
             />
             {isStreamingMessage ? <span className="streaming-cursor" /> : null}
+          </div>
+        ) : null}
+
+        {message.type === "agent" && message.content && !hasWorkorders && !isStreamingMessage ? (
+          <div className="message-copy-row">
+            <button
+              type="button"
+              className="message-copy-btn"
+              onClick={() => void handleMessageCopy()}
+              aria-label={messageCopied ? "已复制" : "复制回复"}
+              title={messageCopied ? "已复制" : "复制回复"}
+            >
+              <CopyGlyph copied={messageCopied} className="message-copy-icon" />
+            </button>
           </div>
         ) : null}
 
@@ -391,6 +436,138 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     </div>
   );
 });
+
+function CopyGlyph({
+  copied,
+  className = "",
+}: {
+  copied: boolean;
+  className?: string;
+}) {
+  if (copied) {
+    return (
+      <svg
+        className={`${className} success`.trim()}
+        viewBox="0 0 16 16"
+        aria-hidden="true"
+      >
+        <path d="M3.5 8.25 6.25 11l6.25-6.25" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      className={`${className} copy`.trim()}
+      viewBox="0 0 1024 1024"
+      overflow="hidden"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M161.744 322.8864a69.6768 69.6768 0 0 1 15.6768-23.8656 69.6768 69.6768 0 0 1 23.8656-15.68A69.7824 69.7824 0 0 1 227.2 278.4h448c8.9504 0 17.5904 1.648 25.9136 4.944a69.6256 69.6256 0 0 1 23.8656 15.6768 69.664 69.664 0 0 1 15.6768 23.8656A69.7664 69.7664 0 0 1 745.6 348.8v448c0 8.9504-1.648 17.5904-4.944 25.9136a69.6128 69.6128 0 0 1-15.6768 23.8656 69.6736 69.6736 0 0 1-23.8656 15.6768A69.7728 69.7728 0 0 1 675.2 867.2H227.2c-8.9536 0-17.5904-1.648-25.9136-4.944a69.664 69.664 0 0 1-23.8656-15.6768 69.6256 69.6256 0 0 1-15.68-23.8656A69.7856 69.7856 0 0 1 156.8 796.8V348.8c0-8.9536 1.648-17.5904 4.944-25.9136zM227.2 803.2h448c1.7664 0 3.2736-0.624 4.5248-1.8752 1.2512-1.2512 1.8752-2.7584 1.8752-4.5248V348.8c0-1.7664-0.624-3.2768-1.8752-4.5248A6.1696 6.1696 0 0 0 675.2 342.4H227.2c-1.7664 0-3.2768 0.624-4.5248 1.8752-1.248 1.248-1.8752 2.7584-1.8752 4.5248v448c0 1.7664 0.624 3.2736 1.8752 4.5248 1.248 1.2512 2.7584 1.8752 4.5248 1.8752z" />
+      <path d="M811.776 161.1584a95.1872 95.1872 0 0 1 30.5056 20.56 95.2096 95.2096 0 0 1 20.56 30.5056A94.96 94.96 0 0 1 870.4 249.6v390.4c0 17.6736-14.3264 32-32 32s-32-14.3264-32-32V249.6a31.76 31.76 0 0 0-9.3728-22.6272A31.8016 31.8016 0 0 0 774.4 217.6H384c-17.6736 0-32-14.3264-32-32s14.3264-32 32-32h390.4c13.008 0 25.4656 2.5184 37.376 7.5584z" />
+    </svg>
+  );
+}
+
+function ToolTraceBlock({ block }: { block: any }) {
+  const sections = [
+    { key: "input", label: "Input", content: block.inputContent },
+    { key: "output", label: "Output", content: block.outputContent },
+  ].filter((section) => section.content);
+
+  if (!sections.length) {
+    return <MessageMarkdown content={block.content} />;
+  }
+
+  return (
+    <div className="tool-trace-stack">
+      {sections.map((section) => (
+        <ToolTracePanel
+          key={`${block.id}-${section.key}`}
+          label={section.label}
+          content={section.content}
+          panelClassName={section.key}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ToolTracePanel({
+  label,
+  content,
+  panelClassName,
+}: {
+  label: string;
+  content: string;
+  panelClassName: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const resetTimerRef = useRef<number | null>(null);
+  const text = getToolTracePayloadText(content);
+
+  useEffect(
+    () => () => {
+      if (resetTimerRef.current) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      if (resetTimerRef.current) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+      resetTimerRef.current = window.setTimeout(() => {
+        setCopied(false);
+        resetTimerRef.current = null;
+      }, 1600);
+    } catch (error) {
+      console.error("Failed to copy tool trace payload:", error);
+    }
+  };
+
+  return (
+    <section className={`tool-trace-panel ${panelClassName}`}>
+      <div className="tool-trace-panel-header">
+        <span>{label}</span>
+        <button
+          type="button"
+          className="tool-trace-copy-btn"
+          onClick={() => void handleCopy()}
+          aria-label={copied ? "已复制" : `复制${label}`}
+          title={copied ? "已复制" : `复制${label}`}
+        >
+          <CopyGlyph copied={copied} className="tool-trace-copy-icon" />
+        </button>
+      </div>
+      <div className="tool-trace-panel-body">
+        <ToolTracePayload content={content} />
+      </div>
+    </section>
+  );
+}
+
+function getToolTracePayloadText(content: string) {
+  const normalized = String(content || "").trim();
+  const fencedMatch = normalized.match(/^```([a-zA-Z0-9_-]+)?\n([\s\S]*?)\n```$/);
+  return fencedMatch ? fencedMatch[2] : normalized;
+}
+
+function ToolTracePayload({ content }: { content: string }) {
+  const text = getToolTracePayloadText(content);
+
+  return (
+    <pre className="tool-trace-code">
+      <code>{text}</code>
+    </pre>
+  );
+}
 
 export const MessageMarkdown = memo(function MessageMarkdown({
   content,
