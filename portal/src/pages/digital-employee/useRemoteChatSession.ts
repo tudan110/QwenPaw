@@ -16,6 +16,7 @@ import {
 import { getFaultDisposalHistory } from "../../api/faultDisposalBridge";
 import {
   buildThinkingBlock,
+  buildResponseBlock,
   buildToolBlock,
   createAgentMessage,
   createRemoteSessionId,
@@ -64,7 +65,6 @@ export function useRemoteChatSession({
   const activeAssistantMessageIdRef = useRef<string | null>(null);
   const streamAssistantMapRef = useRef(new Map());
   const remoteHistoryRequestIdRef = useRef(0);
-  const pendingContentRef = useRef(new Map());
   const pendingProcessBlocksRef = useRef(new Map());
   const flushTimerRef = useRef(0);
   const currentEmployeeRef = useRef(currentEmployee);
@@ -144,13 +144,8 @@ export function useRemoteChatSession({
     }
 
     const frontendMessageId = ensureAgentContainer(employee);
-    const needsSeparator = streamAssistantMapRef.current.size > 0;
-
     const nextState = {
       frontendId: frontendMessageId,
-      sawDelta: false,
-      started: false,
-      needsSeparator,
     };
     streamAssistantMapRef.current.set(backendMessageId, nextState);
     return nextState;
@@ -167,33 +162,16 @@ export function useRemoteChatSession({
     }, 32) as unknown as number;
   };
 
-  const appendToMessageContent = (
-    messageId: string,
-    contentPart: string,
-    { prependSeparator = false }: { prependSeparator?: boolean } = {},
-  ) => {
-    if (!contentPart) {
-      return;
-    }
-
-    const nextFragment = `${prependSeparator ? "\n\n" : ""}${contentPart}`;
-    pendingContentRef.current.set(
-      messageId,
-      `${pendingContentRef.current.get(messageId) || ""}${nextFragment}`,
-    );
-    scheduleStreamFlush();
-  };
-
   const appendProcessBlock = (messageId: string, block: any) => {
     if (!block?.content?.trim()) {
       return;
     }
 
     const queuedBlocks = pendingProcessBlocksRef.current.get(messageId) || [];
-    if (queuedBlocks.some((item: any) => item.id === block.id)) {
-      return;
-    }
-    pendingProcessBlocksRef.current.set(messageId, [...queuedBlocks, block]);
+    pendingProcessBlocksRef.current.set(
+      messageId,
+      mergeProcessBlocks(queuedBlocks, [block]),
+    );
     scheduleStreamFlush();
   };
 
@@ -203,48 +181,24 @@ export function useRemoteChatSession({
       flushTimerRef.current = 0;
     }
 
-    if (
-      pendingContentRef.current.size === 0 &&
-      pendingProcessBlocksRef.current.size === 0
-    ) {
+    if (pendingProcessBlocksRef.current.size === 0) {
       return;
     }
 
-    const contentUpdates = pendingContentRef.current;
     const processBlockUpdates = pendingProcessBlocksRef.current;
-    pendingContentRef.current = new Map();
     pendingProcessBlocksRef.current = new Map();
 
     setMessages((prevMessages) =>
       prevMessages.map((message) => {
-        const nextContentPart = contentUpdates.get(message.id);
         const nextBlocks = processBlockUpdates.get(message.id);
 
-        if (!nextContentPart && !nextBlocks?.length) {
+        if (!nextBlocks?.length) {
           return message;
         }
 
-        let nextMessage = message;
-
-        if (nextContentPart) {
-          nextMessage = {
-            ...nextMessage,
-            content: `${nextMessage.content || ""}${nextContentPart}`,
-          };
-        }
-
-        if (nextBlocks?.length) {
-          const existingBlocks = nextMessage.processBlocks || [];
-          const mergedBlocks = mergeProcessBlocks(existingBlocks, nextBlocks);
-
-          if (mergedBlocks.length !== existingBlocks.length) {
-            nextMessage = { ...nextMessage, processBlocks: mergedBlocks };
-          } else if (mergedBlocks !== existingBlocks) {
-            nextMessage = { ...nextMessage, processBlocks: mergedBlocks };
-          }
-        }
-
-        return nextMessage;
+        const existingBlocks = message.processBlocks || [];
+        const mergedBlocks = mergeProcessBlocks(existingBlocks, nextBlocks);
+        return { ...message, processBlocks: mergedBlocks };
       }),
     );
   };
@@ -258,7 +212,7 @@ export function useRemoteChatSession({
           ...prevMessages,
           createAgentMessage(currentEmployeeRef.current, {
             id: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            content: fallbackText,
+            processBlocks: [buildResponseBlock({ content: fallbackText })],
           }),
         ]);
       }
@@ -268,10 +222,14 @@ export function useRemoteChatSession({
     const activeMessageId = activeAssistantMessageIdRef.current;
     setMessages((prevMessages) =>
       prevMessages.map((message) =>
-        message.id === activeMessageId && !message.content
+        message.id === activeMessageId &&
+        !message.content &&
+        !(message.processBlocks || []).some((block: any) => block.kind === "response")
           ? {
               ...message,
-              content: fallbackText,
+              processBlocks: mergeProcessBlocks(message.processBlocks || [], [
+                buildResponseBlock({ content: fallbackText }),
+              ]),
             }
           : message,
       ),
@@ -444,31 +402,22 @@ export function useRemoteChatSession({
     ) {
       const assistantState = ensureAssistantMessage(event.id, employee);
       const finalText = extractCopawMessageText(event);
-      if (event.status === "completed" && finalText && !assistantState.sawDelta) {
-        appendToMessageContent(assistantState.frontendId, finalText, {
-          prependSeparator: assistantState.needsSeparator && !assistantState.started,
-        });
-        assistantState.started = true;
+      if (event.status === "completed" && finalText) {
+        appendProcessBlock(
+          assistantState.frontendId,
+          buildResponseBlock(event, finalText),
+        );
       }
       return;
     }
 
     if (event.object === "content" && event.type === "text" && event.msg_id) {
-      const assistantState = streamAssistantMapRef.current.get(event.msg_id);
-      if (!assistantState) {
-        return;
-      }
-      if (event.delta === true && event.text) {
-        appendToMessageContent(assistantState.frontendId, event.text, {
-          prependSeparator: assistantState.needsSeparator && !assistantState.started,
-        });
-        assistantState.sawDelta = true;
-        assistantState.started = true;
-      } else if (event.text && event.delta !== true && !assistantState.sawDelta) {
-        appendToMessageContent(assistantState.frontendId, event.text, {
-          prependSeparator: assistantState.needsSeparator && !assistantState.started,
-        });
-        assistantState.started = true;
+      const assistantState = ensureAssistantMessage(event.msg_id, employee);
+      if (event.text) {
+        appendProcessBlock(
+          assistantState.frontendId,
+          buildResponseBlock({ id: event.msg_id }, event.text),
+        );
       }
     }
   };

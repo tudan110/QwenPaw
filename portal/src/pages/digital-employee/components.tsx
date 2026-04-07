@@ -203,43 +203,20 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   onTicketRefresh,
   ticketActionNotice,
 }: any) {
-  const [messageCopied, setMessageCopied] = useState(false);
-  const messageCopyResetTimerRef = useRef<number | null>(null);
+  const latestResponseContent = [...(message.processBlocks || [])]
+    .reverse()
+    .find((block: any) => block?.kind === "response" && block.content)?.content || "";
   const hasWorkorders =
     Boolean(message.workorders?.length) ||
     Boolean(message.workordersLoading) ||
     Boolean(message.workordersError);
   const effectiveDisposalOperation =
-    message.disposalOperation || extractPortalActionPayload(message.content);
+    message.disposalOperation ||
+    extractPortalActionPayload(message.content || latestResponseContent);
   const shouldShowDisposalOperation =
     Boolean(effectiveDisposalOperation) &&
     effectiveDisposalOperation.status !== "success" &&
     !message.hideDisposalOperation;
-
-  useEffect(
-    () => () => {
-      if (messageCopyResetTimerRef.current) {
-        window.clearTimeout(messageCopyResetTimerRef.current);
-      }
-    },
-    [],
-  );
-
-  const handleMessageCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(String(message.content || "").trim());
-      setMessageCopied(true);
-      if (messageCopyResetTimerRef.current) {
-        window.clearTimeout(messageCopyResetTimerRef.current);
-      }
-      messageCopyResetTimerRef.current = window.setTimeout(() => {
-        setMessageCopied(false);
-        messageCopyResetTimerRef.current = null;
-      }, 1600);
-    } catch (error) {
-      console.error("Failed to copy assistant message:", error);
-    }
-  };
 
   return (
     <div className={message.type === "user" ? "message user" : "message agent"}>
@@ -252,30 +229,40 @@ export const ChatMessageItem = memo(function ChatMessageItem({
       <div className="message-content">
         {message.processBlocks?.length ? (
           <div className="process-trace">
-            {message.processBlocks.map((block: any) => (
-              <details
-                key={block.id}
-                className={`trace-block ${block.kind}`}
-                open={block.defaultOpen}
-              >
-                <summary className="trace-summary">
-                  <span className="trace-label">
-                    <i className={`fas ${block.icon}`} />
-                    {block.title}
-                  </span>
-                  {block.subtitle ? (
-                    <span className="trace-subtitle">{block.subtitle}</span>
-                  ) : null}
-                </summary>
-                <div className="trace-body">
-                  {block.kind === "tool" ? (
-                    <ToolTraceBlock block={block} />
-                  ) : (
-                    <MessageMarkdown content={block.content} />
-                  )}
-                </div>
-              </details>
-            ))}
+            {message.processBlocks.map((block: any, index: number) =>
+              block.kind === "response" ? (
+                <ResponseTraceBlock
+                  key={block.id}
+                  block={block}
+                  isStreaming={
+                    isStreamingMessage && index === message.processBlocks.length - 1
+                  }
+                />
+              ) : (
+                <details
+                  key={block.id}
+                  className={`trace-block ${block.kind}`}
+                  open={block.defaultOpen}
+                >
+                  <summary className="trace-summary">
+                    <span className="trace-label">
+                      <i className={`fas ${block.icon}`} />
+                      {block.title}
+                    </span>
+                    {block.subtitle ? (
+                      <span className="trace-subtitle">{block.subtitle}</span>
+                    ) : null}
+                  </summary>
+                  <div className="trace-body">
+                    {block.kind === "tool" ? (
+                      <ToolTraceBlock block={block} />
+                    ) : (
+                      <MessageMarkdown content={block.content} />
+                    )}
+                  </div>
+                </details>
+              ),
+            )}
           </div>
         ) : null}
 
@@ -314,15 +301,12 @@ export const ChatMessageItem = memo(function ChatMessageItem({
 
         {message.type === "agent" && message.content && !hasWorkorders && !isStreamingMessage ? (
           <div className="message-copy-row">
-            <button
-              type="button"
-              className="message-copy-btn"
-              onClick={() => void handleMessageCopy()}
-              aria-label={messageCopied ? "已复制" : "复制回复"}
-              title={messageCopied ? "已复制" : "复制回复"}
-            >
-              <CopyGlyph copied={messageCopied} className="message-copy-icon" />
-            </button>
+            <CopyActionButton
+              text={String(message.content || "").trim()}
+              label="复制回复"
+              buttonClassName="message-copy-btn"
+              iconClassName="message-copy-icon"
+            />
           </div>
         ) : null}
 
@@ -470,6 +454,112 @@ function CopyGlyph({
   );
 }
 
+function CopyActionButton({
+  text,
+  label,
+  buttonClassName,
+  iconClassName,
+}: {
+  text: string;
+  label: string;
+  buttonClassName: string;
+  iconClassName: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const resetTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (resetTimerRef.current) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      if (resetTimerRef.current) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+      resetTimerRef.current = window.setTimeout(() => {
+        setCopied(false);
+        resetTimerRef.current = null;
+      }, 1600);
+    } catch (error) {
+      console.error("Failed to copy content:", error);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className={buttonClassName}
+      onClick={() => void handleCopy()}
+      aria-label={copied ? "已复制" : label}
+      title={copied ? "已复制" : label}
+    >
+      <CopyGlyph copied={copied} className={iconClassName} />
+    </button>
+  );
+}
+
+function ResponseTraceBlock({
+  block,
+  isStreaming = false,
+}: {
+  block: any;
+  isStreaming?: boolean;
+}) {
+  const rich = isRichResponseContent(block.content);
+
+  if (!rich) {
+    return (
+      <div className="response-trace-inline markdown-bubble">
+        <MessageMarkdown content={block.content} isStreaming={isStreaming} />
+        {isStreaming ? <span className="streaming-cursor" /> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="response-trace-rich">
+      <div
+        className={
+          isStreaming
+            ? "message-bubble streaming-bubble markdown-bubble response-trace-bubble"
+            : "message-bubble markdown-bubble response-trace-bubble"
+        }
+      >
+        <MessageMarkdown content={block.content} isStreaming={isStreaming} />
+        {isStreaming ? <span className="streaming-cursor" /> : null}
+      </div>
+      {!isStreaming ? (
+        <div className="message-copy-row">
+          <CopyActionButton
+            text={String(block.content || "").trim()}
+            label="复制回复"
+            buttonClassName="message-copy-btn"
+            iconClassName="message-copy-icon"
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function isRichResponseContent(content: string) {
+  const normalized = String(content || "");
+  return (
+    extractVisualBlocks(normalized).length > 0 ||
+    /(^|\n)\s*#{1,6}\s+\S/m.test(normalized) ||
+    /(^|\n)\s*\|.+\|/m.test(normalized) ||
+    normalized.includes("```")
+  );
+}
+
 function ToolTraceBlock({ block }: { block: any }) {
   const sections = [
     { key: "input", label: "Input", content: block.inputContent },
@@ -503,48 +593,18 @@ function ToolTracePanel({
   content: string;
   panelClassName: string;
 }) {
-  const [copied, setCopied] = useState(false);
-  const resetTimerRef = useRef<number | null>(null);
   const text = getToolTracePayloadText(content);
-
-  useEffect(
-    () => () => {
-      if (resetTimerRef.current) {
-        window.clearTimeout(resetTimerRef.current);
-      }
-    },
-    [],
-  );
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      if (resetTimerRef.current) {
-        window.clearTimeout(resetTimerRef.current);
-      }
-      resetTimerRef.current = window.setTimeout(() => {
-        setCopied(false);
-        resetTimerRef.current = null;
-      }, 1600);
-    } catch (error) {
-      console.error("Failed to copy tool trace payload:", error);
-    }
-  };
 
   return (
     <section className={`tool-trace-panel ${panelClassName}`}>
       <div className="tool-trace-panel-header">
         <span>{label}</span>
-        <button
-          type="button"
-          className="tool-trace-copy-btn"
-          onClick={() => void handleCopy()}
-          aria-label={copied ? "已复制" : `复制${label}`}
-          title={copied ? "已复制" : `复制${label}`}
-        >
-          <CopyGlyph copied={copied} className="tool-trace-copy-icon" />
-        </button>
+        <CopyActionButton
+          text={text}
+          label={`复制${label}`}
+          buttonClassName="tool-trace-copy-btn"
+          iconClassName="tool-trace-copy-icon"
+        />
       </div>
       <div className="tool-trace-panel-body">
         <ToolTracePayload content={content} />

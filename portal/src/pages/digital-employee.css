@@ -965,6 +965,10 @@
   color: #e2e8f0;
 }
 
+.portal-digital-employee.theme-dark .response-trace-inline {
+  color: #e2e8f0;
+}
+
 .portal-digital-employee.theme-dark .streaming-text,
 .portal-digital-employee.theme-dark .markdown-bubble,
 .portal-digital-employee.theme-dark .tasks-welcome-title,
@@ -2378,6 +2382,26 @@
 .portal-digital-employee .message-copy-icon {
   width: 18px;
   height: 18px;
+}
+
+.portal-digital-employee .response-trace-inline {
+  padding: 2px 2px 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.portal-digital-employee .response-trace-inline > :last-child {
+  margin-bottom: 0;
+}
+
+.portal-digital-employee .response-trace-rich {
+  display: flex;
+  flex-direction: column;
+}
+
+.portal-digital-employee .response-trace-bubble {
+  margin-top: 2px;
 }
 
 .portal-digital-employee .streaming-bubble {

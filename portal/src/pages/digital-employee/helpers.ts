@@ -421,13 +421,14 @@ export function normalizeRemoteHistoryMessages(
     }
 
     if (message.role === "assistant" && (!message.type || message.type === "message")) {
-      const text = extractCopawMessageText(message);
-      if (!text) {
+      const block = buildResponseBlock(message);
+      if (!block.content) {
         continue;
       }
-      activeAgentMessage.content = activeAgentMessage.content
-        ? `${activeAgentMessage.content}\n\n${text}`
-        : text;
+      activeAgentMessage.processBlocks = mergeProcessBlocks(
+        activeAgentMessage.processBlocks,
+        [block],
+      );
     }
   }
 
@@ -451,6 +452,16 @@ export function buildThinkingBlock(message: any) {
     subtitle: "思考过程",
     icon: "fa-brain",
     content: extractCopawMessageText(message),
+  };
+}
+
+export function buildResponseBlock(message: any, contentOverride?: string) {
+  const content = String(contentOverride ?? extractCopawMessageText(message) ?? "").trim();
+
+  return {
+    id: message.id || `response-${Date.now()}`,
+    kind: "response",
+    content,
   };
 }
 
@@ -489,6 +500,22 @@ export function mergeProcessBlocks(existingBlocks: any[] = [], incomingBlocks: a
       return mergedBlocks;
     }
 
+    if (incomingBlock.kind === "response") {
+      const existingIndex = mergedBlocks.findIndex(
+        (item) => item?.kind === "response" && item.id === incomingBlock.id,
+      );
+      if (existingIndex === -1) {
+        return [...mergedBlocks, incomingBlock];
+      }
+
+      const nextBlocks = [...mergedBlocks];
+      nextBlocks[existingIndex] = mergeResponseTraceBlock(
+        nextBlocks[existingIndex],
+        incomingBlock,
+      );
+      return nextBlocks;
+    }
+
     if (incomingBlock.kind !== "tool") {
       return mergedBlocks.some((item) => item.id === incomingBlock.id)
         ? mergedBlocks
@@ -506,6 +533,13 @@ export function mergeProcessBlocks(existingBlocks: any[] = [], incomingBlocks: a
     nextBlocks[targetIndex] = mergeToolTraceBlock(nextBlocks[targetIndex], incomingBlock);
     return nextBlocks;
   }, [...existingBlocks]);
+}
+
+function mergeResponseTraceBlock(existingBlock: any, incomingBlock: any) {
+  return {
+    ...existingBlock,
+    content: mergeStreamingText(existingBlock.content || "", incomingBlock.content || ""),
+  };
 }
 
 function findMatchingToolBlockIndex(blocks: any[], incomingBlock: any) {
