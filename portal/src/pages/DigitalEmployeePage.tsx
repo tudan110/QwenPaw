@@ -644,26 +644,36 @@ export default function DigitalEmployeePage() {
                 : "main-content card-mode"
           }
         >
+          <button
+            type="button"
+            className="ops-board-theme-toggle portal-global-theme-toggle"
+            onClick={() => setPageTheme((value) => (value === "light" ? "dark" : "light"))}
+            aria-label="切换整页主题"
+            title="切换整页主题"
+          >
+            <i className={`fas ${pageTheme === "light" ? "fa-moon" : "fa-sun"}`} />
+          </button>
           {isModelConfigMode ? (
-            <ModelConfigModal
-              open
-              resolvedAgentId={resolvedAgentId}
-              activeProviderName={activeProviderName}
-              activeModelLabel={activeModelLabel}
-              activeProviderId={activeProviderId}
+              <ModelConfigModal
+                open
+                resolvedAgentId={resolvedAgentId}
+                resolvedAgentLabel={currentEmployee.name}
+                activeProviderName={activeProviderName}
+                activeModelLabel={activeModelLabel}
+                activeProviderId={activeProviderId}
               activeModelId={activeModelId}
               displayProviders={displayProviders}
               eligibleProviders={eligibleProviders}
               loading={modelsLoading}
               switching={modelsSwitching}
               submitting={modelsSubmitting}
-              disabled={isCreatingChat || isStreaming}
-              notice={modelNotice}
-              onClose={() => setActiveAdvancedPanel(null)}
-              onRefresh={() => void fetchModelState()}
-              onSelectModel={handleSelectModel}
-              onApplyBuiltinApiKey={handleApplyBuiltinApiKey}
-              onSubmitConnect={handleConnectModel}
+                disabled={isCreatingChat || isStreaming}
+                notice={modelNotice}
+                onClose={() => setActiveAdvancedPanel(null)}
+                onRefresh={() => void fetchModelState()}
+                onSelectModel={handleSelectModel}
+                onApplyBuiltinApiKey={handleApplyBuiltinApiKey}
+                onSubmitConnect={handleConnectModel}
               onDeleteProvider={handleDeleteProvider}
               onRemoveModel={handleRemoveModel}
               onConfigureModel={handleConfigureModel}
@@ -722,15 +732,6 @@ export default function DigitalEmployeePage() {
                   </div>
                 </div>
               ) : null}
-              <button
-                type="button"
-                className="ops-board-theme-toggle top-bar-theme-toggle"
-                onClick={() => setPageTheme((value) => (value === "light" ? "dark" : "light"))}
-                aria-label="切换整页主题"
-                title="切换整页主题"
-              >
-                <i className={`fas ${pageTheme === "light" ? "fa-moon" : "fa-sun"}`} />
-              </button>
             </div>
           </div>
 
@@ -742,17 +743,6 @@ export default function DigitalEmployeePage() {
                     运维看板
                     <span>实时任务概览</span>
                   </h3>
-                </div>
-                <div className="ops-board-toolbar">
-                  <button
-                    type="button"
-                    className="ops-board-theme-toggle"
-                    onClick={() => setPageTheme((value) => (value === "light" ? "dark" : "light"))}
-                    aria-label="切换整页主题"
-                    title="切换整页主题"
-                  >
-                    <i className={`fas ${pageTheme === "light" ? "fa-moon" : "fa-sun"}`} />
-                  </button>
                 </div>
               </div>
               <div className="ops-board-columns">

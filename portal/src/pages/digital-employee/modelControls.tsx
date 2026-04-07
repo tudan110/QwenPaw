@@ -1123,6 +1123,7 @@ export function ChatModelSelector({
 export function ModelConfigModal({
   open,
   resolvedAgentId,
+  resolvedAgentLabel,
   activeProviderName,
   activeModelLabel,
   activeProviderId,
@@ -1148,6 +1149,7 @@ export function ModelConfigModal({
 }: {
   open: boolean;
   resolvedAgentId: string;
+  resolvedAgentLabel?: string;
   activeProviderName: string;
   activeModelLabel: string;
   activeProviderId: string;
@@ -1269,6 +1271,7 @@ export function ModelConfigModal({
   return (
     <div className="model-config-page">
       <div className="model-config-body">
+        <div className="model-config-static">
           <div className="portal-model-page-header">
             <div className="portal-model-page-title">
               模型配置 <small>AI模型管理</small>
@@ -1287,7 +1290,7 @@ export function ModelConfigModal({
           </div>
 
           <div className="portal-model-scope-bar">
-            <span>当前作用域：{resolvedAgentId}</span>
+            <span>当前作用域：{resolvedAgentLabel || resolvedAgentId}</span>
             <span>当前模型：{activeProviderName} / {activeModelLabel}</span>
           </div>
 
@@ -1295,12 +1298,13 @@ export function ModelConfigModal({
             <div className={`model-inline-notice ${notice.tone}`}>{notice.text}</div>
           ) : null}
 
+        </div>
+        <div className="model-config-scroll">
           <div className="portal-model-shell">
             <section>
               <div className="portal-model-block-head">
                 <div>
                   <h4>模型列表</h4>
-                  <p>展示 CoPAW 当前完整模型源列表。模型切换仍沿用现有 active model 机制。</p>
                 </div>
               </div>
 
@@ -1317,9 +1321,9 @@ export function ModelConfigModal({
                 onDeleteProvider={handleDelete}
               />
             </section>
-
           </div>
         </div>
+      </div>
         {managedProvider ? (
           <ProviderModelsDialog
             provider={managedProvider}
