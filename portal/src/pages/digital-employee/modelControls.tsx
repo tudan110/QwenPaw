@@ -83,12 +83,16 @@ export function AdvancedModelEntry({
   activeModelLabel,
   activeProviderName,
   isActive,
+  isTokenUsageActive,
   onOpenConfig,
+  onOpenTokenUsage,
 }: {
   activeModelLabel: string;
   activeProviderName: string;
   isActive?: boolean;
+  isTokenUsageActive?: boolean;
   onOpenConfig: () => void;
+  onOpenTokenUsage: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -116,6 +120,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">模型配置</div>
           <div className="sidebar-advanced-item-desc">{activeProviderName}</div>
           <div className="sidebar-advanced-item-meta">{activeModelLabel}</div>
+        </button>
+        <button
+          className={isTokenUsageActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenTokenUsage}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="token-usage">
+              📊
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">Token统计</div>
+          <div className="sidebar-advanced-item-desc">资源消耗分析</div>
+          <div className="sidebar-advanced-item-meta">按模型 / 日期统计</div>
         </button>
       </div>
     </div>

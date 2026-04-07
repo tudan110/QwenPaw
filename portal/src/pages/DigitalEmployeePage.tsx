@@ -24,6 +24,7 @@ import {
   ChatModelSelector,
   ModelConfigModal,
 } from "./digital-employee/modelControls";
+import { TokenUsagePanel } from "./digital-employee/tokenUsagePanel";
 import {
   ALARM_WORKORDER_ENTRY,
   buildEmployeePagePath,
@@ -186,7 +187,9 @@ export default function DigitalEmployeePage() {
   const [executionVisible, setExecutionVisible] = useState(false);
   const [executionTitle, setExecutionTitle] = useState("执行历史");
   const [executionList, setExecutionList] = useState(executionHistory);
-  const [activeAdvancedPanel, setActiveAdvancedPanel] = useState<"model-config" | null>(null);
+  const [activeAdvancedPanel, setActiveAdvancedPanel] = useState<
+    "model-config" | "token-usage" | null
+  >(null);
   const [pageTheme, setPageTheme] = useState<"light" | "dark">(loadPageTheme);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -375,6 +378,7 @@ export default function DigitalEmployeePage() {
   const safeQuickCommands = ensureStringArray(currentEmployee?.quickCommands);
   const showModelSelector = currentView === "chat";
   const isModelConfigMode = activeAdvancedPanel === "model-config";
+  const isTokenUsageMode = activeAdvancedPanel === "token-usage";
 
   const sessionList = (
     isRemoteEmployee
@@ -631,13 +635,15 @@ export default function DigitalEmployeePage() {
             activeModelLabel={activeModelLabel}
             activeProviderName={activeProviderName}
             isActive={isModelConfigMode}
+            isTokenUsageActive={isTokenUsageMode}
             onOpenConfig={() => setActiveAdvancedPanel("model-config")}
+            onOpenTokenUsage={() => setActiveAdvancedPanel("token-usage")}
           />
         </div>
 
         <div
           className={
-            isModelConfigMode
+            isModelConfigMode || isTokenUsageMode
               ? "main-content advanced-page-mode"
               : currentView === "chat"
                 ? "main-content"
@@ -678,8 +684,13 @@ export default function DigitalEmployeePage() {
               onRemoveModel={handleRemoveModel}
               onConfigureModel={handleConfigureModel}
               onTestProvider={handleTestProvider}
-              onTestModel={handleTestModel}
-              onDiscoverModels={handleDiscoverModels}
+                onTestModel={handleTestModel}
+                onDiscoverModels={handleDiscoverModels}
+              />
+          ) : isTokenUsageMode ? (
+            <TokenUsagePanel
+              pageTheme={pageTheme}
+              currentEmployeeName={currentEmployee.name}
             />
           ) : (
             <>
