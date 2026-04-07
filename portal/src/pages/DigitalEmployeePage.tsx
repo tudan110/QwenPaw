@@ -671,11 +671,10 @@ export default function DigitalEmployeePage() {
               displayProviders={displayProviders}
               eligibleProviders={eligibleProviders}
               loading={modelsLoading}
-              switching={modelsSwitching}
-              submitting={modelsSubmitting}
+                switching={modelsSwitching}
+                submitting={modelsSubmitting}
                 disabled={isCreatingChat || isStreaming}
                 notice={modelNotice}
-                onClose={() => setActiveAdvancedPanel(null)}
                 onRefresh={() => void fetchModelState()}
                 onSelectModel={handleSelectModel}
                 onApplyBuiltinApiKey={handleApplyBuiltinApiKey}

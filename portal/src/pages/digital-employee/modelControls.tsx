@@ -1152,7 +1152,6 @@ export function ModelConfigModal({
   submitting,
   disabled,
   notice,
-  onClose,
   onRefresh,
   onSelectModel,
   onApplyBuiltinApiKey,
@@ -1178,7 +1177,6 @@ export function ModelConfigModal({
   submitting: boolean;
   disabled?: boolean;
   notice: ModelNoticeState | null;
-  onClose: () => void;
   onRefresh: () => void;
   onSelectModel: (providerId: string, modelId: string) => Promise<boolean>;
   onApplyBuiltinApiKey: (
@@ -1294,9 +1292,6 @@ export function ModelConfigModal({
               模型配置 <small>AI模型管理</small>
             </div>
             <div className="portal-model-page-actions">
-              <button className="portal-model-btn secondary" onClick={onClose}>
-                关闭
-              </button>
               <button className="portal-model-btn" onClick={handleAddProvider}>
                 <i className="fas fa-plus" /> 添加提供商
               </button>
