@@ -968,6 +968,36 @@
   color: #e2e8f0;
 }
 
+.portal-digital-employee.theme-dark .markdown-bubble table {
+  background: #182235;
+  border-color: #2a3b56;
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .markdown-bubble th,
+.portal-digital-employee.theme-dark .markdown-bubble td {
+  border-bottom-color: rgba(148, 163, 184, 0.18);
+}
+
+.portal-digital-employee.theme-dark .markdown-bubble th {
+  background: rgba(148, 163, 184, 0.12);
+  color: #f8fafc;
+}
+
+.portal-digital-employee.theme-dark .message.user .markdown-bubble table {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.portal-digital-employee.theme-dark .message.user .markdown-bubble th,
+.portal-digital-employee.theme-dark .message.user .markdown-bubble td {
+  border-bottom-color: rgba(255, 255, 255, 0.14);
+}
+
+.portal-digital-employee.theme-dark .message.user .markdown-bubble th {
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .portal-digital-employee.theme-dark .input-box {
   background: #1a2235;
   border-color: #223049;
