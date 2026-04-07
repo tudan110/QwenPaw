@@ -52,6 +52,8 @@ const REMOTE_AGENT_IDS: Record<string, string> = {
   query: "query",
 };
 
+const PAGE_THEME_STORAGE_KEY = "portal-digital-employee-theme";
+
 const operationsBoardDots = {
   pending: "pending",
   running: "running",
@@ -79,6 +81,31 @@ type ExecutionRecord = {
   agentIcon?: string;
   status?: string;
 };
+
+function loadPageTheme(): "light" | "dark" {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+
+  try {
+    return window.localStorage.getItem(PAGE_THEME_STORAGE_KEY) === "dark" ? "dark" : "light";
+  } catch (error) {
+    console.error("Failed to load persisted page theme:", error);
+    return "light";
+  }
+}
+
+function persistPageTheme(theme: "light" | "dark"): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(PAGE_THEME_STORAGE_KEY, theme);
+  } catch (error) {
+    console.error("Failed to persist page theme:", error);
+  }
+}
 
 function ensureSessionRecords(value: unknown): SessionRecord[] {
   return Array.isArray(value) ? (value as SessionRecord[]) : [];
@@ -160,7 +187,7 @@ export default function DigitalEmployeePage() {
   const [executionTitle, setExecutionTitle] = useState("执行历史");
   const [executionList, setExecutionList] = useState(executionHistory);
   const [activeAdvancedPanel, setActiveAdvancedPanel] = useState<"model-config" | null>(null);
-  const [pageTheme, setPageTheme] = useState<"light" | "dark">("light");
+  const [pageTheme, setPageTheme] = useState<"light" | "dark">(loadPageTheme);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const {
@@ -314,6 +341,10 @@ export default function DigitalEmployeePage() {
       window.cancelAnimationFrame(timerId);
     };
   }, [isStreaming, messages]);
+
+  useEffect(() => {
+    persistPageTheme(pageTheme);
+  }, [pageTheme]);
 
   const totalTasks = useMemo(
     () => digitalEmployees.reduce((sum, employee) => sum + employee.tasks, 0),
