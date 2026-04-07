@@ -1,0 +1,1 @@
+window.__PORTAL_RUNTIME_CONFIG__ = window.__PORTAL_RUNTIME_CONFIG__ || {};

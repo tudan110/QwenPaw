@@ -1,0 +1,57 @@
+# 镜像
+image:
+  repository: copaw
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# 副本数
+replicaCount: 1
+
+# 容器安全上下文
+securityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+  runAsGroup: 0
+  fsGroup: 0
+
+# 环境变量
+env:
+  timezone: "Asia/Shanghai"
+  COPAW_PORT: "8088"
+  COPAW_DISABLED_CHANNELS: "imessage"
+  # COPAW_ENABLED_CHANNELS: ""
+
+# 资源限制
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+
+# 服务端口
+service:
+  name: copaw
+  type: NodePort
+  port: 8088
+  targetPort: 8088
+  nodePort: 30088
+
+# 持久化存储
+persistence:
+  enabled: true
+  # existingClaim: ""
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  # 工作目录挂载
+  workingDir:
+    enabled: true
+    mountPath: /app/working
+    subPath: working
+  # 密钥目录挂载
+  secretDir:
+    enabled: true
+    mountPath: /app/working.secret
+    subPath: secret

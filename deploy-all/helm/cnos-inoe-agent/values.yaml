@@ -1,0 +1,103 @@
+# ===========================================
+# CNOS Inoe Agent 总配置
+# ===========================================
+
+# ----- digital-workforce-portal 配置 -----
+digital-workforce-portal:
+  # 固定服务名
+  fullnameOverride: "digital-workforce-portal"
+
+  # 镜像
+  image:
+    repository: digital-workforce-portal
+    tag: 0.1.0
+    pullPolicy: IfNotPresent
+
+  # 副本数
+  replicaCount: 1
+
+  # 容器安全上下文
+  securityContext:
+    runAsNonRoot: false
+    runAsUser: 0
+    runAsGroup: 0
+    fsGroup: 0
+
+  # 环境变量
+  env:
+    timezone: "Asia/Shanghai"
+    FAULT_DISPOSAL_COPAW_BASE_URL: "http://copaw:8088/api"
+
+  # 资源限制
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # 服务端口
+  service:
+    type: NodePort
+    port: 80
+    targetPort: 80
+    nodePort: 30083
+
+# ----- copaw 配置 -----
+copaw:
+  # 固定服务名（nginx 通过此名称访问）
+  fullnameOverride: "copaw"
+
+  # 镜像
+  image:
+    repository: copaw
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  # 副本数
+  replicaCount: 1
+
+  # 容器安全上下文
+  securityContext:
+    runAsNonRoot: false
+    runAsUser: 0
+    runAsGroup: 0
+    fsGroup: 0
+
+  # 环境变量
+  env:
+    timezone: "Asia/Shanghai"
+    COPAW_PORT: "8088"
+    COPAW_DISABLED_CHANNELS: "imessage"
+
+  # 资源限制
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+  # 服务端口
+  service:
+    type: NodePort
+    port: 8088
+    targetPort: 8088
+    nodePort: 30088
+
+  # 持久化存储
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    workingDir:
+      enabled: true
+      mountPath: /app/working
+      subPath: working
+    secretDir:
+      enabled: true
+      mountPath: /app/working.secret
+      subPath: secret

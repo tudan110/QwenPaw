@@ -1,0 +1,155 @@
+# -----------------------------------------------------------------------------
+# Stage 1: build console frontend (dist not committed in repo).
+# -----------------------------------------------------------------------------
+FROM agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/node:slim AS console-builder
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ARG NPM_FETCH_RETRIES=5
+ARG NPM_FETCH_RETRY_FACTOR=2
+ARG NPM_FETCH_RETRY_MIN_TIMEOUT=20000
+ARG NPM_FETCH_RETRY_MAX_TIMEOUT=120000
+ARG NPM_FETCH_TIMEOUT=120000
+WORKDIR /app
+COPY console /app/console
+RUN set -eux; \
+    cd /app/console; \
+    npm config set registry "${NPM_REGISTRY}"; \
+    npm config set replace-registry-host "always"; \
+    npm config set audit false; \
+    npm config set fund false; \
+    npm config set fetch-retries "${NPM_FETCH_RETRIES}"; \
+    npm config set fetch-retry-factor "${NPM_FETCH_RETRY_FACTOR}"; \
+    npm config set fetch-retry-mintimeout "${NPM_FETCH_RETRY_MIN_TIMEOUT}"; \
+    npm config set fetch-retry-maxtimeout "${NPM_FETCH_RETRY_MAX_TIMEOUT}"; \
+    npm config set fetch-timeout "${NPM_FETCH_TIMEOUT}"; \
+    sed -i "s#https://registry.npmjs.org/#${NPM_REGISTRY%/}/#g" package-lock.json; \
+    npm ci --include=dev --legacy-peer-deps --no-audit --no-fund --registry="${NPM_REGISTRY}"; \
+    npm run build
+
+# -----------------------------------------------------------------------------
+# Stage 2: runtime image with Python, Chromium, and app.
+# -----------------------------------------------------------------------------
+FROM agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/node:slim
+
+# ENV variables
+ENV NODE_ENV=production
+ENV WORKSPACE_DIR=/app
+ENV COPAW_WORKING_DIR=/app/working
+ENV COPAW_SECRET_DIR=/app/working.secret
+
+# Channel filtering: use COPAW_DISABLED_CHANNELS (exclusion, recommended)
+# or COPAW_ENABLED_CHANNELS (whitelist). Override at runtime with -e.
+ARG COPAW_DISABLED_CHANNELS="imessage"
+ENV COPAW_DISABLED_CHANNELS=${COPAW_DISABLED_CHANNELS}
+ARG COPAW_ENABLED_CHANNELS=""
+ENV COPAW_ENABLED_CHANNELS=${COPAW_ENABLED_CHANNELS}
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG APT_MIRROR=http://mirrors.aliyun.com
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ARG PIP_TRUSTED_HOST=mirrors.aliyun.com
+ENV PIP_INDEX_URL=${PIP_INDEX_URL}
+ENV UV_INDEX_URL=${PIP_INDEX_URL}
+ENV UV_DEFAULT_INDEX=${PIP_INDEX_URL}
+ENV PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN set -eux; \
+    for apt_source in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; do \
+      if [ -f "${apt_source}" ]; then \
+        sed -Ei \
+          -e "s#https?://deb.debian.org/debian#${APT_MIRROR}/debian#g" \
+          -e "s#https?://deb.debian.org/debian-security#${APT_MIRROR}/debian-security#g" \
+          -e "s#https?://security.debian.org/debian-security#${APT_MIRROR}/debian-security#g" \
+          "${apt_source}"; \
+      fi; \
+    done; \
+    printf 'Acquire::Retries \"5\";\nAcquire::http::Timeout \"30\";\nAcquire::https::Timeout \"30\";\n' \
+      >/etc/apt/apt.conf.d/99copaw-mirror; \
+    apt-get update; \
+    apt-get install -y --fix-missing \
+      curl \
+      ca-certificates \
+      python3 \
+      python3-pip \
+      python3-venv \
+      build-essential \
+      libssl-dev \
+      git \
+      supervisor \
+      vim \
+      gettext-base \
+      xfce4 \
+      xfce4-terminal \
+      xvfb \
+      dbus-x11 \
+      fonts-wqy-zenhei \
+      fonts-wqy-microhei \
+      chromium \
+      chromium-sandbox \
+      libx11-xcb1 \
+      libxcomposite1 \
+      libxdamage1 \
+      libxext6 \
+      libxfixes3 \
+      libxi6 \
+      libxtst6 \
+      libnss3 \
+      libglib2.0-0 \
+      libdrm2 \
+      libgbm1 \
+      libasound2 \
+      fonts-liberation \
+      libu2f-udev; \
+    rm -rf /var/lib/apt/lists/*; \
+    apt-get clean
+
+
+RUN sed -i 's/^CHROMIUM_FLAGS=""/CHROMIUM_FLAGS="--no-sandbox"/' /usr/bin/chromium
+
+# Playwright: use system Chromium (already installed above).
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+# Avoid Playwright downloading its own browser when executable_path is used.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+# Indicate running in container (used e.g. for Chromium --no-sandbox).
+ENV COPAW_RUNNING_IN_CONTAINER=1
+
+WORKDIR ${WORKSPACE_DIR}
+
+RUN python3 -m venv venv
+ENV PATH="/app/venv/bin:$PATH"
+
+# Pip mirror for faster download (use --build-arg PIP_INDEX_URL=xxx to override)
+RUN pip config set global.index-url "${PIP_INDEX_URL}" \
+  && pip config set global.trusted-host "${PIP_TRUSTED_HOST}" \
+  && pip install --no-cache-dir uv
+
+COPY pyproject.toml setup.py README.md ./
+COPY src ./src
+# Inject console dist from build stage (repo does not commit dist).
+COPY --from=console-builder /app/console/dist/ ./src/copaw/console/
+
+RUN pip install --no-cache-dir --timeout 600 --retries 5 .[ollama]
+
+# Init working dir with default config.json and HEARTBEAT.md (build time).
+RUN copaw init --defaults --accept-security
+
+# Copy working directory data to backup (for PVC init on first start)
+COPY deploy-all/copaw/data/copaw/ /app/.working.backup/
+# Copy secret directory data to backup
+COPY deploy-all/copaw/data/copaw.secret/ /app/.working.secret.backup/
+
+# Create empty working directories (PVC will mount over these)
+RUN mkdir -p /app/working /app/working.secret
+
+# Copy knowledge directory for kb-retriever skill
+COPY knowledge/ /app/knowledge/
+
+# CoPaw app port (default 8088). Override at runtime with -e COPAW_PORT=3000.
+ENV COPAW_PORT=8088
+
+COPY deploy-all/copaw/config/supervisord.conf.template /etc/supervisor/conf.d/supervisord.conf.template
+COPY --chmod=755 deploy-all/copaw/entrypoint.sh /entrypoint.sh
+
+EXPOSE 8088
+
+CMD ["/entrypoint.sh"]

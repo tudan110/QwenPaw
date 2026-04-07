@@ -1,0 +1,36 @@
+# 镜像
+image:
+  repository: digital-workforce-portal
+  tag: 0.1.0
+  pullPolicy: IfNotPresent
+
+# 副本数
+replicaCount: 1
+
+# 容器安全上下文
+securityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+  runAsGroup: 0
+  fsGroup: 0
+
+# 环境变量
+env:
+  timezone: "Asia/Shanghai"
+  PORTAL_APP_TITLE: "数字员工门户"
+
+# 资源限制
+resources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# 服务端口
+service:
+  type: NodePort
+  port: 80
+  targetPort: 80
+  nodePort: 30083

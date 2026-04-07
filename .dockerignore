@@ -52,6 +52,8 @@ sessions_mount_dir
 .env
 .env.*
 !.env.example
+!deploy-all/copaw/data/copaw/workspaces/*/skills/*/.env
+!deploy-all/copaw/data/copaw/workspaces/*/skills/*/.env.example
 .DS_Store
 *.log
 logs
