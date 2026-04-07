@@ -1,7 +1,6 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
-  dashboardDailyTasks,
   digitalEmployees,
   employeeResults,
   employeeWorkflows,
@@ -24,6 +23,7 @@ import {
   ChatModelSelector,
   ModelConfigModal,
 } from "./digital-employee/modelControls";
+import { TaskViewPanel } from "./digital-employee/taskViewPanel";
 import { TokenUsagePanel } from "./digital-employee/tokenUsagePanel";
 import {
   ALARM_WORKORDER_ENTRY,
@@ -524,6 +524,13 @@ export default function DigitalEmployeePage() {
     setExecutionVisible(true);
   };
 
+  const handleOpenTaskEmployeeChat = (employeeId: string) => {
+    const employee = getEmployeeById(employeeId);
+    setActiveAdvancedPanel(null);
+    setCurrentView("chat");
+    navigate(buildEmployeePagePath(employee));
+  };
+
   if (!currentEmployee) {
     return null;
   }
@@ -647,7 +654,9 @@ export default function DigitalEmployeePage() {
               ? "main-content advanced-page-mode"
               : currentView === "chat"
                 ? "main-content"
-                : "main-content card-mode"
+                : currentView === "tasks"
+                  ? "main-content card-mode task-page-mode"
+                  : "main-content card-mode"
           }
         >
           <button
@@ -872,65 +881,11 @@ export default function DigitalEmployeePage() {
           ) : null}
 
           {currentView === "tasks" ? (
-            <div className="tasks-card">
-              <div className="tasks-welcome">
-                <div className="tasks-welcome-avatar">
-                  <img
-                    src="https://raw.githubusercontent.com/xiaozhi28/tuya-xiaozhi/main/xiaozhi.png"
-                    alt="助手"
-                  />
-                </div>
-                <div className="tasks-welcome-text">
-                  <div className="tasks-welcome-title">早上好，张工！我是您的工作小助手</div>
-                  <div className="tasks-welcome-desc">
-                    根据您的工作情况将为您完成如下任务，完成后提醒您查看，您可根据实际情况调整时间及任务
-                  </div>
-                </div>
-              </div>
-              <div className="tasks-table">
-                <div className="tasks-table-header">
-                  <div className="tasks-col time">时间</div>
-                  <div className="tasks-col content">任务内容</div>
-                  <div className="tasks-col status">状态</div>
-                  <div className="tasks-col action">操作</div>
-                </div>
-                {dashboardDailyTasks.map((task) => (
-                  <div key={task.id} className={`tasks-table-row ${task.status}`}>
-                    <div className="tasks-col time">{task.time}</div>
-                    <div className="tasks-col content">
-                      <i className={`fas ${task.icon}`} />
-                      {task.name}
-                    </div>
-                    <div className="tasks-col status">
-                      <span className={`task-status-badge ${task.status}`}>
-                        {task.statusText}
-                      </span>
-                    </div>
-                    <div className="tasks-col action">
-                      {task.action !== "—" ? (
-                        <span
-                          className={
-                            task.status === "pending" && task.action === "确认"
-                              ? "task-action-btn btn-confirm"
-                              : "task-action-btn"
-                          }
-                        >
-                          {task.action}
-                        </span>
-                      ) : (
-                        <span className="task-action-dash">—</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <TaskViewPanel onOpenEmployeeChat={handleOpenTaskEmployeeChat} />
           ) : null}
 
-          {currentView !== "dashboard" ? (
-            <div
-              className={currentView === "chat" ? "chat-container" : "chat-container show-cards"}
-            >
+          {currentView === "chat" ? (
+            <div className="chat-container">
               <div className="chat-header">
                 <div className="chat-header-main">
                   <div style={{ fontSize: "13px", fontWeight: 600 }}>

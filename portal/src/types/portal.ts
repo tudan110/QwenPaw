@@ -33,6 +33,16 @@ export interface DigitalEmployee {
 
 export type OperationsBoardColumnId = "pending" | "running" | "completed" | "closed";
 export type OperationsBoardTone = "blue" | "green" | "orange" | "red" | "purple";
+export type TaskViewStatus = "running" | "urgent" | "completed" | "pending";
+export type TaskViewActionKind = "view" | "detail" | "confirm" | "approve" | "none";
+export type TaskViewStatusVariant =
+  | "running"
+  | "urgent"
+  | "completed"
+  | "pending"
+  | "auto-push"
+  | "need-confirm"
+  | "auto-exec";
 
 export interface OperationsBoardTask {
   id: string;
@@ -55,6 +65,24 @@ export interface OperationsBoardColumn {
   id: OperationsBoardColumnId;
   title: string;
   items: OperationsBoardTask[];
+}
+
+export interface TaskViewItem {
+  id: string;
+  title: string;
+  employeeId: DigitalEmployee["id"];
+  employeeLabel?: string;
+  source: string;
+  status: TaskViewStatus;
+  statusText: string;
+  statusVariant?: TaskViewStatusVariant;
+  priority: "P0" | "P1" | "P2" | "P3";
+  scheduledAt: string;
+  timeLabel: string;
+  auto?: boolean;
+  includeInDailyOverview?: boolean;
+  actionKind: TaskViewActionKind;
+  actionLabel?: string;
 }
 
 export interface PortalStatSummary {
