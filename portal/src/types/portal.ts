@@ -31,6 +31,32 @@ export interface DigitalEmployee {
   welcome: string;
 }
 
+export type OperationsBoardColumnId = "pending" | "running" | "completed" | "closed";
+export type OperationsBoardTone = "blue" | "green" | "orange" | "red" | "purple";
+
+export interface OperationsBoardTask {
+  id: string;
+  ownerEmployeeIds: DigitalEmployee["id"][];
+  ownerLabel: string;
+  ownerColor: string;
+  title: string;
+  description: string;
+  label: string;
+  tone: OperationsBoardTone;
+  tagBg: string;
+  tagColor: string;
+  timeText: string;
+  statusText?: string;
+  progress?: number;
+  score?: number;
+}
+
+export interface OperationsBoardColumn {
+  id: OperationsBoardColumnId;
+  title: string;
+  items: OperationsBoardTask[];
+}
+
 export interface PortalStatSummary {
   total: number;
   active: number;

@@ -7,6 +7,7 @@ import {
   employeeWorkflows,
   executionHistory,
   getEmployeeById,
+  operationsBoardColumns,
 } from "../data/portalData";
 import {
   createConversationSession,
@@ -50,6 +51,13 @@ const REMOTE_AGENT_IDS: Record<string, string> = {
   fault: "fault",
   query: "query",
 };
+
+const operationsBoardDots = {
+  pending: "pending",
+  running: "running",
+  completed: "completed",
+  closed: "closed",
+} as const;
 
 type SessionRecord = {
   id: string;
@@ -152,6 +160,7 @@ export default function DigitalEmployeePage() {
   const [executionTitle, setExecutionTitle] = useState("执行历史");
   const [executionList, setExecutionList] = useState(executionHistory);
   const [activeAdvancedPanel, setActiveAdvancedPanel] = useState<"model-config" | null>(null);
+  const [pageTheme, setPageTheme] = useState<"light" | "dark">("light");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const {
@@ -305,20 +314,6 @@ export default function DigitalEmployeePage() {
       window.cancelAnimationFrame(timerId);
     };
   }, [isStreaming, messages]);
-
-  const currentDate = new Date().toLocaleDateString("zh-CN", {
-    month: "long",
-    day: "numeric",
-    weekday: "long",
-  });
-
-  const avgSuccessRate = useMemo(() => {
-    const total = digitalEmployees.reduce((sum, employee) => {
-      const value = Number.parseFloat(employee.success);
-      return sum + (Number.isNaN(value) ? 0 : value);
-    }, 0);
-    return Math.round(total / digitalEmployees.length);
-  }, []);
 
   const totalTasks = useMemo(
     () => digitalEmployees.reduce((sum, employee) => sum + employee.tasks, 0),
@@ -500,7 +495,11 @@ export default function DigitalEmployeePage() {
 
   return (
     <DigitalEmployeeErrorBoundary>
-      <div className="portal-digital-employee">
+      <div
+        className={
+          pageTheme === "dark" ? "portal-digital-employee theme-dark" : "portal-digital-employee"
+        }
+      >
       <div className="bg-effects">
         <div className="bg-gradient" />
         <div className="grid-bg" />
@@ -675,140 +674,167 @@ export default function DigitalEmployeePage() {
                 </span>
               </div>
             </div>
-            {currentView === "chat" ? (
-              <div className="top-bar-stats">
-                <div className="top-stat">
-                  <div className="top-stat-value">{totalTasks}</div>
-                  <div className="top-stat-label">总任务数</div>
+            <div className="top-bar-actions">
+              {currentView === "chat" ? (
+                <div className="top-bar-stats">
+                  <div className="top-stat">
+                    <div className="top-stat-value">{totalTasks}</div>
+                    <div className="top-stat-label">总任务数</div>
+                  </div>
+                  <div className="top-stat">
+                    <div className="top-stat-value">{runningTasks}</div>
+                    <div className="top-stat-label">进行中</div>
+                  </div>
+                  <div className="top-stat">
+                    <div className="top-stat-value">45s</div>
+                    <div className="top-stat-label">平均耗时</div>
+                  </div>
                 </div>
-                <div className="top-stat">
-                  <div className="top-stat-value">{runningTasks}</div>
-                  <div className="top-stat-label">进行中</div>
-                </div>
-                <div className="top-stat">
-                  <div className="top-stat-value">45s</div>
-                  <div className="top-stat-label">平均耗时</div>
-                </div>
-              </div>
-            ) : null}
+              ) : null}
+              <button
+                type="button"
+                className="ops-board-theme-toggle top-bar-theme-toggle"
+                onClick={() => setPageTheme((value) => (value === "light" ? "dark" : "light"))}
+                aria-label="切换整页主题"
+                title="切换整页主题"
+              >
+                <i className={`fas ${pageTheme === "light" ? "fa-moon" : "fa-sun"}`} />
+              </button>
+            </div>
           </div>
 
           {currentView === "dashboard" ? (
-            <div className="dashboard-card">
-              <div className="dashboard-card-header">
-                <span className="dashboard-card-title">
-                  <i className="fas fa-chart-pie" /> 数字员工看板
-                </span>
-                <span className="dashboard-date">{currentDate}</span>
-              </div>
-              <div className="dashboard-stats-row">
-                <button
-                  className="stat-mini-card"
-                  onClick={() => handleOpenExecutionHistory("executions")}
-                >
-                  <i className="fas fa-play-circle" />
-                  <div className="stat-mini-value">{totalTasks}</div>
-                  <div className="stat-mini-label">今日执行</div>
-                </button>
-                <button
-                  className="stat-mini-card"
-                  onClick={() => handleOpenExecutionHistory("running")}
-                >
-                  <i className="fas fa-sync-alt" />
-                  <div className="stat-mini-value">{runningTasks}</div>
-                  <div className="stat-mini-label">进行中</div>
-                </button>
-                <button
-                  className="stat-mini-card"
-                  onClick={() => handleOpenExecutionHistory("success")}
-                >
-                  <i className="fas fa-check-circle" />
-                  <div className="stat-mini-value" style={{ color: "var(--success)" }}>
-                    {avgSuccessRate}%
-                  </div>
-                  <div className="stat-mini-label">成功率</div>
-                </button>
-                <div className="stat-mini-card">
-                  <i className="fas fa-robot" />
-                  <div className="stat-mini-value">{digitalEmployees.length}</div>
-                  <div className="stat-mini-label">数字员工</div>
+            <div className="ops-board-shell">
+              <div className="ops-board-header">
+                <div className="ops-board-title-group">
+                  <h3 className="ops-board-title">
+                    运维看板
+                    <span>实时任务概览</span>
+                  </h3>
+                </div>
+                <div className="ops-board-toolbar">
+                  <button
+                    type="button"
+                    className="ops-board-theme-toggle"
+                    onClick={() => setPageTheme((value) => (value === "light" ? "dark" : "light"))}
+                    aria-label="切换整页主题"
+                    title="切换整页主题"
+                  >
+                    <i className={`fas ${pageTheme === "light" ? "fa-moon" : "fa-sun"}`} />
+                  </button>
                 </div>
               </div>
-              <div className="agents-grid-card">
-                {digitalEmployees.map((employee) => (
-                  <button
-                    key={employee.id}
-                    className={employee.urgent ? "agent-mini-card urgent" : "agent-mini-card"}
-                    onClick={() => navigate(buildEmployeePagePath(employee))}
-                  >
-                    <div className="agent-mini-avatar" style={{ background: employee.gradient }}>
-                      <i className={`fas ${employee.icon}`} />
-                      {employee.status === "running" && !employee.urgent ? (
-                        <div className="agent-mini-anim running">
-                          <svg viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="5" r="2.5" fill="#fff" />
-                            <path
-                              d="M12 8v4"
-                              stroke="#fff"
-                              strokeWidth="1.5"
-                              strokeLinecap="round"
-                            />
-                            <path
-                              d="M9 14l3-2 3 2"
-                              stroke="#fff"
-                              strokeWidth="1.5"
-                              strokeLinecap="round"
-                            />
-                            <rect
-                              x="12"
-                              y="8"
-                              width="2"
-                              height="6"
-                              rx="0.5"
-                              fill="#8B4513"
-                              transform="rotate(-30, 13, 11)"
-                            />
-                          </svg>
-                        </div>
-                      ) : null}
-                      {employee.urgent ? (
-                        <div className="agent-mini-anim urgent">
-                          <div className="urgent-dot" />
-                        </div>
-                      ) : null}
-                      {employee.status !== "running" && !employee.urgent ? (
-                        <div className="agent-mini-anim stopped">
-                          <span className="zzz-small">Z</span>
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="agent-mini-info">
-                      <div className="agent-mini-name">
-                        {employee.name.replace("数字员工", "").replace("助手", "")}
+              <div className="ops-board-columns">
+                {operationsBoardColumns.map((column) => (
+                  <section key={column.id} className={`ops-column ops-column-${column.id}`}>
+                    <div className="ops-column-header">
+                      <div className="ops-column-title">
+                        <span
+                          className={`ops-column-dot ${operationsBoardDots[column.id]}`}
+                        />
+                        <span>{column.title}</span>
                       </div>
-                      <div className="agent-mini-stats">
-                        <span>
-                          <i className="fas fa-chart-line" /> {employee.tasks}
-                        </span>
-                        <span style={{ color: "var(--success)" }}>{employee.success}</span>
-                      </div>
+                      <span className="ops-column-count">{column.items.length}</span>
                     </div>
-                    <span
-                      className={
-                        employee.urgent
-                          ? "status-badge urgent"
-                          : employee.status === "running"
-                            ? "status-badge running"
-                            : "status-badge stopped"
-                      }
-                    >
-                      {employee.urgent
-                        ? "紧急"
-                        : employee.status === "running"
-                          ? "运行中"
-                          : "已停止"}
-                    </span>
-                  </button>
+                    <div className="ops-column-list">
+                      {column.items.map((item) => (
+                        <article
+                          key={item.id}
+                          className={
+                            typeof item.progress === "number"
+                              ? `ops-task-card tone-${item.tone} has-progress`
+                              : `ops-task-card tone-${item.tone}`
+                          }
+                        >
+                          <div
+                            className="ops-task-stripe"
+                            style={{ background: item.ownerColor }}
+                            aria-hidden="true"
+                          />
+                          <div className="ops-task-owner-row">
+                            <DigitalEmployeeAvatar
+                              employee={getEmployeeById(item.ownerEmployeeIds[0])}
+                              className="ops-owner-avatar"
+                            />
+                            <span className="ops-task-owner-text">{item.ownerLabel}</span>
+                          </div>
+                          <h4 className="ops-task-title">{item.title}</h4>
+                          <p className="ops-task-desc">{item.description}</p>
+                          {typeof item.progress === "number" ? (
+                            <>
+                            <div className="ops-progress-block">
+                              <div className="ops-progress-bar">
+                                <span
+                                  style={{
+                                    width: `${item.progress}%`,
+                                    background: `linear-gradient(90deg, ${item.ownerColor}, ${item.ownerColor}cc)`,
+                                  }}
+                                />
+                              </div>
+                              <div className="ops-progress-label">
+                                <span>进度</span>
+                                <strong style={{ color: item.ownerColor }}>
+                                  {item.progress}%
+                                </strong>
+                              </div>
+                            </div>
+                            <div className="ops-task-footer ops-task-footer-progress">
+                              <span
+                                className="ops-task-chip"
+                                style={{ background: item.tagBg, color: item.tagColor }}
+                              >
+                                {item.label}
+                              </span>
+                              <span
+                                className={
+                                  item.statusText === "紧急"
+                                    ? "ops-task-meta alert"
+                                    : "ops-task-meta"
+                                }
+                              >
+                                {item.statusText || item.timeText}
+                              </span>
+                            </div>
+                            </>
+                          ) : null}
+                          {typeof item.score === "number" ? (
+                            <div className="ops-task-rating" aria-label={`评分 ${item.score}`}>
+                              {Array.from({ length: 5 }, (_, index) => (
+                                <i
+                                  key={`${item.id}-star-${index}`}
+                                  className={
+                                    item.score >= index + 0.5
+                                      ? "fas fa-star"
+                                      : "far fa-star"
+                                  }
+                                />
+                              ))}
+                              <strong>{item.score}</strong>
+                            </div>
+                          ) : null}
+                          {typeof item.progress !== "number" ? (
+                            <div className="ops-task-footer">
+                              <span
+                                className="ops-task-chip"
+                                style={{ background: item.tagBg, color: item.tagColor }}
+                              >
+                                {item.label}
+                              </span>
+                              <span
+                                className={
+                                  item.statusText === "紧急"
+                                    ? "ops-task-meta alert"
+                                    : "ops-task-meta"
+                                }
+                              >
+                                {item.statusText || item.timeText}
+                              </span>
+                            </div>
+                          ) : null}
+                        </article>
+                      ))}
+                    </div>
+                  </section>
                 ))}
               </div>
             </div>
@@ -870,188 +896,196 @@ export default function DigitalEmployeePage() {
             </div>
           ) : null}
 
-          <div className={currentView === "chat" ? "chat-container" : "chat-container show-cards"}>
-            <div className="chat-header">
-              <div className="chat-header-main">
-                <div style={{ fontSize: "13px", fontWeight: 600 }}>
-                  {isAlarmWorkbenchMode
-                    ? `${currentEmployee.name} - 告警工单处置`
-                    : `${currentEmployee.name} - 智能服务`}
-                </div>
-                {isRemoteEmployee || isAlarmWorkbenchMode ? (
-                  <span
-                    className={
-                      isAlarmWorkbenchMode
-                        ? "chat-status-pill alert"
-                        : isStreaming || currentChatStatus === "running"
-                          ? "chat-status-pill running"
-                          : "chat-status-pill"
-                    }
-                  >
+          {currentView !== "dashboard" ? (
+            <div
+              className={currentView === "chat" ? "chat-container" : "chat-container show-cards"}
+            >
+              <div className="chat-header">
+                <div className="chat-header-main">
+                  <div style={{ fontSize: "13px", fontWeight: 600 }}>
                     {isAlarmWorkbenchMode
-                      ? "告警触发"
-                      : isCreatingChat
-                        ? "创建中"
-                        : isStreaming || currentChatStatus === "running"
-                          ? "对话中"
-                          : currentChatId
-                            ? "历史可追溯"
-                            : "等待发起"}
-                  </span>
-                ) : null}
-              </div>
-              <div className={isAlarmWorkbenchMode ? "chat-capabilities alarm-mode" : "chat-capabilities"}>
-                {isAlarmWorkbenchMode ? (
-                  <>
-                    {showModelSelector ? (
-                      <ChatModelSelector
-                        activeModelLabel={activeModelLabel}
-                        activeProviderId={activeProviderId}
-                        activeModelId={activeModelId}
-                        eligibleProviders={eligibleProviders}
-                        loading={modelsLoading}
-                        switching={modelsSwitching}
-                        disabled={isCreatingChat || isStreaming}
-                        notice={modelNotice}
-                        onSelectModel={handleSelectModel}
-                        onOpenConfig={() => setActiveAdvancedPanel("model-config")}
-                      />
-                    ) : null}
-                    <button className="history-btn" onClick={() => void handleOpenHistory()}>
-                      <i className="fas fa-history" /> 历史信息
-                    </button>
-                    <span className="capability-tag active static-tag">
-                      <i className="fas fa-file-lines" /> 工单视图
+                      ? `${currentEmployee.name} - 告警工单处置`
+                      : `${currentEmployee.name} - 智能服务`}
+                  </div>
+                  {isRemoteEmployee || isAlarmWorkbenchMode ? (
+                    <span
+                      className={
+                        isAlarmWorkbenchMode
+                          ? "chat-status-pill alert"
+                          : isStreaming || currentChatStatus === "running"
+                            ? "chat-status-pill running"
+                            : "chat-status-pill"
+                      }
+                    >
+                      {isAlarmWorkbenchMode
+                        ? "告警触发"
+                        : isCreatingChat
+                          ? "创建中"
+                          : isStreaming || currentChatStatus === "running"
+                            ? "对话中"
+                            : currentChatId
+                              ? "历史可追溯"
+                              : "等待发起"}
                     </span>
-                  </>
-                ) : (
-                  <>
-                    {showModelSelector ? (
-                      <ChatModelSelector
-                        activeModelLabel={activeModelLabel}
-                        activeProviderId={activeProviderId}
-                        activeModelId={activeModelId}
-                        eligibleProviders={eligibleProviders}
-                        loading={modelsLoading}
-                        switching={modelsSwitching}
-                        disabled={isCreatingChat || isStreaming}
-                        notice={modelNotice}
-                        onSelectModel={handleSelectModel}
-                        onOpenConfig={() => setActiveAdvancedPanel("model-config")}
-                      />
-                    ) : null}
-                    <button className="history-btn" onClick={() => void handleOpenHistory()}>
-                      <i className="fas fa-history" /> 历史信息
-                    </button>
-                    {capabilityOptions.map((item) => (
-                      <button
-                        key={item.id}
-                        className={
-                          activeCapability === item.id
-                            ? "capability-tag active"
-                            : "capability-tag"
-                        }
-                        onClick={() => setActiveCapability(item.id)}
-                      >
-                        <i className={`fas ${item.icon}`} /> {item.label}
-                      </button>
-                    ))}
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="chat-messages">
-              {safeMessages.map((message) => (
-                <ChatMessageItem
-                  key={message.id}
-                  currentEmployee={currentEmployee}
-                  isStreamingMessage={
-                    Boolean(message.streaming) ||
-                    (isStreaming && message.id === activeAssistantMessageIdRef.current)
+                  ) : null}
+                </div>
+                <div
+                  className={
+                    isAlarmWorkbenchMode ? "chat-capabilities alarm-mode" : "chat-capabilities"
                   }
-                  message={message}
-                  onDisposalAction={handleAlarmDisposalOperationRequest}
-                  onTicketAction={handleAlarmWorkbenchTicketAction}
-                  onTicketRefresh={() => void loadAlarmWorkorders()}
-                  ticketActionNotice={ticketActionNotice}
-                />
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
-
-            {currentView === "chat" ? (
-              <>
-                {!isAlarmWorkbenchMode ? (
-                  <div className="quick-commands">
-                    <div className="capabilities-row">
-                      {safeCapabilities.map((item) => (
-                        <span key={item} className="capability-label">
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="quick-cmd-row">
-                      {safeQuickCommands.map((command) => (
-                        <button
-                          key={command}
-                          className="quick-cmd"
-                          onClick={() => void handleSendMessage(command)}
+                >
+                  {isAlarmWorkbenchMode ? (
+                    <>
+                      {showModelSelector ? (
+                        <ChatModelSelector
+                          activeModelLabel={activeModelLabel}
+                          activeProviderId={activeProviderId}
+                          activeModelId={activeModelId}
+                          eligibleProviders={eligibleProviders}
+                          loading={modelsLoading}
+                          switching={modelsSwitching}
                           disabled={isCreatingChat || isStreaming}
+                          notice={modelNotice}
+                          onSelectModel={handleSelectModel}
+                          onOpenConfig={() => setActiveAdvancedPanel("model-config")}
+                        />
+                      ) : null}
+                      <button className="history-btn" onClick={() => void handleOpenHistory()}>
+                        <i className="fas fa-history" /> 历史信息
+                      </button>
+                      <span className="capability-tag active static-tag">
+                        <i className="fas fa-file-lines" /> 工单视图
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      {showModelSelector ? (
+                        <ChatModelSelector
+                          activeModelLabel={activeModelLabel}
+                          activeProviderId={activeProviderId}
+                          activeModelId={activeModelId}
+                          eligibleProviders={eligibleProviders}
+                          loading={modelsLoading}
+                          switching={modelsSwitching}
+                          disabled={isCreatingChat || isStreaming}
+                          notice={modelNotice}
+                          onSelectModel={handleSelectModel}
+                          onOpenConfig={() => setActiveAdvancedPanel("model-config")}
+                        />
+                      ) : null}
+                      <button className="history-btn" onClick={() => void handleOpenHistory()}>
+                        <i className="fas fa-history" /> 历史信息
+                      </button>
+                      {capabilityOptions.map((item) => (
+                        <button
+                          key={item.id}
+                          className={
+                            activeCapability === item.id
+                              ? "capability-tag active"
+                              : "capability-tag"
+                          }
+                          onClick={() => setActiveCapability(item.id)}
                         >
-                          <i className="fas fa-bolt" />
-                          {command}
+                          <i className={`fas ${item.icon}`} /> {item.label}
                         </button>
                       ))}
-                    </div>
-                  </div>
-                ) : null}
-                <div className="input-area">
-                  <div className="input-wrapper">
-                    <div className={isCreatingChat ? "input-box disabled" : "input-box"}>
-                      <i className="fas fa-comment-dots" />
-                      <input
-                        type="text"
-                        value={inputMessage}
-                        disabled={isCreatingChat || isStreaming}
-                        onChange={(event) => setInputMessage(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" && !isStreaming) {
-                            void handleSendMessage();
-                          }
-                        }}
-                        placeholder={`向 ${currentEmployee.name} 描述您的需求...`}
-                      />
-                    </div>
-                    <button
-                      className={
-                        isCreatingChat
-                          ? "send-btn disabled"
-                          : isStreaming
-                            ? "send-btn stop-mode"
-                            : "send-btn"
-                      }
-                      onClick={() => {
-                        if (isStreaming) {
-                          stopActiveStream(true);
-                          return;
-                        }
-                        void handleSendMessage();
-                      }}
-                      disabled={isCreatingChat}
-                      aria-label={isStreaming ? "停止聊天" : "发送消息"}
-                    >
-                      {isStreaming ? (
-                        <span className="send-btn-stop-icon" aria-hidden="true" />
-                      ) : (
-                        <i className="fas fa-paper-plane" />
-                      )}
-                    </button>
-                  </div>
+                    </>
+                  )}
                 </div>
-              </>
-            ) : null}
-          </div>
+              </div>
+
+              <div className="chat-messages">
+                {safeMessages.map((message) => (
+                  <ChatMessageItem
+                    key={message.id}
+                    currentEmployee={currentEmployee}
+                    isStreamingMessage={
+                      Boolean(message.streaming) ||
+                      (isStreaming && message.id === activeAssistantMessageIdRef.current)
+                    }
+                    message={message}
+                    onDisposalAction={handleAlarmDisposalOperationRequest}
+                    onTicketAction={handleAlarmWorkbenchTicketAction}
+                    onTicketRefresh={() => void loadAlarmWorkorders()}
+                    ticketActionNotice={ticketActionNotice}
+                  />
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {currentView === "chat" ? (
+                <>
+                  {!isAlarmWorkbenchMode ? (
+                    <div className="quick-commands">
+                      <div className="capabilities-row">
+                        {safeCapabilities.map((item) => (
+                          <span key={item} className="capability-label">
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="quick-cmd-row">
+                        {safeQuickCommands.map((command) => (
+                          <button
+                            key={command}
+                            className="quick-cmd"
+                            onClick={() => void handleSendMessage(command)}
+                            disabled={isCreatingChat || isStreaming}
+                          >
+                            <i className="fas fa-bolt" />
+                            {command}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="input-area">
+                    <div className="input-wrapper">
+                      <div className={isCreatingChat ? "input-box disabled" : "input-box"}>
+                        <i className="fas fa-comment-dots" />
+                        <input
+                          type="text"
+                          value={inputMessage}
+                          disabled={isCreatingChat || isStreaming}
+                          onChange={(event) => setInputMessage(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" && !isStreaming) {
+                              void handleSendMessage();
+                            }
+                          }}
+                          placeholder={`向 ${currentEmployee.name} 描述您的需求...`}
+                        />
+                      </div>
+                      <button
+                        className={
+                          isCreatingChat
+                            ? "send-btn disabled"
+                            : isStreaming
+                              ? "send-btn stop-mode"
+                              : "send-btn"
+                        }
+                        onClick={() => {
+                          if (isStreaming) {
+                            stopActiveStream(true);
+                            return;
+                          }
+                          void handleSendMessage();
+                        }}
+                        disabled={isCreatingChat}
+                        aria-label={isStreaming ? "停止聊天" : "发送消息"}
+                      >
+                        {isStreaming ? (
+                          <span className="send-btn-stop-icon" aria-hidden="true" />
+                        ) : (
+                          <i className="fas fa-paper-plane" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          ) : null}
             </>
           )}
         </div>
