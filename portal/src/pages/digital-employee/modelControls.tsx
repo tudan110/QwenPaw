@@ -1,36 +1,51 @@
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import { DEFAULT_PROVIDER_SLOT_ID } from "./usePortalModels";
 import type {
+  AddProviderModelPayload,
   BuiltinApiKeyApplyPayload,
   BuiltinApiKeyApplyResult,
-  ConnectModelPayload,
   DisplayProvider,
   EligibleProvider,
   ModelNoticeState,
+  SaveProviderPayload,
 } from "./usePortalModels";
 
-type ModelConfigFormState = {
+type ProviderConfigFormState = {
   providerName: string;
   providerId: string;
   baseUrl: string;
   apiKey: string;
-  modelId: string;
-  modelName: string;
   protocol: string;
-  setActive: boolean;
+  apiKeyConfigured: boolean;
   generateConfigText: string;
   advancedOpen: boolean;
 };
 
-const DEFAULT_FORM_STATE: ModelConfigFormState = {
+type AddModelFormState = {
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  modelName: string;
+  generateConfigText: string;
+  advancedOpen: boolean;
+};
+
+const DEFAULT_PROVIDER_FORM_STATE: ProviderConfigFormState = {
   providerName: "",
   providerId: "",
   baseUrl: "",
   apiKey: "",
+  protocol: "OpenAIChatModel",
+  apiKeyConfigured: false,
+  generateConfigText: "",
+  advancedOpen: false,
+};
+
+const DEFAULT_ADD_MODEL_FORM_STATE: AddModelFormState = {
+  providerId: "",
+  providerName: "",
   modelId: "",
   modelName: "",
-  protocol: "OpenAIChatModel",
-  setActive: true,
   generateConfigText: "",
   advancedOpen: false,
 };
@@ -42,6 +57,79 @@ const DEFAULT_BUILTIN_API_KEY_FORM: BuiltinApiKeyFormState = {
   appIds: ["qiming1.0", "deepseek3.2", "qwen3.5"],
   expirePreset: "30d",
 };
+
+const PROTOCOL_OPTIONS = [
+  {
+    value: "OpenAIChatModel",
+    label: "OpenAI 兼容",
+    description: "适合大多数标准 OpenAI 风格接口",
+  },
+  {
+    value: "AnthropicChatModel",
+    label: "Anthropic 兼容",
+    description: "适用于 Claude / Anthropic 风格接口",
+  },
+] as const;
+
+function ProtocolSelect({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useOutsideClose(open, containerRef, () => setOpen(false));
+
+  const selected = PROTOCOL_OPTIONS.find((option) => option.value === value) || PROTOCOL_OPTIONS[0];
+
+  return (
+    <div className="portal-select" ref={containerRef}>
+      <button
+        type="button"
+        className={open ? "portal-select-trigger active" : "portal-select-trigger"}
+        disabled={disabled}
+        onClick={() => {
+          if (!disabled) {
+            setOpen((prev) => !prev);
+          }
+        }}
+      >
+        <span className="portal-select-copy">
+          <span className="portal-select-title">{selected.label}</span>
+        </span>
+        <i className={`fas ${open ? "fa-chevron-up" : "fa-chevron-down"}`} />
+      </button>
+
+      {open ? (
+        <div className="portal-select-menu">
+          {PROTOCOL_OPTIONS.map((option) => {
+            const active = option.value === value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                className={active ? "portal-select-option active" : "portal-select-option"}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+              >
+                <span className="portal-select-title">{option.label}</span>
+                <span className="portal-select-desc">{option.description}</span>
+                {active ? <i className="fas fa-check" /> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function resolveProviderId(value: string) {
   const normalized = value
@@ -195,33 +283,32 @@ function getProviderVisual(providerId: string, providerName: string) {
   };
 }
 
-function buildProviderPrefill(provider: DisplayProvider): ModelConfigFormState {
-  const shouldPrefillModel =
-    !(
-      provider.id === DEFAULT_PROVIDER_SLOT_ID
-      && !provider.baseUrl
-      && !provider.apiKeyConfigured
-    );
+function buildProviderPrefill(provider: DisplayProvider): ProviderConfigFormState {
+  const generateConfigText = formatGenerateConfig(provider.generateKwargs);
   return {
     providerName: provider.name,
     providerId: provider.id,
     baseUrl: provider.baseUrl,
     apiKey: "",
-    modelId: shouldPrefillModel ? provider.models[0]?.id || "" : "",
-    modelName: shouldPrefillModel ? provider.models[0]?.name || "" : "",
     protocol:
       provider.id.includes("anthropic")
       || provider.id.includes("minimax")
         ? "AnthropicChatModel"
         : "OpenAIChatModel",
-    setActive: true,
-    generateConfigText:
-      provider.generateKwargs && Object.keys(provider.generateKwargs).length > 0
-        ? JSON.stringify(provider.generateKwargs, null, 2)
-        : "",
-    advancedOpen: Boolean(
-      provider.generateKwargs && Object.keys(provider.generateKwargs).length > 0,
-    ),
+    apiKeyConfigured: provider.apiKeyConfigured,
+    generateConfigText,
+    advancedOpen: Boolean(generateConfigText),
+  };
+}
+
+function buildAddModelPrefill(provider: DisplayProvider): AddModelFormState {
+  return {
+    providerId: provider.id,
+    providerName: provider.name,
+    modelId: "",
+    modelName: "",
+    generateConfigText: "",
+    advancedOpen: false,
   };
 }
 
@@ -439,13 +526,69 @@ function BuiltinApiKeyResultDialog({
   );
 }
 
+function DeleteConfirmDialog({
+  open,
+  title,
+  message,
+  submitting,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  title: string;
+  message: string;
+  submitting: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="history-modal show" onClick={onClose}>
+      <div
+        className="history-content portal-confirm-dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="history-header">
+          <h3>
+            <i className="fas fa-triangle-exclamation" /> {title}
+          </h3>
+          <button className="history-close" onClick={onClose}>
+            <i className="fas fa-times" />
+          </button>
+        </div>
+        <div className="history-body portal-confirm-body">
+          <div className="portal-confirm-copy">{message}</div>
+          <div className="portal-model-form-actions portal-confirm-actions">
+            <button
+              type="button"
+              className="portal-model-btn secondary"
+              disabled={submitting}
+              onClick={onClose}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="portal-model-btn secondary danger"
+              disabled={submitting}
+              onClick={onConfirm}
+            >
+              <i className={`fas ${submitting ? "fa-spinner fa-spin" : "fa-trash-can"}`} />
+              确认删除
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProviderLibrary({
   displayProviders,
   activeProviderId,
-  activeModelId,
-  switching,
-  disabled,
-  onSelectModel,
   onAcquireApiKey,
   onPrefillConnect,
   onManageModels,
@@ -453,10 +596,6 @@ function ProviderLibrary({
 }: {
   displayProviders: DisplayProvider[];
   activeProviderId: string;
-  activeModelId: string;
-  switching: boolean;
-  disabled?: boolean;
-  onSelectModel: (providerId: string, modelId: string) => Promise<boolean>;
   onAcquireApiKey: (provider: DisplayProvider) => void;
   onPrefillConnect: (provider: DisplayProvider) => void;
   onManageModels: (provider: DisplayProvider) => void;
@@ -537,20 +676,14 @@ function ProviderLibrary({
 
               {provider.models.length ? (
                 <div className="portal-provider-model-preview">
-                  {provider.models.slice(0, 3).map((model) => {
-                    const isActive =
-                      provider.id === activeProviderId && model.id === activeModelId;
-                    return (
-                      <button
-                        key={`${provider.id}-${model.id}`}
-                        className={isActive ? "portal-provider-model-chip active" : "portal-provider-model-chip"}
-                        disabled={!provider.configured || disabled || switching}
-                        onClick={() => void onSelectModel(provider.id, model.id)}
-                      >
-                        {model.name || model.id}
-                      </button>
-                    );
-                  })}
+                  {provider.models.slice(0, 3).map((model) => (
+                    <span
+                      key={`${provider.id}-${model.id}`}
+                      className="portal-provider-model-chip passive"
+                    >
+                      {model.name || model.id}
+                    </span>
+                  ))}
                   {provider.models.length > 3 ? (
                     <span className="portal-provider-model-more">
                       +{provider.models.length - 3}
@@ -559,9 +692,9 @@ function ProviderLibrary({
                 </div>
               ) : (
                 <div className="portal-provider-model-empty">
-                  {provider.configured
-                    ? "当前未录入模型，可在下方补充 MODEL ID。"
-                    : "先完成 API 配置，配置后可直接使用现有模型。"}
+                  {provider.baseUrl || provider.apiKeyConfigured
+                    ? "当前未录入模型，可在模型管理中添加模型。"
+                    : "先完成提供商配置，再到模型管理中添加模型。"}
                 </div>
               )}
 
@@ -611,6 +744,7 @@ function ManagedModelConfigEditor({
   providerId,
   modelId,
   initialText,
+  open,
   saving,
   disabled,
   onSave,
@@ -618,11 +752,11 @@ function ManagedModelConfigEditor({
   providerId: string;
   modelId: string;
   initialText: string;
+  open: boolean;
   saving: boolean;
   disabled?: boolean;
   onSave: (providerId: string, modelId: string, text: string) => Promise<boolean>;
 }) {
-  const [open, setOpen] = useState(false);
   const [text, setText] = useState(initialText);
 
   useEffect(() => {
@@ -633,19 +767,10 @@ function ManagedModelConfigEditor({
 
   return (
     <div className="portal-managed-model-config">
-      <button
-        type="button"
-        className={open ? "portal-managed-config-toggle active" : "portal-managed-config-toggle"}
-        disabled={disabled || saving}
-        onClick={() => setOpen((prev) => !prev)}
-      >
-        <i className={`fas ${open ? "fa-chevron-up" : "fa-chevron-down"}`} />
-        <span>{open ? "收起高级配置" : "高级配置"}</span>
-      </button>
       {open ? (
         <div className="portal-managed-model-config-panel">
           <div className="portal-managed-config-hint">
-            使用 JSON 配置当前模型的专属生成参数，优先级高于 provider 级配置。
+            使用 JSON 配置当前模型的专属生成参数。
           </div>
           <textarea
             className="portal-model-json-editor"
@@ -681,35 +806,37 @@ function ManagedModelConfigEditor({
 
 function ProviderModelsDialog({
   provider,
-  activeProviderId,
-  activeModelId,
   switching,
   submitting,
   disabled,
   notice,
-  onSelectModel,
   onRemoveModel,
   onTestModel,
+  onProbeMultimodal,
   onDiscoverModels,
   onConfigureModel,
   onClose,
-  onOpenConfig,
+  onOpenAddModel,
 }: {
   provider: DisplayProvider;
-  activeProviderId: string;
-  activeModelId: string;
   switching: boolean;
   submitting: boolean;
   disabled?: boolean;
   notice: ModelNoticeState | null;
-  onSelectModel: (providerId: string, modelId: string) => Promise<boolean>;
   onRemoveModel: (providerId: string, modelId: string) => Promise<boolean>;
   onTestModel: (providerId: string, modelId: string) => Promise<boolean>;
+  onProbeMultimodal: (providerId: string, modelId: string) => Promise<boolean>;
   onDiscoverModels: (providerId: string) => Promise<boolean>;
   onConfigureModel: (providerId: string, modelId: string, text: string) => Promise<boolean>;
   onClose: () => void;
-  onOpenConfig: (provider: DisplayProvider) => void;
+  onOpenAddModel: (provider: DisplayProvider) => void;
 }) {
+  const [openModelConfigs, setOpenModelConfigs] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setOpenModelConfigs({});
+  }, [provider.id]);
+
   return (
     <div className="history-modal show" onClick={onClose}>
       <div
@@ -732,61 +859,88 @@ function ProviderModelsDialog({
           {provider.models.length ? (
             <div className="portal-managed-model-list">
               {provider.models.map((model) => {
-                const isActive =
-                  provider.id === activeProviderId && model.id === activeModelId;
+                const configKey = `${provider.id}-${model.id}`;
+                const configOpen = Boolean(openModelConfigs[configKey]);
+
                 return (
-                  <div key={`${provider.id}-${model.id}`} className="portal-managed-model-item">
+                <div key={configKey} className="portal-managed-model-item">
+                  <div className="portal-managed-model-header">
                     <div className="portal-managed-model-copy">
                       <div className="portal-managed-model-title">
                         <strong>{model.name || model.id}</strong>
-                        <span className="portal-managed-model-kind">纯文本</span>
+                        {model.supportsImage ? (
+                          <span className="portal-managed-model-kind image">图片</span>
+                        ) : null}
+                        {model.supportsVideo ? (
+                          <span className="portal-managed-model-kind video">视频</span>
+                        ) : null}
+                        {model.supportsMultimodal === false ? (
+                          <span className="portal-managed-model-kind">纯文本</span>
+                        ) : null}
+                        {model.supportsMultimodal === null ? (
+                          <span className="portal-managed-model-kind pending">未检测</span>
+                        ) : null}
                         <span className="portal-managed-model-source">用户添加</span>
                       </div>
                       <span>{model.id}</span>
                     </div>
-                    <div className="portal-managed-model-side">
-                      <div className="portal-managed-model-actions">
-                        <button
-                          type="button"
-                          className={isActive ? "portal-managed-action active" : "portal-managed-action"}
-                          disabled={disabled || switching}
-                          onClick={() => void onSelectModel(provider.id, model.id)}
-                        >
-                          {isActive ? "当前模型" : "设为当前"}
-                        </button>
-                        <button
-                          type="button"
-                          className="portal-managed-action"
-                          disabled={disabled || switching}
-                          onClick={() => void onTestModel(provider.id, model.id)}
-                        >
-                          测试连接
-                        </button>
-                        <button
-                          type="button"
-                          className="portal-managed-action danger"
-                          disabled={disabled || submitting}
-                          onClick={() => void onRemoveModel(provider.id, model.id)}
-                        >
-                          删除
-                        </button>
-                      </div>
-                      <ManagedModelConfigEditor
-                        providerId={provider.id}
-                        modelId={model.id}
-                        initialText={formatGenerateConfig(model.generateKwargs)}
-                        saving={submitting}
-                        disabled={disabled}
-                        onSave={onConfigureModel}
-                      />
+                    <div className="portal-managed-model-actions">
+                      <button
+                        type="button"
+                        className="portal-managed-action"
+                        disabled={disabled || switching}
+                        onClick={() => void onProbeMultimodal(provider.id, model.id)}
+                      >
+                        测试多模态
+                      </button>
+                      <button
+                        type="button"
+                        className="portal-managed-action"
+                        disabled={disabled || switching}
+                        onClick={() => void onTestModel(provider.id, model.id)}
+                      >
+                        测试连接
+                      </button>
+                      <button
+                        type="button"
+                        className={configOpen ? "portal-managed-action icon-only active" : "portal-managed-action icon-only"}
+                        disabled={disabled || submitting}
+                        onClick={() =>
+                          setOpenModelConfigs((prev) => ({
+                            ...prev,
+                            [configKey]: !prev[configKey],
+                          }))
+                        }
+                        aria-label={configOpen ? "收起高级配置" : "展开高级配置"}
+                        title={configOpen ? "收起高级配置" : "展开高级配置"}
+                      >
+                        <i className={`fas ${configOpen ? "fa-chevron-up" : "fa-gear"}`} />
+                      </button>
+                      <button
+                        type="button"
+                        className="portal-managed-action danger"
+                        disabled={disabled || submitting}
+                        onClick={() => void onRemoveModel(provider.id, model.id)}
+                      >
+                        删除
+                      </button>
                     </div>
                   </div>
-                );
-              })}
+                  <ManagedModelConfigEditor
+                    providerId={provider.id}
+                    modelId={model.id}
+                    initialText={formatGenerateConfig(model.generateKwargs)}
+                    open={configOpen}
+                    saving={submitting}
+                    disabled={disabled}
+                    onSave={onConfigureModel}
+                  />
+                </div>
+              )})}
             </div>
           ) : (
             <div className="portal-provider-model-empty">
-              当前 Provider 暂无可管理模型，可通过“添加模型”新增 MODEL ID。
+              当前 Provider 暂无可管理模型，可通过“添加模型”新增模型 ID。
             </div>
           )}
 
@@ -801,15 +955,151 @@ function ProviderModelsDialog({
                 <i className={`fas ${switching ? "fa-spinner fa-spin" : "fa-rotate"}`} /> 自动获取模型
               </button>
             ) : null}
-            <button
-              type="button"
-              className="portal-model-btn secondary"
-              disabled={disabled}
-              onClick={() => onOpenConfig(provider)}
-            >
-              <i className="fas fa-plus" /> 添加模型
-            </button>
+              <button
+                type="button"
+                className="portal-model-btn secondary"
+                disabled={disabled}
+                onClick={() => onOpenAddModel(provider)}
+              >
+                <i className="fas fa-plus" /> 添加模型
+              </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddModelDialog({
+  open,
+  form,
+  submitting,
+  disabled,
+  notice,
+  onClose,
+  onSubmit,
+  onChange,
+}: {
+  open: boolean;
+  form: AddModelFormState;
+  submitting: boolean;
+  disabled?: boolean;
+  notice: ModelNoticeState | null;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onChange: (updater: (prev: AddModelFormState) => AddModelFormState) => void;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="history-modal show" onClick={onClose}>
+      <div
+        className="history-content portal-provider-config-dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="history-header">
+          <h3>
+            <i className="fas fa-cube" /> 添加模型
+          </h3>
+          <button className="history-close" onClick={onClose}>
+            <i className="fas fa-times" />
+          </button>
+        </div>
+        <div className="history-body portal-provider-config-body">
+          {notice ? (
+            <div className={`model-inline-notice ${notice.tone}`}>{notice.text}</div>
+          ) : null}
+          <form className="portal-model-form" onSubmit={onSubmit}>
+            <div className="portal-form-row">
+              <div className="portal-form-group">
+                <label>提供商 ID</label>
+                <input value={form.providerId} disabled />
+              </div>
+              <div className="portal-form-group">
+                <label>显示名称</label>
+                <input value={form.providerName} disabled />
+              </div>
+            </div>
+
+            <div className="portal-form-row">
+              <div className="portal-form-group">
+                <label>模型 ID</label>
+                <input
+                  value={form.modelId}
+                  onChange={(event) =>
+                    onChange((prev) => ({ ...prev, modelId: event.target.value }))
+                  }
+                  placeholder="例如：DeepSeek-R1-0528"
+                />
+              </div>
+              <div className="portal-form-group">
+                <label>模型名称</label>
+                <input
+                  value={form.modelName}
+                  onChange={(event) =>
+                    onChange((prev) => ({ ...prev, modelName: event.target.value }))
+                  }
+                  placeholder="展示名称，可选"
+                />
+              </div>
+            </div>
+
+            <div className="portal-model-tip">
+              <i className="fas fa-circle-info" />
+              先保存提供商，再为该提供商单独添加可用模型。
+            </div>
+
+            <div className="portal-advanced-config">
+              <button
+                type="button"
+                className={form.advancedOpen ? "portal-model-toggle active" : "portal-model-toggle"}
+                onClick={() =>
+                  onChange((prev) => ({ ...prev, advancedOpen: !prev.advancedOpen }))
+                }
+              >
+                <i className={`fas ${form.advancedOpen ? "fa-chevron-up" : "fa-chevron-down"}`} />
+                高级配置
+              </button>
+              {form.advancedOpen ? (
+                <div className="portal-advanced-config-panel">
+                  <label>Model generate_kwargs</label>
+                  <textarea
+                    className="portal-model-json-editor"
+                    value={form.generateConfigText}
+                    onChange={(event) =>
+                      onChange((prev) => ({ ...prev, generateConfigText: event.target.value }))
+                    }
+                    placeholder={`{\n  "extra_body": {\n    "enable_thinking": false\n  },\n  "max_tokens": 2048\n}`}
+                    spellCheck={false}
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            <div className="portal-model-form-actions">
+              <button
+                type="button"
+                className="portal-model-btn secondary"
+                onClick={onClose}
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                className="portal-model-btn success"
+                disabled={submitting || disabled}
+              >
+                <i
+                  className={`fas ${
+                    submitting ? "fa-spinner fa-spin" : "fa-plus"
+                  }`}
+                />
+                {submitting ? "保存中..." : "添加模型"}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
@@ -829,7 +1119,7 @@ function ProviderConfigDialog({
   onChange,
 }: {
   open: boolean;
-  form: ModelConfigFormState;
+  form: ProviderConfigFormState;
   submitting: boolean;
   disabled?: boolean;
   mode: "create" | "edit";
@@ -837,7 +1127,7 @@ function ProviderConfigDialog({
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onTestProvider: () => void;
-  onChange: (updater: (prev: ModelConfigFormState) => ModelConfigFormState) => void;
+  onChange: (updater: (prev: ProviderConfigFormState) => ProviderConfigFormState) => void;
 }) {
   if (!open) {
     return null;
@@ -864,28 +1154,39 @@ function ProviderConfigDialog({
           <form className="portal-model-form" onSubmit={onSubmit}>
             <div className="portal-form-row">
               <div className="portal-form-group">
-                <label>模型提供商</label>
-                <input
-                  value={form.providerName}
-                  onChange={(event) =>
-                    onChange((prev) => ({ ...prev, providerName: event.target.value }))
-                  }
-                  placeholder="例如：天翼开放平台"
-                />
-              </div>
-              <div className="portal-form-group">
-                <label>Provider ID</label>
+                <label>提供商 ID</label>
                 <input
                   value={form.providerId}
                   onChange={(event) =>
                     onChange((prev) => ({ ...prev, providerId: event.target.value }))
                   }
                   placeholder="可选，不填则自动生成"
+                  disabled={mode === "edit"}
+                />
+              </div>
+              <div className="portal-form-group">
+                <label>显示名称</label>
+                <input
+                  value={form.providerName}
+                  onChange={(event) =>
+                    onChange((prev) => ({ ...prev, providerName: event.target.value }))
+                  }
+                  placeholder="例如：自定义模型服务"
                 />
               </div>
             </div>
 
             <div className="portal-form-row">
+              <div className="portal-form-group">
+                <label>API Base URL</label>
+                <input
+                  value={form.baseUrl}
+                  onChange={(event) =>
+                    onChange((prev) => ({ ...prev, baseUrl: event.target.value }))
+                  }
+                  placeholder={mode === "create" ? "可选，创建后可稍后补充" : "https://example.com/v1"}
+                />
+              </div>
               <div className="portal-form-group">
                 <label>API Key</label>
                 <input
@@ -894,73 +1195,28 @@ function ProviderConfigDialog({
                   onChange={(event) =>
                     onChange((prev) => ({ ...prev, apiKey: event.target.value }))
                   }
-                  placeholder="请输入模型服务的 API Key"
-                />
-              </div>
-              <div className="portal-form-group">
-                <label>API Base URL</label>
-                <input
-                  value={form.baseUrl}
-                  onChange={(event) =>
-                    onChange((prev) => ({ ...prev, baseUrl: event.target.value }))
+                  placeholder={
+                    mode === "create"
+                      ? "可选，创建后可稍后补充"
+                      : form.apiKeyConfigured
+                        ? "留空以保持当前密钥"
+                        : "输入 API 密钥（可选）"
                   }
-                  placeholder="https://example.com/v1"
                 />
               </div>
             </div>
 
             <div className="portal-form-row">
               <div className="portal-form-group">
-                <label>MODEL ID</label>
-                <input
-                  value={form.modelId}
-                  onChange={(event) =>
-                    onChange((prev) => ({ ...prev, modelId: event.target.value }))
-                  }
-                  placeholder="例如：06b788a..."
-                />
-              </div>
-              <div className="portal-form-group">
-                <label>模型名称</label>
-                <input
-                  value={form.modelName}
-                  onChange={(event) =>
-                    onChange((prev) => ({ ...prev, modelName: event.target.value }))
-                  }
-                  placeholder="展示名称，可选"
-                />
-              </div>
-            </div>
-
-            <div className="portal-form-row">
-              <div className="portal-form-group">
-                <label>请求格式</label>
-                <select
+                <label>协议</label>
+                <ProtocolSelect
                   value={form.protocol}
-                  onChange={(event) =>
-                    onChange((prev) => ({ ...prev, protocol: event.target.value }))
+                  disabled={submitting || disabled}
+                  onChange={(value) =>
+                    onChange((prev) => ({ ...prev, protocol: value }))
                   }
-                >
-                  <option value="OpenAIChatModel">OpenAI 兼容</option>
-                  <option value="AnthropicChatModel">Anthropic 兼容</option>
-                </select>
+                />
               </div>
-              <div className="portal-form-group">
-                <label>接入后动作</label>
-                <button
-                  type="button"
-                  className={form.setActive ? "portal-model-toggle active" : "portal-model-toggle"}
-                  onClick={() => onChange((prev) => ({ ...prev, setActive: !prev.setActive }))}
-                >
-                  <i className={`fas ${form.setActive ? "fa-check" : "fa-circle"}`} />
-                  {form.setActive ? "设为当前会话模型" : "仅保存，不切换"}
-                </button>
-              </div>
-            </div>
-
-            <div className="portal-model-tip">
-              <i className="fas fa-circle-info" />
-              OpenAI 兼容地址通常只需要填 URL、API Key 和 MODEL ID 即可。
             </div>
 
             <div className="portal-advanced-config">
@@ -971,7 +1227,7 @@ function ProviderConfigDialog({
                   onChange((prev) => ({ ...prev, advancedOpen: !prev.advancedOpen }))
                 }
               >
-                <i className={`fas ${form.advancedOpen ? "fa-chevron-down" : "fa-chevron-right"}`} />
+                <i className={`fas ${form.advancedOpen ? "fa-chevron-up" : "fa-chevron-down"}`} />
                 高级配置
               </button>
               {form.advancedOpen ? (
@@ -983,11 +1239,22 @@ function ProviderConfigDialog({
                     onChange={(event) =>
                       onChange((prev) => ({ ...prev, generateConfigText: event.target.value }))
                     }
-                    placeholder={`{\n  "extra_body": {\n    "enable_thinking": false\n  },\n  "max_tokens": 2048\n}`}
+                    placeholder={`{\n  "temperature": 0.2,\n  "max_tokens": 4096\n}`}
                     spellCheck={false}
                   />
+                  <div className="portal-model-tip" style={{ marginTop: 12 }}>
+                    <i className="fas fa-circle-info" />
+                    这里的配置会作为该提供商下所有模型的默认生成参数；模型级高级配置会覆盖这里的同名字段。
+                  </div>
                 </div>
               ) : null}
+            </div>
+
+            <div className="portal-model-tip">
+              <i className="fas fa-circle-info" />
+              {mode === "create"
+                ? "创建提供商时 Base URL、API Key 都可先留空，模型请到“模型管理”里单独添加。"
+                : "设置时需要填写 Base URL；API Key 留空则保持当前密钥。模型请到“模型管理”里单独添加。"}
             </div>
 
             <div className="portal-model-form-actions">
@@ -1009,7 +1276,7 @@ function ProviderConfigDialog({
                     submitting ? "fa-spinner fa-spin" : "fa-plug-circle-plus"
                   }`}
                 />
-                {submitting ? "保存中..." : mode === "create" ? "创建并保存" : "保存设置"}
+                {submitting ? "保存中..." : mode === "create" ? "创建提供商" : "保存设置"}
               </button>
             </div>
           </form>
@@ -1139,67 +1406,63 @@ export function ChatModelSelector({
 
 export function ModelConfigModal({
   open,
-  resolvedAgentId,
-  resolvedAgentLabel,
-  activeProviderName,
-  activeModelLabel,
   activeProviderId,
-  activeModelId,
   displayProviders,
-  eligibleProviders,
   loading,
   switching,
   submitting,
   disabled,
   notice,
   onRefresh,
-  onSelectModel,
   onApplyBuiltinApiKey,
-  onSubmitConnect,
+  onSubmitProvider,
+  onSubmitModel,
   onDeleteProvider,
   onRemoveModel,
   onTestProvider,
   onTestModel,
+  onProbeMultimodal,
   onDiscoverModels,
   onConfigureModel,
 }: {
   open: boolean;
-  resolvedAgentId: string;
-  resolvedAgentLabel?: string;
-  activeProviderName: string;
-  activeModelLabel: string;
   activeProviderId: string;
-  activeModelId: string;
   displayProviders: DisplayProvider[];
-  eligibleProviders: EligibleProvider[];
   loading: boolean;
   switching: boolean;
   submitting: boolean;
   disabled?: boolean;
   notice: ModelNoticeState | null;
   onRefresh: () => void;
-  onSelectModel: (providerId: string, modelId: string) => Promise<boolean>;
   onApplyBuiltinApiKey: (
     payload: BuiltinApiKeyApplyPayload,
   ) => Promise<BuiltinApiKeyApplyResult | null>;
-  onSubmitConnect: (payload: ConnectModelPayload) => Promise<boolean>;
+  onSubmitProvider: (payload: SaveProviderPayload) => Promise<boolean>;
+  onSubmitModel: (payload: AddProviderModelPayload) => Promise<boolean>;
   onDeleteProvider: (providerId: string) => Promise<boolean>;
   onRemoveModel: (providerId: string, modelId: string) => Promise<boolean>;
   onTestProvider: (providerId: string, payload?: {
     apiKey?: string;
     baseUrl?: string;
     protocol?: string;
-    modelId?: string;
     generateConfigText?: string;
   }) => Promise<boolean>;
   onTestModel: (providerId: string, modelId: string) => Promise<boolean>;
+  onProbeMultimodal: (providerId: string, modelId: string) => Promise<boolean>;
   onDiscoverModels: (providerId: string) => Promise<boolean>;
   onConfigureModel: (providerId: string, modelId: string, text: string) => Promise<boolean>;
 }) {
-  const [form, setForm] = useState<ModelConfigFormState>(DEFAULT_FORM_STATE);
+  const [deleteConfirmState, setDeleteConfirmState] = useState<
+    | null
+    | { kind: "provider"; provider: DisplayProvider }
+    | { kind: "model"; providerId: string; modelId: string }
+  >(null);
+  const [providerForm, setProviderForm] = useState<ProviderConfigFormState>(DEFAULT_PROVIDER_FORM_STATE);
+  const [modelForm, setModelForm] = useState<AddModelFormState>(DEFAULT_ADD_MODEL_FORM_STATE);
   const [managedProviderId, setManagedProviderId] = useState("");
-  const [configDialogOpen, setConfigDialogOpen] = useState(false);
-  const [configDialogMode, setConfigDialogMode] = useState<"create" | "edit">("create");
+  const [providerDialogOpen, setProviderDialogOpen] = useState(false);
+  const [providerDialogMode, setProviderDialogMode] = useState<"create" | "edit">("create");
+  const [modelDialogOpen, setModelDialogOpen] = useState(false);
   const [builtinApiDialogOpen, setBuiltinApiDialogOpen] = useState(false);
   const [builtinApiResultOpen, setBuiltinApiResultOpen] = useState(false);
   const [builtinApiResult, setBuiltinApiResult] = useState<BuiltinApiKeyApplyResult | null>(null);
@@ -1208,9 +1471,12 @@ export function ModelConfigModal({
 
   useEffect(() => {
     if (open) {
-      setForm(DEFAULT_FORM_STATE);
+      setDeleteConfirmState(null);
+      setProviderForm(DEFAULT_PROVIDER_FORM_STATE);
+      setModelForm(DEFAULT_ADD_MODEL_FORM_STATE);
       setManagedProviderId("");
-      setConfigDialogOpen(false);
+      setProviderDialogOpen(false);
+      setModelDialogOpen(false);
       setBuiltinApiDialogOpen(false);
       setBuiltinApiResultOpen(false);
       setBuiltinApiResult(null);
@@ -1222,28 +1488,51 @@ export function ModelConfigModal({
     return null;
   }
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmitProvider = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const succeeded = await onSubmitConnect(form);
+    const succeeded = await onSubmitProvider({
+      mode: providerDialogMode,
+      providerId: providerForm.providerId,
+      providerName: providerForm.providerName,
+      baseUrl: providerForm.baseUrl,
+      apiKey: providerForm.apiKey,
+      protocol: providerForm.protocol,
+      generateConfigText: providerForm.generateConfigText,
+    });
     if (succeeded) {
-      setForm(DEFAULT_FORM_STATE);
-      setConfigDialogOpen(false);
+      setProviderForm(DEFAULT_PROVIDER_FORM_STATE);
+      setProviderDialogOpen(false);
     }
   };
 
-  const handlePrefillConnect = (provider: DisplayProvider) => {
-    setForm(buildProviderPrefill(provider));
-    setConfigDialogMode("edit");
-    setConfigDialogOpen(true);
+  const handleSubmitModel = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const succeeded = await onSubmitModel(modelForm);
+    if (succeeded) {
+      setModelForm(DEFAULT_ADD_MODEL_FORM_STATE);
+      setModelDialogOpen(false);
+    }
+  };
+
+  const handlePrefillProvider = (provider: DisplayProvider) => {
+    setProviderForm(buildProviderPrefill(provider));
+    setProviderDialogMode("edit");
+    setProviderDialogOpen(true);
+  };
+
+  const handleOpenAddModel = (provider: DisplayProvider) => {
+    setManagedProviderId(provider.id);
+    setModelForm(buildAddModelPrefill(provider));
+    setModelDialogOpen(true);
   };
 
   const managedProvider = displayProviders.find((provider) => provider.id === managedProviderId) || null;
 
   const handleAddProvider = () => {
     setManagedProviderId("");
-    setForm(DEFAULT_FORM_STATE);
-    setConfigDialogMode("create");
-    setConfigDialogOpen(true);
+    setProviderForm(DEFAULT_PROVIDER_FORM_STATE);
+    setProviderDialogMode("create");
+    setProviderDialogOpen(true);
   };
 
   const handleOpenBuiltinApiDialog = (provider: DisplayProvider) => {
@@ -1253,23 +1542,37 @@ export function ModelConfigModal({
   };
 
   const handleDelete = async (provider: DisplayProvider) => {
-    if (!window.confirm(`确认删除提供商 ${provider.name} 吗？`)) {
-      return;
-    }
-
-    const succeeded = await onDeleteProvider(provider.id);
-    if (succeeded && managedProviderId === provider.id) {
-      setManagedProviderId("");
-    }
+    setDeleteConfirmState({ kind: "provider", provider });
   };
 
   const handleRemoveManagedModel = async (providerId: string, modelId: string) => {
-    if (!window.confirm(`确认删除模型 ${modelId} 吗？`)) {
-      return false;
+    setDeleteConfirmState({ kind: "model", providerId, modelId });
+    return false;
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirmState) {
+      return;
     }
 
-    const succeeded = await onRemoveModel(providerId, modelId);
-    return succeeded;
+    if (deleteConfirmState.kind === "provider") {
+      const succeeded = await onDeleteProvider(deleteConfirmState.provider.id);
+      if (succeeded && managedProviderId === deleteConfirmState.provider.id) {
+        setManagedProviderId("");
+      }
+      if (succeeded) {
+        setDeleteConfirmState(null);
+      }
+      return;
+    }
+
+    const succeeded = await onRemoveModel(
+      deleteConfirmState.providerId,
+      deleteConfirmState.modelId,
+    );
+    if (succeeded) {
+      setDeleteConfirmState(null);
+    }
   };
 
   const handleSubmitBuiltinApiKey = async (event: FormEvent<HTMLFormElement>) => {
@@ -1301,11 +1604,6 @@ export function ModelConfigModal({
             </div>
           </div>
 
-          <div className="portal-model-scope-bar">
-            <span>当前作用域：{resolvedAgentLabel || resolvedAgentId}</span>
-            <span>当前模型：{activeProviderName} / {activeModelLabel}</span>
-          </div>
-
           {notice ? (
             <div className={`model-inline-notice ${notice.tone}`}>{notice.text}</div>
           ) : null}
@@ -1323,12 +1621,8 @@ export function ModelConfigModal({
               <ProviderLibrary
                 displayProviders={displayProviders}
                 activeProviderId={activeProviderId}
-                activeModelId={activeModelId}
-                switching={switching}
-                disabled={disabled}
-                onSelectModel={onSelectModel}
                 onAcquireApiKey={handleOpenBuiltinApiDialog}
-                onPrefillConnect={handlePrefillConnect}
+                onPrefillConnect={handlePrefillProvider}
                 onManageModels={(provider) => setManagedProviderId(provider.id)}
                 onDeleteProvider={handleDelete}
               />
@@ -1339,45 +1633,52 @@ export function ModelConfigModal({
         {managedProvider ? (
           <ProviderModelsDialog
             provider={managedProvider}
-            activeProviderId={activeProviderId}
-            activeModelId={activeModelId}
             switching={switching}
             submitting={submitting}
             disabled={disabled}
             notice={notice}
-            onSelectModel={onSelectModel}
             onRemoveModel={handleRemoveManagedModel}
             onTestModel={onTestModel}
+            onProbeMultimodal={onProbeMultimodal}
             onDiscoverModels={onDiscoverModels}
             onConfigureModel={onConfigureModel}
             onClose={() => setManagedProviderId("")}
-            onOpenConfig={handlePrefillConnect}
+            onOpenAddModel={handleOpenAddModel}
           />
         ) : null}
         <ProviderConfigDialog
-          open={configDialogOpen}
-          form={form}
+          open={providerDialogOpen}
+          form={providerForm}
           submitting={submitting}
           disabled={disabled}
-          mode={configDialogMode}
+          mode={providerDialogMode}
           notice={notice}
-          onClose={() => setConfigDialogOpen(false)}
-          onSubmit={handleSubmit}
+          onClose={() => setProviderDialogOpen(false)}
+          onSubmit={handleSubmitProvider}
           onTestProvider={() =>
             void onTestProvider(
-              form.providerId || resolveProviderId(
-                form.providerId.trim() || form.providerName || form.modelId,
+              providerForm.providerId || resolveProviderId(
+                providerForm.providerId.trim() || providerForm.providerName,
               ),
               {
-                apiKey: form.apiKey,
-                baseUrl: form.baseUrl,
-                protocol: form.protocol,
-                modelId: form.modelId,
-                generateConfigText: form.generateConfigText,
+                apiKey: providerForm.apiKey,
+                baseUrl: providerForm.baseUrl,
+                protocol: providerForm.protocol,
+                generateConfigText: providerForm.generateConfigText,
               },
             )
           }
-          onChange={(updater) => setForm((prev) => updater(prev))}
+          onChange={(updater) => setProviderForm((prev) => updater(prev))}
+        />
+        <AddModelDialog
+          open={modelDialogOpen}
+          form={modelForm}
+          submitting={submitting}
+          disabled={disabled}
+          notice={notice}
+          onClose={() => setModelDialogOpen(false)}
+          onSubmit={handleSubmitModel}
+          onChange={(updater) => setModelForm((prev) => updater(prev))}
         />
         <BuiltinApiKeyDialog
           open={builtinApiDialogOpen}
@@ -1392,6 +1693,18 @@ export function ModelConfigModal({
           open={builtinApiResultOpen}
           result={builtinApiResult}
           onClose={() => setBuiltinApiResultOpen(false)}
+        />
+        <DeleteConfirmDialog
+          open={Boolean(deleteConfirmState)}
+          title={deleteConfirmState?.kind === "provider" ? "删除提供商" : "删除模型"}
+          message={
+            deleteConfirmState?.kind === "provider"
+              ? `确认删除提供商“${deleteConfirmState.provider.name}”吗？`
+              : `确认删除模型“${deleteConfirmState?.modelId || ""}”吗？`
+          }
+          submitting={submitting}
+          onClose={() => setDeleteConfirmState(null)}
+          onConfirm={() => void handleConfirmDelete()}
         />
     </div>
   );

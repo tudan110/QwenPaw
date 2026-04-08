@@ -46,19 +46,27 @@ export interface DisplayProvider {
   models: Array<{
     id: string;
     name: string;
+    supportsMultimodal: boolean | null;
+    supportsImage: boolean | null;
+    supportsVideo: boolean | null;
     generateKwargs: Record<string, unknown>;
   }>;
 }
 
-export interface ConnectModelPayload {
+export interface SaveProviderPayload {
+  mode: "create" | "edit";
   providerId?: string;
   providerName: string;
   baseUrl: string;
   apiKey: string;
+  protocol?: string;
+  generateConfigText?: string;
+}
+
+export interface AddProviderModelPayload {
+  providerId: string;
   modelId: string;
   modelName?: string;
-  protocol?: string;
-  setActive?: boolean;
   generateConfigText?: string;
 }
 
@@ -327,6 +335,18 @@ export function usePortalModels({
         models: flattenModels(provider).map((model) => ({
           id: model.id,
           name: model.name || model.id,
+          supportsMultimodal:
+            typeof model.supports_multimodal === "boolean"
+              ? model.supports_multimodal
+              : null,
+          supportsImage:
+            typeof model.supports_image === "boolean"
+              ? model.supports_image
+              : null,
+          supportsVideo:
+            typeof model.supports_video === "boolean"
+              ? model.supports_video
+              : null,
           generateKwargs: model.generate_kwargs || {},
         })),
       })),
@@ -395,61 +415,33 @@ export function usePortalModels({
     switching,
   ]);
 
-  const handleConnectModel = useCallback(async (payload: ConnectModelPayload) => {
+  const handleSaveProvider = useCallback(async (payload: SaveProviderPayload) => {
     const providerId = slugifyProviderId(
-      payload.providerId?.trim() || payload.providerName || payload.modelId,
+      payload.providerId?.trim() || payload.providerName,
     );
     const existingProvider = providersRef.current.find(
       (provider) => provider.id === providerId,
     );
-    const providerName = payload.providerName.trim() || existingProvider?.name || "";
-    const baseUrl = payload.baseUrl.trim() || existingProvider?.base_url || "";
+    const providerName = payload.providerName.trim();
+    const baseUrl = payload.baseUrl.trim();
     const apiKey = payload.apiKey.trim();
-    const modelId = payload.modelId.trim();
-    const modelName = (payload.modelName || payload.modelId).trim();
     const protocol =
       payload.protocol || existingProvider?.chat_model || "OpenAIChatModel";
-    const existingModels = flattenModels(existingProvider);
-    const requiresApiKey = existingProvider?.require_api_key ?? true;
-    const hasExistingApiKey = Boolean(existingProvider?.api_key);
-    const parsedGenerateConfig = parseGenerateConfig(payload.generateConfigText);
     const isDefaultSlot = providerId === DEFAULT_PROVIDER_SLOT_ID;
-    const defaultModelId = DEFAULT_PROVIDER_MODELS[0]?.id || "";
-    const defaultModelName = DEFAULT_PROVIDER_MODELS[0]?.name || defaultModelId;
-    const isNameOnlySave =
-      isDefaultSlot
-      && !baseUrl
-      && !apiKey
-      && !modelId
-      && existingModels.length === 0;
+    const parsedGenerateConfig = parseGenerateConfig(payload.generateConfigText);
 
     if (!providerName) {
       pushNotice("error", "请填写模型提供商名称");
       return false;
     }
 
-    if (!parsedGenerateConfig.ok) {
-      pushNotice("error", parsedGenerateConfig.error);
-      return false;
-    }
-
-    if (!isNameOnlySave && !baseUrl && !existingProvider?.is_local) {
+    if (payload.mode === "edit" && !baseUrl) {
       pushNotice("error", "请填写模型服务地址");
       return false;
     }
 
-    if (!isNameOnlySave && requiresApiKey && !apiKey && !hasExistingApiKey) {
-      pushNotice("error", "请填写 API Key");
-      return false;
-    }
-
-    if (
-      !isNameOnlySave
-      && !modelId
-      && existingModels.length === 0
-      && !isDefaultSlot
-    ) {
-      pushNotice("error", "请填写 MODEL ID");
+    if (!parsedGenerateConfig.ok) {
+      pushNotice("error", parsedGenerateConfig.error);
       return false;
     }
 
@@ -461,11 +453,11 @@ export function usePortalModels({
           name: providerName,
           default_base_url: baseUrl,
           chat_model: protocol,
-          models: isDefaultSlot && !isNameOnlySave ? DEFAULT_PROVIDER_MODELS : undefined,
+          models: isDefaultSlot ? DEFAULT_PROVIDER_MODELS : undefined,
         });
       }
 
-      let configuredProvider = await modelsApi.configureProvider(providerId, {
+      await modelsApi.configureProvider(providerId, {
         name: providerName || undefined,
         api_key: apiKey || undefined,
         base_url: baseUrl || undefined,
@@ -473,49 +465,73 @@ export function usePortalModels({
         generate_kwargs: parsedGenerateConfig.value,
       });
 
-      const effectiveModelId = modelId || (isNameOnlySave ? "" : defaultModelId);
-      const effectiveModelName = modelName || (
-        effectiveModelId === defaultModelId ? defaultModelName : effectiveModelId
-      );
-      const modelExists = effectiveModelId
-        ? flattenModels(configuredProvider).some((model) => model.id === effectiveModelId)
-        : true;
-
-      if (effectiveModelId && !modelExists) {
-        configuredProvider = await modelsApi.addModel(providerId, {
-          id: effectiveModelId,
-          name: effectiveModelName || effectiveModelId,
-        });
-      }
-
       await fetchModelState();
-
-      const targetModelId =
-        effectiveModelId || flattenModels(configuredProvider)[0]?.id || "";
-
-      if (payload.setActive !== false) {
-        if (targetModelId && !isNameOnlySave) {
-          await handleSelectModel(providerId, targetModelId);
-        } else {
-          pushNotice("success", `${providerName} 已保存`);
-        }
-      } else {
-        pushNotice(
-          "success",
-          targetModelId
-            ? `模型 ${effectiveModelName || targetModelId} 已接入`
-            : `${providerName} 已保存`,
-        );
-      }
+      pushNotice(
+        "success",
+        payload.mode === "create"
+          ? `${providerName} 已创建，可稍后补充地址、密钥和模型`
+          : `${providerName} 设置已保存`,
+      );
 
       return true;
     } catch (error: any) {
-      pushNotice("error", error?.message || "模型接入失败");
+      pushNotice("error", error?.message || "提供商保存失败");
       return false;
     } finally {
       setSubmitting(false);
     }
-  }, [fetchModelState, handleSelectModel, pushNotice]);
+  }, [fetchModelState, pushNotice]);
+
+  const handleAddModel = useCallback(async (payload: AddProviderModelPayload) => {
+    const providerId = payload.providerId.trim();
+    const modelId = payload.modelId.trim();
+    const modelName = (payload.modelName || payload.modelId).trim();
+    const existingProvider = providersRef.current.find((provider) => provider.id === providerId);
+    const parsedGenerateConfig = parseGenerateConfig(payload.generateConfigText);
+
+    if (!providerId) {
+      pushNotice("error", "请先选择模型提供商");
+      return false;
+    }
+
+    if (!modelId) {
+      pushNotice("error", "请填写 MODEL ID");
+      return false;
+    }
+
+    if (!parsedGenerateConfig.ok) {
+      pushNotice("error", parsedGenerateConfig.error);
+      return false;
+    }
+
+    if (flattenModels(existingProvider).some((model) => model.id === modelId)) {
+      pushNotice("error", `模型 ${modelId} 已存在`);
+      return false;
+    }
+
+    setSubmitting(true);
+    try {
+      await modelsApi.addModel(providerId, {
+        id: modelId,
+        name: modelName || modelId,
+      });
+
+      if (Object.keys(parsedGenerateConfig.value).length > 0) {
+        await modelsApi.configureModel(providerId, modelId, {
+          generate_kwargs: parsedGenerateConfig.value,
+        });
+      }
+
+      await fetchModelState();
+      pushNotice("success", `模型 ${modelName || modelId} 已添加，可在数字员工页面切换使用`);
+      return true;
+    } catch (error: any) {
+      pushNotice("error", error?.message || "添加模型失败");
+      return false;
+    } finally {
+      setSubmitting(false);
+    }
+  }, [fetchModelState, pushNotice]);
 
   const handleDeleteProvider = useCallback(async (providerId: string) => {
     if (!providerId) {
@@ -683,6 +699,38 @@ export function usePortalModels({
     }
   }, [pushNotice]);
 
+  const handleProbeMultimodal = useCallback(async (providerId: string, modelId: string) => {
+    if (!providerId || !modelId) {
+      return false;
+    }
+
+    setSwitching(true);
+    try {
+      const result = await modelsApi.probeMultimodal(providerId, modelId);
+      await fetchModelState();
+
+      const supportedTypes: string[] = [];
+      if (result?.supports_image) {
+        supportedTypes.push("图片");
+      }
+      if (result?.supports_video) {
+        supportedTypes.push("视频");
+      }
+
+      if (supportedTypes.length > 0) {
+        pushNotice("success", `模型 ${modelId} 支持：${supportedTypes.join("、")}`);
+      } else {
+        pushNotice("info", `模型 ${modelId} 暂不支持多模态输入`);
+      }
+      return true;
+    } catch (error: any) {
+      pushNotice("error", error?.message || "模型多模态探测失败");
+      return false;
+    } finally {
+      setSwitching(false);
+    }
+  }, [fetchModelState, pushNotice]);
+
   const handleConfigureModel = useCallback(async (
     providerId: string,
     modelId: string,
@@ -771,13 +819,15 @@ export function usePortalModels({
     clearNotice,
     fetchModelState,
     handleSelectModel,
-    handleConnectModel,
+    handleSaveProvider,
+    handleAddModel,
     handleDeleteProvider,
     handleApplyBuiltinApiKey,
     handleRemoveModel,
     handleConfigureModel,
     handleTestProvider,
     handleTestModel,
+    handleProbeMultimodal,
     handleDiscoverModels,
   };
 }

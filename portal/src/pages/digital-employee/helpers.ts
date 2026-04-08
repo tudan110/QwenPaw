@@ -2,6 +2,18 @@ const TIMEOUT_ALARM_TITLE = "应用接口响应超时";
 export const ALARM_WORKORDER_ENTRY = "alarm-workorders";
 export const ALARM_WORKORDER_LIMIT = 5;
 export const PORTAL_FAULT_WORKORDER_MARKER = "# PORTAL FAULT WORKORDER MODE";
+export const PORTAL_VIEW_OPTIONS = ["chat", "dashboard", "tasks"] as const;
+export const PORTAL_ADVANCED_PANEL_OPTIONS = ["model-config", "token-usage"] as const;
+export const PORTAL_ROUTE_SECTION_OPTIONS = [
+  "dashboard",
+  "tasks",
+  "model-config",
+  "token-usage",
+] as const;
+
+export type PortalView = (typeof PORTAL_VIEW_OPTIONS)[number];
+export type PortalAdvancedPanel = (typeof PORTAL_ADVANCED_PANEL_OPTIONS)[number];
+export type PortalRouteSection = (typeof PORTAL_ROUTE_SECTION_OPTIONS)[number];
 
 export type VisualBlock = {
   type: "echarts" | "mermaid" | "portal-visualization";
@@ -73,11 +85,84 @@ export function mergeStreamingText(currentText: string, incomingText: string) {
   return `${current}${incoming}`;
 }
 
-export function buildEmployeePagePath(employee: any) {
-  if (employee?.id === "fault" && employee?.urgent) {
-    return `/employee/${employee.id}?entry=${ALARM_WORKORDER_ENTRY}`;
+export function parsePortalView(value: string | null | undefined): PortalView {
+  return PORTAL_VIEW_OPTIONS.includes(value as PortalView) ? (value as PortalView) : "chat";
+}
+
+export function parsePortalAdvancedPanel(
+  value: string | null | undefined,
+): PortalAdvancedPanel | null {
+  return PORTAL_ADVANCED_PANEL_OPTIONS.includes(value as PortalAdvancedPanel)
+    ? (value as PortalAdvancedPanel)
+    : null;
+}
+
+export function isPortalRouteSection(
+  value: string | null | undefined,
+): value is PortalRouteSection {
+  return PORTAL_ROUTE_SECTION_OPTIONS.includes(value as PortalRouteSection);
+}
+
+export function buildPortalRouteSection(options: {
+  view?: PortalView;
+  panel?: PortalAdvancedPanel | null;
+}): PortalRouteSection | null {
+  if (options.panel) {
+    return options.panel;
   }
-  return `/employee/${employee.id}`;
+
+  if (options.view && options.view !== "chat") {
+    return options.view;
+  }
+
+  return null;
+}
+
+export function buildPortalSectionPath(
+  section: PortalRouteSection,
+  options: {
+    entry?: string | null;
+  } = {},
+) {
+  const params = new URLSearchParams();
+
+  if (options.entry) {
+    params.set("entry", options.entry);
+  }
+
+  const query = params.toString();
+  const pathname = `/${section}`;
+  return query ? `${pathname}?${query}` : pathname;
+}
+
+export function buildEmployeePagePath(
+  employee: any,
+  options: {
+    entry?: string | null;
+    view?: PortalView;
+    panel?: PortalAdvancedPanel | null;
+  } = {},
+) {
+  const params = new URLSearchParams();
+  const entry =
+    options.entry !== undefined
+      ? options.entry
+      : employee?.id === "fault" && employee?.urgent
+        ? ALARM_WORKORDER_ENTRY
+        : null;
+
+  if (entry) {
+    params.set("entry", entry);
+  }
+
+  const query = params.toString();
+  const section = buildPortalRouteSection(options);
+  if (section) {
+    return buildPortalSectionPath(section);
+  }
+
+  const pathname = `/employee/${employee.id}`;
+  return query ? `${pathname}?${query}` : pathname;
 }
 
 export function getSeverityClassName(severityLevel: any) {

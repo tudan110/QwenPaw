@@ -6,6 +6,10 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<AgentCenterPage />} />
+      <Route path="/dashboard" element={<DigitalEmployeePage forcedSection="dashboard" />} />
+      <Route path="/tasks" element={<DigitalEmployeePage forcedSection="tasks" />} />
+      <Route path="/model-config" element={<DigitalEmployeePage forcedSection="model-config" />} />
+      <Route path="/token-usage" element={<DigitalEmployeePage forcedSection="token-usage" />} />
       <Route path="/employee/:employeeId" element={<DigitalEmployeePage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

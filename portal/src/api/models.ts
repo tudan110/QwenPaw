@@ -108,6 +108,14 @@ export interface DiscoverModelsResponse {
   added_count: number;
 }
 
+export interface ProbeMultimodalResponse {
+  supports_image: boolean;
+  supports_video: boolean;
+  supports_multimodal: boolean;
+  image_message: string;
+  video_message: string;
+}
+
 function extractErrorMessage(text: string) {
   if (!text) {
     return "";
@@ -252,5 +260,11 @@ export const modelsApi = {
         method: "POST",
         body: body ? JSON.stringify(body) : undefined,
       },
+    ),
+
+  probeMultimodal: (providerId: string, modelId: string) =>
+    requestModels<ProbeMultimodalResponse>(
+      `/models/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}/probe-multimodal`,
+      { method: "POST" },
     ),
 };

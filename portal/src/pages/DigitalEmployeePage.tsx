@@ -27,12 +27,18 @@ import { TaskViewPanel } from "./digital-employee/taskViewPanel";
 import { TokenUsagePanel } from "./digital-employee/tokenUsagePanel";
 import {
   ALARM_WORKORDER_ENTRY,
+  buildPortalSectionPath,
   buildEmployeePagePath,
   buildSessionTitle,
   createAgentMessage,
   createAlarmWorkorderMessage,
   createUserMessage,
   createWelcomeMessage,
+  parsePortalAdvancedPanel,
+  parsePortalView,
+  type PortalAdvancedPanel,
+  type PortalRouteSection,
+  type PortalView,
 } from "./digital-employee/helpers";
 import { useAlarmWorkbench } from "./digital-employee/useAlarmWorkbench";
 import { usePortalModels } from "./digital-employee/usePortalModels";
@@ -164,19 +170,41 @@ class DigitalEmployeeErrorBoundary extends Component<
   }
 }
 
-export default function DigitalEmployeePage() {
+export default function DigitalEmployeePage({
+  forcedSection,
+}: {
+  forcedSection?: PortalRouteSection;
+}) {
   const { employeeId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const currentEmployee = useMemo(() => getEmployeeById(employeeId), [employeeId]);
-  const remoteAgentId = currentEmployee ? REMOTE_AGENT_IDS[currentEmployee.id] : null;
+  const selectedEmployee = useMemo(() => {
+    if (!employeeId) {
+      return null;
+    }
+    return digitalEmployees.find((item) => item.id === employeeId) || null;
+  }, [employeeId]);
+  const defaultEmployee = useMemo(
+    () => getEmployeeById(sidebarEmployeePriority[0]) || digitalEmployees[0],
+    [],
+  );
+  const currentEmployee = selectedEmployee || defaultEmployee;
+  const routeSection = forcedSection || null;
+  const remoteAgentId = selectedEmployee ? REMOTE_AGENT_IDS[selectedEmployee.id] : null;
   const isRemoteEmployee = Boolean(remoteAgentId);
+  const routeSearchParams = useMemo(
+    () => new URLSearchParams(location.search),
+    [location.search],
+  );
+  const currentEntry = routeSearchParams.get("entry");
+  const currentView = parsePortalView(routeSection ?? routeSearchParams.get("view"));
+  const activeAdvancedPanel = parsePortalAdvancedPanel(
+    routeSection ?? routeSearchParams.get("panel"),
+  );
   const isAlarmWorkbenchMode = Boolean(
-    currentEmployee?.id === "fault" &&
-      new URLSearchParams(location.search).get("entry") === ALARM_WORKORDER_ENTRY,
+    selectedEmployee?.id === "fault" && currentEntry === ALARM_WORKORDER_ENTRY,
   );
 
-  const [currentView, setCurrentView] = useState<"chat" | "dashboard" | "tasks">("chat");
   const [activeCapability, setActiveCapability] =
     useState<(typeof capabilityOptions)[number]["id"]>("scan");
   const [inputMessage, setInputMessage] = useState("");
@@ -187,9 +215,6 @@ export default function DigitalEmployeePage() {
   const [executionVisible, setExecutionVisible] = useState(false);
   const [executionTitle, setExecutionTitle] = useState("执行历史");
   const [executionList, setExecutionList] = useState(executionHistory);
-  const [activeAdvancedPanel, setActiveAdvancedPanel] = useState<
-    "model-config" | "token-usage" | null
-  >(null);
   const [pageTheme, setPageTheme] = useState<"light" | "dark">(loadPageTheme);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -245,7 +270,6 @@ export default function DigitalEmployeePage() {
 
   const modelAgentId = remoteAgentId || "default";
   const {
-    resolvedAgentId,
     displayProviders,
     eligibleProviders,
     activeProviderId,
@@ -258,29 +282,102 @@ export default function DigitalEmployeePage() {
     notice: modelNotice,
     fetchModelState,
     handleSelectModel,
-    handleConnectModel,
+    handleSaveProvider,
+    handleAddModel,
     handleApplyBuiltinApiKey,
     handleDeleteProvider,
     handleRemoveModel,
     handleConfigureModel,
     handleTestProvider,
     handleTestModel,
+    handleProbeMultimodal,
     handleDiscoverModels,
   } = usePortalModels({
     agentId: modelAgentId,
     enabled: Boolean(currentEmployee),
   });
 
+  const navigateToEmployeePage = (
+    employee: any,
+    options: {
+      entry?: string | null;
+      view?: PortalView;
+      panel?: PortalAdvancedPanel | null;
+      replace?: boolean;
+    } = {},
+  ) => {
+    navigate(
+      buildEmployeePagePath(employee, {
+        entry: options.entry,
+        view: options.view,
+        panel: options.panel,
+      }),
+      options.replace ? { replace: true } : undefined,
+    );
+  };
+
+  const updateCurrentEmployeeRoute = (
+    options: {
+      entry?: string | null;
+      view?: PortalView;
+      panel?: PortalAdvancedPanel | null;
+      replace?: boolean;
+    } = {},
+  ) => {
+    if (!currentEmployee) {
+      return;
+    }
+
+    navigateToEmployeePage(currentEmployee, {
+      entry: options.entry ?? currentEntry,
+      view: options.view ?? currentView,
+      panel: options.panel === undefined ? activeAdvancedPanel : options.panel,
+      replace: options.replace,
+    });
+  };
+
+  const openModelConfig = () => {
+    navigate(buildPortalSectionPath("model-config"));
+  };
+
   useEffect(() => {
     if (!currentEmployee) {
       return;
     }
 
-    setCurrentView("chat");
+    if (employeeId && !selectedEmployee) {
+      navigate("/", { replace: true });
+      return;
+    }
+
+    if (routeSearchParams.has("view") || routeSearchParams.has("panel")) {
+      navigateToEmployeePage(currentEmployee, {
+        entry: currentEntry,
+        view: currentView,
+        panel: activeAdvancedPanel,
+        replace: true,
+      });
+    }
+  }, [
+    activeAdvancedPanel,
+    currentEmployee,
+    currentEntry,
+    currentView,
+    employeeId,
+    navigate,
+    routeSearchParams,
+    routeSection,
+    selectedEmployee,
+  ]);
+
+  useEffect(() => {
+    if (!currentEmployee) {
+      return;
+    }
+
     setActiveCapability("scan");
     setInputMessage("");
     setExecutionVisible(false);
-    setActiveAdvancedPanel(null);
     resetAlarmWorkbench();
 
     if (isAlarmWorkbenchMode) {
@@ -526,9 +623,13 @@ export default function DigitalEmployeePage() {
 
   const handleOpenTaskEmployeeChat = (employeeId: string) => {
     const employee = getEmployeeById(employeeId);
-    setActiveAdvancedPanel(null);
-    setCurrentView("chat");
-    navigate(buildEmployeePagePath(employee));
+    if (!employee) {
+      return;
+    }
+    navigateToEmployeePage(employee, {
+      view: "chat",
+      panel: null,
+    });
   };
 
   if (!currentEmployee) {
@@ -563,8 +664,10 @@ export default function DigitalEmployeePage() {
             <button
               className={currentView === "dashboard" ? "view-tab active" : "view-tab"}
               onClick={() => {
-                setActiveAdvancedPanel(null);
-                setCurrentView("dashboard");
+                updateCurrentEmployeeRoute({
+                  view: "dashboard",
+                  panel: null,
+                });
               }}
             >
               <i className="fas fa-chart-pie" />
@@ -573,8 +676,10 @@ export default function DigitalEmployeePage() {
             <button
               className={currentView === "tasks" ? "view-tab active" : "view-tab"}
               onClick={() => {
-                setActiveAdvancedPanel(null);
-                setCurrentView("tasks");
+                updateCurrentEmployeeRoute({
+                  view: "tasks",
+                  panel: null,
+                });
               }}
             >
               <i className="fas fa-list-check" />
@@ -592,11 +697,13 @@ export default function DigitalEmployeePage() {
               <button
                 key={employee.id}
                 className={
-                  employee.id === currentEmployee.id ? "agent-card active" : "agent-card"
+                  employee.id === selectedEmployee?.id ? "agent-card active" : "agent-card"
                 }
                 onClick={() => {
-                  setActiveAdvancedPanel(null);
-                  navigate(buildEmployeePagePath(employee));
+                  navigateToEmployeePage(employee, {
+                    view: "chat",
+                    panel: null,
+                  });
                 }}
               >
                 <span
@@ -643,8 +750,12 @@ export default function DigitalEmployeePage() {
             activeProviderName={activeProviderName}
             isActive={isModelConfigMode}
             isTokenUsageActive={isTokenUsageMode}
-            onOpenConfig={() => setActiveAdvancedPanel("model-config")}
-            onOpenTokenUsage={() => setActiveAdvancedPanel("token-usage")}
+            onOpenConfig={openModelConfig}
+            onOpenTokenUsage={() =>
+              updateCurrentEmployeeRoute({
+                panel: "token-usage",
+              })
+            }
           />
         </div>
 
@@ -671,34 +782,29 @@ export default function DigitalEmployeePage() {
           {isModelConfigMode ? (
               <ModelConfigModal
                 open
-                resolvedAgentId={resolvedAgentId}
-                resolvedAgentLabel={currentEmployee.name}
-                activeProviderName={activeProviderName}
-                activeModelLabel={activeModelLabel}
                 activeProviderId={activeProviderId}
-              activeModelId={activeModelId}
-              displayProviders={displayProviders}
-              eligibleProviders={eligibleProviders}
-              loading={modelsLoading}
+                displayProviders={displayProviders}
+                loading={modelsLoading}
                 switching={modelsSwitching}
                 submitting={modelsSubmitting}
                 disabled={isCreatingChat || isStreaming}
                 notice={modelNotice}
                 onRefresh={() => void fetchModelState()}
-                onSelectModel={handleSelectModel}
                 onApplyBuiltinApiKey={handleApplyBuiltinApiKey}
-                onSubmitConnect={handleConnectModel}
-              onDeleteProvider={handleDeleteProvider}
-              onRemoveModel={handleRemoveModel}
-              onConfigureModel={handleConfigureModel}
-              onTestProvider={handleTestProvider}
+                onSubmitProvider={handleSaveProvider}
+                onSubmitModel={handleAddModel}
+                onDeleteProvider={handleDeleteProvider}
+                onRemoveModel={handleRemoveModel}
+                onConfigureModel={handleConfigureModel}
+                onTestProvider={handleTestProvider}
                 onTestModel={handleTestModel}
+                onProbeMultimodal={handleProbeMultimodal}
                 onDiscoverModels={handleDiscoverModels}
               />
           ) : isTokenUsageMode ? (
             <TokenUsagePanel
               pageTheme={pageTheme}
-              currentEmployeeName={currentEmployee.name}
+              currentEmployeeName={selectedEmployee ? currentEmployee.name : "全局"}
             />
           ) : (
             <>
@@ -930,11 +1036,11 @@ export default function DigitalEmployeePage() {
                           eligibleProviders={eligibleProviders}
                           loading={modelsLoading}
                           switching={modelsSwitching}
-                          disabled={isCreatingChat || isStreaming}
-                          notice={modelNotice}
-                          onSelectModel={handleSelectModel}
-                          onOpenConfig={() => setActiveAdvancedPanel("model-config")}
-                        />
+                           disabled={isCreatingChat || isStreaming}
+                           notice={modelNotice}
+                           onSelectModel={handleSelectModel}
+                           onOpenConfig={openModelConfig}
+                         />
                       ) : null}
                       <button className="history-btn" onClick={() => void handleOpenHistory()}>
                         <i className="fas fa-history" /> 历史信息
@@ -953,11 +1059,11 @@ export default function DigitalEmployeePage() {
                           eligibleProviders={eligibleProviders}
                           loading={modelsLoading}
                           switching={modelsSwitching}
-                          disabled={isCreatingChat || isStreaming}
-                          notice={modelNotice}
-                          onSelectModel={handleSelectModel}
-                          onOpenConfig={() => setActiveAdvancedPanel("model-config")}
-                        />
+                           disabled={isCreatingChat || isStreaming}
+                           notice={modelNotice}
+                           onSelectModel={handleSelectModel}
+                           onOpenConfig={openModelConfig}
+                         />
                       ) : null}
                       <button className="history-btn" onClick={() => void handleOpenHistory()}>
                         <i className="fas fa-history" /> 历史信息

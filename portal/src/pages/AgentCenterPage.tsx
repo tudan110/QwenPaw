@@ -7,6 +7,7 @@ import {
   portalAgents,
   portalStats,
 } from "../data/portalData";
+import { buildEmployeePagePath } from "./digital-employee/helpers";
 
 const categories = [
   { id: "all", label: "全部" },
@@ -144,16 +145,12 @@ export default function AgentCenterPage() {
         ) : (
           <div className="agent-grid">
             {filteredAgents.map((agent) => (
-              <Link
-                key={agent.id}
-                to={
-                  agent.employeeId === "fault" && agent.isUrgent
-                    ? `/employee/${agent.employeeId}?entry=alarm-workorders`
-                    : `/employee/${agent.employeeId}`
-                }
-                className={
-                  agent.isUrgent
-                    ? "agent-card-link urgent-agent-link"
+                <Link
+                  key={agent.id}
+                  to={buildEmployeePagePath(agent.employee)}
+                  className={
+                    agent.isUrgent
+                      ? "agent-card-link urgent-agent-link"
                     : "agent-card-link"
                 }
               >
