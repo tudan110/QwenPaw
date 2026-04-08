@@ -7,12 +7,11 @@ import {
 } from "../../api/models";
 
 const DEFAULT_MODEL_AGENT_ID = "default";
-export const DEFAULT_PROVIDER_SLOT_ID = "default-provider-slot";
-const DEFAULT_PROVIDER_SLOT_NAME = "test1";
-const DEFAULT_PROVIDER_MODELS: ModelInfo[] = [
+export const CT_CNOS_PROVIDER_ID = "ct-cnos";
+export const CT_CNOS_SIMULATED_MODELS: ModelInfo[] = [
+  { id: "qwen3.5", name: "qwen3.5" },
   { id: "qiming1.0", name: "启明1.0" },
   { id: "deepseek3.2", name: "deepseek3.2" },
-  { id: "qwen3.5", name: "qwen3.5" },
 ];
 
 export type ModelNoticeTone = "success" | "error" | "info";
@@ -71,19 +70,6 @@ export interface AddProviderModelPayload {
   generateConfigText?: string;
 }
 
-export interface BuiltinApiKeyApplyPayload {
-  quotaServiceName: string;
-  appIds: string[];
-  expirePreset: "30d" | "90d" | "180d" | "forever";
-}
-
-export interface BuiltinApiKeyApplyResult {
-  apiKey: string;
-  expireAt: string;
-  serviceName: string;
-  appNames: string[];
-}
-
 function flattenModels(provider?: ProviderInfo) {
   const merged = [...(provider?.models || []), ...(provider?.extra_models || [])];
   const deduped: ModelInfo[] = [];
@@ -103,52 +89,27 @@ function hasProviderModels(provider?: ProviderInfo) {
   return flattenModels(provider).length > 0;
 }
 
+function getPortalProviderModels(provider?: ProviderInfo) {
+  if (!provider) {
+    return [];
+  }
+  if (provider.id === CT_CNOS_PROVIDER_ID && !provider.api_key) {
+    return [];
+  }
+  return flattenModels(provider);
+}
+
 function buildDisplayProviders(providerList: ProviderInfo[]) {
-  const source = providerList.map((provider, index) => ({
-    ...provider,
-    __order: index,
-  }));
-
-  const slotExisting = source.find((provider) => provider.id === DEFAULT_PROVIDER_SLOT_ID);
-  const slotModels = [
-    ...DEFAULT_PROVIDER_MODELS,
-    ...flattenModels(slotExisting),
-  ].reduce<ModelInfo[]>((acc, model) => {
-    if (!acc.some((item) => item.id === model.id)) {
-      acc.push(model);
-    }
-    return acc;
-  }, []);
-
-  const defaultProvider: ProviderInfo & { __order: number } = {
-    ...(slotExisting || {}),
-    id: DEFAULT_PROVIDER_SLOT_ID,
-    name: slotExisting?.name || DEFAULT_PROVIDER_SLOT_NAME,
-    is_custom: true,
-    is_local: false,
-    require_api_key: true,
-    base_url: slotExisting?.base_url || "",
-    chat_model: slotExisting?.chat_model || "OpenAIChatModel",
-    support_model_discovery: false,
-    models: slotModels,
-    extra_models: [],
-    __order: -1,
-  };
-
-  return source
-    .filter((provider) => provider.id !== DEFAULT_PROVIDER_SLOT_ID)
-    .concat(defaultProvider)
+  return providerList
+    .map((provider, index) => ({
+      ...provider,
+      __order: index,
+    }))
     .sort((left, right) => {
-      if (
-        left.id === DEFAULT_PROVIDER_SLOT_ID
-        && right.id !== DEFAULT_PROVIDER_SLOT_ID
-      ) {
+      if (left.id === CT_CNOS_PROVIDER_ID && right.id !== CT_CNOS_PROVIDER_ID) {
         return -1;
       }
-      if (
-        right.id === DEFAULT_PROVIDER_SLOT_ID
-        && left.id !== DEFAULT_PROVIDER_SLOT_ID
-      ) {
+      if (right.id === CT_CNOS_PROVIDER_ID && left.id !== CT_CNOS_PROVIDER_ID) {
         return 1;
       }
       return left.__order - right.__order;
@@ -176,7 +137,7 @@ function isProviderConfigured(provider: ProviderInfo) {
 }
 
 function isProviderAvailable(provider: ProviderInfo) {
-  return hasProviderModels(provider) && isProviderConfigured(provider);
+  return getPortalProviderModels(provider).length > 0 && isProviderConfigured(provider);
 }
 
 function slugifyProviderId(value: string) {
@@ -203,15 +164,6 @@ function buildProviderDescription(provider: ProviderInfo) {
     return "本地模型服务";
   }
   return "系统内置模型源";
-}
-
-function generateBuiltinApiKey() {
-  const charset = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let value = "";
-  for (let i = 0; i < 32; i += 1) {
-    value += charset[Math.floor(Math.random() * charset.length)];
-  }
-  return value;
 }
 
 function parseGenerateConfig(text?: string) {
@@ -310,6 +262,31 @@ export function usePortalModels({
     void fetchModelState();
   }, [fetchModelState]);
 
+  const syncCtCnosModels = useCallback(async (
+    providerId: string,
+    currentModels: ModelInfo[],
+    shouldHaveModels: boolean,
+  ) => {
+    const targetModels = shouldHaveModels ? CT_CNOS_SIMULATED_MODELS : [];
+    const targetIds = new Set(targetModels.map((model) => model.id));
+    const currentIds = new Set(currentModels.map((model) => model.id));
+
+    for (const model of currentModels) {
+      if (!targetIds.has(model.id)) {
+        await modelsApi.removeModel(providerId, model.id);
+      }
+    }
+
+    for (const model of targetModels) {
+      if (!currentIds.has(model.id)) {
+        await modelsApi.addModel(providerId, {
+          id: model.id,
+          name: model.name || model.id,
+        });
+      }
+    }
+  }, []);
+
   const eligibleProviders = useMemo<EligibleProvider[]>(
     () =>
       providers
@@ -319,7 +296,7 @@ export function usePortalModels({
           name: provider.name,
           isCustom: Boolean(provider.is_custom),
           description: buildProviderDescription(provider),
-          models: flattenModels(provider).map((model) => ({
+          models: getPortalProviderModels(provider).map((model) => ({
             id: model.id,
             name: model.name || model.id,
           })),
@@ -344,7 +321,7 @@ export function usePortalModels({
         configured: isProviderConfigured(provider),
         available: isProviderAvailable(provider),
         generateKwargs: provider.generate_kwargs || {},
-        models: flattenModels(provider).map((model) => ({
+        models: getPortalProviderModels(provider).map((model) => ({
           id: model.id,
           name: model.name || model.id,
           supportsMultimodal:
@@ -373,10 +350,10 @@ export function usePortalModels({
       return "选择模型";
     }
 
-    const provider = eligibleProviders.find((item) => item.id === activeProviderId);
-    const model = provider?.models.find((item) => item.id === activeModelId);
-    return model?.name || activeModelId;
-  }, [activeModelId, activeProviderId, eligibleProviders]);
+    const provider = providers.find((item) => item.id === activeProviderId);
+    const model = getPortalProviderModels(provider).find((item) => item.id === activeModelId);
+    return model?.name || "选择模型";
+  }, [activeModelId, activeProviderId, providers]);
 
   const activeProviderName = useMemo(() => {
     const provider = providers.find((item) => item.id === activeProviderId);
@@ -439,7 +416,6 @@ export function usePortalModels({
     const apiKey = payload.apiKey.trim();
     const protocol =
       payload.protocol || existingProvider?.chat_model || "OpenAIChatModel";
-    const isDefaultSlot = providerId === DEFAULT_PROVIDER_SLOT_ID;
     const parsedGenerateConfig = parseGenerateConfig(payload.generateConfigText);
 
     if (!providerName) {
@@ -465,17 +441,24 @@ export function usePortalModels({
           name: providerName,
           default_base_url: baseUrl,
           chat_model: protocol,
-          models: isDefaultSlot ? DEFAULT_PROVIDER_MODELS : undefined,
         });
       }
 
-      await modelsApi.configureProvider(providerId, {
+      const configuredProvider = await modelsApi.configureProvider(providerId, {
         name: providerName || undefined,
         api_key: apiKey || undefined,
         base_url: baseUrl || undefined,
         chat_model: protocol,
         generate_kwargs: parsedGenerateConfig.value,
       });
+
+      if (providerId === CT_CNOS_PROVIDER_ID) {
+        await syncCtCnosModels(
+          providerId,
+          flattenModels(configuredProvider || existingProvider),
+          Boolean(configuredProvider?.api_key || apiKey || existingProvider?.api_key),
+        );
+      }
 
       await fetchModelState();
       pushNotice(
@@ -492,7 +475,7 @@ export function usePortalModels({
     } finally {
       setSubmitting(false);
     }
-  }, [fetchModelState, pushNotice]);
+  }, [fetchModelState, pushNotice, syncCtCnosModels]);
 
   const handleAddModel = useCallback(async (payload: AddProviderModelPayload) => {
     const providerId = payload.providerId.trim();
@@ -574,9 +557,16 @@ export function usePortalModels({
 
     setSubmitting(true);
     try {
-      await modelsApi.configureProvider(providerId, {
+      const configuredProvider = await modelsApi.configureProvider(providerId, {
         api_key: "",
       });
+      if (providerId === CT_CNOS_PROVIDER_ID) {
+        await syncCtCnosModels(
+          providerId,
+          flattenModels(configuredProvider || provider),
+          false,
+        );
+      }
       await fetchModelState();
       pushNotice("success", `${providerName} 的 API 密钥授权已撤销`);
       return true;
@@ -586,49 +576,54 @@ export function usePortalModels({
     } finally {
       setSubmitting(false);
     }
-  }, [fetchModelState, pushNotice]);
+  }, [fetchModelState, pushNotice, syncCtCnosModels]);
 
   const handleApplyBuiltinApiKey = useCallback(async (
-    payload: BuiltinApiKeyApplyPayload,
+    providerId: string,
+    apiKey: string,
   ) => {
-    if (!payload.quotaServiceName.trim()) {
-      pushNotice("error", "请填写名称");
-      return null;
+    const normalizedProviderId = providerId.trim();
+    const normalizedApiKey = apiKey.trim();
+
+    if (!normalizedProviderId) {
+      pushNotice("error", "未找到可应用的模型提供商");
+      return false;
     }
-    if (!payload.appIds.length) {
-      pushNotice("error", "请至少选择一个模型应用");
-      return null;
+    if (!normalizedApiKey) {
+      pushNotice("error", "API Key 不能为空");
+      return false;
+    }
+
+    const existingProvider = providersRef.current.find((provider) => provider.id === normalizedProviderId);
+    if (!existingProvider) {
+      pushNotice("error", "当前提供商不存在");
+      return false;
     }
 
     setSubmitting(true);
     try {
-      const now = Date.now();
-      const expireAtMap: Record<BuiltinApiKeyApplyPayload["expirePreset"], string> = {
-        "30d": new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        "90d": new Date(now + 90 * 24 * 60 * 60 * 1000).toISOString(),
-        "180d": new Date(now + 180 * 24 * 60 * 60 * 1000).toISOString(),
-        forever: "2099-12-31T23:59:59Z",
-      };
-      const modelNameMap: Record<string, string> = {
-        "qiming1.0": "启明1.0",
-        "deepseek3.2": "DeepSeek3.2",
-        "qwen3.5": "Qwen3.5",
-      };
+      const configuredProvider = await modelsApi.configureProvider(normalizedProviderId, {
+        api_key: normalizedApiKey,
+      });
 
-      pushNotice("success", "API Key 已生成");
-      return {
-        apiKey: generateBuiltinApiKey(),
-        expireAt: expireAtMap[payload.expirePreset],
-        serviceName: payload.quotaServiceName.trim(),
-        appNames: payload.appIds.map((id) => modelNameMap[id] || id),
-      } satisfies BuiltinApiKeyApplyResult;
+      if (normalizedProviderId === CT_CNOS_PROVIDER_ID) {
+        await syncCtCnosModels(
+          normalizedProviderId,
+          flattenModels(configuredProvider || existingProvider),
+          true,
+        );
+      }
+
+      await fetchModelState();
+      pushNotice("success", `${existingProvider.name || normalizedProviderId} API Key 已应用，模型已自动配置`);
+      return true;
     } catch (error: any) {
-      pushNotice("error", error?.message || "获取 API Key 失败");
-      return null;
+      pushNotice("error", error?.message || "应用 API Key 失败");
+      return false;
     } finally {
       setSubmitting(false);
     }
-  }, [pushNotice]);
+  }, [fetchModelState, pushNotice, syncCtCnosModels]);
 
   const handleRemoveModel = useCallback(async (
     providerId: string,

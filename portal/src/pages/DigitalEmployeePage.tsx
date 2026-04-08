@@ -284,9 +284,9 @@ export default function DigitalEmployeePage({
     handleSelectModel,
     handleSaveProvider,
     handleAddModel,
-    handleApplyBuiltinApiKey,
     handleDeleteProvider,
     handleRevokeProviderAuth,
+    handleApplyBuiltinApiKey,
     handleRemoveModel,
     handleConfigureModel,
     handleTestProvider,
@@ -791,11 +791,11 @@ export default function DigitalEmployeePage({
                 disabled={isCreatingChat || isStreaming}
                 notice={modelNotice}
                 onRefresh={() => void fetchModelState()}
-                onApplyBuiltinApiKey={handleApplyBuiltinApiKey}
                 onSubmitProvider={handleSaveProvider}
                 onSubmitModel={handleAddModel}
                 onDeleteProvider={handleDeleteProvider}
                 onRevokeProviderAuth={handleRevokeProviderAuth}
+                onApplyBuiltinApiKey={handleApplyBuiltinApiKey}
                 onRemoveModel={handleRemoveModel}
                 onConfigureModel={handleConfigureModel}
                 onTestProvider={handleTestProvider}
