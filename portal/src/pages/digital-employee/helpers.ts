@@ -135,6 +135,29 @@ export function buildPortalSectionPath(
   return query ? `${pathname}?${query}` : pathname;
 }
 
+export function buildPortalHomePath(
+  options: {
+    entry?: string | null;
+    view?: PortalView;
+    panel?: PortalAdvancedPanel | null;
+  } = {},
+) {
+  const section = buildPortalRouteSection(options);
+  if (section) {
+    return buildPortalSectionPath(section, {
+      entry: options.entry,
+    });
+  }
+
+  const params = new URLSearchParams();
+  if (options.entry) {
+    params.set("entry", options.entry);
+  }
+
+  const query = params.toString();
+  return query ? `/?${query}` : "/";
+}
+
 export function buildEmployeePagePath(
   employee: any,
   options: {
@@ -621,6 +644,14 @@ export function mergeProcessBlocks(existingBlocks: any[] = [], incomingBlocks: a
 }
 
 function mergeResponseTraceBlock(existingBlock: any, incomingBlock: any) {
+  if (incomingBlock.replaceContent) {
+    return {
+      ...existingBlock,
+      ...incomingBlock,
+      content: incomingBlock.content || "",
+    };
+  }
+
   return {
     ...existingBlock,
     content: mergeStreamingText(existingBlock.content || "", incomingBlock.content || ""),
@@ -828,7 +859,11 @@ export function normalizeMarkdownDisplayContent(
   content: string,
   { isStreaming = false }: { isStreaming?: boolean } = {},
 ) {
-  let normalized = unwrapOuterMarkdownFence(String(content || ""))
+  let normalized = repairMarkdownDisplayContent(
+    unwrapOuterMarkdownFence(String(content || "")),
+  );
+
+  normalized = normalizeOperationalMarkdownSections(normalized)
     .replace(/```portal-action\s*[\s\S]*?```/gi, "")
     .replace(/<br\s*\/?>\s*<br\s*\/?>/gi, "\n\n")
     .replace(/<br\s*\/?>/gi, "  \n")
@@ -846,8 +881,7 @@ export function normalizeMarkdownDisplayContent(
       .replace(/```echarts[\s\S]*$/i, "\n\n> 图表加载中，正在生成可视化配置...\n\n")
       .replace(/```mermaid[\s\S]*$/i, "\n\n> 拓扑图加载中，正在生成可视化配置...\n\n")
       .replace(/```portal-visualization[\s\S]*$/i, "\n\n> 图表加载中，正在生成可视化配置...\n\n")
-      .replace(/```json[\s\S]*$/i, "\n\n> 图表加载中，正在生成可视化配置...\n\n")
-      .replace(/`{1,3}/g, "");
+      .replace(/```json[\s\S]*$/i, "\n\n> 图表加载中，正在生成可视化配置...\n\n");
   } else {
     normalized = normalized.replace(/```(?:echarts|mermaid|portal-visualization)\s*[\s\S]*?```/gi, "");
     normalized = normalized.replace(/```json\s*([\s\S]*?)```/gi, (fullMatch, raw) => {
@@ -856,6 +890,134 @@ export function normalizeMarkdownDisplayContent(
   }
 
   return normalized;
+}
+
+function repairMarkdownDisplayContent(content: string) {
+  const normalized = String(content || "").replace(/\r\n?/g, "\n");
+  const fencedBlocks: string[] = [];
+  const placeholderPrefix = "__PORTAL_FENCE_BLOCK__";
+
+  const protectedContent = normalized.replace(/```[\s\S]*?```/g, (block) => {
+    const marker = `${placeholderPrefix}${fencedBlocks.length}__`;
+    fencedBlocks.push(block);
+    return marker;
+  });
+
+  const repaired = protectedContent
+    .replace(/([^\n])\s*(#{1,6})([^\s#])/g, "$1\n\n$2 $3")
+    .replace(/^(#{1,6})([^\s#])/gm, "$1 $2")
+    .replace(/([^\n])\s*((?:[-*+]\s+|\d+\.\s+|>\s+))/g, "$1\n$2")
+    .replace(/([^\n])(\n?)(\|[^\n]+\|)/g, (fullMatch, before, maybeBreak, tableRow) => {
+      if (before === "\n") {
+        return fullMatch;
+      }
+      return `${before}\n${tableRow}`;
+    })
+    .replace(/([^\n])(\n?)(---|\*\*\*|___)(\n?)(#{1,6}\s)/g, "$1\n\n$3\n\n$5")
+    .replace(/\n{3,}/g, "\n\n");
+
+  return repaired.replace(new RegExp(`${placeholderPrefix}(\\d+)__`, "g"), (_, index) =>
+    fencedBlocks[Number(index)] || "",
+  );
+}
+
+function normalizeOperationalMarkdownSections(content: string) {
+  let normalized = String(content || "");
+  normalized = normalizeEvidencePipeTable(normalized);
+  return normalized;
+}
+
+function normalizeEvidencePipeTable(content: string) {
+  const lines = String(content || "").split("\n");
+  const result: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    result.push(line);
+
+    if (!/^\s*[*#>\-0-9.\s]*关键证据\s*$/u.test(line.trim())) {
+      continue;
+    }
+
+    const sectionLines: string[] = [];
+    let cursor = index + 1;
+    while (cursor < lines.length) {
+      const candidate = lines[cursor];
+      const trimmed = candidate.trim();
+      if (!trimmed) {
+        sectionLines.push(candidate);
+        cursor += 1;
+        continue;
+      }
+      if (/^\s*[*#>\-0-9.\s]*[\u{1F300}-\u{1FAFF}\u2600-\u27BF]?\s*[^\s].*$/u.test(trimmed) && !trimmed.includes("|") && sectionLines.length) {
+        break;
+      }
+      if (/^\s*[*#>\-0-9.\s]*故障链路\s*$/u.test(trimmed) || /^\s*[*#>\-0-9.\s]*下一步\s*$/u.test(trimmed)) {
+        break;
+      }
+      sectionLines.push(candidate);
+      cursor += 1;
+    }
+
+    const flattened = sectionLines
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join(" ");
+    const tableMarkdown = buildPipeEvidenceTable(flattened);
+    if (!tableMarkdown) {
+      continue;
+    }
+
+    result.push("");
+    result.push(tableMarkdown);
+    result.push("");
+    index = cursor - 1;
+  }
+
+  return result.join("\n");
+}
+
+function buildPipeEvidenceTable(content: string) {
+  const raw = String(content || "").trim();
+  if (!raw || !raw.includes("|")) {
+    return "";
+  }
+
+  const tokens = raw
+    .split("|")
+    .map((item) => item.replace(/\s+/g, " ").trim())
+    .filter((item) => item && !/^-+$/.test(item));
+
+  if (tokens.length < 6) {
+    return "";
+  }
+
+  const headerCount =
+    tokens[0] === "指标" && tokens[1] === "观测值" && tokens[2] === "状态"
+      ? 3
+      : 0;
+  if (!headerCount) {
+    return "";
+  }
+
+  const rows = [];
+  for (let index = headerCount; index < tokens.length; index += 3) {
+    const row = tokens.slice(index, index + 3);
+    if (row.length < 3) {
+      break;
+    }
+    rows.push(`| ${row[0]} | ${row[1]} | ${row[2]} |`);
+  }
+
+  if (!rows.length) {
+    return "";
+  }
+
+  return [
+    "| 指标 | 观测值 | 状态 |",
+    "| --- | --- | --- |",
+    ...rows,
+  ].join("\n");
 }
 
 export function extractVisualBlocks(content: string): VisualBlock[] {

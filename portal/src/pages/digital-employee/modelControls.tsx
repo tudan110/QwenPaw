@@ -210,8 +210,12 @@ export function AdvancedModelEntry({
             </span>
           </div>
           <div className="sidebar-advanced-item-name">模型配置</div>
-          <div className="sidebar-advanced-item-desc">{activeProviderName}</div>
-          <div className="sidebar-advanced-item-meta">{activeModelLabel}</div>
+          <div className="sidebar-advanced-item-desc" title={activeProviderName}>
+            {activeProviderName}
+          </div>
+          <div className="sidebar-advanced-item-meta" title={activeModelLabel}>
+            {activeModelLabel}
+          </div>
         </button>
         <button
           className={isTokenUsageActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}

@@ -5,7 +5,8 @@ import DigitalEmployeePage from "./pages/DigitalEmployeePage";
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<AgentCenterPage />} />
+      <Route path="/" element={<DigitalEmployeePage />} />
+      <Route path="/agent-center" element={<AgentCenterPage />} />
       <Route path="/dashboard" element={<DigitalEmployeePage forcedSection="dashboard" />} />
       <Route path="/tasks" element={<DigitalEmployeePage forcedSection="tasks" />} />
       <Route path="/model-config" element={<DigitalEmployeePage forcedSection="model-config" />} />

@@ -403,9 +403,13 @@ export function useRemoteChatSession({
       const assistantState = ensureAssistantMessage(event.id, employee);
       const finalText = extractCopawMessageText(event);
       if (event.status === "completed" && finalText) {
+        const responseBlock = buildResponseBlock(event, finalText);
         appendProcessBlock(
           assistantState.frontendId,
-          buildResponseBlock(event, finalText),
+          {
+            ...responseBlock,
+            replaceContent: true,
+          },
         );
       }
       return;
@@ -550,9 +554,7 @@ export function useRemoteChatSession({
     setCurrentSessionId("");
     setCurrentChatId("");
     setIsCreatingChat(false);
-    if (initialMessages.length) {
-      setMessages(initialMessages);
-    }
+    setMessages(initialMessages);
   }, [setMessages, stopActiveStream]);
 
   return {
