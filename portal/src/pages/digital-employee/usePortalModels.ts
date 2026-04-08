@@ -42,6 +42,7 @@ export interface DisplayProvider {
   requireApiKey: boolean;
   supportModelDiscovery: boolean;
   configured: boolean;
+  available: boolean;
   generateKwargs: Record<string, unknown>;
   models: Array<{
     id: string;
@@ -98,6 +99,10 @@ function flattenModels(provider?: ProviderInfo) {
   return deduped;
 }
 
+function hasProviderModels(provider?: ProviderInfo) {
+  return flattenModels(provider).length > 0;
+}
+
 function buildDisplayProviders(providerList: ProviderInfo[]) {
   const source = providerList.map((provider, index) => ({
     ...provider,
@@ -152,20 +157,26 @@ function buildDisplayProviders(providerList: ProviderInfo[]) {
 }
 
 function isProviderConfigured(provider: ProviderInfo) {
-  const hasModels = flattenModels(provider).length > 0;
-  if (!hasModels) {
-    return false;
-  }
-  if (provider.require_api_key === false) {
-    return Boolean(provider.base_url);
+  if (provider.is_local) {
+    return true;
   }
   if (provider.is_custom) {
-    return Boolean(provider.base_url);
-  }
-  if (provider.require_api_key ?? true) {
+    if (!provider.base_url) {
+      return false;
+    }
+    if (provider.require_api_key === false) {
+      return true;
+    }
     return Boolean(provider.api_key);
   }
-  return true;
+  if (provider.require_api_key === false) {
+    return true;
+  }
+  return Boolean(provider.api_key);
+}
+
+function isProviderAvailable(provider: ProviderInfo) {
+  return hasProviderModels(provider) && isProviderConfigured(provider);
 }
 
 function slugifyProviderId(value: string) {
@@ -302,7 +313,7 @@ export function usePortalModels({
   const eligibleProviders = useMemo<EligibleProvider[]>(
     () =>
       providers
-        .filter((provider) => isProviderConfigured(provider))
+        .filter((provider) => isProviderAvailable(provider))
         .map((provider) => ({
           id: provider.id,
           name: provider.name,
@@ -331,6 +342,7 @@ export function usePortalModels({
         requireApiKey: provider.require_api_key ?? true,
         supportModelDiscovery: Boolean(provider.support_model_discovery),
         configured: isProviderConfigured(provider),
+        available: isProviderAvailable(provider),
         generateKwargs: provider.generate_kwargs || {},
         models: flattenModels(provider).map((model) => ({
           id: model.id,
@@ -546,6 +558,30 @@ export function usePortalModels({
       return true;
     } catch (error: any) {
       pushNotice("error", error?.message || "删除提供商失败");
+      return false;
+    } finally {
+      setSubmitting(false);
+    }
+  }, [fetchModelState, pushNotice]);
+
+  const handleRevokeProviderAuth = useCallback(async (providerId: string) => {
+    if (!providerId) {
+      return false;
+    }
+
+    const provider = providersRef.current.find((item) => item.id === providerId);
+    const providerName = provider?.name || providerId;
+
+    setSubmitting(true);
+    try {
+      await modelsApi.configureProvider(providerId, {
+        api_key: "",
+      });
+      await fetchModelState();
+      pushNotice("success", `${providerName} 的 API 密钥授权已撤销`);
+      return true;
+    } catch (error: any) {
+      pushNotice("error", error?.message || "撤销授权失败");
       return false;
     } finally {
       setSubmitting(false);
@@ -822,6 +858,7 @@ export function usePortalModels({
     handleSaveProvider,
     handleAddModel,
     handleDeleteProvider,
+    handleRevokeProviderAuth,
     handleApplyBuiltinApiKey,
     handleRemoveModel,
     handleConfigureModel,

@@ -286,6 +286,7 @@ export default function DigitalEmployeePage({
     handleAddModel,
     handleApplyBuiltinApiKey,
     handleDeleteProvider,
+    handleRevokeProviderAuth,
     handleRemoveModel,
     handleConfigureModel,
     handleTestProvider,
@@ -794,6 +795,7 @@ export default function DigitalEmployeePage({
                 onSubmitProvider={handleSaveProvider}
                 onSubmitModel={handleAddModel}
                 onDeleteProvider={handleDeleteProvider}
+                onRevokeProviderAuth={handleRevokeProviderAuth}
                 onRemoveModel={handleRemoveModel}
                 onConfigureModel={handleConfigureModel}
                 onTestProvider={handleTestProvider}

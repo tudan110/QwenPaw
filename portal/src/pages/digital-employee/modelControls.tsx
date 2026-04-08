@@ -530,6 +530,8 @@ function DeleteConfirmDialog({
   open,
   title,
   message,
+  confirmLabel,
+  confirmIconClass,
   submitting,
   onClose,
   onConfirm,
@@ -537,6 +539,8 @@ function DeleteConfirmDialog({
   open: boolean;
   title: string;
   message: string;
+  confirmLabel?: string;
+  confirmIconClass?: string;
   submitting: boolean;
   onClose: () => void;
   onConfirm: () => void;
@@ -576,8 +580,8 @@ function DeleteConfirmDialog({
               disabled={submitting}
               onClick={onConfirm}
             >
-              <i className={`fas ${submitting ? "fa-spinner fa-spin" : "fa-trash-can"}`} />
-              确认删除
+              <i className={`fas ${submitting ? "fa-spinner fa-spin" : confirmIconClass || "fa-trash-can"}`} />
+              {confirmLabel || "确认删除"}
             </button>
           </div>
         </div>
@@ -617,13 +621,16 @@ function ProviderLibrary({
           const providerVisual = getProviderVisual(provider.id, provider.name);
           const isActiveProvider = provider.id === activeProviderId;
           const isRecommended = provider.id === DEFAULT_PROVIDER_SLOT_ID;
-          const badgeText = isActiveProvider
-            ? "当前使用"
+          const statusClass = provider.available
+            ? "available"
             : provider.configured
-              ? provider.models.length
-                ? "已接入"
-                : "已配置"
-              : "待配置";
+              ? "partial"
+              : "pending";
+          const badgeText = provider.available
+            ? "可用（有模型）"
+            : provider.configured
+              ? "未就绪（无模型）"
+              : "未就绪（未配置）";
 
           return (
             <div
@@ -631,7 +638,7 @@ function ProviderLibrary({
               className={[
                 "portal-model-card",
                 "provider-card",
-                provider.configured ? "connected" : "pending",
+                statusClass,
                 isActiveProvider ? "active" : "",
                 isRecommended ? "recommended" : "",
               ].filter(Boolean).join(" ")}
@@ -642,7 +649,7 @@ function ProviderLibrary({
                     {providerVisual.icon}
                   </span>
                 </div>
-                <span className={`portal-provider-badge ${provider.configured ? "connected" : "pending"}`}>
+                <span className={`portal-provider-badge ${statusClass}`}>
                   {badgeText}
                 </span>
               </div>
@@ -1113,9 +1120,11 @@ function ProviderConfigDialog({
   disabled,
   mode,
   notice,
+  showRevokeAuthorization,
   onClose,
   onSubmit,
   onTestProvider,
+  onRevokeAuthorization,
   onChange,
 }: {
   open: boolean;
@@ -1124,9 +1133,11 @@ function ProviderConfigDialog({
   disabled?: boolean;
   mode: "create" | "edit";
   notice: ModelNoticeState | null;
+  showRevokeAuthorization?: boolean;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onTestProvider: () => void;
+  onRevokeAuthorization: () => void;
   onChange: (updater: (prev: ProviderConfigFormState) => ProviderConfigFormState) => void;
 }) {
   if (!open) {
@@ -1257,27 +1268,41 @@ function ProviderConfigDialog({
                 : "设置时需要填写 Base URL；API Key 留空则保持当前密钥。模型请到“模型管理”里单独添加。"}
             </div>
 
-            <div className="portal-model-form-actions">
-              <button
-                type="button"
-                className="portal-model-btn secondary"
-                disabled={submitting || disabled}
-                onClick={onTestProvider}
-              >
-                <i className="fas fa-plug-circle-check" /> 测试连接
-              </button>
-              <button
-                type="submit"
-                className="portal-model-btn success"
-                disabled={submitting || disabled}
-              >
-                <i
-                  className={`fas ${
-                    submitting ? "fa-spinner fa-spin" : "fa-plug-circle-plus"
-                  }`}
-                />
-                {submitting ? "保存中..." : mode === "create" ? "创建提供商" : "保存设置"}
-              </button>
+            <div className="portal-provider-config-footer">
+              <div className="portal-provider-config-footer-side">
+                {showRevokeAuthorization ? (
+                  <button
+                    type="button"
+                    className="portal-model-btn secondary danger"
+                    disabled={submitting || disabled}
+                    onClick={onRevokeAuthorization}
+                  >
+                    <i className="fas fa-link-slash" /> 撤销授权
+                  </button>
+                ) : null}
+              </div>
+              <div className="portal-provider-config-footer-side portal-model-form-actions">
+                <button
+                  type="button"
+                  className="portal-model-btn secondary"
+                  disabled={submitting || disabled}
+                  onClick={onTestProvider}
+                >
+                  <i className="fas fa-plug-circle-check" /> 测试连接
+                </button>
+                <button
+                  type="submit"
+                  className="portal-model-btn success"
+                  disabled={submitting || disabled}
+                >
+                  <i
+                    className={`fas ${
+                      submitting ? "fa-spinner fa-spin" : "fa-plug-circle-plus"
+                    }`}
+                  />
+                  {submitting ? "保存中..." : mode === "create" ? "创建提供商" : "保存设置"}
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -1418,6 +1443,7 @@ export function ModelConfigModal({
   onSubmitProvider,
   onSubmitModel,
   onDeleteProvider,
+  onRevokeProviderAuth,
   onRemoveModel,
   onTestProvider,
   onTestModel,
@@ -1440,6 +1466,7 @@ export function ModelConfigModal({
   onSubmitProvider: (payload: SaveProviderPayload) => Promise<boolean>;
   onSubmitModel: (payload: AddProviderModelPayload) => Promise<boolean>;
   onDeleteProvider: (providerId: string) => Promise<boolean>;
+  onRevokeProviderAuth: (providerId: string) => Promise<boolean>;
   onRemoveModel: (providerId: string, modelId: string) => Promise<boolean>;
   onTestProvider: (providerId: string, payload?: {
     apiKey?: string;
@@ -1456,6 +1483,7 @@ export function ModelConfigModal({
     | null
     | { kind: "provider"; provider: DisplayProvider }
     | { kind: "model"; providerId: string; modelId: string }
+    | { kind: "revoke-auth"; providerId: string; providerName: string; isActive: boolean }
   >(null);
   const [providerForm, setProviderForm] = useState<ProviderConfigFormState>(DEFAULT_PROVIDER_FORM_STATE);
   const [modelForm, setModelForm] = useState<AddModelFormState>(DEFAULT_ADD_MODEL_FORM_STATE);
@@ -1552,6 +1580,20 @@ export function ModelConfigModal({
 
   const handleConfirmDelete = async () => {
     if (!deleteConfirmState) {
+      return;
+    }
+
+    if (deleteConfirmState.kind === "revoke-auth") {
+      const succeeded = await onRevokeProviderAuth(deleteConfirmState.providerId);
+      if (succeeded) {
+        setDeleteConfirmState(null);
+        setProviderDialogOpen(false);
+        setProviderForm((prev) => ({
+          ...prev,
+          apiKey: "",
+          apiKeyConfigured: false,
+        }));
+      }
       return;
     }
 
@@ -1653,6 +1695,7 @@ export function ModelConfigModal({
           disabled={disabled}
           mode={providerDialogMode}
           notice={notice}
+          showRevokeAuthorization={providerDialogMode === "edit" && providerForm.apiKeyConfigured}
           onClose={() => setProviderDialogOpen(false)}
           onSubmit={handleSubmitProvider}
           onTestProvider={() =>
@@ -1667,6 +1710,14 @@ export function ModelConfigModal({
                 generateConfigText: providerForm.generateConfigText,
               },
             )
+          }
+          onRevokeAuthorization={() =>
+            setDeleteConfirmState({
+              kind: "revoke-auth",
+              providerId: providerForm.providerId,
+              providerName: providerForm.providerName,
+              isActive: providerForm.providerId === activeProviderId,
+            })
           }
           onChange={(updater) => setProviderForm((prev) => updater(prev))}
         />
@@ -1696,12 +1747,24 @@ export function ModelConfigModal({
         />
         <DeleteConfirmDialog
           open={Boolean(deleteConfirmState)}
-          title={deleteConfirmState?.kind === "provider" ? "删除提供商" : "删除模型"}
+          title={
+            deleteConfirmState?.kind === "provider"
+              ? "删除提供商"
+              : deleteConfirmState?.kind === "revoke-auth"
+                ? "撤销授权"
+                : "删除模型"
+          }
           message={
             deleteConfirmState?.kind === "provider"
               ? `确认删除提供商“${deleteConfirmState.provider.name}”吗？`
-              : `确认删除模型“${deleteConfirmState?.modelId || ""}”吗？`
+              : deleteConfirmState?.kind === "revoke-auth"
+                ? deleteConfirmState.isActive
+                  ? `确定要移除“${deleteConfirmState.providerName}”的 API 密钥吗？当前 LLM 模型配置也将被清除。`
+                  : `确定要移除“${deleteConfirmState.providerName}”的 API 密钥吗？`
+                : `确认删除模型“${deleteConfirmState?.modelId || ""}”吗？`
           }
+          confirmLabel={deleteConfirmState?.kind === "revoke-auth" ? "撤销授权" : "确认删除"}
+          confirmIconClass={deleteConfirmState?.kind === "revoke-auth" ? "fa-link-slash" : "fa-trash-can"}
           submitting={submitting}
           onClose={() => setDeleteConfirmState(null)}
           onConfirm={() => void handleConfirmDelete()}
