@@ -247,6 +247,9 @@
     "edit": "編集",
     "delete": "削除",
     "descriptionLabel": "説明",
+    "tags": "タグ",
+    "tagsPlaceholder": "タグを選択または入力",
+    "filterByTag": "タグで絞り込む",
     "version": "バージョン",
     "createTitle": "スキルプール項目を作成",
     "editTitle": "{{name}} を編集",
@@ -716,7 +719,7 @@
     "localDownloadInProgress": "すでにダウンロードが進行中です",
     "localDownloaded": "ダウンロード済み",
     "localNotDownloaded": "未ダウンロード",
-    "localNoRecommendedModels": "推奨ローカルモデルはありません",
+    "localNoRecommendedModels": "現在のマシン性能ではローカルモデルの実行に向いていません",
     "localCancelDownloadTitle": "ダウンロードをキャンセル",
     "localCancelDownloadAction": "ダウンロードをキャンセル",
     "localCancelDownloadConfirm": "\"{{repo}}\" のダウンロードをキャンセルしますか？",
@@ -774,6 +777,7 @@
     "testConnection": "接続テスト",
     "testConnectionSuccess": "接続テストに成功しました",
     "testConnectionFailed": "接続テストに失敗しました",
+    "testConnectionFailedWithMessage": "接続テストに失敗しました: {{message}}",
     "testConnectionError": "接続テスト中にエラーが発生しました",
     "discoverModels": "モデルを検出",
     "discoverModelsFailed": "モデルの検出に失敗しました",
@@ -1026,6 +1030,7 @@
   "chat": {
     "modelSelectTooltip": "モデルを選択",
     "newChatTooltip": "新しいチャット",
+    "searchTooltip": "すべてのチャットを検索",
     "chatHistoryTooltip": "チャット履歴",
     "allChats": "すべてのチャット",
     "createNewChat": "新しいチャットを作成",
@@ -1036,7 +1041,7 @@
     "description": "私はあなたの質問をサポートするAIアシスタントです。",
     "prompt1": "新しい旅を始めましょう！",
     "prompt2": "あなたのスキルを教えてください。",
-    "inputPlaceholder": "/ を入力してコマンドを表示。承認時は /approve または /deny を使えます...",
+    "inputPlaceholder": "\"↑↓\"でメッセージ移動 · \"/\"でクイックコマンド（承認時は\"/approve\"または\"/deny\"）",
     "commands": {
       "clear": {
         "description": "会話のコンテキストをクリア"
@@ -1060,6 +1065,15 @@
       "multimodalWarning": "現在のモデルにマルチモーダル機能が検出されていません。画像や動画が正しく処理されない場合があります",
       "imageOnlyAccept": "現在のモデルは画像ファイルのみ対応しています",
       "imageOnlyWarning": "現在のモデルは画像のみ対応しています。動画などの非画像ファイルは正しく処理されない場合があります"
+    },
+    "search": {
+      "title": "チャットを検索",
+      "tooltip": "現在のチャットを検索",
+      "placeholder": "メッセージを検索...",
+      "noResults": "結果が見つかりません",
+      "resultsCount": "{{count}} 件の結果が見つかりました",
+      "userMessage": "ユーザー",
+      "assistantMessage": "アシスタント"
     }
   },
   "security": {
