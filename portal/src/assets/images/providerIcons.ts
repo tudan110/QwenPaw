@@ -13,6 +13,7 @@ import minimaxIcon from "./provider-icons/minimax.png";
 import modelscopeIcon from "./provider-icons/modelscope.png";
 import ollamaIcon from "./provider-icons/ollama.png";
 import openaiIcon from "./provider-icons/openai.png";
+import siliconflowIcon from "./provider-icons/siliconflow.png";
 import zhipuIcon from "./provider-icons/zhipu.png";
 
 export const PROVIDER_ICON_BY_ID: Record<string, string> = {
@@ -29,6 +30,8 @@ export const PROVIDER_ICON_BY_ID: Record<string, string> = {
   "minimax-cn": minimaxIcon,
   minimax: minimaxIcon,
   openai: openaiIcon,
+  "siliconflow-cn": siliconflowIcon,
+  "siliconflow-intl": siliconflowIcon,
   dashscope: dashscopeIcon,
   lmstudio: lmstudioIcon,
   "copaw-local": copawLocalIcon,
@@ -56,6 +59,9 @@ export function getProviderFallbackIcon(key: string) {
   }
   if (key.includes("openai")) {
     return openaiIcon;
+  }
+  if (key.includes("siliconflow")) {
+    return siliconflowIcon;
   }
   if (key.includes("anthropic") || key.includes("claude")) {
     return anthropicIcon;
