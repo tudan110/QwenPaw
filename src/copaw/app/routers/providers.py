@@ -56,7 +56,6 @@ def get_provider_manager(request: Request) -> ProviderManager:
 
 
 class ProviderConfigRequest(BaseModel):
-    name: Optional[str] = Field(default=None)
     api_key: Optional[str] = Field(default=None)
     base_url: Optional[str] = Field(default=None)
     chat_model: Optional[ChatModelName] = Field(
@@ -166,7 +165,6 @@ async def configure_provider(
     ok = manager.update_provider(
         provider_id,
         {
-            "name": body.name,
             "api_key": body.api_key,
             "base_url": body.base_url,
             "chat_model": body.chat_model,
@@ -233,30 +231,10 @@ class TestProviderRequest(BaseModel):
         default=None,
         description="Optional chat model class to test protocol behavior",
     )
-    generate_kwargs: Optional[dict] = Field(
-        default_factory=dict,
-        description="Optional generation kwargs to test",
-    )
 
 
 class TestModelRequest(BaseModel):
     model_id: str = Field(..., description="Model ID to test")
-    api_key: Optional[str] = Field(
-        default=None,
-        description="Optional API key to test",
-    )
-    base_url: Optional[str] = Field(
-        default=None,
-        description="Optional Base URL to test",
-    )
-    chat_model: Optional[ChatModelName] = Field(
-        default=None,
-        description="Optional chat model class to test protocol behavior",
-    )
-    generate_kwargs: Optional[dict] = Field(
-        default_factory=dict,
-        description="Optional generation kwargs to test",
-    )
 
 
 class DiscoverModelsRequest(BaseModel):
@@ -271,10 +249,6 @@ class DiscoverModelsRequest(BaseModel):
     chat_model: Optional[ChatModelName] = Field(
         default=None,
         description="Optional chat model class to use for discovery",
-    )
-    generate_kwargs: Optional[dict] = Field(
-        default_factory=dict,
-        description="Optional generation kwargs to use for discovery",
     )
 
 
@@ -315,10 +289,6 @@ async def test_provider(
             tmp_provider.api_key = body.api_key
         if body and body.base_url:
             tmp_provider.base_url = body.base_url
-        if body and body.chat_model:
-            tmp_provider.chat_model = body.chat_model
-        if body and body.generate_kwargs:
-            tmp_provider.generate_kwargs = body.generate_kwargs
         ok, msg = await tmp_provider.check_connection()
         return TestConnectionResponse(
             success=ok,
@@ -346,8 +316,6 @@ async def discover_models(
             {
                 "api_key": body.api_key if body else None,
                 "base_url": body.base_url if body else None,
-                "chat_model": body.chat_model if body else None,
-                "generate_kwargs": body.generate_kwargs if body else None,
             },
         )
         if not ok:
@@ -383,16 +351,7 @@ async def test_model(
         provider = manager.get_provider(provider_id)
         if provider is None:
             raise ValueError(f"Provider '{provider_id}' not found")
-        tmp_provider = deepcopy(provider)
-        if body.api_key:
-            tmp_provider.api_key = body.api_key
-        if body.base_url:
-            tmp_provider.base_url = body.base_url
-        if body.chat_model:
-            tmp_provider.chat_model = body.chat_model
-        if body.generate_kwargs:
-            tmp_provider.generate_kwargs = body.generate_kwargs
-        ok, msg = await tmp_provider.check_model_connection(model_id=body.model_id)
+        ok, msg = await provider.check_model_connection(model_id=body.model_id)
         return TestConnectionResponse(
             success=ok,
             message=(
