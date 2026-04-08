@@ -1,6 +1,7 @@
 import aliyunCodingPlanIcon from "./provider-icons/aliyun-codingplan.png";
 import anthropicIcon from "./provider-icons/anthropic.png";
 import azureOpenAiIcon from "./provider-icons/azure-openai.png";
+import chinaTelecomIcon from "./provider-icons/china-telecom.svg";
 import copawLocalIcon from "./provider-icons/copaw-local.png";
 import dashscopeIcon from "./provider-icons/dashscope.png";
 import deepseekIcon from "./provider-icons/deepseek.png";
@@ -17,6 +18,7 @@ import zhipuIcon from "./provider-icons/zhipu.png";
 export const PROVIDER_ICON_BY_ID: Record<string, string> = {
   modelscope: modelscopeIcon,
   "aliyun-codingplan": aliyunCodingPlanIcon,
+  "ct-cnos": chinaTelecomIcon,
   deepseek: deepseekIcon,
   gemini: geminiIcon,
   "azure-openai": azureOpenAiIcon,

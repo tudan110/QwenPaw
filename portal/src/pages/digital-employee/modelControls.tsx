@@ -300,7 +300,7 @@ function buildBuiltinApiKeySeedRecords(provider: DisplayProvider): BuiltinApiKey
       id: `${provider.id}-seed-1`,
       apiKey: DEFAULT_BUILTIN_API_KEY_SAMPLE_KEY,
       expireAt: "2026-12-31T23:59:59Z",
-      serviceName: "智能客服使用",
+      serviceName: "智能客服",
       appNames: modelNames,
       providerName,
       ownerAccount: DEFAULT_BUILTIN_API_KEY_OWNER_ACCOUNT,
