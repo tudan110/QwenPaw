@@ -4640,51 +4640,13 @@
 }
 
 .portal-digital-employee .portal-model-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
   margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  background: rgba(79, 110, 247, 0.12);
-  color: var(--primary);
-}
-
-.portal-digital-employee .portal-model-icon.openai {
-  background: rgba(34, 197, 94, 0.12);
-  color: #16a34a;
-}
-
-.portal-digital-employee .portal-model-icon.ctyun {
-  background: rgba(59, 130, 246, 0.12);
-  color: #2563eb;
-}
-
-.portal-digital-employee .portal-model-icon.anthropic {
-  background: rgba(139, 92, 246, 0.12);
-  color: #8b5cf6;
-}
-
-.portal-digital-employee .portal-model-icon.aliyun {
-  background: rgba(59, 130, 246, 0.12);
-  color: #2563eb;
-}
-
-.portal-digital-employee .portal-model-icon.deepseek {
-  background: rgba(6, 182, 212, 0.12);
-  color: #0891b2;
-}
-
-.portal-digital-employee .portal-model-icon.glm {
-  background: rgba(245, 158, 11, 0.12);
-  color: #d97706;
-}
-
-.portal-digital-employee .portal-model-icon.local {
-  background: rgba(100, 116, 139, 0.12);
-  color: #475569;
+  display: block;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .portal-digital-employee .portal-form-section {
