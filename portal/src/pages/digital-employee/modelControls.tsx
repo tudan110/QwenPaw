@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
+import { getProviderFallbackIcon, PROVIDER_ICON_BY_ID } from "../../assets/images/providerIcons";
 import { DEFAULT_PROVIDER_SLOT_ID } from "./usePortalModels";
 import type {
   AddProviderModelPayload,
@@ -232,150 +233,9 @@ function getProviderVisual(providerId: string, providerName: string) {
   const name = providerName.trim().toLowerCase();
   const key = `${id} ${name}`;
 
-  const defaultIconUrl =
-    "https://gw.alicdn.com/imgextra/i4/O1CN01IWnlOw1lebfpiFrIL_!!6000000004844-0-tps-100-100.jpg";
-  const iconByProviderId: Record<string, string> = {
-    modelscope:
-      "https://gw.alicdn.com/imgextra/i4/O1CN01exenB61EAwhgY4pmA_!!6000000000312-2-tps-400-400.png",
-    "aliyun-codingplan":
-      "https://gw.alicdn.com/imgextra/i4/O1CN01nEmGhQ1we71GXW6eo_!!6000000006332-2-tps-400-400.png",
-    deepseek:
-      "https://gw.alicdn.com/imgextra/i4/O1CN01YfmXc81ogO3pR0aW8_!!6000000005254-2-tps-400-400.png",
-    gemini:
-      "https://gw.alicdn.com/imgextra/i2/O1CN01pDWy7z25caEvmJ3u1_!!6000000007547-2-tps-400-400.png",
-    "azure-openai":
-      "https://gw.alicdn.com/imgextra/i2/O1CN01R42n1y1hQAjCEiVlB_!!6000000004271-2-tps-400-400.png",
-    "kimi-cn":
-      "https://gw.alicdn.com/imgextra/i1/O1CN01xCKAr81Yz8Q9pXh1u_!!6000000003129-2-tps-400-400.png",
-    "kimi-intl":
-      "https://gw.alicdn.com/imgextra/i1/O1CN01xCKAr81Yz8Q9pXh1u_!!6000000003129-2-tps-400-400.png",
-    anthropic:
-      "https://gw.alicdn.com/imgextra/i2/O1CN014LwvBJ1tNDYvc3FfA_!!6000000005889-2-tps-400-400.png",
-    ollama:
-      "https://gw.alicdn.com/imgextra/i3/O1CN01xZeNJ01R0Ufb3nqqb_!!6000000002049-2-tps-400-400.png",
-    "minimax-cn":
-      "https://gw.alicdn.com/imgextra/i1/O1CN01B0FaVn1VzBcO4nF1C_!!6000000002723-2-tps-400-400.png",
-    minimax:
-      "https://gw.alicdn.com/imgextra/i1/O1CN01B0FaVn1VzBcO4nF1C_!!6000000002723-2-tps-400-400.png",
-    openai:
-      "https://gw.alicdn.com/imgextra/i3/O1CN01rQSexq1D7S4AYstKh_!!6000000000169-2-tps-400-400.png",
-    dashscope:
-      "https://gw.alicdn.com/imgextra/i4/O1CN01aDHDeq1mgj7gbRkhi_!!6000000004984-2-tps-400-400.png",
-    lmstudio:
-      "https://gw.alicdn.com/imgextra/i4/O1CN01Abv67y1jHaXLqikIJ_!!6000000004523-2-tps-200-200.png",
-    "copaw-local":
-      "https://gw.alicdn.com/imgextra/i2/O1CN01pyXzjQ1EL1PuZMlSd_!!6000000000334-2-tps-288-288.png",
-    "zhipu-cn":
-      "https://img.alicdn.com/imgextra/i2/O1CN01TFZcQz23xX7qacIEv_!!6000000007322-2-tps-640-640.png",
-    "zhipu-intl":
-      "https://img.alicdn.com/imgextra/i2/O1CN01TFZcQz23xX7qacIEv_!!6000000007322-2-tps-640-640.png",
-    "zhipu-cn-codingplan":
-      "https://img.alicdn.com/imgextra/i2/O1CN01TFZcQz23xX7qacIEv_!!6000000007322-2-tps-640-640.png",
-    "zhipu-intl-codingplan":
-      "https://img.alicdn.com/imgextra/i2/O1CN01TFZcQz23xX7qacIEv_!!6000000007322-2-tps-640-640.png",
+  return {
+    iconUrl: PROVIDER_ICON_BY_ID[id] || getProviderFallbackIcon(key),
   };
-
-  if (iconByProviderId[id]) {
-    return { iconUrl: iconByProviderId[id] };
-  }
-
-  if (key.includes("zhipu") || key.includes("bigmodel") || key.includes("z.ai")) {
-    return {
-      iconUrl:
-        "https://img.alicdn.com/imgextra/i2/O1CN01TFZcQz23xX7qacIEv_!!6000000007322-2-tps-640-640.png",
-    };
-  }
-  if (key.includes("kimi") || key.includes("moonshot")) {
-    return {
-      iconUrl:
-        "https://gw.alicdn.com/imgextra/i1/O1CN01xCKAr81Yz8Q9pXh1u_!!6000000003129-2-tps-400-400.png",
-    };
-  }
-  if (key.includes("minimax")) {
-    return {
-      iconUrl:
-        "https://gw.alicdn.com/imgextra/i1/O1CN01B0FaVn1VzBcO4nF1C_!!6000000002723-2-tps-400-400.png",
-    };
-  }
-  if (key.includes("azure") || key.includes("azure-openai")) {
-    return {
-      iconUrl:
-        "https://gw.alicdn.com/imgextra/i2/O1CN01R42n1y1hQAjCEiVlB_!!6000000004271-2-tps-400-400.png",
-    };
-  }
-  if (key.includes("modelscope")) {
-    return {
-      iconUrl:
-        "https://gw.alicdn.com/imgextra/i4/O1CN01exenB61EAwhgY4pmA_!!6000000000312-2-tps-400-400.png",
-    };
-  }
-  if (key.includes("openai")) {
-    return {
-      iconUrl:
-        "https://gw.alicdn.com/imgextra/i3/O1CN01rQSexq1D7S4AYstKh_!!6000000000169-2-tps-400-400.png",
-    };
-  }
-  if (key.includes("anthropic") || key.includes("claude")) {
-    return {
-      iconUrl:
-        "https://gw.alicdn.com/imgextra/i2/O1CN014LwvBJ1tNDYvc3FfA_!!6000000005889-2-tps-400-400.png",
-    };
-  }
-  if (
-    key.includes("dashscope")
-    || key.includes("通义")
-    || key.includes("qwen")
-    || key.includes("阿里云百炼")
-  ) {
-    return {
-      iconUrl:
-        "https://gw.alicdn.com/imgextra/i4/O1CN01aDHDeq1mgj7gbRkhi_!!6000000004984-2-tps-400-400.png",
-    };
-  }
-  if (key.includes("codingplan") || key.includes("aliyun") || key.includes("阿里")) {
-    return {
-      iconUrl:
-        "https://gw.alicdn.com/imgextra/i4/O1CN01nEmGhQ1we71GXW6eo_!!6000000006332-2-tps-400-400.png",
-    };
-  }
-  if (key.includes("deepseek")) {
-    return {
-      iconUrl:
-        "https://gw.alicdn.com/imgextra/i4/O1CN01YfmXc81ogO3pR0aW8_!!6000000005254-2-tps-400-400.png",
-    };
-  }
-  if (key.includes("glm") || key.includes("智谱")) {
-    return {
-      iconUrl:
-        "https://img.alicdn.com/imgextra/i2/O1CN01TFZcQz23xX7qacIEv_!!6000000007322-2-tps-640-640.png",
-    };
-  }
-  if (key.includes("gemini")) {
-    return {
-      iconUrl:
-        "https://gw.alicdn.com/imgextra/i2/O1CN01pDWy7z25caEvmJ3u1_!!6000000007547-2-tps-400-400.png",
-    };
-  }
-  if (key.includes("copaw-local")) {
-    return {
-      iconUrl:
-        "https://gw.alicdn.com/imgextra/i2/O1CN01pyXzjQ1EL1PuZMlSd_!!6000000000334-2-tps-288-288.png",
-    };
-  }
-  if (key.includes("lmstudio")) {
-    return {
-      iconUrl:
-        "https://gw.alicdn.com/imgextra/i4/O1CN01Abv67y1jHaXLqikIJ_!!6000000004523-2-tps-200-200.png",
-    };
-  }
-  if (key.includes("ollama") || key.includes("local")) {
-    return {
-      iconUrl:
-        "https://gw.alicdn.com/imgextra/i3/O1CN01xZeNJ01R0Ufb3nqqb_!!6000000002049-2-tps-400-400.png",
-    };
-  }
-
-  return { iconUrl: defaultIconUrl };
 }
 
 function buildProviderPrefill(provider: DisplayProvider): ProviderConfigFormState {
