@@ -963,6 +963,22 @@ export default function DigitalEmployeePage({
     setMentionActiveIndex(0);
   }, [mentionContext?.query]);
 
+  const prefillEmployeeMention = useCallback((employee: any) => {
+    const rawContent = String(inputMessage || "").trim();
+    const mentionResult = extractMentionTarget(rawContent);
+    const nextContent = mentionResult.employee ? mentionResult.cleanContent : rawContent;
+    const nextValue = nextContent ? `@${employee.name} ${nextContent}` : `@${employee.name} `;
+    const nextCursor = nextValue.length;
+
+    setInputMessage(nextValue);
+    setInputCursor(nextCursor);
+
+    window.requestAnimationFrame(() => {
+      homeComposerRef.current?.focus();
+      homeComposerRef.current?.setSelectionRange(nextCursor, nextCursor);
+    });
+  }, [inputMessage]);
+
   const applyMentionSuggestion = (employeeName: string) => {
     if (!mentionContext) {
       return;
@@ -1526,12 +1542,7 @@ export default function DigitalEmployeePage({
                           key={`compact-stage-${employee.id}`}
                           type="button"
                           className="portal-employee-pill compact stage"
-                          onClick={() =>
-                            navigateToEmployeePage(employee, {
-                              view: "chat",
-                              panel: null,
-                            })
-                          }
+                          onClick={() => prefillEmployeeMention(employee)}
                         >
                           <DigitalEmployeeAvatar
                             employee={employee}

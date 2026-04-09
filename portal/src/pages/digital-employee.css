@@ -2476,6 +2476,16 @@
   --de-avatar-zzz-size: 6px;
 }
 
+.portal-digital-employee .portal-employee-pill.compact.stage .portal-employee-pill-avatar.digital-employee-avatar {
+  --de-avatar-animation-size: 16px;
+  --de-avatar-zzz-size: 7px;
+}
+
+.portal-digital-employee .portal-employee-pill.compact.stage .portal-employee-pill-avatar.digital-employee-avatar .de-avatar-animation {
+  right: 1px;
+  bottom: 1px;
+}
+
 .portal-digital-employee .portal-employee-pill-copy {
   min-width: 0;
   display: flex;
