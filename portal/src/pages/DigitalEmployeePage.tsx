@@ -253,6 +253,37 @@ function extractMentionTarget(rawContent: string) {
   };
 }
 
+function resolveEmployeeAgentId(employeeId: string) {
+  return REMOTE_AGENT_IDS[employeeId] || employeeId;
+}
+
+function buildMentionCollaborationPrompt({
+  currentEmployee,
+  currentAgentId,
+  targetEmployee,
+  userRequest,
+}: {
+  currentEmployee: any;
+  currentAgentId: string;
+  targetEmployee: any;
+  userRequest: string;
+}) {
+  const targetAgentId = resolveEmployeeAgentId(String(targetEmployee?.id || ""));
+  const normalizedRequest = String(userRequest || "").trim();
+
+  return [
+    `你当前是数字员工「${currentEmployee?.name || currentAgentId}」。`,
+    `用户在当前会话中 @ 了另一位数字员工「${targetEmployee?.name || targetAgentId}」。`,
+    "请不要要求用户切换页面，也不要把本次请求交回前端路由处理。",
+    "请直接使用你已启用的内置技能 Multi-Agent Collaboration（multi_agent_collaboration），在当前会话中发起智能体协同并整合结果后回复用户。",
+    `当前智能体（from-agent）：${currentAgentId}`,
+    `目标智能体（to-agent）：${targetAgentId}`,
+    normalizedRequest
+      ? `用户希望协同处理的内容：${normalizedRequest}`
+      : `用户目前只 @ 了「${targetEmployee?.name || targetAgentId}」，请先确认需要对方协助的具体问题，再决定如何发起协同。`,
+  ].join("\n");
+}
+
 function extractMentionQuery(value: string, cursorPosition: number | null) {
   const safeCursor = cursorPosition ?? value.length;
   const beforeCursor = String(value || "").slice(0, safeCursor);
@@ -1215,6 +1246,28 @@ export default function DigitalEmployeePage({
 
     const mentionResult = extractMentionTarget(rawContent);
     if (mentionResult.employee) {
+      const shouldUseAgentCollaboration = Boolean(
+        selectedEmployee
+        && isRemoteEmployee
+        && remoteAgentId
+        && mentionResult.employee.id !== currentEmployee.id,
+      );
+
+      if (shouldUseAgentCollaboration) {
+        await dispatchActiveMessage(
+          buildMentionCollaborationPrompt({
+            currentEmployee,
+            currentAgentId: remoteAgentId,
+            targetEmployee: mentionResult.employee,
+            userRequest: mentionResult.cleanContent,
+          }),
+          {
+            visibleContent: mentionResult.visibleContent,
+          },
+        );
+        return;
+      }
+
       if (!mentionResult.cleanContent) {
         navigateToEmployeePage(mentionResult.employee, {
           entry: null,
