@@ -114,3 +114,6 @@ src/.hypothesis/
 
 # Worktrees
 .worktrees/
+
+# 临时文件
+tmp/
