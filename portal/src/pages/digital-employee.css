@@ -205,12 +205,12 @@
   margin-bottom: 12px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   width: 100%;
   padding: 0;
   background: transparent;
-  cursor: pointer;
+  cursor: default;
 }
 
 .portal-digital-employee .agents-title-copy {
@@ -219,18 +219,76 @@
   gap: 8px;
 }
 
-.portal-digital-employee .agents-title.collapsed {
+.portal-digital-employee .agent-list {
+  position: relative;
+  overflow: visible;
+  padding-right: 0;
+}
+
+.portal-digital-employee .agent-dropdown {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+}
+
+.portal-digital-employee .agent-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(12px);
+  z-index: 20;
+  max-height: min(420px, calc(100vh - 260px));
+  overflow-y: auto;
+}
+
+.portal-digital-employee .agent-card-selector {
   margin-bottom: 0;
 }
 
-.portal-digital-employee .agent-list {
-  flex: 1;
-  overflow-y: auto;
-  padding-right: 5px;
+.portal-digital-employee .agent-dropdown-menu .agent-card:last-child {
+  margin-bottom: 0;
 }
 
-.portal-digital-employee .agent-list.collapsed {
-  display: none;
+.portal-digital-employee .agent-card-chevron {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-end;
+  position: relative;
+  top: 6px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.portal-digital-employee .agent-card-chevron.open {
+  color: var(--primary);
+}
+
+.portal-digital-employee .agent-card-chevron:hover {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.portal-digital-employee .agent-card-selector:hover .agent-card-chevron,
+.portal-digital-employee .agent-card-selector.active .agent-card-chevron {
+  color: var(--primary);
 }
 
 .portal-digital-employee .sidebar-advanced {
@@ -1061,6 +1119,12 @@
 .portal-digital-employee.theme-dark .portal-employee-pill {
   background: #1a2235;
   border-color: #223049;
+}
+
+.portal-digital-employee.theme-dark .agent-dropdown-menu {
+  background: rgba(20, 27, 45, 0.96);
+  border-color: #223049;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.32);
 }
 
 .portal-digital-employee.theme-dark .portal-system-entry-btn:hover,

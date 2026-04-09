@@ -418,7 +418,7 @@ export default function DigitalEmployeePage({
 
   const [activeCapability, setActiveCapability] =
     useState<(typeof capabilityOptions)[number]["id"]>("scan");
-  const [matrixCollapsed, setMatrixCollapsed] = useState(false);
+  const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
   const [inputMessage, setInputMessage] = useState("");
   const [inputCursor, setInputCursor] = useState<number | null>(null);
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
@@ -434,6 +434,7 @@ export default function DigitalEmployeePage({
   const handledPendingDispatchRef = useRef("");
   const chatInputRef = useRef<HTMLInputElement | null>(null);
   const homeComposerRef = useRef<HTMLTextAreaElement | null>(null);
+  const employeeDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const {
     currentSessionId,
@@ -729,6 +730,15 @@ export default function DigitalEmployeePage({
       ...digitalEmployees.filter((employee) => !priorityIds.has(employee.id)),
     ];
   }, []);
+  const [lastSidebarEmployeeId, setLastSidebarEmployeeId] = useState<string | null>(null);
+  const currentSidebarEmployee = useMemo(() => {
+    const employeeId = selectedEmployee?.id || lastSidebarEmployeeId || sidebarEmployees[0]?.id || null;
+    return sidebarEmployees.find((employee) => employee.id === employeeId) || sidebarEmployees[0] || null;
+  }, [lastSidebarEmployeeId, selectedEmployee?.id, sidebarEmployees]);
+  const otherSidebarEmployees = useMemo(
+    () => sidebarEmployees.filter((employee) => employee.id !== currentSidebarEmployee?.id),
+    [currentSidebarEmployee?.id, sidebarEmployees],
+  );
 
   const safeMessages = ensureObjectArray(messages);
   const safeExecutionList = ensureObjectArray<ExecutionRecord>(executionList);
@@ -963,6 +973,124 @@ export default function DigitalEmployeePage({
     setMentionActiveIndex(0);
   }, [mentionContext?.query]);
 
+  useEffect(() => {
+    if (!selectedEmployee?.id) {
+      return;
+    }
+    setLastSidebarEmployeeId(selectedEmployee.id);
+    setEmployeeDropdownOpen(false);
+  }, [selectedEmployee?.id]);
+
+  useEffect(() => {
+    if (!employeeDropdownOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!employeeDropdownRef.current?.contains(event.target as Node)) {
+        setEmployeeDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [employeeDropdownOpen]);
+
+  const getEmployeeStatusBadgeClassName = useCallback((employee: any) => {
+    if (employee.urgent) {
+      return "status-badge urgent";
+    }
+    if (employee.status === "running") {
+      return "status-badge running";
+    }
+    return "status-badge stopped";
+  }, []);
+
+  const getEmployeeStatusLabel = useCallback((employee: any) => {
+    if (employee.urgent) {
+      return "紧急";
+    }
+    if (employee.status === "running") {
+      return "运行中";
+    }
+    return "已停止";
+  }, []);
+
+  const renderSidebarEmployeeCard = useCallback((
+    employee: any,
+    {
+      active = false,
+      expandable = false,
+      expanded = false,
+      onClick,
+      onToggleExpand,
+    }: {
+      active?: boolean;
+      expandable?: boolean;
+      expanded?: boolean;
+      onClick: () => void;
+      onToggleExpand?: () => void;
+    },
+  ) => (
+    <div
+      key={employee.id}
+      role="button"
+      tabIndex={0}
+      className={
+        active
+          ? "agent-card active agent-card-selector"
+          : "agent-card agent-card-selector"
+      }
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+    >
+      <span className={getEmployeeStatusBadgeClassName(employee)}>
+        {getEmployeeStatusLabel(employee)}
+      </span>
+
+      <div className="agent-header">
+        <DigitalEmployeeAvatar employee={employee} />
+        <div className="agent-info">
+          <h3>{employee.name}</h3>
+          <p>{employee.desc}</p>
+        </div>
+        {expandable ? (
+          <button
+            type="button"
+            className={expanded ? "agent-card-chevron open" : "agent-card-chevron"}
+            aria-label={expanded ? "收起员工切换" : "展开员工切换"}
+            aria-expanded={expanded}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleExpand?.();
+            }}
+          >
+            <i className={`fas ${expanded ? "fa-chevron-up" : "fa-chevron-down"}`} />
+          </button>
+        ) : null}
+      </div>
+      <div className="agent-stats">
+        <div className="stat-item">
+          <i className="fas fa-chart-line" />
+          <span className="stat-value">{employee.tasks}</span> 执行
+        </div>
+        <div className="stat-item">
+          <i className="fas fa-check-circle" />
+          <span className="stat-value" style={{ color: "var(--success)" }}>
+            {employee.success}
+          </span>
+        </div>
+      </div>
+    </div>
+  ), [getEmployeeStatusBadgeClassName, getEmployeeStatusLabel]);
+
   const prefillEmployeeMention = useCallback((employee: any) => {
     const rawContent = String(inputMessage || "").trim();
     const mentionResult = extractMentionTarget(rawContent);
@@ -1194,68 +1322,52 @@ export default function DigitalEmployeePage({
             </button>
           </div>
 
-          <button
-            className={matrixCollapsed ? "agents-title collapsed" : "agents-title"}
-            onClick={() => setMatrixCollapsed((prev) => !prev)}
-          >
+          <div className="agents-title">
             <span className="agents-title-copy">
               <i className="fas fa-users" />
               数字员工矩阵
             </span>
-            <i className={`fas ${matrixCollapsed ? "fa-chevron-right" : "fa-chevron-down"}`} />
-          </button>
+          </div>
 
-          <div className={matrixCollapsed ? "agent-list collapsed" : "agent-list"}>
-            {sidebarEmployees.map((employee) => (
-              <button
-                key={employee.id}
-                className={
-                  employee.id === selectedEmployee?.id ? "agent-card active" : "agent-card"
-                }
-                onClick={() => {
-                  navigateToEmployeePage(employee, {
+          <div className="agent-list">
+            <div
+              ref={employeeDropdownRef}
+              className={
+                employeeDropdownOpen
+                  ? "agent-dropdown agent-dropdown-open"
+                  : "agent-dropdown"
+              }
+            >
+              {currentSidebarEmployee ? renderSidebarEmployeeCard(currentSidebarEmployee, {
+                active: true,
+                expandable: true,
+                expanded: employeeDropdownOpen,
+                onClick: () => {
+                  setEmployeeDropdownOpen(false);
+                  navigateToEmployeePage(currentSidebarEmployee, {
                     view: "chat",
                     panel: null,
                   });
-                }}
-              >
-                <span
-                  className={
-                    employee.urgent
-                      ? "status-badge urgent"
-                      : employee.status === "running"
-                        ? "status-badge running"
-                        : "status-badge stopped"
-                  }
-                >
-                  {employee.urgent
-                    ? "紧急"
-                    : employee.status === "running"
-                      ? "运行中"
-                      : "已停止"}
-                </span>
+                },
+                onToggleExpand: () => setEmployeeDropdownOpen((prev) => !prev),
+              }) : null}
 
-                <div className="agent-header">
-                  <DigitalEmployeeAvatar employee={employee} />
-                  <div className="agent-info">
-                    <h3>{employee.name}</h3>
-                    <p>{employee.desc}</p>
-                  </div>
+              {employeeDropdownOpen ? (
+                <div className="agent-dropdown-menu">
+                  {otherSidebarEmployees.map((employee) =>
+                    renderSidebarEmployeeCard(employee, {
+                      onClick: () => {
+                        setEmployeeDropdownOpen(false);
+                        navigateToEmployeePage(employee, {
+                          view: "chat",
+                          panel: null,
+                        });
+                      },
+                    }),
+                  )}
                 </div>
-                <div className="agent-stats">
-                  <div className="stat-item">
-                    <i className="fas fa-chart-line" />
-                    <span className="stat-value">{employee.tasks}</span> 执行
-                  </div>
-                  <div className="stat-item">
-                    <i className="fas fa-check-circle" />
-                    <span className="stat-value" style={{ color: "var(--success)" }}>
-                      {employee.success}
-                    </span>
-                  </div>
-                </div>
-              </button>
-            ))}
+              ) : null}
+            </div>
           </div>
 
           <AdvancedModelEntry
