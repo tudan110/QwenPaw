@@ -95,6 +95,25 @@ export function getChatHistory(agentId: string | undefined, chatId: string) {
   });
 }
 
+export function updateChat(
+  agentId: string | undefined,
+  chatId: string,
+  payload: Record<string, unknown>,
+) {
+  return requestCopaw(`/chats/${encodeURIComponent(chatId)}`, {
+    agentId,
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function deleteChat(agentId: string | undefined, chatId: string) {
+  return requestCopaw(`/chats/${encodeURIComponent(chatId)}`, {
+    agentId,
+    method: "DELETE",
+  });
+}
+
 export function stopChat(agentId: string | undefined, chatId: string) {
   return requestCopaw(`/console/chat/stop?chat_id=${encodeURIComponent(chatId)}`, {
     agentId,

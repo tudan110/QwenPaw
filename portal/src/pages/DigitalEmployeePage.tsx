@@ -21,6 +21,7 @@ import {
   loadConversationStore,
   saveConversationStore,
 } from "../lib/conversationStore";
+import { deleteChat, updateChat } from "../api/copawChat";
 import DigitalEmployeeAvatar from "../components/DigitalEmployeeAvatar";
 import {
   AlarmWorkorderBoard,
@@ -54,12 +55,6 @@ import { usePortalModels } from "./digital-employee/usePortalModels";
 import { useRemoteChatSession } from "./digital-employee/useRemoteChatSession";
 import { portalAppTitle } from "../config/portalBranding";
 import "./digital-employee.css";
-
-const capabilityOptions = [
-  { id: "scan", label: "快速发现", icon: "fa-magnifying-glass" },
-  { id: "auto", label: "自动化", icon: "fa-wand-magic-sparkles" },
-  { id: "analyze", label: "智能分析", icon: "fa-chart-pie" },
-] as const;
 
 const sidebarEmployeePriority = [
   "query",
@@ -137,6 +132,9 @@ type SessionRecord = {
   createdAt?: string;
   updatedAt?: string;
   messages?: any[];
+  sessionId?: string;
+  status?: string;
+  meta?: Record<string, unknown>;
   detail?: string;
   tag?: string;
 };
@@ -416,8 +414,6 @@ export default function DigitalEmployeePage({
     selectedEmployee?.id === "fault" && currentEntry === ALARM_WORKORDER_ENTRY,
   );
 
-  const [activeCapability, setActiveCapability] =
-    useState<(typeof capabilityOptions)[number]["id"]>("scan");
   const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
   const [inputMessage, setInputMessage] = useState("");
   const [inputCursor, setInputCursor] = useState<number | null>(null);
@@ -435,12 +431,15 @@ export default function DigitalEmployeePage({
   const chatInputRef = useRef<HTMLInputElement | null>(null);
   const homeComposerRef = useRef<HTMLTextAreaElement | null>(null);
   const employeeDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [historyEditingId, setHistoryEditingId] = useState("");
+  const [historyDraftTitle, setHistoryDraftTitle] = useState("");
+  const [historyActionSessionId, setHistoryActionSessionId] = useState("");
+  const [historyActionError, setHistoryActionError] = useState("");
 
   const {
     currentSessionId,
     setCurrentSessionId,
     currentChatId,
-    setCurrentChatId,
     currentChatStatus,
     historyVisible,
     setHistoryVisible,
@@ -632,7 +631,6 @@ export default function DigitalEmployeePage({
       return;
     }
 
-    setActiveCapability("scan");
     setInputMessage("");
     setExecutionVisible(false);
     resetAlarmWorkbench();
@@ -773,6 +771,31 @@ export default function DigitalEmployeePage({
       : ensureSessionRecords(conversationStore[currentEmployee?.id || ""])
   ) as SessionRecord[];
 
+  useEffect(() => {
+    if (historyVisible) {
+      return;
+    }
+    setHistoryEditingId("");
+    setHistoryDraftTitle("");
+    setHistoryActionSessionId("");
+    setHistoryActionError("");
+  }, [historyVisible]);
+
+  const createAndActivateLocalSession = useCallback((employee: any, initialMessages: any[]) => {
+    const nextSession = createConversationSession(employee, initialMessages) as SessionRecord;
+    setConversationStore((prevStore) => {
+      const previousSessions = ensureSessionRecords(prevStore[employee.id]);
+      const nextStore: ConversationStoreState = {
+        ...prevStore,
+        [employee.id]: [nextSession, ...previousSessions],
+      };
+      saveConversationStore(nextStore);
+      return nextStore;
+    });
+    setCurrentSessionId(nextSession.id);
+    return nextSession.id;
+  }, []);
+
   const updateMessagesAndStore = useCallback((
     nextMessages: any[],
     {
@@ -837,6 +860,14 @@ export default function DigitalEmployeePage({
     content: string,
     visibleContent: string,
   ) => {
+    let nextSessionId = currentSessionId;
+    if (!nextSessionId) {
+      nextSessionId = createAndActivateLocalSession(
+        employee,
+        messages.length ? messages : [createWelcomeMessage(employee)],
+      );
+    }
+
     const userMessage = createUserMessage(visibleContent);
     const workflow =
       employeeWorkflows[employee.id as keyof typeof employeeWorkflows] || [];
@@ -857,6 +888,7 @@ export default function DigitalEmployeePage({
     const initialQueue = [...messages, userMessage, processingMessage];
     updateMessagesAndStore(initialQueue, {
       employee,
+      nextSessionId,
     });
 
     if (!workflow.length) {
@@ -895,6 +927,7 @@ export default function DigitalEmployeePage({
           window.setTimeout(() => {
             updateMessagesAndStore(nextMessages, {
               employee,
+              nextSessionId,
             });
           }, 0);
         }
@@ -903,7 +936,7 @@ export default function DigitalEmployeePage({
       });
       step += 1;
     }, 800);
-  }, [messages, updateMessagesAndStore]);
+  }, [createAndActivateLocalSession, currentSessionId, messages, updateMessagesAndStore]);
 
   const dispatchActiveMessage = useCallback(async (
     content: string,
@@ -1223,6 +1256,193 @@ export default function DigitalEmployeePage({
 
     await handleSelectRemoteHistory(session);
   };
+
+  const handleStartNewConversation = useCallback(() => {
+    if (!currentEmployee) {
+      return;
+    }
+
+    setInputMessage("");
+    setExecutionVisible(false);
+
+    if (isAlarmWorkbenchMode) {
+      resetAlarmWorkbench();
+      resetRemoteState({
+        initialMessages: [
+          createAlarmWorkorderMessage(currentEmployee, {
+            content: "告警已触发，我正在为您查询待处置工单...",
+            workorders: [],
+            workordersLoading: true,
+            workordersError: "",
+          }),
+        ],
+      });
+      return;
+    }
+
+    if (isRemoteEmployee) {
+      resetRemoteState({
+        initialMessages: [createWelcomeMessage(currentEmployee)],
+      });
+      return;
+    }
+
+    const initialMessages = [createWelcomeMessage(currentEmployee)];
+    createAndActivateLocalSession(currentEmployee, initialMessages);
+    setMessages(initialMessages);
+    setHistoryVisible(false);
+  }, [
+    createAndActivateLocalSession,
+    currentEmployee,
+    isAlarmWorkbenchMode,
+    isRemoteEmployee,
+    resetAlarmWorkbench,
+    resetRemoteState,
+    setHistoryVisible,
+  ]);
+
+  const handleStartHistoryRename = useCallback((session: SessionRecord) => {
+    setHistoryActionError("");
+    setHistoryEditingId(session.id);
+    setHistoryDraftTitle(session.title);
+  }, []);
+
+  const handleCancelHistoryRename = useCallback(() => {
+    setHistoryEditingId("");
+    setHistoryDraftTitle("");
+    setHistoryActionError("");
+  }, []);
+
+  const handleSubmitHistoryRename = useCallback(async (session: SessionRecord) => {
+    if (!currentEmployee) {
+      return;
+    }
+
+    const nextTitle = historyDraftTitle.trim();
+    if (!nextTitle) {
+      setHistoryActionError("会话名称不能为空");
+      return;
+    }
+
+    if (nextTitle === session.title) {
+      handleCancelHistoryRename();
+      return;
+    }
+
+    setHistoryActionSessionId(session.id);
+    setHistoryActionError("");
+
+    try {
+      if (isRemoteEmployee) {
+        await updateChat(remoteAgentId || undefined, session.id, { name: nextTitle });
+        await refreshRemoteSessions(false);
+      } else {
+        const previousSessions = ensureSessionRecords(conversationStore[currentEmployee.id]);
+        const nextSessions = previousSessions.map((item) =>
+          item.id === session.id
+            ? {
+                ...item,
+                title: nextTitle,
+                updatedAt: new Date().toISOString(),
+              }
+            : item,
+        );
+        const nextStore: ConversationStoreState = {
+          ...conversationStore,
+          [currentEmployee.id]: nextSessions,
+        };
+        saveConversationStore(nextStore);
+        setConversationStore(nextStore);
+      }
+
+      setHistoryEditingId("");
+      setHistoryDraftTitle("");
+    } catch (error: any) {
+      setHistoryActionError(error?.message || "会话名称更新失败，请稍后重试");
+    } finally {
+      setHistoryActionSessionId("");
+    }
+  }, [
+    conversationStore,
+    currentEmployee,
+    handleCancelHistoryRename,
+    historyDraftTitle,
+    isRemoteEmployee,
+    refreshRemoteSessions,
+    remoteAgentId,
+  ]);
+
+  const handleDeleteHistorySession = useCallback(async (session: SessionRecord) => {
+    if (!currentEmployee) {
+      return;
+    }
+
+    if (!window.confirm(`确认删除“${session.title}”吗？`)) {
+      return;
+    }
+
+    setHistoryActionSessionId(session.id);
+    setHistoryActionError("");
+
+    try {
+      if (isRemoteEmployee) {
+        const deletingCurrentSession = session.id === currentChatId;
+        if (deletingCurrentSession) {
+          stopActiveStream(false, { silent: true });
+        }
+        await deleteChat(remoteAgentId || undefined, session.id);
+        if (deletingCurrentSession) {
+          resetRemoteState({
+            initialMessages: [createWelcomeMessage(currentEmployee)],
+            clearHistoryError: false,
+          });
+          setHistoryVisible(true);
+        }
+        await refreshRemoteSessions(!deletingCurrentSession);
+      } else {
+        const previousSessions = ensureSessionRecords(conversationStore[currentEmployee.id]);
+        const nextSessions = previousSessions.filter((item) => item.id !== session.id);
+        const nextStore: ConversationStoreState = {
+          ...conversationStore,
+          [currentEmployee.id]: nextSessions,
+        };
+        saveConversationStore(nextStore);
+        setConversationStore(nextStore);
+
+        if (session.id === currentSessionId) {
+          const nextActiveSession = nextSessions[0];
+          if (nextActiveSession) {
+            setCurrentSessionId(nextActiveSession.id);
+            setMessages(nextActiveSession.messages || []);
+          } else {
+            setCurrentSessionId("");
+            setMessages([createWelcomeMessage(currentEmployee)]);
+          }
+        }
+      }
+
+      if (historyEditingId === session.id) {
+        setHistoryEditingId("");
+        setHistoryDraftTitle("");
+      }
+    } catch (error: any) {
+      setHistoryActionError(error?.message || "删除会话失败，请稍后重试");
+    } finally {
+      setHistoryActionSessionId("");
+    }
+  }, [
+    conversationStore,
+    currentChatId,
+    currentEmployee,
+    currentSessionId,
+    historyEditingId,
+    isRemoteEmployee,
+    refreshRemoteSessions,
+    remoteAgentId,
+    resetRemoteState,
+    setHistoryVisible,
+    stopActiveStream,
+  ]);
 
   const handleOpenExecutionHistory = (type: "executions" | "running" | "success") => {
     if (type === "executions") {
@@ -1804,7 +2024,10 @@ export default function DigitalEmployeePage({
                             />
                           ) : null}
                           <button className="history-btn" onClick={() => void handleOpenHistory()}>
-                            <i className="fas fa-history" /> 历史信息
+                            <i className="fas fa-history" /> 历史会话
+                          </button>
+                          <button className="history-btn new-chat-btn" onClick={handleStartNewConversation}>
+                            <i className="fas fa-plus" /> 新对话
                           </button>
                           <span className="capability-tag active static-tag">
                             <i className="fas fa-file-lines" /> 工单视图
@@ -1827,21 +2050,11 @@ export default function DigitalEmployeePage({
                             />
                           ) : null}
                           <button className="history-btn" onClick={() => void handleOpenHistory()}>
-                            <i className="fas fa-history" /> 历史信息
+                            <i className="fas fa-history" /> 历史会话
                           </button>
-                          {capabilityOptions.map((item) => (
-                            <button
-                              key={item.id}
-                              className={
-                                activeCapability === item.id
-                                  ? "capability-tag active"
-                                  : "capability-tag"
-                              }
-                              onClick={() => setActiveCapability(item.id)}
-                            >
-                              <i className={`fas ${item.icon}`} /> {item.label}
-                            </button>
-                          ))}
+                          <button className="history-btn new-chat-btn" onClick={handleStartNewConversation}>
+                            <i className="fas fa-plus" /> 新对话
+                          </button>
                         </>
                       )}
                     </div>
@@ -1984,13 +2197,19 @@ export default function DigitalEmployeePage({
           <div className="history-content" onClick={(event) => event.stopPropagation()}>
             <div className="history-header">
               <h3>
-                <i className="fas fa-history" /> 历史信息
+                <i className="fas fa-history" /> 历史会话
               </h3>
               <button className="history-close" onClick={() => setHistoryVisible(false)}>
                 <i className="fas fa-times" />
               </button>
             </div>
             <div className="history-body">
+              {historyActionError ? (
+                <div className="history-inline-error">
+                  <i className="fas fa-circle-exclamation" />
+                  <span>{historyActionError}</span>
+                </div>
+              ) : null}
               {historyLoading ? (
                 <div className="history-empty">
                   <i className="fas fa-spinner fa-spin" />
@@ -2003,31 +2222,106 @@ export default function DigitalEmployeePage({
                 </div>
               ) : sessionList.length ? (
                 <div className="history-timeline">
-                  {sessionList.map((session) => (
-                    <button
-                      key={session.id}
-                      className={
-                        session.id === (isRemoteEmployee ? currentChatId : currentSessionId)
-                          ? "history-item active-session"
-                          : "history-item"
-                      }
-                      onClick={() => void handleSelectHistory(session)}
-                    >
-                      <div className="history-time">
-                        {new Date(
-                          session.updatedAt || session.createdAt || new Date().toISOString(),
-                        ).toLocaleString("zh-CN")}
+                  {sessionList.map((session) => {
+                    const isActiveSession =
+                      session.id === (isRemoteEmployee ? currentChatId : currentSessionId);
+                    const isEditingSession = historyEditingId === session.id;
+                    const isBusySession = historyActionSessionId === session.id;
+                    const isLockedRemoteSession =
+                      isRemoteEmployee &&
+                      isActiveSession &&
+                      (isStreaming || currentChatStatus === "running");
+
+                    return (
+                      <div
+                        key={session.id}
+                        className={
+                          isActiveSession
+                            ? `history-item ${session.status || ""} active-session`.trim()
+                            : `history-item ${session.status || ""}`.trim()
+                        }
+                      >
+                        <button
+                          type="button"
+                          className="history-item-main"
+                          onClick={() => void handleSelectHistory(session)}
+                        >
+                          <div className="history-time">
+                            {new Date(
+                              session.updatedAt || session.createdAt || new Date().toISOString(),
+                            ).toLocaleString("zh-CN")}
+                          </div>
+                          {isEditingSession ? (
+                            <input
+                              autoFocus
+                              className="history-title-input"
+                              value={historyDraftTitle}
+                              onChange={(event) => setHistoryDraftTitle(event.target.value)}
+                              onClick={(event) => event.stopPropagation()}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  void handleSubmitHistoryRename(session);
+                                }
+                                if (event.key === "Escape") {
+                                  event.preventDefault();
+                                  handleCancelHistoryRename();
+                                }
+                              }}
+                              placeholder="请输入会话名称"
+                            />
+                          ) : (
+                            <div className="history-title">{session.title}</div>
+                          )}
+                        </button>
+                        <div className="history-item-actions">
+                          {isEditingSession ? (
+                            <>
+                              <button
+                                type="button"
+                                className="history-item-action confirm"
+                                onClick={() => void handleSubmitHistoryRename(session)}
+                                disabled={isBusySession}
+                                title="保存会话名称"
+                              >
+                                <i className={isBusySession ? "fas fa-spinner fa-spin" : "fas fa-check"} />
+                              </button>
+                              <button
+                                type="button"
+                                className="history-item-action"
+                                onClick={handleCancelHistoryRename}
+                                disabled={isBusySession}
+                                title="取消编辑"
+                              >
+                                <i className="fas fa-xmark" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className="history-item-action"
+                                onClick={() => handleStartHistoryRename(session)}
+                                disabled={isBusySession || isLockedRemoteSession}
+                                title={isLockedRemoteSession ? "当前会话处理中，暂不可编辑" : "编辑会话名称"}
+                              >
+                                <i className="fas fa-pen" />
+                              </button>
+                              <button
+                                type="button"
+                                className="history-item-action delete"
+                                onClick={() => void handleDeleteHistorySession(session)}
+                                disabled={isBusySession || isLockedRemoteSession}
+                                title={isLockedRemoteSession ? "当前会话处理中，暂不可删除" : "删除会话"}
+                              >
+                                <i className={isBusySession ? "fas fa-spinner fa-spin" : "fas fa-trash-can"} />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <div className="history-title">{session.title}</div>
-                      <div className="history-detail">
-                        {session.detail || `${session.messages?.length || 0} 条消息`}
-                      </div>
-                      <div className="history-agent-tag">
-                        <i className={`fas ${currentEmployee.icon}`} />
-                        {session.tag || currentEmployee.name}
-                      </div>
-                    </button>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="history-empty">
