@@ -113,6 +113,10 @@ export function TokenUsagePanel({
     [endDate, loadTokenUsage, startDate],
   );
 
+  const resetTokenUsage = useCallback(async () => {
+    await loadTokenUsage(defaultRange.startDate, defaultRange.endDate);
+  }, [defaultRange.endDate, defaultRange.startDate, loadTokenUsage]);
+
   useEffect(() => {
     void loadTokenUsage(defaultRange.startDate, defaultRange.endDate);
   }, [defaultRange.endDate, defaultRange.startDate, loadTokenUsage]);
@@ -284,16 +288,6 @@ export function TokenUsagePanel({
           <div className="portal-model-page-title">
             Token统计 <small>资源消耗分析</small>
           </div>
-          <div className="portal-model-page-actions">
-            <button
-              type="button"
-              className="portal-model-btn"
-              disabled={loading}
-              onClick={() => void fetchTokenUsage()}
-            >
-              <i className={`fas ${loading ? "fa-spinner fa-spin" : "fa-rotate-right"}`} /> 刷新
-            </button>
-          </div>
         </div>
 
         <div className="portal-model-scope-bar token-usage-scope-bar">
@@ -321,6 +315,26 @@ export function TokenUsagePanel({
               onChange={(event) => setEndDate(event.target.value)}
             />
           </label>
+          <div className="token-usage-filter-actions">
+            <button
+              type="button"
+              className="portal-model-btn token-usage-filter-action token-usage-filter-action-query"
+              disabled={loading || !startDate || !endDate}
+              onClick={() => void fetchTokenUsage()}
+            >
+              <i className={`fas ${loading ? "fa-spinner fa-spin" : "fa-magnifying-glass"}`} />
+              查询
+            </button>
+            <button
+              type="button"
+              className="portal-model-btn secondary token-usage-filter-action token-usage-filter-action-reset"
+              disabled={loading}
+              onClick={() => void resetTokenUsage()}
+            >
+              <i className="fas fa-rotate-left" />
+              重置
+            </button>
+          </div>
         </div>
 
         {error ? <div className="model-inline-notice error">{error}</div> : null}

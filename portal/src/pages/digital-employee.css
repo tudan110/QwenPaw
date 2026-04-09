@@ -1534,9 +1534,52 @@
 }
 
 .portal-digital-employee.theme-dark .portal-model-btn.secondary {
-  background: #1a2235;
-  color: #cbd5e1;
+  background: #182133;
+  color: #d7e0ef;
   border-color: #2a3b56;
+}
+
+.portal-digital-employee.theme-dark .portal-model-btn.secondary:hover {
+  background: rgba(38, 51, 78, 0.96);
+  color: #eef4ff;
+  box-shadow: 0 8px 18px rgba(2, 6, 23, 0.16);
+}
+
+.portal-digital-employee.theme-dark .portal-model-btn {
+  background: linear-gradient(135deg, #3b4f94, #545fc6);
+  color: #eef2ff;
+  border: 1px solid rgba(129, 140, 248, 0.16);
+  box-shadow: 0 10px 20px rgba(2, 6, 23, 0.26);
+}
+
+.portal-digital-employee.theme-dark .portal-model-btn:hover {
+  background: linear-gradient(135deg, #455aa3, #5d69cf);
+  box-shadow: 0 12px 24px rgba(2, 6, 23, 0.3);
+}
+
+.portal-digital-employee.theme-dark .portal-model-btn.success {
+  background: linear-gradient(135deg, #1f7a66, #2a9d84);
+  border-color: rgba(74, 222, 128, 0.16);
+  box-shadow: 0 10px 20px rgba(2, 6, 23, 0.24);
+}
+
+.portal-digital-employee.theme-dark .portal-model-btn.secondary.danger {
+  background: rgba(127, 29, 29, 0.18);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.22);
+}
+
+.portal-digital-employee.theme-dark .portal-model-btn.secondary.danger:hover {
+  background: rgba(127, 29, 29, 0.26);
+  box-shadow: 0 8px 18px rgba(127, 29, 29, 0.16);
+}
+
+.portal-digital-employee.theme-dark .token-usage-filter-action-query {
+  box-shadow: 0 10px 20px rgba(2, 6, 23, 0.26);
+}
+
+.portal-digital-employee.theme-dark .token-usage-filter-action-reset {
+  box-shadow: none;
 }
 
 .portal-digital-employee.theme-dark .portal-managed-model-copy strong,
@@ -4626,6 +4669,25 @@
   box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.12);
 }
 
+.portal-digital-employee .token-usage-filter-action {
+  min-height: 40px;
+  align-self: flex-end;
+}
+
+.portal-digital-employee .token-usage-filter-action-query {
+  box-shadow: 0 8px 18px rgba(111, 137, 255, 0.14);
+}
+
+.portal-digital-employee .token-usage-filter-action-reset {
+  box-shadow: none;
+}
+
+.portal-digital-employee .token-usage-filter-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
 .portal-digital-employee .token-usage-stats-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -4874,6 +4936,17 @@
     min-width: 0;
   }
 
+  .portal-digital-employee .token-usage-filter-action {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .portal-digital-employee .token-usage-filter-actions {
+    width: 100%;
+    flex-direction: column;
+    gap: 12px;
+  }
+
   .portal-digital-employee .token-usage-stats-row {
     grid-template-columns: 1fr;
   }
@@ -4913,18 +4986,18 @@
   gap: 6px;
   padding: 8px 18px;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--primary), #7c3aed);
+  background: linear-gradient(135deg, #6f89ff, #9a8cf8);
   color: #fff;
   border: none;
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
   transition: 0.3s;
-  box-shadow: 0 0 12px rgba(79, 110, 247, 0.2);
+  box-shadow: 0 8px 18px rgba(111, 137, 255, 0.16);
 }
 
 .portal-digital-employee .portal-model-btn:hover {
-  box-shadow: 0 0 20px rgba(79, 110, 247, 0.35);
+  box-shadow: 0 10px 22px rgba(111, 137, 255, 0.2);
   transform: translateY(-1px);
 }
 
@@ -4958,7 +5031,7 @@
 }
 
 .portal-digital-employee .portal-model-btn.success {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
+  background: linear-gradient(135deg, #4ade80, #34d399);
 }
 
 .portal-digital-employee .portal-model-scope-bar {
