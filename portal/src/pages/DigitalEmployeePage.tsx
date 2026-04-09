@@ -61,7 +61,14 @@ const capabilityOptions = [
   { id: "analyze", label: "智能分析", icon: "fa-chart-pie" },
 ] as const;
 
-const sidebarEmployeePriority = ["query", "fault"] as const;
+const sidebarEmployeePriority = [
+  "query",
+  "fault",
+  "resource",
+  "inspection",
+  "order",
+  "knowledge",
+] as const;
 
 const REMOTE_AGENT_IDS: Record<string, string> = {
   fault: "fault",
