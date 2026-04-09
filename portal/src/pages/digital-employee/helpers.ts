@@ -859,11 +859,9 @@ export function normalizeMarkdownDisplayContent(
   content: string,
   { isStreaming = false }: { isStreaming?: boolean } = {},
 ) {
-  let normalized = repairMarkdownDisplayContent(
+  let normalized = normalizeOperationalMarkdownSections(
     unwrapOuterMarkdownFence(String(content || "")),
-  );
-
-  normalized = normalizeOperationalMarkdownSections(normalized)
+  )
     .replace(/```portal-action\s*[\s\S]*?```/gi, "")
     .replace(/<br\s*\/?>\s*<br\s*\/?>/gi, "\n\n")
     .replace(/<br\s*\/?>/gi, "  \n")
@@ -890,35 +888,6 @@ export function normalizeMarkdownDisplayContent(
   }
 
   return normalized;
-}
-
-function repairMarkdownDisplayContent(content: string) {
-  const normalized = String(content || "").replace(/\r\n?/g, "\n");
-  const fencedBlocks: string[] = [];
-  const placeholderPrefix = "__PORTAL_FENCE_BLOCK__";
-
-  const protectedContent = normalized.replace(/```[\s\S]*?```/g, (block) => {
-    const marker = `${placeholderPrefix}${fencedBlocks.length}__`;
-    fencedBlocks.push(block);
-    return marker;
-  });
-
-  const repaired = protectedContent
-    .replace(/([^\n])\s*(#{1,6})([^\s#])/g, "$1\n\n$2 $3")
-    .replace(/^(#{1,6})([^\s#])/gm, "$1 $2")
-    .replace(/([^\n])\s*((?:[-*+]\s+|\d+\.\s+|>\s+))/g, "$1\n$2")
-    .replace(/([^\n])(\n?)(\|[^\n]+\|)/g, (fullMatch, before, maybeBreak, tableRow) => {
-      if (before === "\n") {
-        return fullMatch;
-      }
-      return `${before}\n${tableRow}`;
-    })
-    .replace(/([^\n])(\n?)(---|\*\*\*|___)(\n?)(#{1,6}\s)/g, "$1\n\n$3\n\n$5")
-    .replace(/\n{3,}/g, "\n\n");
-
-  return repaired.replace(new RegExp(`${placeholderPrefix}(\\d+)__`, "g"), (_, index) =>
-    fencedBlocks[Number(index)] || "",
-  );
 }
 
 function normalizeOperationalMarkdownSections(content: string) {
