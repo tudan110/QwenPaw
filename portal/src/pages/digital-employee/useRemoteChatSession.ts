@@ -275,19 +275,14 @@ export function useRemoteChatSession({
     setHistoryError("");
 
     try {
-      const chatGroups = await Promise.all(
-        [COPAW_USER_ID].map((userId) =>
-          listChats(nextRemoteAgentId, {
-            user_id: userId,
-            channel: COPAW_CHANNEL,
-          }),
-        ),
-      );
+      const chats = await listChats(nextRemoteAgentId, {
+        channel: COPAW_CHANNEL,
+      });
       if (remoteHistoryRequestIdRef.current !== requestId) {
         return;
       }
       setRemoteSessions(
-        normalizeRemoteSessions(chatGroups.flat(), nextEmployee.id),
+        normalizeRemoteSessions(chats, nextEmployee.id),
       );
     } catch (error: any) {
       if (remoteHistoryRequestIdRef.current !== requestId) {

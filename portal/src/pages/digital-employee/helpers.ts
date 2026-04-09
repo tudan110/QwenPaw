@@ -437,13 +437,8 @@ export function buildRemoteChatName(employeeName: string, firstMessage: string) 
 }
 
 export function normalizeRemoteSessions(chats: any[] = [], employeeId: string) {
-  const allowedPrefixes = getRemoteSessionPrefixes(employeeId);
   const scopedChats = [...(chats || [])]
-    .filter((chat) =>
-      allowedPrefixes.some((prefix) =>
-        String(chat.session_id || "").startsWith(prefix),
-      ),
-    )
+    .filter((chat) => isRemoteSessionForEmployee(chat, employeeId))
     .sort((left, right) => {
       const leftTime = new Date(left.updated_at || left.created_at || 0).getTime();
       const rightTime = new Date(right.updated_at || right.created_at || 0).getTime();
@@ -820,8 +815,15 @@ export function getPortalSessionPrefix(employeeId: string) {
   return `portal-${employeeId}-`;
 }
 
-function getRemoteSessionPrefixes(employeeId: string) {
-  return [getPortalSessionPrefix(employeeId)];
+function isCrossAgentSessionForEmployee(chat: any, employeeId: string) {
+  const segments = String(chat?.session_id || "").split(":");
+  return segments.length >= 4 && segments[1] === "to" && segments[2] === employeeId;
+}
+
+function isRemoteSessionForEmployee(chat: any, employeeId: string) {
+  const sessionId = String(chat?.session_id || "");
+  return sessionId.startsWith(getPortalSessionPrefix(employeeId))
+    || isCrossAgentSessionForEmployee(chat, employeeId);
 }
 
 function buildRemoteSessionDedupeKey(chat: any, employeeId: string) {
