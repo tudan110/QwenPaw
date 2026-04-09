@@ -747,7 +747,6 @@ export default function ChatPage() {
               </Tooltip>
             );
           },
-          accept: "*/*",
           customRequest: handleFileUpload,
         },
         placeholder: t("chat.inputPlaceholder"),
