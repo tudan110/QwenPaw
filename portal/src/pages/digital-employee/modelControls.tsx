@@ -176,15 +176,19 @@ export function AdvancedModelEntry({
   activeProviderName,
   isActive,
   isTokenUsageActive,
+  isOpsExpertActive,
   onOpenConfig,
   onOpenTokenUsage,
+  onOpenOpsExpert,
 }: {
   activeModelLabel: string;
   activeProviderName: string;
   isActive?: boolean;
   isTokenUsageActive?: boolean;
+  isOpsExpertActive?: boolean;
   onOpenConfig: () => void;
   onOpenTokenUsage: () => void;
+  onOpenOpsExpert: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -229,6 +233,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">Token统计</div>
           <div className="sidebar-advanced-item-desc">资源消耗分析</div>
           <div className="sidebar-advanced-item-meta">按模型 / 日期统计</div>
+        </button>
+        <button
+          className={isOpsExpertActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenOpsExpert}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="ops-expert">
+              🧑‍💻
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">运维专家</div>
+          <div className="sidebar-advanced-item-desc">数字员工专家库</div>
+          <div className="sidebar-advanced-item-meta">垂直领域专家</div>
         </button>
       </div>
     </div>

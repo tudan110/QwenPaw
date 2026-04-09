@@ -7,6 +7,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<DigitalEmployeePage />} />
       <Route path="/agent-center" element={<AgentCenterPage />} />
+      <Route path="/ops-expert" element={<DigitalEmployeePage forcedSection="ops-expert" />} />
       <Route path="/overview" element={<DigitalEmployeePage forcedSection="overview" />} />
       <Route path="/dashboard" element={<DigitalEmployeePage forcedSection="dashboard" />} />
       <Route path="/tasks" element={<DigitalEmployeePage forcedSection="tasks" />} />

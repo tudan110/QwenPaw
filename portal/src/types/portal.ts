@@ -92,6 +92,19 @@ export interface PortalStatSummary {
   efficiency: number;
 }
 
+export interface OpsExpert {
+  id: string;
+  name: string;
+  title: string;
+  desc: string;
+  tags: string[];
+  skills: string[];
+  avatar: string;
+  bg: string;
+  color: string;
+  category: string;
+}
+
 export interface AlarmWorkorder {
   [key: string]: unknown;
   id?: string;

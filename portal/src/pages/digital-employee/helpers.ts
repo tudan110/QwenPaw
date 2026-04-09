@@ -5,13 +5,14 @@ export const ALARM_WORKORDER_ENTRY = "alarm-workorders";
 export const ALARM_WORKORDER_LIMIT = 5;
 export const PORTAL_FAULT_WORKORDER_MARKER = "# PORTAL FAULT WORKORDER MODE";
 export const PORTAL_VIEW_OPTIONS = ["chat", "overview", "dashboard", "tasks"] as const;
-export const PORTAL_ADVANCED_PANEL_OPTIONS = ["model-config", "token-usage"] as const;
+export const PORTAL_ADVANCED_PANEL_OPTIONS = ["model-config", "token-usage", "ops-expert"] as const;
 export const PORTAL_ROUTE_SECTION_OPTIONS = [
   "overview",
   "dashboard",
   "tasks",
   "model-config",
   "token-usage",
+  "ops-expert",
 ] as const;
 
 export type PortalView = (typeof PORTAL_VIEW_OPTIONS)[number];

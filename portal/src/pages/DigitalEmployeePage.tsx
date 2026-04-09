@@ -35,6 +35,7 @@ import {
 import { OverviewPanel } from "./digital-employee/overviewPanel";
 import { TaskViewPanel } from "./digital-employee/taskViewPanel";
 import { TokenUsagePanel } from "./digital-employee/tokenUsagePanel";
+import { OpsExpertPanel } from "./digital-employee/opsExpertPanel";
 import {
   ALARM_WORKORDER_ENTRY,
   buildPortalHomePath,
@@ -778,6 +779,7 @@ export default function DigitalEmployeePage({
   const showModelSelector = currentView === "chat";
   const isModelConfigMode = activeAdvancedPanel === "model-config";
   const isTokenUsageMode = activeAdvancedPanel === "token-usage";
+  const isOpsExpertMode = activeAdvancedPanel === "ops-expert";
   const showPortalHomeHero = isPortalHomeChat && safeMessages.length === 0;
   const mentionContext = useMemo(
     () => extractMentionQuery(inputMessage, inputCursor),
@@ -1658,10 +1660,16 @@ export default function DigitalEmployeePage({
             activeProviderName={activeProviderName}
             isActive={isModelConfigMode}
             isTokenUsageActive={isTokenUsageMode}
+            isOpsExpertActive={isOpsExpertMode}
             onOpenConfig={openModelConfig}
             onOpenTokenUsage={() =>
               updateCurrentEmployeeRoute({
                 panel: "token-usage",
+              })
+            }
+            onOpenOpsExpert={() =>
+              updateCurrentEmployeeRoute({
+                panel: "ops-expert",
               })
             }
           />
@@ -1669,7 +1677,7 @@ export default function DigitalEmployeePage({
 
         <div
           className={
-            isModelConfigMode || isTokenUsageMode
+            isModelConfigMode || isTokenUsageMode || isOpsExpertMode
               ? "main-content advanced-page-mode"
               : currentView === "chat"
                 ? "main-content"
@@ -1717,6 +1725,8 @@ export default function DigitalEmployeePage({
               pageTheme={pageTheme}
               currentEmployeeName={selectedEmployee ? currentEmployee.name : "全局"}
             />
+          ) : isOpsExpertMode ? (
+            <OpsExpertPanel />
           ) : (
             <>
           {!isPortalHomeChat ? (
