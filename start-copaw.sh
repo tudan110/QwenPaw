@@ -1,6 +1,11 @@
 #!/bin/bash
 # CoPaw 项目启动脚本 (使用 uv)
 
+# 兼容 sh 调用：若非 bash 则自动切换到 bash 执行
+if [ -z "$BASH_VERSION" ]; then
+    exec bash "$0" "$@"
+fi
+
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
