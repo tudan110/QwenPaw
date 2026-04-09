@@ -72,7 +72,7 @@ const serviceHealthItems: ServiceHealthItem[] = [
     status: "健康",
     health: 99.98,
     latency: "68ms",
-    owner: "故障速应",
+    owner: "故障处置员",
   },
   {
     id: "svc-billing",
@@ -80,7 +80,7 @@ const serviceHealthItems: ServiceHealthItem[] = [
     status: "关注",
     health: 99.74,
     latency: "112ms",
-    owner: "数据洞察员",
+    owner: "数据分析员",
   },
   {
     id: "svc-api",
@@ -88,7 +88,7 @@ const serviceHealthItems: ServiceHealthItem[] = [
     status: "健康",
     health: 99.91,
     latency: "74ms",
-    owner: "资产管家",
+    owner: "资产管理员",
   },
   {
     id: "svc-cmdb",
@@ -96,7 +96,7 @@ const serviceHealthItems: ServiceHealthItem[] = [
     status: "巡检中",
     health: 99.63,
     latency: "95ms",
-    owner: "巡弋小卫",
+    owner: "巡检专员",
   },
 ];
 

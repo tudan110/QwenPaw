@@ -108,9 +108,9 @@ const PORTAL_HOME_EMPLOYEE = {
     "入口导航",
   ],
   quickCommands: [
-    "@数据洞察员 当前有哪些设备？",
-    "@故障速应 数据库响应很慢，请帮我定位",
-    "@知库小典 Oracle 死锁怎么处理？",
+    "@数据分析员 当前有哪些设备？",
+    "@故障处置员 数据库响应很慢，请帮我定位",
+    "@知识专员 Oracle 死锁怎么处理？",
     "帮我判断这个问题应该交给哪个数字员工",
   ],
   welcome: "",
@@ -341,12 +341,12 @@ function scoreMentionCandidate(employee: (typeof digitalEmployees)[number], quer
 function buildPortalAssistantReply(content: string) {
   const normalized = String(content || "").trim();
   const suggestions = [
-    { employee: "数据洞察员", keywords: ["设备", "指标", "报表", "趋势", "性能", "查询", "可用性"] },
-    { employee: "故障速应", keywords: ["故障", "异常", "超时", "中断", "恢复", "慢", "报警", "告警"] },
-    { employee: "资产管家", keywords: ["资产", "纳管", "扫描", "发现", "拓扑", "资源"] },
-    { employee: "巡弋小卫", keywords: ["巡检", "健康", "检查", "日报", "周报"] },
-    { employee: "知库小典", keywords: ["怎么", "最佳实践", "方案", "知识", "原理"] },
-    { employee: "工单管家", keywords: ["工单", "审批", "转派", "流程"] },
+    { employee: "数据分析员", keywords: ["设备", "指标", "报表", "趋势", "性能", "查询", "可用性"] },
+    { employee: "故障处置员", keywords: ["故障", "异常", "超时", "中断", "恢复", "慢", "报警", "告警"] },
+    { employee: "资产管理员", keywords: ["资产", "纳管", "扫描", "发现", "拓扑", "资源"] },
+    { employee: "巡检专员", keywords: ["巡检", "健康", "检查", "日报", "周报"] },
+    { employee: "知识专员", keywords: ["怎么", "最佳实践", "方案", "知识", "原理"] },
+    { employee: "工单调度员", keywords: ["工单", "审批", "转派", "流程"] },
   ];
 
   const recommended = suggestions
@@ -368,9 +368,9 @@ function buildPortalAssistantReply(content: string) {
     "- 输入 `@数字员工名 + 需求`，我会自动切换并执行对应员工逻辑",
     "",
     "可直接复制这些示例继续：",
-    "- `@数据洞察员 当前有哪些设备？`",
-    "- `@故障速应 数据库响应很慢，请帮我定位`",
-    "- `@知库小典 Oracle 死锁怎么处理？`",
+    "- `@数据分析员 当前有哪些设备？`",
+    "- `@故障处置员 数据库响应很慢，请帮我定位`",
+    "- `@知识专员 Oracle 死锁怎么处理？`",
   ].join("\n");
 }
 
