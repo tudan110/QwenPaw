@@ -2,353 +2,304 @@ import { useMemo } from "react";
 import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
 import DigitalEmployeeAvatar from "../../components/DigitalEmployeeAvatar";
-import {
-  digitalEmployees,
-  getEmployeeById,
-  operationsBoardColumns,
-  portalStats,
-  taskDailyOverviewItems,
-} from "../../data/portalData";
+import { digitalEmployees } from "../../data/portalData";
 
 type OverviewPanelProps = {
   pageTheme: "light" | "dark";
   onOpenEmployeeChat: (employeeId: string) => void;
 };
 
-type AlertDistributionItem = {
-  label: string;
-  count: number;
-  color: string;
-  hint: string;
-};
-
-type ServiceHealthItem = {
-  id: string;
-  name: string;
-  status: string;
-  health: number;
-  latency: string;
-  owner: string;
-};
-
-type AssetMetric = {
+type OverviewKpi = {
   label: string;
   value: string;
-  hint: string;
-  icon: string;
+  trend: "up" | "down" | "flat";
+  trendValue: string;
+  color: string;
+  barPct: number;
+  iconClass: string;
 };
 
-const alertTrendHours = [
-  "00:00",
-  "02:00",
-  "04:00",
-  "06:00",
-  "08:00",
-  "10:00",
-  "12:00",
-  "14:00",
-  "16:00",
-  "18:00",
-  "20:00",
-  "22:00",
-];
-
-const alertTrendSeries = {
-  total: [8, 7, 6, 9, 14, 18, 16, 12, 10, 11, 9, 7],
-  critical: [2, 2, 1, 2, 4, 6, 5, 3, 2, 3, 2, 1],
+type OverviewAlert = {
+  level: string;
+  color: string;
+  count: number;
+  pct: number;
 };
 
-const alertDistribution: AlertDistributionItem[] = [
-  { label: "紧急", count: 3, color: "#ef4444", hint: "需 5 分钟内响应" },
-  { label: "高危", count: 6, color: "#f97316", hint: "核心链路性能抖动" },
-  { label: "一般", count: 11, color: "#f59e0b", hint: "建议当日闭环" },
-  { label: "提示", count: 15, color: "#06b6d4", hint: "观测与趋势跟踪" },
+type OverviewTicket = {
+  label: string;
+  value: string | number;
+  color: string;
+};
+
+type OverviewService = {
+  name: string;
+  status: "healthy" | "warning" | "critical";
+  uptime: string;
+  latency: string;
+  latencyClass: "" | "warn" | "bad";
+};
+
+type OverviewEvent = {
+  title: string;
+  time: string;
+  color: string;
+  iconClass: string;
+  employeeId?: string;
+};
+
+const EMPLOYEE_ORDER = [
+  "resource",
+  "fault",
+  "inspection",
+  "order",
+  "query",
+  "knowledge",
+] as const;
+
+const STATUS_LABELS: Record<string, string> = {
+  running: "运行中",
+  urgent: "紧急处理中",
+  stopped: "已停止",
+  pending: "待执行",
+  completed: "已完成",
+};
+
+const ASSET_OVERVIEW_STATS: OverviewKpi[] = [
+  {
+    label: "纳管总资产",
+    value: "19,540",
+    trend: "flat",
+    trendValue: "资产",
+    color: "#3b82f6",
+    barPct: 100,
+    iconClass: "fa-server",
+  },
+  {
+    label: "云主机",
+    value: "12,450",
+    trend: "flat",
+    trendValue: "IaaS",
+    color: "#6366f1",
+    barPct: 64,
+    iconClass: "fa-cloud",
+  },
+  {
+    label: "网络设备",
+    value: "5,200",
+    trend: "flat",
+    trendValue: "LAN",
+    color: "#22c55e",
+    barPct: 27,
+    iconClass: "fa-network-wired",
+  },
+  {
+    label: "在线率",
+    value: "99.1%",
+    trend: "flat",
+    trendValue: "稳定",
+    color: "#22d3ee",
+    barPct: 99.1,
+    iconClass: "fa-signal",
+  },
 ];
 
-const serviceHealthItems: ServiceHealthItem[] = [
+const KPI_CARDS: OverviewKpi[] = [
   {
-    id: "svc-core-pay",
-    name: "支付核心链路",
-    status: "健康",
-    health: 99.98,
-    latency: "68ms",
-    owner: "故障处置员",
+    label: "业务可用率",
+    value: "99.97%",
+    trend: "up",
+    trendValue: "+0.12%",
+    color: "#22c55e",
+    barPct: 99.97,
+    iconClass: "fa-heart-pulse",
   },
   {
-    id: "svc-billing",
-    name: "计费中心",
-    status: "关注",
-    health: 99.74,
-    latency: "112ms",
-    owner: "数据分析员",
+    label: "活跃告警",
+    value: "7",
+    trend: "down",
+    trendValue: "-3",
+    color: "#ef4444",
+    barPct: 14,
+    iconClass: "fa-triangle-exclamation",
   },
   {
-    id: "svc-api",
-    name: "开放 API 网关",
-    status: "健康",
-    health: 99.91,
-    latency: "74ms",
-    owner: "资产管理员",
+    label: "今日工单",
+    value: "23",
+    trend: "up",
+    trendValue: "+5",
+    color: "#6366f1",
+    barPct: 46,
+    iconClass: "fa-square-check",
   },
   {
-    id: "svc-cmdb",
-    name: "CMDB 资产中枢",
-    status: "巡检中",
-    health: 99.63,
-    latency: "95ms",
-    owner: "巡检专员",
+    label: "数字员工在线",
+    value: "5/6",
+    trend: "flat",
+    trendValue: "稳定",
+    color: "#22d3ee",
+    barPct: 83,
+    iconClass: "fa-users",
+  },
+  ...ASSET_OVERVIEW_STATS,
+];
+
+const ALERTS: OverviewAlert[] = [
+  { level: "紧急", color: "#ef4444", count: 1, pct: 14 },
+  { level: "严重", color: "#f97316", count: 2, pct: 28 },
+  { level: "警告", color: "#f59e0b", count: 4, pct: 57 },
+  { level: "通知", color: "#22d3ee", count: 12, pct: 100 },
+];
+
+const TICKETS: OverviewTicket[] = [
+  { label: "待处理", value: 8, color: "#f59e0b" },
+  { label: "进行中", value: 6, color: "#3b82f6" },
+  { label: "已完成", value: 18, color: "#22c55e" },
+  { label: "完成率", value: "75%", color: "#6366f1" },
+];
+
+const SERVICES: OverviewService[] = [
+  { name: "核心交换网络", status: "healthy", uptime: "99.99%", latency: "2ms", latencyClass: "" },
+  { name: "Web应用集群", status: "healthy", uptime: "99.98%", latency: "45ms", latencyClass: "" },
+  {
+    name: "数据库集群(MySQL)",
+    status: "warning",
+    uptime: "99.92%",
+    latency: "128ms",
+    latencyClass: "warn",
+  },
+  { name: "K8s容器平台", status: "healthy", uptime: "99.95%", latency: "12ms", latencyClass: "" },
+  { name: "对象存储(OSS)", status: "healthy", uptime: "100%", latency: "8ms", latencyClass: "" },
+  { name: "支付服务", status: "critical", uptime: "98.7%", latency: "892ms", latencyClass: "bad" },
+  { name: "CDN加速节点", status: "healthy", uptime: "99.99%", latency: "5ms", latencyClass: "" },
+  {
+    name: "消息队列(Kafka)",
+    status: "warning",
+    uptime: "99.88%",
+    latency: "67ms",
+    latencyClass: "warn",
   },
 ];
 
-const assetMetrics: AssetMetric[] = [
-  { label: "纳管资产", value: "12,481", hint: "+168 / 今日", icon: "fa-server" },
-  { label: "业务服务", value: "318", hint: "27 条核心链路", icon: "fa-project-diagram" },
-  { label: "自动策略", value: "86", hint: "12 条刚刚执行", icon: "fa-bolt" },
+const EVENTS: OverviewEvent[] = [
+  {
+    title: "支付服务连接池耗尽",
+    time: "2分钟前",
+    color: "#ef4444",
+    iconClass: "fa-circle-xmark",
+    employeeId: "fault",
+  },
+  {
+    title: "K8s Pod自动扩容 → 12副本",
+    time: "5分钟前",
+    color: "#22d3ee",
+    iconClass: "fa-up-right-and-down-left-from-center",
+    employeeId: "resource",
+  },
+  {
+    title: "MySQL慢查询告警已触发",
+    time: "8分钟前",
+    color: "#f59e0b",
+    iconClass: "fa-database",
+    employeeId: "fault",
+  },
+  {
+    title: "SSL证书续签完成(15个域名)",
+    time: "15分钟前",
+    color: "#22c55e",
+    iconClass: "fa-lock",
+    employeeId: "inspection",
+  },
+  {
+    title: "CDN节点华东区域流量激增",
+    time: "22分钟前",
+    color: "#f97316",
+    iconClass: "fa-wave-square",
+    employeeId: "query",
+  },
+  {
+    title: "巡检专员完成全量主机巡检",
+    time: "30分钟前",
+    color: "#22c55e",
+    iconClass: "fa-circle-check",
+    employeeId: "inspection",
+  },
+  {
+    title: "Kafka消费者组Lag告警",
+    time: "45分钟前",
+    color: "#f59e0b",
+    iconClass: "fa-triangle-exclamation",
+    employeeId: "fault",
+  },
+  {
+    title: "自动备份任务完成",
+    time: "1小时前",
+    color: "#6366f1",
+    iconClass: "fa-cloud-arrow-up",
+    employeeId: "order",
+  },
 ];
 
-const priorityRank = {
-  P0: 0,
-  P1: 1,
-  P2: 2,
-  P3: 3,
-} as const;
-
-const statusRank = {
-  running: 0,
-  urgent: 0,
-  pending: 1,
-  completed: 2,
-} as const;
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat("zh-CN").format(value);
-}
-
-function parseSuccessRate(value: string) {
-  const parsed = Number.parseFloat(value.replace("%", ""));
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function getEmployeeStatusMeta(status: string, urgent: boolean) {
-  if (urgent) {
-    return {
-      label: "高优先级",
-      tone: "danger",
-    } as const;
-  }
-  if (status === "running") {
-    return {
-      label: "在线",
-      tone: "success",
-    } as const;
-  }
-  if (status === "stopped") {
-    return {
-      label: "暂停",
-      tone: "muted",
-    } as const;
-  }
-  return {
-    label: "待命",
-    tone: "info",
-  } as const;
-}
+const ALERT_TREND_HOURS = Array.from({ length: 24 }, (_, index) => `${String(index).padStart(2, "0")}:00`);
+const ALERT_TREND_SERIES_CRITICAL = [2, 1, 1, 0, 1, 0, 0, 1, 3, 5, 8, 6, 4, 3, 5, 7, 4, 3, 2, 3, 4, 2, 1, 1];
+const ALERT_TREND_SERIES_WARNING = [5, 4, 3, 2, 3, 2, 1, 4, 6, 9, 12, 10, 8, 7, 9, 11, 8, 6, 5, 6, 7, 5, 4, 3];
 
 export function OverviewPanel({ pageTheme, onOpenEmployeeChat }: OverviewPanelProps) {
   const isDark = pageTheme === "dark";
 
-  const overviewEmployees = useMemo(
+  const orderedEmployees = useMemo(
     () =>
-      digitalEmployees.map((employee) => ({
-        ...employee,
-        statusMeta: getEmployeeStatusMeta(employee.status, employee.urgent),
-      })),
-    [],
-  );
-
-  const onlineEmployees = overviewEmployees.filter((employee) => employee.status === "running").length;
-  const urgentEmployees = overviewEmployees.filter((employee) => employee.urgent).length;
-  const averageSuccess =
-    overviewEmployees.reduce((sum, employee) => sum + parseSuccessRate(employee.success), 0) /
-    overviewEmployees.length;
-
-  const workorderSummary = useMemo(() => {
-    const summary = taskDailyOverviewItems.reduce(
-      (result, item) => {
-        result.total += 1;
-        if (item.status === "completed") {
-          result.completed += 1;
-        } else if (item.status === "running" || item.status === "urgent") {
-          result.running += 1;
-        } else {
-          result.pending += 1;
-        }
-        return result;
-      },
-      { total: 0, completed: 0, running: 0, pending: 0 },
-    );
-
-    return {
-      ...summary,
-      completionRate:
-        summary.total > 0 ? Math.round((summary.completed / summary.total) * 100) : 0,
-    };
-  }, []);
-
-  const workorderQueue = useMemo(
-    () =>
-      [...taskDailyOverviewItems]
-        .sort((left, right) => {
-          const leftPriority = priorityRank[left.priority];
-          const rightPriority = priorityRank[right.priority];
-          if (leftPriority !== rightPriority) {
-            return leftPriority - rightPriority;
-          }
-          const leftStatus = statusRank[left.status];
-          const rightStatus = statusRank[right.status];
-          if (leftStatus !== rightStatus) {
-            return leftStatus - rightStatus;
-          }
-          return left.timeLabel.localeCompare(right.timeLabel);
-        })
-        .slice(0, 5),
-    [],
-  );
-
-  const activeAlerts = alertDistribution
-    .slice(0, 3)
-    .reduce((sum, item) => sum + item.count, 0);
-
-  const kpiCards = [
-    {
-      label: "业务可用率",
-      value: "99.97%",
-      hint: "核心服务 24h 健康度",
-      icon: "fa-shield-alt",
-      tone: "blue",
-    },
-    {
-      label: "活跃告警",
-      value: `${activeAlerts}`,
-      hint: "紧急 / 高危 / 一般",
-      icon: "fa-exclamation-triangle",
-      tone: "red",
-    },
-    {
-      label: "今日工单",
-      value: `${workorderSummary.total}`,
-      hint: `${workorderSummary.completionRate}% 已闭环`,
-      icon: "fa-ticket-alt",
-      tone: "amber",
-    },
-    {
-      label: "数字员工在线",
-      value: `${onlineEmployees}/${overviewEmployees.length}`,
-      hint: `${urgentEmployees} 个高优先级席位`,
-      icon: "fa-users-cog",
-      tone: "cyan",
-    },
-    ...assetMetrics.map((metric, index) => ({
-      ...metric,
-      tone: index === 0 ? "purple" : index === 1 ? "green" : "slate",
-    })),
-  ];
-
-  const eventFeed = useMemo(
-    () =>
-      operationsBoardColumns
-        .flatMap((column) =>
-          column.items.map((item) => ({
-            id: item.id,
-            title: item.title,
-            description: item.description,
-            employeeId: item.ownerEmployeeIds[0],
-            employeeLabel: item.ownerLabel,
-            state: column.title,
-            timeLabel: item.statusText || item.timeText,
-            tone: item.ownerColor,
-          })),
-        )
-        .slice(0, 6),
+      EMPLOYEE_ORDER
+        .map((id) => digitalEmployees.find((employee) => employee.id === id))
+        .filter((employee): employee is (typeof digitalEmployees)[number] => Boolean(employee)),
     [],
   );
 
   const chartOption = useMemo<EChartsOption>(
     () => ({
-      backgroundColor: "transparent",
-      animationDuration: 500,
-      grid: {
-        left: 12,
-        right: 12,
-        top: 40,
-        bottom: 10,
-        containLabel: true,
-      },
-      legend: {
-        top: 0,
-        right: 0,
-        textStyle: {
-          color: isDark ? "#cbd5e1" : "#475569",
-          fontSize: 12,
-        },
-        itemWidth: 10,
-        itemHeight: 10,
-      },
-      tooltip: {
-        trigger: "axis",
-        backgroundColor: isDark ? "rgba(15, 23, 42, 0.94)" : "rgba(255, 255, 255, 0.96)",
-        borderColor: isDark ? "rgba(59, 130, 246, 0.28)" : "rgba(148, 163, 184, 0.24)",
-        textStyle: {
-          color: isDark ? "#e2e8f0" : "#0f172a",
-        },
-      },
+      grid: { top: 10, right: 10, bottom: 24, left: 32 },
       xAxis: {
         type: "category",
-        boundaryGap: false,
-        data: alertTrendHours,
+        data: ALERT_TREND_HOURS,
+        axisLabel: {
+          fontSize: 9,
+          color: isDark ? "#64748b" : "#94a3b8",
+          interval: 3,
+        },
         axisLine: {
           lineStyle: {
-            color: isDark ? "rgba(148, 163, 184, 0.18)" : "rgba(148, 163, 184, 0.32)",
+            color: isDark ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.07)",
           },
         },
-        axisLabel: {
-          color: isDark ? "#94a3b8" : "#64748b",
-          fontSize: 11,
-        },
-        axisTick: {
-          show: false,
-        },
+        axisTick: { show: false },
       },
       yAxis: {
         type: "value",
-        axisLine: {
-          show: false,
-        },
         splitLine: {
           lineStyle: {
-            color: isDark ? "rgba(51, 65, 85, 0.55)" : "rgba(226, 232, 240, 0.88)",
+            color: isDark ? "rgba(255,255,255,.05)" : "rgba(0,0,0,.05)",
           },
         },
         axisLabel: {
-          color: isDark ? "#94a3b8" : "#64748b",
+          fontSize: 9,
+          color: isDark ? "#64748b" : "#94a3b8",
+        },
+      },
+      tooltip: {
+        trigger: "axis",
+        backgroundColor: isDark ? "#1c2130" : "#fff",
+        borderColor: isDark ? "rgba(255,255,255,.1)" : "rgba(0,0,0,.1)",
+        textStyle: {
           fontSize: 11,
+          color: isDark ? "#e2e8f0" : "#1e293b",
         },
       },
       series: [
         {
-          name: "告警总量",
           type: "line",
           smooth: true,
-          data: alertTrendSeries.total,
-          symbol: "circle",
-          symbolSize: 7,
-          lineStyle: {
-            width: 3,
-            color: "#38bdf8",
-          },
-          itemStyle: {
-            color: "#38bdf8",
-          },
+          symbol: "none",
+          lineStyle: { width: 2, color: "#ef4444" },
           areaStyle: {
             color: {
               type: "linear",
@@ -357,274 +308,212 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat }: OverviewPanelPr
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: "rgba(56, 189, 248, 0.34)" },
-                { offset: 1, color: "rgba(56, 189, 248, 0.02)" },
+                { offset: 0, color: "rgba(239,68,68,.25)" },
+                { offset: 1, color: "rgba(239,68,68,0)" },
               ],
             },
           },
+          data: ALERT_TREND_SERIES_CRITICAL,
         },
         {
-          name: "紧急告警",
           type: "line",
           smooth: true,
-          data: alertTrendSeries.critical,
-          symbol: "circle",
-          symbolSize: 6,
-          lineStyle: {
-            width: 2,
-            color: "#fb7185",
+          symbol: "none",
+          lineStyle: { width: 2, color: "#f59e0b" },
+          areaStyle: {
+            color: {
+              type: "linear",
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: "rgba(245,158,11,.15)" },
+                { offset: 1, color: "rgba(245,158,11,0)" },
+              ],
+            },
           },
-          itemStyle: {
-            color: "#fb7185",
-          },
+          data: ALERT_TREND_SERIES_WARNING,
         },
       ],
     }),
     [isDark],
   );
 
-  const maxAlertCount = Math.max(...alertDistribution.map((item) => item.count));
-  const maxHealth = 100;
-
   return (
-    <div className="portal-overview">
-      <section className="overview-hero">
-        <div className="overview-hero-copy">
-          <div className="overview-kicker">
-            <span className="overview-kicker-dot" />
-            数字总览
-          </div>
-          <h3>全局态势感知与数字员工协同调度</h3>
-          <p>
-            聚合数字员工、工单、告警和业务服务健康度，帮助值班席位在一个视图里完成感知、定位与派发。
-          </p>
+    <div className="portal-overview portal-overview-reference">
+      <div className="overview-main-header">
+        <div className="overview-main-title">
+          <span className="overview-live-dot" />
+          数字总览
+          <small>全局态势感知</small>
         </div>
-        <div className="overview-hero-badges">
-          <div className="overview-hero-badge">
-            <strong>{formatNumber(portalStats.tasksToday)}</strong>
-            <span>今日自动化动作</span>
-          </div>
-          <div className="overview-hero-badge">
-            <strong>{portalStats.efficiency}%</strong>
-            <span>流程自动化效率</span>
-          </div>
-          <div className="overview-hero-badge">
-            <strong>{averageSuccess.toFixed(1)}%</strong>
-            <span>数字员工平均成功率</span>
-          </div>
-        </div>
-      </section>
+      </div>
 
-      <section className="overview-kpi-grid">
-        {kpiCards.map((card) => (
-          <article key={card.label} className={`overview-kpi-card tone-${card.tone}`}>
-            <div className="overview-kpi-icon">
-              <i className={`fas ${card.icon}`} />
+      <section className="overview-ref-top">
+        {KPI_CARDS.map((card) => (
+          <article key={card.label} className="overview-ref-kpi">
+            <div className="overview-ref-kpi-head">
+              <div className="overview-ref-kpi-icon" style={{ background: card.color }}>
+                <i className={`fas ${card.iconClass}`} />
+              </div>
+              <div className={`overview-ref-kpi-trend ${card.trend}`}>{card.trendValue}</div>
             </div>
-            <div className="overview-kpi-content">
-              <span>{card.label}</span>
-              <strong>{card.value}</strong>
-              <em>{card.hint}</em>
+            <div className="overview-ref-kpi-value" style={{ color: card.color }}>
+              {card.value}
+            </div>
+            <div className="overview-ref-kpi-label">{card.label}</div>
+            <div className="overview-ref-kpi-bar">
+              <div
+                className="overview-ref-kpi-bar-fill"
+                style={{ width: `${card.barPct}%`, background: card.color }}
+              />
             </div>
           </article>
         ))}
       </section>
 
-      <section className="overview-grid">
-        <article className="overview-card overview-span-2">
-          <header className="overview-card-header">
-            <div>
-              <h4>数字员工状态</h4>
-              <p>在线席位、优先级与能力使用率</p>
-            </div>
-            <span className="overview-header-tag">实时调度</span>
-          </header>
-          <div className="overview-employee-grid">
-            {overviewEmployees.map((employee) => (
+      <section className="overview-ref-mid">
+        <article className="overview-ref-card">
+          <div className="overview-ref-card-title">
+            <i className="fas fa-users" />
+            数字员工状态
+          </div>
+          <div className="overview-ref-employee-grid">
+            {orderedEmployees.map((employee) => (
               <button
                 key={employee.id}
                 type="button"
-                className="overview-employee-card"
+                className="overview-ref-employee-item"
                 onClick={() => onOpenEmployeeChat(employee.id)}
               >
-                <div className="overview-employee-card-top">
-                  <DigitalEmployeeAvatar employee={employee} className="overview-employee-avatar" />
-                  <span className={`overview-status-pill tone-${employee.statusMeta.tone}`}>
-                    {employee.statusMeta.label}
-                  </span>
-                </div>
-                <div className="overview-employee-name">{employee.name}</div>
-                <div className="overview-employee-desc">{employee.desc}</div>
-                <div className="overview-employee-meta">
-                  <div>
-                    <strong>{formatNumber(employee.tasks)}</strong>
-                    <span>累计任务</span>
-                  </div>
-                  <div>
-                    <strong>{employee.success}</strong>
-                    <span>成功率</span>
-                  </div>
+                <DigitalEmployeeAvatar employee={employee} className="overview-ref-employee-avatar" />
+                <div className="overview-ref-employee-name">{employee.name}</div>
+                <div className={`overview-ref-employee-status ${employee.status}`}>
+                  {STATUS_LABELS[employee.status] || employee.status}
                 </div>
               </button>
             ))}
           </div>
         </article>
 
-        <article className="overview-card overview-workorder-card">
-          <header className="overview-card-header">
-            <div>
-              <h4>今日工单</h4>
-              <p>以当日待办与运行中任务为主视角</p>
-            </div>
-            <span className="overview-header-tag subtle">日常闭环</span>
-          </header>
-          <div className="overview-workorder-summary">
-            <div className="overview-workorder-total">
-              <strong>{workorderSummary.total}</strong>
-              <span>今日总量</span>
-            </div>
-            <div className="overview-workorder-split">
-              <div>
-                <strong>{workorderSummary.running}</strong>
-                <span>运行中</span>
-              </div>
-              <div>
-                <strong>{workorderSummary.pending}</strong>
-                <span>待处理</span>
-              </div>
-              <div>
-                <strong>{workorderSummary.completed}</strong>
-                <span>已完成</span>
-              </div>
-            </div>
+        <article className="overview-ref-card">
+          <div className="overview-ref-card-title">
+            <i className="fas fa-square-check" />
+            今日工单
           </div>
-          <div className="overview-ticket-list">
-            {workorderQueue.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className="overview-ticket-item"
-                onClick={() => onOpenEmployeeChat(item.employeeId)}
-              >
-                <div className="overview-ticket-main">
-                  <span className={`overview-priority-tag ${item.priority.toLowerCase()}`}>
-                    {item.priority}
-                  </span>
-                  <div>
-                    <strong>{item.title}</strong>
-                    <span>
-                      {item.employeeLabel || getEmployeeById(item.employeeId)?.name} · {item.timeLabel}
-                    </span>
-                  </div>
+          <div className="overview-ref-ticket-grid">
+            {TICKETS.map((ticket) => (
+              <div key={ticket.label} className="overview-ref-ticket-item">
+                <div className="overview-ref-ticket-value" style={{ color: ticket.color }}>
+                  {ticket.value}
                 </div>
-                <em>{item.statusText}</em>
-              </button>
+                <div className="overview-ref-ticket-label">{ticket.label}</div>
+              </div>
             ))}
           </div>
         </article>
 
-        <article className="overview-card overview-span-2">
-          <header className="overview-card-header">
-            <div>
-              <h4>24h 告警趋势</h4>
-              <p>关注告警总量与紧急告警波峰</p>
-            </div>
-            <span className="overview-header-tag">近 24 小时</span>
-          </header>
-          <div className="overview-chart-wrap">
+        <article className="overview-ref-card">
+          <div className="overview-ref-card-title">
+            <i className="fas fa-chart-line" />
+            24h告警趋势
+          </div>
+          <div className="overview-ref-chart">
             <ReactECharts
               option={chartOption}
-              style={{ height: 280, width: "100%" }}
+              style={{ height: 186, width: "100%" }}
               notMerge
               lazyUpdate
             />
           </div>
         </article>
+      </section>
 
-        <article className="overview-card">
-          <header className="overview-card-header">
-            <div>
-              <h4>告警分布</h4>
-              <p>按告警等级拆分处理压力</p>
-            </div>
-          </header>
-          <div className="overview-distribution-list">
-            {alertDistribution.map((item) => (
-              <div key={item.label} className="overview-distribution-item">
-                <div className="overview-distribution-top">
-                  <strong>{item.label}</strong>
-                  <span>{item.count}</span>
+      <section className="overview-ref-bottom">
+        <article className="overview-ref-card">
+          <div className="overview-ref-card-title">
+            <i className="fas fa-triangle-exclamation" />
+            告警分布
+          </div>
+          <div className="overview-ref-alert-list">
+            {ALERTS.map((alert) => (
+              <div key={alert.level} className="overview-ref-alert-row">
+                <div className="overview-ref-alert-dot" style={{ background: alert.color }} />
+                <div className="overview-ref-alert-level" style={{ color: alert.color }}>
+                  {alert.level}
                 </div>
-                <div className="overview-distribution-bar">
-                  <span
-                    style={{
-                      width: `${(item.count / maxAlertCount) * 100}%`,
-                      background: item.color,
-                    }}
+                <div className="overview-ref-alert-bar">
+                  <div
+                    className="overview-ref-alert-bar-fill"
+                    style={{ width: `${alert.pct}%`, background: alert.color }}
                   />
                 </div>
-                <em>{item.hint}</em>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article className="overview-card overview-span-2">
-          <header className="overview-card-header">
-            <div>
-              <h4>业务服务健康度</h4>
-              <p>按关键服务观察健康分与延迟</p>
-            </div>
-            <span className="overview-header-tag subtle">服务视角</span>
-          </header>
-          <div className="overview-service-list">
-            {serviceHealthItems.map((service) => (
-              <div key={service.id} className="overview-service-item">
-                <div className="overview-service-main">
-                  <div>
-                    <strong>{service.name}</strong>
-                    <span>
-                      {service.owner} · {service.status}
-                    </span>
-                  </div>
-                  <div className="overview-service-meta">
-                    <strong>{service.health.toFixed(2)}%</strong>
-                    <span>{service.latency}</span>
-                  </div>
-                </div>
-                <div className="overview-service-bar">
-                  <span style={{ width: `${(service.health / maxHealth) * 100}%` }} />
+                <div className="overview-ref-alert-count" style={{ color: alert.color }}>
+                  {alert.count}
                 </div>
               </div>
             ))}
           </div>
         </article>
 
-        <article className="overview-card overview-event-card">
-          <header className="overview-card-header">
-            <div>
-              <h4>实时事件流</h4>
-              <p>来自当前协同任务与处置动作</p>
-            </div>
-          </header>
-          <div className="overview-event-list">
-            {eventFeed.map((event) => (
-              <button
-                key={event.id}
-                type="button"
-                className="overview-event-item"
-                onClick={() => onOpenEmployeeChat(event.employeeId)}
-              >
-                <span className="overview-event-dot" style={{ background: event.tone }} />
-                <div className="overview-event-content">
-                  <strong>{event.title}</strong>
-                  <span>{event.description}</span>
-                  <em>
-                    {event.employeeLabel} · {event.state} · {event.timeLabel}
-                  </em>
+        <article className="overview-ref-card">
+          <div className="overview-ref-card-title">
+            <span className="overview-live-dot small" />
+            业务服务健康度
+          </div>
+          <div className="overview-ref-service-list">
+            {SERVICES.map((service) => (
+              <div key={service.name} className="overview-ref-service-row">
+                <div className={`overview-ref-service-dot ${service.status}`} />
+                <div className="overview-ref-service-name">{service.name}</div>
+                <div className="overview-ref-service-uptime">{service.uptime}</div>
+                <div className={`overview-ref-service-latency ${service.latencyClass}`}>
+                  {service.latency}
                 </div>
-              </button>
+              </div>
             ))}
+          </div>
+        </article>
+
+        <article className="overview-ref-card">
+          <div className="overview-ref-card-title">
+            <i className="fas fa-clock" />
+            实时事件流
+          </div>
+          <div className="overview-ref-event-list">
+            {EVENTS.map((event) => {
+              const content = (
+                <>
+                  <div className="overview-ref-event-icon" style={{ background: `${event.color}20`, color: event.color }}>
+                    <i className={`fas ${event.iconClass}`} />
+                  </div>
+                  <div className="overview-ref-event-body">
+                    <div className="overview-ref-event-title">{event.title}</div>
+                    <div className="overview-ref-event-time">{event.time}</div>
+                  </div>
+                </>
+              );
+
+              if (event.employeeId) {
+                return (
+                  <button
+                    key={event.title}
+                    type="button"
+                    className="overview-ref-event"
+                    onClick={() => onOpenEmployeeChat(event.employeeId!)}
+                  >
+                    {content}
+                  </button>
+                );
+              }
+
+              return (
+                <div key={event.title} className="overview-ref-event">
+                  {content}
+                </div>
+              );
+            })}
           </div>
         </article>
       </section>
