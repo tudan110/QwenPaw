@@ -276,6 +276,7 @@ function buildMentionCollaborationPrompt({
     `用户在当前会话中 @ 了另一位数字员工「${targetEmployee?.name || targetAgentId}」。`,
     "请不要要求用户切换页面，也不要把本次请求交回前端路由处理。",
     "请直接使用你已启用的内置技能 Multi-Agent Collaboration（multi_agent_collaboration），在当前会话中发起智能体协同并整合结果后回复用户。",
+    "给目标智能体的协同请求正文请直接概括任务本身，不要重复写 [Agent ... requesting]，也不要以 User explicitly asked... 这类泛化说明开头。",
     `当前智能体（from-agent）：${currentAgentId}`,
     `目标智能体（to-agent）：${targetAgentId}`,
     normalizedRequest

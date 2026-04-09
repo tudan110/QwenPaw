@@ -1,3 +1,5 @@
+import { digitalEmployees } from "../../data/portalData";
+
 const TIMEOUT_ALARM_TITLE = "应用接口响应超时";
 export const ALARM_WORKORDER_ENTRY = "alarm-workorders";
 export const ALARM_WORKORDER_LIMIT = 5;
@@ -826,12 +828,44 @@ function isRemoteSessionForEmployee(chat: any, employeeId: string) {
     || isCrossAgentSessionForEmployee(chat, employeeId);
 }
 
+function getEmployeeNameByAgentId(agentId: string) {
+  const employee = digitalEmployees.find((item) => item.id === agentId);
+  return employee?.name || agentId;
+}
+
 function buildRemoteSessionDedupeKey(chat: any, employeeId: string) {
   return String(chat?.session_id || chat?.id || Math.random());
 }
 
 function isFaultWorkbenchChat(chat: any) {
   return String(chat?.meta?.source || "") === "portal-fault-workorder";
+}
+
+function buildCrossAgentSessionTitle(chat: any, employeeId: string) {
+  if (!isCrossAgentSessionForEmployee(chat, employeeId)) {
+    return "";
+  }
+
+  const rawName = String(chat?.name || "").trim();
+  if (!rawName) {
+    return "";
+  }
+
+  const cleaned = rawName
+    .replace(/^\[(?:Agent|来自智能体)\s+[^\]]+\]\s*/i, "")
+    .replace(/^User explicitly asked to consult [\w-]+\.?\s*/i, "")
+    .trim();
+
+  if (cleaned && cleaned !== rawName) {
+    return cleaned.slice(0, 24);
+  }
+
+  if (/^\[(?:Agent|来自智能体)\s+/i.test(rawName)) {
+    const sourceAgentId = String(chat?.session_id || "").split(":")[0] || "";
+    return `${getEmployeeNameByAgentId(sourceAgentId)}协同会话`;
+  }
+
+  return rawName;
 }
 
 function buildRemoteSessionTitle(chat: any, employeeId: string) {
@@ -844,6 +878,10 @@ function buildRemoteSessionTitle(chat: any, employeeId: string) {
     if (workorderNo) {
       return `故障处置 · ${workorderNo}`;
     }
+  }
+  const collaborationTitle = buildCrossAgentSessionTitle(chat, employeeId);
+  if (collaborationTitle) {
+    return collaborationTitle;
   }
   return chat?.name || "未命名会话";
 }

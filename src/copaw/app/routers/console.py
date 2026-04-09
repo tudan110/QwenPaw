@@ -29,6 +29,32 @@ def _safe_filename(name: str) -> str:
     return re.sub(r"[^\w.\-]", "_", base)[:200] or "file"
 
 
+def _derive_chat_name_from_text(text: str) -> str:
+    """Build a readable chat title from the first user text payload."""
+    normalized = " ".join(str(text or "").split()).strip()
+    if not normalized:
+        return "New Chat"
+
+    stripped = re.sub(
+        r"^\[(?:Agent|来自智能体)\s+[^\]]+\]\s*",
+        "",
+        normalized,
+        flags=re.IGNORECASE,
+    ).strip()
+    collaboration_title = stripped or normalized
+    collaboration_title = re.sub(
+        r"^User explicitly asked to consult [\w\-]+\.?\s*",
+        "",
+        collaboration_title,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    if stripped != normalized:
+        return (collaboration_title or stripped or normalized)[:24] or "Agent Collaboration"
+
+    return normalized[:10]
+
+
 def _extract_session_and_payload(request_data: Union[AgentRequest, dict]):
     """Extract run_key (ChatSpec.id), session_id, and native payload.
 
@@ -98,7 +124,7 @@ async def post_console_chat(
     if len(native_payload["content_parts"]) > 0:
         content = native_payload["content_parts"][0]
         if content:
-            name = content.text[:10]
+            name = _derive_chat_name_from_text(content.text)
         else:
             name = "Media Message"
     chat = await workspace.chat_manager.get_or_create_chat(
