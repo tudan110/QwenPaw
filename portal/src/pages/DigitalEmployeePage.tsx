@@ -32,8 +32,8 @@ import {
   ChatModelSelector,
   ModelConfigModal,
 } from "./digital-employee/modelControls";
+import { CronJobsPanel } from "./digital-employee/cronJobsPanel";
 import { OverviewPanel } from "./digital-employee/overviewPanel";
-import { TaskViewPanel } from "./digital-employee/taskViewPanel";
 import { TokenUsagePanel } from "./digital-employee/tokenUsagePanel";
 import { OpsExpertPanel } from "./digital-employee/opsExpertPanel";
 import {
@@ -1603,7 +1603,7 @@ export default function DigitalEmployeePage({
               }}
             >
               <i className="fas fa-list-check" />
-              <span>任务</span>
+              <span>定时任务</span>
             </button>
           </div>
 
@@ -1659,9 +1659,16 @@ export default function DigitalEmployeePage({
             activeModelLabel={activeModelLabel}
             activeProviderName={activeProviderName}
             isActive={isModelConfigMode}
+            isCronJobsActive={currentView === "tasks"}
             isTokenUsageActive={isTokenUsageMode}
             isOpsExpertActive={isOpsExpertMode}
             onOpenConfig={openModelConfig}
+            onOpenCronJobs={() =>
+              updateCurrentEmployeeRoute({
+                view: "tasks",
+                panel: null,
+              })
+            }
             onOpenTokenUsage={() =>
               updateCurrentEmployeeRoute({
                 panel: "token-usage",
@@ -1740,7 +1747,7 @@ export default function DigitalEmployeePage({
                         : currentView === "dashboard"
                         ? "fa-chart-pie"
                         : currentView === "tasks"
-                          ? "fa-list-check"
+                          ? "fa-clock"
                           : currentEmployee.icon
                     }`}
                   />
@@ -1752,7 +1759,7 @@ export default function DigitalEmployeePage({
                       : currentView === "dashboard"
                         ? "数字员工看板"
                         : currentView === "tasks"
-                          ? "每日任务"
+                          ? "定时任务"
                           : currentEmployee.name}
                   </h2>
                   <span>
@@ -1761,7 +1768,7 @@ export default function DigitalEmployeePage({
                       : currentView === "dashboard"
                         ? "查看实时任务概览和泳道看板"
                         : currentView === "tasks"
-                          ? "查看和管理每日任务"
+                          ? "查看和管理 CoPaw 定时任务"
                           : isAlarmWorkbenchMode
                             ? "告警触发后自动生成的待处置工单视图"
                             : currentEmployee.desc}
@@ -1923,7 +1930,7 @@ export default function DigitalEmployeePage({
           ) : null}
 
           {currentView === "tasks" ? (
-            <TaskViewPanel onOpenEmployeeChat={handleOpenTaskEmployeeChat} />
+            <CronJobsPanel />
           ) : null}
 
           {currentView === "chat" ? (

@@ -1,0 +1,595 @@
+.cron-jobs-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.cron-jobs-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.cron-jobs-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cron-jobs-title small {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.cron-jobs-subtitle {
+  margin: 8px 0 0;
+  max-width: 760px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.cron-jobs-toolbar,
+.cron-jobs-actions,
+.cron-jobs-modal-footer,
+.cron-jobs-section-head,
+.cron-jobs-checkbox-shell,
+.cron-jobs-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cron-jobs-refresh-btn,
+.cron-jobs-create-btn,
+.cron-jobs-action-btn,
+.cron-jobs-filter-chip,
+.cron-jobs-footer-btn,
+.cron-jobs-week-btn,
+.cron-jobs-modal-close {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.cron-jobs-refresh-btn,
+.cron-jobs-create-btn,
+.cron-jobs-footer-btn {
+  padding: 10px 16px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.cron-jobs-refresh-btn {
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--text-secondary);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.cron-jobs-create-btn,
+.cron-jobs-footer-btn.primary,
+.cron-jobs-action-btn.primary {
+  background: linear-gradient(135deg, #2563eb, #0f766e);
+  color: #fff;
+}
+
+.cron-jobs-refresh-btn:hover,
+.cron-jobs-create-btn:hover,
+.cron-jobs-action-btn:hover,
+.cron-jobs-filter-chip:hover,
+.cron-jobs-footer-btn:hover,
+.cron-jobs-week-btn:hover,
+.cron-jobs-modal-close:hover {
+  transform: translateY(-1px);
+}
+
+.cron-jobs-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.cron-jobs-stat-card {
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.06);
+}
+
+.cron-jobs-stat-card span {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.cron-jobs-stat-card strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 30px;
+  color: var(--text-primary);
+}
+
+.cron-jobs-stat-card.accent-green strong {
+  color: #059669;
+}
+
+.cron-jobs-stat-card.accent-amber strong {
+  color: #d97706;
+}
+
+.cron-jobs-stat-card.accent-red strong {
+  color: #dc2626;
+}
+
+.cron-jobs-filter-chip {
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--text-secondary);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.cron-jobs-filter-chip.active {
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.18);
+}
+
+.cron-jobs-notice {
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+}
+
+.cron-jobs-notice.success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.18);
+}
+
+.cron-jobs-notice.error,
+.cron-jobs-form-error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #b91c1c;
+  border: 1px solid rgba(239, 68, 68, 0.16);
+  padding: 12px 14px;
+  border-radius: 14px;
+}
+
+.cron-jobs-table-shell,
+.cron-jobs-section-card,
+.cron-jobs-modal {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(20px);
+}
+
+.cron-jobs-table-shell {
+  border-radius: 22px;
+  overflow: hidden;
+}
+
+.cron-jobs-table-wrap {
+  overflow-x: auto;
+}
+
+.cron-jobs-table {
+  width: 100%;
+  min-width: 1140px;
+  border-collapse: collapse;
+}
+
+.cron-jobs-table thead th {
+  padding: 16px 18px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(248, 250, 252, 0.96);
+}
+
+.cron-jobs-table tbody td {
+  padding: 16px 18px;
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+  vertical-align: top;
+  color: var(--text-primary);
+}
+
+.cron-jobs-name-cell,
+.cron-jobs-schedule-cell,
+.cron-jobs-type-cell,
+.cron-jobs-target-cell,
+.cron-jobs-status-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cron-jobs-name-cell span,
+.cron-jobs-schedule-cell span,
+.cron-jobs-type-cell span:last-child,
+.cron-jobs-target-cell small,
+.cron-jobs-status-cell small {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.cron-jobs-schedule-cell code {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+}
+
+.cron-jobs-pill,
+.cron-jobs-status-badge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cron-jobs-pill {
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text-primary);
+}
+
+.cron-jobs-status-badge.tone-green {
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+}
+
+.cron-jobs-status-badge.tone-amber {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+}
+
+.cron-jobs-status-badge.tone-red {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+}
+
+.cron-jobs-status-badge.tone-slate {
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+}
+
+.cron-jobs-action-btn {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(241, 245, 249, 0.92);
+  color: var(--text-secondary);
+}
+
+.cron-jobs-action-btn.danger {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.cron-jobs-empty-state {
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-secondary);
+}
+
+.cron-jobs-empty-state i {
+  font-size: 28px;
+}
+
+.cron-jobs-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(15, 23, 42, 0.34);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.cron-jobs-modal {
+  width: min(980px, 100%);
+  max-height: min(92vh, 980px);
+  border-radius: 24px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.cron-jobs-modal-header,
+.cron-jobs-modal-footer {
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.72);
+}
+
+.cron-jobs-modal-footer {
+  border-bottom: 0;
+  border-top: 1px solid rgba(226, 232, 240, 0.72);
+  justify-content: flex-end;
+}
+
+.cron-jobs-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cron-jobs-modal-header h4 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.cron-jobs-modal-header p {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+}
+
+.cron-jobs-modal-close {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(241, 245, 249, 0.96);
+  color: var(--text-secondary);
+}
+
+.cron-jobs-modal-body {
+  padding: 22px 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cron-jobs-form-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.cron-jobs-form-grid.single-column {
+  grid-template-columns: 1fr;
+}
+
+.cron-jobs-form-grid.two-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cron-jobs-form-grid.three-columns {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cron-jobs-form-grid.compact {
+  align-items: end;
+}
+
+.cron-jobs-form-grid label,
+.cron-jobs-section-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text-primary);
+}
+
+.cron-jobs-form-grid label span,
+.cron-jobs-section-card label span {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.cron-jobs-form-grid input,
+.cron-jobs-form-grid select,
+.cron-jobs-form-grid textarea,
+.cron-jobs-section-card input,
+.cron-jobs-section-card select {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.96);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cron-jobs-form-grid input:focus,
+.cron-jobs-form-grid select:focus,
+.cron-jobs-form-grid textarea:focus,
+.cron-jobs-section-card input:focus,
+.cron-jobs-section-card select:focus {
+  border-color: rgba(37, 99, 235, 0.48);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.cron-jobs-checkbox-field {
+  justify-content: flex-end;
+}
+
+.cron-jobs-checkbox-shell {
+  min-height: 48px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  padding: 0 14px;
+  justify-content: flex-start;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.cron-jobs-checkbox-shell em {
+  font-style: normal;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.cron-jobs-section-card {
+  border-radius: 18px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cron-jobs-section-head {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.cron-jobs-section-head h5 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.cron-jobs-section-head span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.cron-jobs-week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cron-jobs-week-btn {
+  padding: 10px 0;
+  border-radius: 12px;
+  background: rgba(241, 245, 249, 0.96);
+  color: var(--text-secondary);
+}
+
+.cron-jobs-week-btn.active {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.2);
+}
+
+.portal-digital-employee.theme-dark .cron-jobs-title,
+.portal-digital-employee.theme-dark .cron-jobs-modal-header h4,
+.portal-digital-employee.theme-dark .cron-jobs-section-head h5,
+.portal-digital-employee.theme-dark .cron-jobs-table tbody td,
+.portal-digital-employee.theme-dark .cron-jobs-form-grid label,
+.portal-digital-employee.theme-dark .cron-jobs-stat-card strong {
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .cron-jobs-subtitle,
+.portal-digital-employee.theme-dark .cron-jobs-title small,
+.portal-digital-employee.theme-dark .cron-jobs-stat-card span,
+.portal-digital-employee.theme-dark .cron-jobs-name-cell span,
+.portal-digital-employee.theme-dark .cron-jobs-schedule-cell span,
+.portal-digital-employee.theme-dark .cron-jobs-type-cell span:last-child,
+.portal-digital-employee.theme-dark .cron-jobs-target-cell small,
+.portal-digital-employee.theme-dark .cron-jobs-status-cell small,
+.portal-digital-employee.theme-dark .cron-jobs-section-head span,
+.portal-digital-employee.theme-dark .cron-jobs-modal-header p,
+.portal-digital-employee.theme-dark .cron-jobs-form-grid label span,
+.portal-digital-employee.theme-dark .cron-jobs-section-card label span,
+.portal-digital-employee.theme-dark .cron-jobs-checkbox-shell em,
+.portal-digital-employee.theme-dark .cron-jobs-empty-state {
+  color: #94a3b8;
+}
+
+.portal-digital-employee.theme-dark .cron-jobs-stat-card,
+.portal-digital-employee.theme-dark .cron-jobs-table-shell,
+.portal-digital-employee.theme-dark .cron-jobs-section-card,
+.portal-digital-employee.theme-dark .cron-jobs-modal {
+  background: rgba(15, 23, 42, 0.78);
+  border-color: rgba(71, 85, 105, 0.42);
+  box-shadow: 0 24px 54px rgba(2, 6, 23, 0.28);
+}
+
+.portal-digital-employee.theme-dark .cron-jobs-refresh-btn,
+.portal-digital-employee.theme-dark .cron-jobs-action-btn,
+.portal-digital-employee.theme-dark .cron-jobs-filter-chip,
+.portal-digital-employee.theme-dark .cron-jobs-modal-close,
+.portal-digital-employee.theme-dark .cron-jobs-week-btn,
+.portal-digital-employee.theme-dark .cron-jobs-checkbox-shell {
+  background: rgba(30, 41, 59, 0.88);
+  color: #cbd5e1;
+  border-color: rgba(71, 85, 105, 0.4);
+}
+
+.portal-digital-employee.theme-dark .cron-jobs-filter-chip.active,
+.portal-digital-employee.theme-dark .cron-jobs-week-btn.active {
+  background: rgba(37, 99, 235, 0.18);
+  color: #93c5fd;
+}
+
+.portal-digital-employee.theme-dark .cron-jobs-table thead th {
+  background: rgba(15, 23, 42, 0.92);
+  color: #94a3b8;
+}
+
+.portal-digital-employee.theme-dark .cron-jobs-table tbody td,
+.portal-digital-employee.theme-dark .cron-jobs-modal-header,
+.portal-digital-employee.theme-dark .cron-jobs-modal-footer {
+  border-color: rgba(51, 65, 85, 0.72);
+}
+
+.portal-digital-employee.theme-dark .cron-jobs-form-grid input,
+.portal-digital-employee.theme-dark .cron-jobs-form-grid select,
+.portal-digital-employee.theme-dark .cron-jobs-form-grid textarea,
+.portal-digital-employee.theme-dark .cron-jobs-section-card input,
+.portal-digital-employee.theme-dark .cron-jobs-section-card select {
+  background: rgba(15, 23, 42, 0.88);
+  border-color: rgba(71, 85, 105, 0.44);
+  color: #e2e8f0;
+}
+
+@media (max-width: 1100px) {
+  .cron-jobs-stats,
+  .cron-jobs-form-grid.three-columns,
+  .cron-jobs-form-grid.two-columns {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cron-jobs-week-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .cron-jobs-header,
+  .cron-jobs-toolbar,
+  .cron-jobs-filter-bar,
+  .cron-jobs-modal-footer,
+  .cron-jobs-section-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cron-jobs-stats,
+  .cron-jobs-form-grid.three-columns,
+  .cron-jobs-form-grid.two-columns,
+  .cron-jobs-week-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cron-jobs-modal-backdrop {
+    padding: 12px;
+  }
+
+  .cron-jobs-modal {
+    max-height: 95vh;
+  }
+}

@@ -11,6 +11,7 @@ export default function App() {
       <Route path="/overview" element={<DigitalEmployeePage forcedSection="overview" />} />
       <Route path="/dashboard" element={<DigitalEmployeePage forcedSection="dashboard" />} />
       <Route path="/tasks" element={<DigitalEmployeePage forcedSection="tasks" />} />
+      <Route path="/cron-jobs" element={<DigitalEmployeePage forcedSection="tasks" />} />
       <Route path="/model-config" element={<DigitalEmployeePage forcedSection="model-config" />} />
       <Route path="/token-usage" element={<DigitalEmployeePage forcedSection="token-usage" />} />
       <Route path="/employee/:employeeId" element={<DigitalEmployeePage />} />

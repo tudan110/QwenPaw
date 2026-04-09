@@ -175,18 +175,22 @@ export function AdvancedModelEntry({
   activeModelLabel,
   activeProviderName,
   isActive,
+  isCronJobsActive,
   isTokenUsageActive,
   isOpsExpertActive,
   onOpenConfig,
+  onOpenCronJobs,
   onOpenTokenUsage,
   onOpenOpsExpert,
 }: {
   activeModelLabel: string;
   activeProviderName: string;
   isActive?: boolean;
+  isCronJobsActive?: boolean;
   isTokenUsageActive?: boolean;
   isOpsExpertActive?: boolean;
   onOpenConfig: () => void;
+  onOpenCronJobs: () => void;
   onOpenTokenUsage: () => void;
   onOpenOpsExpert: () => void;
 }) {
@@ -233,6 +237,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">Token统计</div>
           <div className="sidebar-advanced-item-desc">资源消耗分析</div>
           <div className="sidebar-advanced-item-meta">按模型 / 日期统计</div>
+        </button>
+        <button
+          className={isCronJobsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenCronJobs}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="cron-jobs">
+              ⏰
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">定时任务</div>
+          <div className="sidebar-advanced-item-desc">任务调度中心</div>
+          <div className="sidebar-advanced-item-meta">创建 / 启停 / 立即执行</div>
         </button>
         <button
           className={isOpsExpertActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
