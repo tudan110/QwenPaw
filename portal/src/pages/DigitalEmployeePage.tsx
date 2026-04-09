@@ -1271,18 +1271,9 @@ export default function DigitalEmployeePage({
 
       <div className="app-container">
         <div className="sidebar">
-          <div className="logo">
-            <div className="logo-icon">
-              <i className="fas fa-brain" />
-            </div>
-            <div className="logo-text">
-              <h1>{portalAppTitle}</h1>
-              <span>智能 · 高效 · 自动化</span>
-            </div>
-          </div>
-
           <button
-            className={isPortalHomeChat ? "sidebar-home-entry active" : "sidebar-home-entry"}
+            type="button"
+            className={isPortalHomeChat ? "logo active" : "logo"}
             onClick={() =>
               navigateToPortalHome({
                 entry: null,
@@ -1291,8 +1282,13 @@ export default function DigitalEmployeePage({
               })
             }
           >
-            <i className="fas fa-house" />
-            <span>主页</span>
+            <div className="logo-icon">
+              <i className="fas fa-brain" />
+            </div>
+            <div className="logo-text">
+              <h1>{portalAppTitle}</h1>
+              <span>智能 · 高效 · 自动化</span>
+            </div>
           </button>
 
           <div className="view-tabs">

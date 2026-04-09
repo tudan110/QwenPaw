@@ -103,9 +103,19 @@
   display: flex;
   align-items: center;
   gap: 14px;
+  width: 100%;
   padding: 10px 0 25px;
+  background: transparent;
+  border: none;
   border-bottom: 1px solid var(--border);
   margin-bottom: 20px;
+  text-align: left;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.portal-digital-employee .logo:hover {
+  opacity: 0.92;
 }
 
 .portal-digital-employee .logo-icon {
@@ -139,32 +149,6 @@
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
-}
-
-.portal-digital-employee .sidebar-home-entry {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px 16px;
-  margin-bottom: 12px;
-  background: var(--bg-gray);
-  border: 1px solid var(--border-light);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.3s;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.portal-digital-employee .sidebar-home-entry:hover,
-.portal-digital-employee .sidebar-home-entry.active {
-  background: var(--bg-white);
-  border-color: var(--primary);
-  color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .portal-digital-employee .view-tab {
