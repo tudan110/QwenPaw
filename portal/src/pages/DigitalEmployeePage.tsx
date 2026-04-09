@@ -32,6 +32,7 @@ import {
   ChatModelSelector,
   ModelConfigModal,
 } from "./digital-employee/modelControls";
+import { OverviewPanel } from "./digital-employee/overviewPanel";
 import { TaskViewPanel } from "./digital-employee/taskViewPanel";
 import { TokenUsagePanel } from "./digital-employee/tokenUsagePanel";
 import {
@@ -83,6 +84,13 @@ const EMPLOYEE_MENTION_ALIASES: Record<string, string[]> = {
 const PAGE_THEME_STORAGE_KEY = "portal-digital-employee-theme";
 const PORTAL_HOME_ID = "portal-home";
 
+const operationsBoardDots = {
+  pending: "pending",
+  running: "running",
+  completed: "completed",
+  closed: "closed",
+} as const;
+
 const PORTAL_HOME_EMPLOYEE = {
   id: PORTAL_HOME_ID,
   name: "数字员工协同入口",
@@ -106,13 +114,6 @@ const PORTAL_HOME_EMPLOYEE = {
     "帮我判断这个问题应该交给哪个数字员工",
   ],
   welcome: "",
-} as const;
-
-const operationsBoardDots = {
-  pending: "pending",
-  running: "running",
-  completed: "completed",
-  closed: "closed",
 } as const;
 
 type PendingPortalDispatch = {
@@ -1567,6 +1568,18 @@ export default function DigitalEmployeePage({
 
           <div className="view-tabs">
             <button
+              className={currentView === "overview" ? "view-tab active" : "view-tab"}
+              onClick={() => {
+                updateCurrentEmployeeRoute({
+                  view: "overview",
+                  panel: null,
+                });
+              }}
+            >
+              <i className="fas fa-chart-line" />
+              <span>总览</span>
+            </button>
+            <button
               className={currentView === "dashboard" ? "view-tab active" : "view-tab"}
               onClick={() => {
                 updateCurrentEmployeeRoute({
@@ -1712,7 +1725,9 @@ export default function DigitalEmployeePage({
                 <div className="active-agent-avatar">
                   <i
                     className={`fas ${
-                      currentView === "dashboard"
+                      currentView === "overview"
+                        ? "fa-chart-line"
+                        : currentView === "dashboard"
                         ? "fa-chart-pie"
                         : currentView === "tasks"
                           ? "fa-list-check"
@@ -1722,20 +1737,24 @@ export default function DigitalEmployeePage({
                 </div>
                 <div className="active-agent-info">
                   <h2>
-                    {currentView === "dashboard"
-                      ? "数字员工看板"
-                      : currentView === "tasks"
-                        ? "每日任务"
-                        : currentEmployee.name}
+                    {currentView === "overview"
+                      ? "数字总览"
+                      : currentView === "dashboard"
+                        ? "数字员工看板"
+                        : currentView === "tasks"
+                          ? "每日任务"
+                          : currentEmployee.name}
                   </h2>
                   <span>
-                    {currentView === "dashboard"
-                      ? "查看整体运营状态和统计"
-                      : currentView === "tasks"
-                        ? "查看和管理每日任务"
-                        : isAlarmWorkbenchMode
-                          ? "告警触发后自动生成的待处置工单视图"
-                          : currentEmployee.desc}
+                    {currentView === "overview"
+                      ? "查看整体态势、告警与业务健康"
+                      : currentView === "dashboard"
+                        ? "查看实时任务概览和泳道看板"
+                        : currentView === "tasks"
+                          ? "查看和管理每日任务"
+                          : isAlarmWorkbenchMode
+                            ? "告警触发后自动生成的待处置工单视图"
+                            : currentEmployee.desc}
                   </span>
                 </div>
               </div>
@@ -1758,6 +1777,13 @@ export default function DigitalEmployeePage({
                 ) : null}
               </div>
             </div>
+          ) : null}
+
+          {currentView === "overview" ? (
+            <OverviewPanel
+              pageTheme={pageTheme}
+              onOpenEmployeeChat={handleOpenTaskEmployeeChat}
+            />
           ) : null}
 
           {currentView === "dashboard" ? (
@@ -1808,39 +1834,39 @@ export default function DigitalEmployeePage({
                           <p className="ops-task-desc">{item.description}</p>
                           {typeof item.progress === "number" ? (
                             <>
-                            <div className="ops-progress-block">
-                              <div className="ops-progress-bar">
+                              <div className="ops-progress-block">
+                                <div className="ops-progress-bar">
+                                  <span
+                                    style={{
+                                      width: `${item.progress}%`,
+                                      background: `linear-gradient(90deg, ${item.ownerColor}, ${item.ownerColor}cc)`,
+                                    }}
+                                  />
+                                </div>
+                                <div className="ops-progress-label">
+                                  <span>进度</span>
+                                  <strong style={{ color: item.ownerColor }}>
+                                    {item.progress}%
+                                  </strong>
+                                </div>
+                              </div>
+                              <div className="ops-task-footer ops-task-footer-progress">
                                 <span
-                                  style={{
-                                    width: `${item.progress}%`,
-                                    background: `linear-gradient(90deg, ${item.ownerColor}, ${item.ownerColor}cc)`,
-                                  }}
-                                />
+                                  className="ops-task-chip"
+                                  style={{ background: item.tagBg, color: item.tagColor }}
+                                >
+                                  {item.label}
+                                </span>
+                                <span
+                                  className={
+                                    item.statusText === "紧急"
+                                      ? "ops-task-meta alert"
+                                      : "ops-task-meta"
+                                  }
+                                >
+                                  {item.statusText || item.timeText}
+                                </span>
                               </div>
-                              <div className="ops-progress-label">
-                                <span>进度</span>
-                                <strong style={{ color: item.ownerColor }}>
-                                  {item.progress}%
-                                </strong>
-                              </div>
-                            </div>
-                            <div className="ops-task-footer ops-task-footer-progress">
-                              <span
-                                className="ops-task-chip"
-                                style={{ background: item.tagBg, color: item.tagColor }}
-                              >
-                                {item.label}
-                              </span>
-                              <span
-                                className={
-                                  item.statusText === "紧急"
-                                    ? "ops-task-meta alert"
-                                    : "ops-task-meta"
-                                }
-                              >
-                                {item.statusText || item.timeText}
-                              </span>
-                            </div>
                             </>
                           ) : null}
                           {typeof item.score === "number" ? (

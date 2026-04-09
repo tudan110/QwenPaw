@@ -4,9 +4,10 @@ const TIMEOUT_ALARM_TITLE = "应用接口响应超时";
 export const ALARM_WORKORDER_ENTRY = "alarm-workorders";
 export const ALARM_WORKORDER_LIMIT = 5;
 export const PORTAL_FAULT_WORKORDER_MARKER = "# PORTAL FAULT WORKORDER MODE";
-export const PORTAL_VIEW_OPTIONS = ["chat", "dashboard", "tasks"] as const;
+export const PORTAL_VIEW_OPTIONS = ["chat", "overview", "dashboard", "tasks"] as const;
 export const PORTAL_ADVANCED_PANEL_OPTIONS = ["model-config", "token-usage"] as const;
 export const PORTAL_ROUTE_SECTION_OPTIONS = [
+  "overview",
   "dashboard",
   "tasks",
   "model-config",
