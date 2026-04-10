@@ -1632,18 +1632,6 @@ export default function DigitalEmployeePage({
               <i className="fas fa-chart-pie" />
               <span>看板</span>
             </button>
-            <button
-              className={currentView === "tasks" ? "view-tab active" : "view-tab"}
-              onClick={() => {
-                updateCurrentEmployeeRoute({
-                  view: "tasks",
-                  panel: null,
-                });
-              }}
-            >
-              <i className="fas fa-list-check" />
-              <span>定时任务</span>
-            </button>
           </div>
 
           <div className="agents-title">

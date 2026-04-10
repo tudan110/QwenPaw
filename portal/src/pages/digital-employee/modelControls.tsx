@@ -265,7 +265,7 @@ export function AdvancedModelEntry({
         >
           <div className="sidebar-advanced-item-icon">
             <span role="img" aria-label="mcp">
-              🔗
+              🔌
             </span>
           </div>
           <div className="sidebar-advanced-item-name">MCP管理</div>
