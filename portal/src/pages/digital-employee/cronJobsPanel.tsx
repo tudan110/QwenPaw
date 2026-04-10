@@ -745,187 +745,183 @@ export function CronJobsPanel() {
 
   return (
     <div className="cron-jobs-page">
-      <div className="cron-jobs-header">
-        <div>
-          <h3 className="cron-jobs-title">
-            定时任务
-            <small>任务调度中心</small>
-          </h3>
-          <p className="cron-jobs-subtitle">
-            创建和管理 CoPaw 的定时执行任务，支持 Agent 提问、固定消息、暂停恢复和立即执行。
-          </p>
+      <div className="portal-model-page-header">
+        <div className="portal-model-page-title">
+          定时任务 <small>任务调度中心</small>
         </div>
-        <div className="cron-jobs-toolbar">
+        <div className="portal-model-page-actions">
+          <button type="button" className="portal-model-btn" onClick={openCreateModal}>
+            <i className="fas fa-plus" />
+            新增任务
+          </button>
           <button
             type="button"
-            className="cron-jobs-refresh-btn"
+            className="portal-model-btn"
             onClick={() => void refreshJobs()}
             disabled={loading}
           >
             <i className={`fas ${loading ? "fa-spinner fa-spin" : "fa-rotate-right"}`} />
             刷新
           </button>
-          <button type="button" className="cron-jobs-create-btn" onClick={openCreateModal}>
-            <i className="fas fa-plus" />
-            新增任务
-          </button>
         </div>
       </div>
 
-      <div className="cron-jobs-stats">
-        <article className="cron-jobs-stat-card">
-          <span>任务总数</span>
-          <strong>{stats.total}</strong>
-        </article>
-        <article className="cron-jobs-stat-card accent-green">
-          <span>运行中</span>
-          <strong>{stats.running}</strong>
-        </article>
-        <article className="cron-jobs-stat-card accent-amber">
-          <span>待首次执行</span>
-          <strong>{stats.pending}</strong>
-        </article>
-        <article className="cron-jobs-stat-card accent-red">
-          <span>最近失败</span>
-          <strong>{stats.errors}</strong>
-        </article>
+      <div className="cron-jobs-content">
+        <div className="cron-jobs-stats">
+          <article className="cron-jobs-stat-card">
+            <span>任务总数</span>
+            <strong>{stats.total}</strong>
+          </article>
+          <article className="cron-jobs-stat-card accent-green">
+            <span>运行中</span>
+            <strong>{stats.running}</strong>
+          </article>
+          <article className="cron-jobs-stat-card accent-amber">
+            <span>待首次执行</span>
+            <strong>{stats.pending}</strong>
+          </article>
+          <article className="cron-jobs-stat-card accent-red">
+            <span>最近失败</span>
+            <strong>{stats.errors}</strong>
+          </article>
+        </div>
+
+        <div className="cron-jobs-filter-bar">
+          {FILTER_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={filter === option.id ? "cron-jobs-filter-chip active" : "cron-jobs-filter-chip"}
+              onClick={() => setFilter(option.id)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        {notice ? <div className="cron-jobs-notice success">{notice}</div> : null}
+        {error ? <div className="cron-jobs-notice error">{error}</div> : null}
+
+        <section className="cron-jobs-table-shell">
+          {loading ? (
+            <div className="cron-jobs-empty-state">
+              <i className="fas fa-spinner fa-spin" />
+              <p>正在加载定时任务...</p>
+            </div>
+          ) : filteredJobs.length ? (
+            <div className="cron-jobs-table-wrap">
+              <table className="cron-jobs-table">
+                <thead>
+                  <tr>
+                    <th>任务名称</th>
+                    <th>调度计划</th>
+                    <th>任务类型</th>
+                    <th>投递目标</th>
+                    <th>状态</th>
+                    <th>下次执行</th>
+                    <th>上次执行</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredJobs.map((record) => {
+                    const { job, state, status } = record;
+                    const isBusy = actionJobId === job.id;
+                    const scheduleActionLabel =
+                      job.enabled === false ? "启用" : !state.next_run_at ? "恢复" : "暂停";
+
+                    return (
+                      <tr key={job.id}>
+                        <td>
+                          <div className="cron-jobs-name-cell">
+                            <strong>{job.name}</strong>
+                            <span>{job.id}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="cron-jobs-schedule-cell">
+                            <code>{job.schedule?.cron || "-"}</code>
+                            <span>{getCronSummary(job.schedule?.cron || "")}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="cron-jobs-type-cell">
+                            <span className="cron-jobs-pill">{formatTaskType(job)}</span>
+                            <span>{job.dispatch?.mode === "stream" ? "流式投递" : "最终结果投递"}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="cron-jobs-target-cell">
+                            <span>{formatTarget(job)}</span>
+                            <small>{job.schedule?.timezone || "UTC"}</small>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="cron-jobs-status-cell">
+                            <span className={`cron-jobs-status-badge tone-${status.tone}`}>
+                              {status.label}
+                            </span>
+                            <small>{status.helper}</small>
+                          </div>
+                        </td>
+                        <td>{formatDateTime(state.next_run_at)}</td>
+                        <td>{formatDateTime(state.last_run_at)}</td>
+                        <td>
+                          <div className="cron-jobs-actions">
+                            <button
+                              type="button"
+                              className="cron-jobs-action-btn primary"
+                              onClick={() =>
+                                void runJobAction(
+                                  job.id,
+                                  () => cronJobsApi.runCronJob(job.id),
+                                  `已触发任务“${job.name}”立即执行。`,
+                                )
+                              }
+                              disabled={isBusy}
+                            >
+                              立即执行
+                            </button>
+                            <button
+                              type="button"
+                              className="cron-jobs-action-btn"
+                              onClick={() => void handleToggleSchedule(record)}
+                              disabled={isBusy}
+                            >
+                              {scheduleActionLabel}
+                            </button>
+                            <button
+                              type="button"
+                              className="cron-jobs-action-btn"
+                              onClick={() => openEditModal(job)}
+                              disabled={isBusy}
+                            >
+                              编辑
+                            </button>
+                            <button
+                              type="button"
+                              className="cron-jobs-action-btn danger"
+                              onClick={() => void handleDelete(job)}
+                              disabled={isBusy}
+                            >
+                              删除
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="cron-jobs-empty-state">
+              <i className="fas fa-clock" />
+              <p>{filter === "all" ? "当前还没有定时任务，先创建一个任务。" : "当前筛选条件下没有匹配的任务。"}</p>
+            </div>
+          )}
+        </section>
       </div>
-
-      <div className="cron-jobs-filter-bar">
-        {FILTER_OPTIONS.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            className={filter === option.id ? "cron-jobs-filter-chip active" : "cron-jobs-filter-chip"}
-            onClick={() => setFilter(option.id)}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-
-      {notice ? <div className="cron-jobs-notice success">{notice}</div> : null}
-      {error ? <div className="cron-jobs-notice error">{error}</div> : null}
-
-      <section className="cron-jobs-table-shell">
-        {loading ? (
-          <div className="cron-jobs-empty-state">
-            <i className="fas fa-spinner fa-spin" />
-            <p>正在加载定时任务...</p>
-          </div>
-        ) : filteredJobs.length ? (
-          <div className="cron-jobs-table-wrap">
-            <table className="cron-jobs-table">
-              <thead>
-                <tr>
-                  <th>任务名称</th>
-                  <th>调度计划</th>
-                  <th>任务类型</th>
-                  <th>投递目标</th>
-                  <th>状态</th>
-                  <th>下次执行</th>
-                  <th>上次执行</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredJobs.map((record) => {
-                  const { job, state, status } = record;
-                  const isBusy = actionJobId === job.id;
-                  const scheduleActionLabel =
-                    job.enabled === false ? "启用" : !state.next_run_at ? "恢复" : "暂停";
-
-                  return (
-                    <tr key={job.id}>
-                      <td>
-                        <div className="cron-jobs-name-cell">
-                          <strong>{job.name}</strong>
-                          <span>{job.id}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="cron-jobs-schedule-cell">
-                          <code>{job.schedule?.cron || "-"}</code>
-                          <span>{getCronSummary(job.schedule?.cron || "")}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="cron-jobs-type-cell">
-                          <span className="cron-jobs-pill">{formatTaskType(job)}</span>
-                          <span>{job.dispatch?.mode === "stream" ? "流式投递" : "最终结果投递"}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="cron-jobs-target-cell">
-                          <span>{formatTarget(job)}</span>
-                          <small>{job.schedule?.timezone || "UTC"}</small>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="cron-jobs-status-cell">
-                          <span className={`cron-jobs-status-badge tone-${status.tone}`}>
-                            {status.label}
-                          </span>
-                          <small>{status.helper}</small>
-                        </div>
-                      </td>
-                      <td>{formatDateTime(state.next_run_at)}</td>
-                      <td>{formatDateTime(state.last_run_at)}</td>
-                      <td>
-                        <div className="cron-jobs-actions">
-                          <button
-                            type="button"
-                            className="cron-jobs-action-btn primary"
-                            onClick={() =>
-                              void runJobAction(
-                                job.id,
-                                () => cronJobsApi.runCronJob(job.id),
-                                `已触发任务“${job.name}”立即执行。`,
-                              )
-                            }
-                            disabled={isBusy}
-                          >
-                            立即执行
-                          </button>
-                          <button
-                            type="button"
-                            className="cron-jobs-action-btn"
-                            onClick={() => void handleToggleSchedule(record)}
-                            disabled={isBusy}
-                          >
-                            {scheduleActionLabel}
-                          </button>
-                          <button
-                            type="button"
-                            className="cron-jobs-action-btn"
-                            onClick={() => openEditModal(job)}
-                            disabled={isBusy}
-                          >
-                            编辑
-                          </button>
-                          <button
-                            type="button"
-                            className="cron-jobs-action-btn danger"
-                            onClick={() => void handleDelete(job)}
-                            disabled={isBusy}
-                          >
-                            删除
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="cron-jobs-empty-state">
-            <i className="fas fa-clock" />
-            <p>{filter === "all" ? "当前还没有定时任务，先创建一个任务。" : "当前筛选条件下没有匹配的任务。"}</p>
-          </div>
-        )}
-      </section>
 
       {isModalOpen ? (
         <div className="cron-jobs-modal-backdrop" onClick={closeModal}>
