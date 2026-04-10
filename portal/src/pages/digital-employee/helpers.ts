@@ -5,7 +5,7 @@ export const ALARM_WORKORDER_ENTRY = "alarm-workorders";
 export const ALARM_WORKORDER_LIMIT = 5;
 export const PORTAL_FAULT_WORKORDER_MARKER = "# PORTAL FAULT WORKORDER MODE";
 export const PORTAL_VIEW_OPTIONS = ["chat", "overview", "dashboard", "tasks"] as const;
-export const PORTAL_ADVANCED_PANEL_OPTIONS = ["model-config", "token-usage", "ops-expert"] as const;
+export const PORTAL_ADVANCED_PANEL_OPTIONS = ["model-config", "token-usage", "ops-expert", "mcp", "skill-pool", "inspiration", "cli"] as const;
 export const PORTAL_ROUTE_SECTION_OPTIONS = [
   "overview",
   "dashboard",
@@ -13,6 +13,10 @@ export const PORTAL_ROUTE_SECTION_OPTIONS = [
   "model-config",
   "token-usage",
   "ops-expert",
+  "mcp",
+  "skill-pool",
+  "inspiration",
+  "cli",
 ] as const;
 
 export type PortalView = (typeof PORTAL_VIEW_OPTIONS)[number];
@@ -126,12 +130,17 @@ export function buildPortalSectionPath(
   section: PortalRouteSection,
   options: {
     entry?: string | null;
+    employeeId?: string | null;
   } = {},
 ) {
   const params = new URLSearchParams();
 
   if (options.entry) {
     params.set("entry", options.entry);
+  }
+
+  if (options.employeeId) {
+    params.set("employee", options.employeeId);
   }
 
   const query = params.toString();
@@ -185,7 +194,10 @@ export function buildEmployeePagePath(
   const query = params.toString();
   const section = buildPortalRouteSection(options);
   if (section) {
-    return buildPortalSectionPath(section);
+    return buildPortalSectionPath(section, {
+      entry,
+      employeeId: options.panel ? employee.id : null,
+    });
   }
 
   const pathname = `/employee/${employee.id}`;

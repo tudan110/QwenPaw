@@ -178,10 +178,18 @@ export function AdvancedModelEntry({
   isCronJobsActive,
   isTokenUsageActive,
   isOpsExpertActive,
+  isMcpActive,
+  isSkillPoolActive,
+  isInspirationActive,
+  isCliActive,
   onOpenConfig,
   onOpenCronJobs,
   onOpenTokenUsage,
   onOpenOpsExpert,
+  onOpenMcp,
+  onOpenSkillPool,
+  onOpenInspiration,
+  onOpenCli,
 }: {
   activeModelLabel: string;
   activeProviderName: string;
@@ -189,10 +197,18 @@ export function AdvancedModelEntry({
   isCronJobsActive?: boolean;
   isTokenUsageActive?: boolean;
   isOpsExpertActive?: boolean;
+  isMcpActive?: boolean;
+  isSkillPoolActive?: boolean;
+  isInspirationActive?: boolean;
+  isCliActive?: boolean;
   onOpenConfig: () => void;
   onOpenCronJobs: () => void;
   onOpenTokenUsage: () => void;
   onOpenOpsExpert: () => void;
+  onOpenMcp: () => void;
+  onOpenSkillPool: () => void;
+  onOpenInspiration: () => void;
+  onOpenCli: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -208,6 +224,32 @@ export function AdvancedModelEntry({
         </span>
       </button>
       <div className={collapsed ? "sidebar-advanced-grid collapsed" : "sidebar-advanced-grid"}>
+        <button
+          className={isOpsExpertActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenOpsExpert}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="ops-expert">
+              🧑‍💻
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">运维专家</div>
+          <div className="sidebar-advanced-item-desc">数字员工专家库</div>
+          <div className="sidebar-advanced-item-meta">垂直领域专家</div>
+        </button>
+        <button
+          className={isCronJobsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenCronJobs}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="cron-jobs">
+              ⏰
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">定时任务</div>
+          <div className="sidebar-advanced-item-desc">任务调度中心</div>
+          <div className="sidebar-advanced-item-meta">创建 / 启停 / 立即执行</div>
+        </button>
         <button
           className={isActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
           onClick={onOpenConfig}
@@ -226,6 +268,32 @@ export function AdvancedModelEntry({
           </div>
         </button>
         <button
+          className={isMcpActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenMcp}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="mcp">
+              🔌
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">MCP管理</div>
+          <div className="sidebar-advanced-item-desc">协议接入控制台</div>
+          <div className="sidebar-advanced-item-meta">新增 / 编辑 / 启停 / 工具查看</div>
+        </button>
+        <button
+          className={isSkillPoolActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenSkillPool}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="skill-pool">
+              ⚡
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">技能池</div>
+          <div className="sidebar-advanced-item-desc">全局运维技能库</div>
+          <div className="sidebar-advanced-item-meta">搜索 / 新增 / 编辑 / 删除</div>
+        </button>
+        <button
           className={isTokenUsageActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
           onClick={onOpenTokenUsage}
         >
@@ -239,30 +307,30 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-meta">按模型 / 日期统计</div>
         </button>
         <button
-          className={isCronJobsActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenCronJobs}
+          className={isInspirationActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenInspiration}
         >
           <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="cron-jobs">
-              ⏰
+            <span role="img" aria-label="inspiration">
+              💡
             </span>
           </div>
-          <div className="sidebar-advanced-item-name">定时任务</div>
-          <div className="sidebar-advanced-item-desc">任务调度中心</div>
-          <div className="sidebar-advanced-item-meta">创建 / 启停 / 立即执行</div>
+          <div className="sidebar-advanced-item-name">灵感中心</div>
+          <div className="sidebar-advanced-item-desc">探索 AI 运维新范式</div>
+          <div className="sidebar-advanced-item-meta">场景 / 协作 / 自动化</div>
         </button>
         <button
-          className={isOpsExpertActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
-          onClick={onOpenOpsExpert}
+          className={isCliActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenCli}
         >
           <div className="sidebar-advanced-item-icon">
-            <span role="img" aria-label="ops-expert">
-              🧑‍💻
+            <span role="img" aria-label="cli">
+              💻
             </span>
           </div>
-          <div className="sidebar-advanced-item-name">运维专家</div>
-          <div className="sidebar-advanced-item-desc">数字员工专家库</div>
-          <div className="sidebar-advanced-item-meta">垂直领域专家</div>
+          <div className="sidebar-advanced-item-name">CLI终端</div>
+          <div className="sidebar-advanced-item-desc">命令行交互界面</div>
+          <div className="sidebar-advanced-item-meta">help / use / ask / run</div>
         </button>
       </div>
     </div>

@@ -32,7 +32,11 @@ import {
   ModelConfigModal,
 } from "./digital-employee/modelControls";
 import { CronJobsPanel } from "./digital-employee/cronJobsPanel";
+import { CliTerminalPanel } from "./digital-employee/cliTerminalPanel";
+import { InspirationPanel } from "./digital-employee/inspirationPanel";
+import { McpPanel } from "./digital-employee/mcpPanel";
 import { OverviewPanel } from "./digital-employee/overviewPanel";
+import { SkillPoolPanel } from "./digital-employee/skillPoolPanel";
 import { TokenUsagePanel } from "./digital-employee/tokenUsagePanel";
 import { OpsExpertPanel } from "./digital-employee/opsExpertPanel";
 import {
@@ -812,12 +816,17 @@ export default function DigitalEmployeePage({
   const location = useLocation();
   const navigate = useNavigate();
   const locationState = (location.state || null) as PortalLocationState | null;
+  const routeSearchParams = useMemo(
+    () => new URLSearchParams(location.search),
+    [location.search],
+  );
   const selectedEmployee = useMemo(() => {
-    if (!employeeId) {
+    const routeEmployeeId = employeeId || routeSearchParams.get("employee");
+    if (!routeEmployeeId) {
       return null;
     }
-    return digitalEmployees.find((item) => item.id === employeeId) || null;
-  }, [employeeId]);
+    return digitalEmployees.find((item) => item.id === routeEmployeeId) || null;
+  }, [employeeId, routeSearchParams]);
   const portalHomeEmployee = useMemo(() => ({ ...PORTAL_HOME_EMPLOYEE }), []);
   const currentEmployee = selectedEmployee || portalHomeEmployee;
   const routeSection = forcedSection || null;
@@ -825,10 +834,6 @@ export default function DigitalEmployeePage({
     ? (REMOTE_AGENT_IDS[selectedEmployee.id] || null)
     : PORTAL_HOME_AGENT_ID;
   const isRemoteEmployee = Boolean(remoteAgentId);
-  const routeSearchParams = useMemo(
-    () => new URLSearchParams(location.search),
-    [location.search],
-  );
   const currentEntry = routeSearchParams.get("entry");
   const currentView = parsePortalView(routeSection ?? routeSearchParams.get("view"));
   const activeAdvancedPanel = parsePortalAdvancedPanel(
@@ -1022,8 +1027,42 @@ export default function DigitalEmployeePage({
   ]);
 
   const openModelConfig = () => {
-    navigate(buildPortalSectionPath("model-config"));
+    updateCurrentEmployeeRoute({
+      panel: "model-config",
+    });
   };
+
+  const openSkillPool = useCallback(() => {
+    navigate(buildPortalSectionPath("skill-pool"));
+  }, [navigate]);
+
+  const openInspiration = useCallback(() => {
+    navigate(buildPortalSectionPath("inspiration"));
+  }, [navigate]);
+
+  const openCli = useCallback(() => {
+    navigate(
+      buildPortalSectionPath("cli", {
+        employeeId: selectedEmployee?.id || null,
+      }),
+    );
+  }, [navigate, selectedEmployee?.id]);
+
+  const switchMcpEmployee = useCallback((employeeId: string | null) => {
+    navigate(buildPortalSectionPath("mcp", { employeeId }));
+  }, [navigate]);
+
+  const openEmployeeChat = useCallback((targetEmployeeId: string) => {
+    const employee = digitalEmployees.find((item) => item.id === targetEmployeeId);
+    if (!employee) {
+      return;
+    }
+    navigateToEmployeePage(employee, {
+      entry: null,
+      view: "chat",
+      panel: null,
+    });
+  }, [navigateToEmployeePage]);
 
   useEffect(() => {
     if (!currentEmployee) {
@@ -1285,6 +1324,14 @@ export default function DigitalEmployeePage({
   const isModelConfigMode = activeAdvancedPanel === "model-config";
   const isTokenUsageMode = activeAdvancedPanel === "token-usage";
   const isOpsExpertMode = activeAdvancedPanel === "ops-expert";
+  const isMcpMode = activeAdvancedPanel === "mcp";
+  const isSkillPoolMode = activeAdvancedPanel === "skill-pool";
+  const isInspirationMode = activeAdvancedPanel === "inspiration";
+  const isCliMode = activeAdvancedPanel === "cli";
+  const effectiveMcpEmployee = isMcpMode ? (selectedEmployee || currentSidebarEmployee) : selectedEmployee;
+  const effectiveMcpAgentId = effectiveMcpEmployee
+    ? (REMOTE_AGENT_IDS[effectiveMcpEmployee.id] || "default")
+    : "default";
   const showPortalHomeHero = isPortalHomeChat && safeMessages.length === 0;
   const mentionContext = useMemo(
     () => extractMentionQuery(inputMessage, inputCursor),
@@ -1553,6 +1600,26 @@ export default function DigitalEmployeePage({
     setLastSidebarEmployeeId(selectedEmployee.id);
     setEmployeeDropdownOpen(false);
   }, [selectedEmployee?.id]);
+
+  useEffect(() => {
+    if (!isMcpMode || selectedEmployee || !currentSidebarEmployee?.id) {
+      return;
+    }
+
+    navigate(
+      buildPortalSectionPath("mcp", {
+        entry: currentEntry,
+        employeeId: currentSidebarEmployee.id,
+      }),
+      { replace: true },
+    );
+  }, [
+    currentEntry,
+    currentSidebarEmployee?.id,
+    isMcpMode,
+    navigate,
+    selectedEmployee,
+  ]);
 
   useEffect(() => {
     if (!employeeDropdownOpen) {
@@ -2098,18 +2165,6 @@ export default function DigitalEmployeePage({
               <i className="fas fa-chart-pie" />
               <span>看板</span>
             </button>
-            <button
-              className={currentView === "tasks" ? "view-tab active" : "view-tab"}
-              onClick={() => {
-                updateCurrentEmployeeRoute({
-                  view: "tasks",
-                  panel: null,
-                });
-              }}
-            >
-              <i className="fas fa-list-check" />
-              <span>定时任务</span>
-            </button>
           </div>
 
           <div className="agents-title">
@@ -2167,6 +2222,10 @@ export default function DigitalEmployeePage({
             isCronJobsActive={currentView === "tasks"}
             isTokenUsageActive={isTokenUsageMode}
             isOpsExpertActive={isOpsExpertMode}
+            isMcpActive={isMcpMode}
+            isSkillPoolActive={isSkillPoolMode}
+            isInspirationActive={isInspirationMode}
+            isCliActive={isCliMode}
             onOpenConfig={openModelConfig}
             onOpenCronJobs={() =>
               updateCurrentEmployeeRoute({
@@ -2184,12 +2243,20 @@ export default function DigitalEmployeePage({
                 panel: "ops-expert",
               })
             }
+            onOpenMcp={() =>
+              updateCurrentEmployeeRoute({
+                panel: "mcp",
+              })
+            }
+            onOpenSkillPool={openSkillPool}
+            onOpenInspiration={openInspiration}
+            onOpenCli={openCli}
           />
         </div>
 
         <div
           className={
-            isModelConfigMode || isTokenUsageMode || isOpsExpertMode
+            isModelConfigMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isInspirationMode || isCliMode
               ? "main-content advanced-page-mode"
               : currentView === "chat"
                 ? "main-content"
@@ -2239,6 +2306,36 @@ export default function DigitalEmployeePage({
             />
           ) : isOpsExpertMode ? (
             <OpsExpertPanel />
+          ) : isMcpMode ? (
+            <McpPanel
+              agentId={effectiveMcpAgentId}
+              currentEmployeeId={effectiveMcpEmployee?.id || null}
+              currentEmployeeName={effectiveMcpEmployee?.name || currentEmployee.name}
+              onSwitchEmployee={switchMcpEmployee}
+            />
+          ) : isSkillPoolMode ? (
+            <SkillPoolPanel />
+          ) : isInspirationMode ? (
+            <InspirationPanel
+              onOpenEmployeeChat={openEmployeeChat}
+              onOpenView={(view) =>
+                updateCurrentEmployeeRoute({
+                  view,
+                  panel: null,
+                })
+              }
+              onOpenPanel={(panel) =>
+                updateCurrentEmployeeRoute({
+                  panel,
+                })
+              }
+            />
+          ) : isCliMode ? (
+            <CliTerminalPanel
+              employees={sidebarEmployees}
+              activeEmployeeId={selectedEmployee?.id || currentSidebarEmployee?.id || null}
+              onOpenEmployeeChat={openEmployeeChat}
+            />
           ) : (
             <>
           {!isPortalHomeChat ? (
