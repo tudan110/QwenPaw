@@ -180,12 +180,14 @@ export function AdvancedModelEntry({
   isOpsExpertActive,
   isMcpActive,
   isSkillPoolActive,
+  isInspirationActive,
   onOpenConfig,
   onOpenCronJobs,
   onOpenTokenUsage,
   onOpenOpsExpert,
   onOpenMcp,
   onOpenSkillPool,
+  onOpenInspiration,
 }: {
   activeModelLabel: string;
   activeProviderName: string;
@@ -195,12 +197,14 @@ export function AdvancedModelEntry({
   isOpsExpertActive?: boolean;
   isMcpActive?: boolean;
   isSkillPoolActive?: boolean;
+  isInspirationActive?: boolean;
   onOpenConfig: () => void;
   onOpenCronJobs: () => void;
   onOpenTokenUsage: () => void;
   onOpenOpsExpert: () => void;
   onOpenMcp: () => void;
   onOpenSkillPool: () => void;
+  onOpenInspiration: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -297,6 +301,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">Token统计</div>
           <div className="sidebar-advanced-item-desc">资源消耗分析</div>
           <div className="sidebar-advanced-item-meta">按模型 / 日期统计</div>
+        </button>
+        <button
+          className={isInspirationActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenInspiration}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="inspiration">
+              💡
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">灵感中心</div>
+          <div className="sidebar-advanced-item-desc">探索 AI 运维新范式</div>
+          <div className="sidebar-advanced-item-meta">场景 / 协作 / 自动化</div>
         </button>
       </div>
     </div>

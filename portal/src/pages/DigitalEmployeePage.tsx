@@ -33,6 +33,7 @@ import {
   ModelConfigModal,
 } from "./digital-employee/modelControls";
 import { CronJobsPanel } from "./digital-employee/cronJobsPanel";
+import { InspirationPanel } from "./digital-employee/inspirationPanel";
 import { McpPanel } from "./digital-employee/mcpPanel";
 import { OverviewPanel } from "./digital-employee/overviewPanel";
 import { SkillPoolPanel } from "./digital-employee/skillPoolPanel";
@@ -638,9 +639,25 @@ export default function DigitalEmployeePage({
     navigate(buildPortalSectionPath("skill-pool"));
   }, [navigate]);
 
+  const openInspiration = useCallback(() => {
+    navigate(buildPortalSectionPath("inspiration"));
+  }, [navigate]);
+
   const switchMcpEmployee = useCallback((employeeId: string | null) => {
     navigate(buildPortalSectionPath("mcp", { employeeId }));
   }, [navigate]);
+
+  const openEmployeeChat = useCallback((targetEmployeeId: string) => {
+    const employee = digitalEmployees.find((item) => item.id === targetEmployeeId);
+    if (!employee) {
+      return;
+    }
+    navigateToEmployeePage(employee, {
+      entry: null,
+      view: "chat",
+      panel: null,
+    });
+  }, [navigateToEmployeePage]);
 
   useEffect(() => {
     if (!currentEmployee) {
@@ -795,6 +812,7 @@ export default function DigitalEmployeePage({
   const isOpsExpertMode = activeAdvancedPanel === "ops-expert";
   const isMcpMode = activeAdvancedPanel === "mcp";
   const isSkillPoolMode = activeAdvancedPanel === "skill-pool";
+  const isInspirationMode = activeAdvancedPanel === "inspiration";
   const effectiveMcpEmployee = isMcpMode ? (selectedEmployee || currentSidebarEmployee) : selectedEmployee;
   const effectiveMcpAgentId = effectiveMcpEmployee
     ? (REMOTE_AGENT_IDS[effectiveMcpEmployee.id] || "default")
@@ -1691,6 +1709,7 @@ export default function DigitalEmployeePage({
             isOpsExpertActive={isOpsExpertMode}
             isMcpActive={isMcpMode}
             isSkillPoolActive={isSkillPoolMode}
+            isInspirationActive={isInspirationMode}
             onOpenConfig={openModelConfig}
             onOpenCronJobs={() =>
               updateCurrentEmployeeRoute({
@@ -1714,12 +1733,13 @@ export default function DigitalEmployeePage({
               })
             }
             onOpenSkillPool={openSkillPool}
+            onOpenInspiration={openInspiration}
           />
         </div>
 
         <div
           className={
-            isModelConfigMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode
+            isModelConfigMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isInspirationMode
               ? "main-content advanced-page-mode"
               : currentView === "chat"
                 ? "main-content"
@@ -1778,6 +1798,21 @@ export default function DigitalEmployeePage({
             />
           ) : isSkillPoolMode ? (
             <SkillPoolPanel />
+          ) : isInspirationMode ? (
+            <InspirationPanel
+              onOpenEmployeeChat={openEmployeeChat}
+              onOpenView={(view) =>
+                updateCurrentEmployeeRoute({
+                  view,
+                  panel: null,
+                })
+              }
+              onOpenPanel={(panel) =>
+                updateCurrentEmployeeRoute({
+                  panel,
+                })
+              }
+            />
           ) : (
             <>
           {!isPortalHomeChat ? (
