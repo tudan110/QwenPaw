@@ -33,6 +33,7 @@ import {
   ModelConfigModal,
 } from "./digital-employee/modelControls";
 import { CronJobsPanel } from "./digital-employee/cronJobsPanel";
+import { CliTerminalPanel } from "./digital-employee/cliTerminalPanel";
 import { InspirationPanel } from "./digital-employee/inspirationPanel";
 import { McpPanel } from "./digital-employee/mcpPanel";
 import { OverviewPanel } from "./digital-employee/overviewPanel";
@@ -643,6 +644,14 @@ export default function DigitalEmployeePage({
     navigate(buildPortalSectionPath("inspiration"));
   }, [navigate]);
 
+  const openCli = useCallback(() => {
+    navigate(
+      buildPortalSectionPath("cli", {
+        employeeId: selectedEmployee?.id || null,
+      }),
+    );
+  }, [navigate, selectedEmployee?.id]);
+
   const switchMcpEmployee = useCallback((employeeId: string | null) => {
     navigate(buildPortalSectionPath("mcp", { employeeId }));
   }, [navigate]);
@@ -813,6 +822,7 @@ export default function DigitalEmployeePage({
   const isMcpMode = activeAdvancedPanel === "mcp";
   const isSkillPoolMode = activeAdvancedPanel === "skill-pool";
   const isInspirationMode = activeAdvancedPanel === "inspiration";
+  const isCliMode = activeAdvancedPanel === "cli";
   const effectiveMcpEmployee = isMcpMode ? (selectedEmployee || currentSidebarEmployee) : selectedEmployee;
   const effectiveMcpAgentId = effectiveMcpEmployee
     ? (REMOTE_AGENT_IDS[effectiveMcpEmployee.id] || "default")
@@ -1710,6 +1720,7 @@ export default function DigitalEmployeePage({
             isMcpActive={isMcpMode}
             isSkillPoolActive={isSkillPoolMode}
             isInspirationActive={isInspirationMode}
+            isCliActive={isCliMode}
             onOpenConfig={openModelConfig}
             onOpenCronJobs={() =>
               updateCurrentEmployeeRoute({
@@ -1734,12 +1745,13 @@ export default function DigitalEmployeePage({
             }
             onOpenSkillPool={openSkillPool}
             onOpenInspiration={openInspiration}
+            onOpenCli={openCli}
           />
         </div>
 
         <div
           className={
-            isModelConfigMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isInspirationMode
+            isModelConfigMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isInspirationMode || isCliMode
               ? "main-content advanced-page-mode"
               : currentView === "chat"
                 ? "main-content"
@@ -1812,6 +1824,12 @@ export default function DigitalEmployeePage({
                   panel,
                 })
               }
+            />
+          ) : isCliMode ? (
+            <CliTerminalPanel
+              employees={sidebarEmployees}
+              activeEmployeeId={selectedEmployee?.id || currentSidebarEmployee?.id || null}
+              onOpenEmployeeChat={openEmployeeChat}
             />
           ) : (
             <>

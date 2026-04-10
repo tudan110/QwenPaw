@@ -181,6 +181,7 @@ export function AdvancedModelEntry({
   isMcpActive,
   isSkillPoolActive,
   isInspirationActive,
+  isCliActive,
   onOpenConfig,
   onOpenCronJobs,
   onOpenTokenUsage,
@@ -188,6 +189,7 @@ export function AdvancedModelEntry({
   onOpenMcp,
   onOpenSkillPool,
   onOpenInspiration,
+  onOpenCli,
 }: {
   activeModelLabel: string;
   activeProviderName: string;
@@ -198,6 +200,7 @@ export function AdvancedModelEntry({
   isMcpActive?: boolean;
   isSkillPoolActive?: boolean;
   isInspirationActive?: boolean;
+  isCliActive?: boolean;
   onOpenConfig: () => void;
   onOpenCronJobs: () => void;
   onOpenTokenUsage: () => void;
@@ -205,6 +208,7 @@ export function AdvancedModelEntry({
   onOpenMcp: () => void;
   onOpenSkillPool: () => void;
   onOpenInspiration: () => void;
+  onOpenCli: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -314,6 +318,19 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">灵感中心</div>
           <div className="sidebar-advanced-item-desc">探索 AI 运维新范式</div>
           <div className="sidebar-advanced-item-meta">场景 / 协作 / 自动化</div>
+        </button>
+        <button
+          className={isCliActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenCli}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <span role="img" aria-label="cli">
+              💻
+            </span>
+          </div>
+          <div className="sidebar-advanced-item-name">CLI终端</div>
+          <div className="sidebar-advanced-item-desc">命令行交互界面</div>
+          <div className="sidebar-advanced-item-meta">help / use / ask / run</div>
         </button>
       </div>
     </div>

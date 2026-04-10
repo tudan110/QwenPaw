@@ -11,6 +11,7 @@ export default function App() {
       <Route path="/mcp" element={<DigitalEmployeePage forcedSection="mcp" />} />
       <Route path="/skill-pool" element={<DigitalEmployeePage forcedSection="skill-pool" />} />
       <Route path="/inspiration" element={<DigitalEmployeePage forcedSection="inspiration" />} />
+      <Route path="/cli" element={<DigitalEmployeePage forcedSection="cli" />} />
       <Route path="/overview" element={<DigitalEmployeePage forcedSection="overview" />} />
       <Route path="/dashboard" element={<DigitalEmployeePage forcedSection="dashboard" />} />
       <Route path="/tasks" element={<DigitalEmployeePage forcedSection="tasks" />} />
