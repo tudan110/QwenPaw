@@ -574,8 +574,13 @@ export function buildThinkingBlock(message: any) {
   };
 }
 
-export function buildResponseBlock(message: any, contentOverride?: string) {
-  const content = String(contentOverride ?? extractCopawMessageText(message) ?? "").trim();
+export function buildResponseBlock(
+  message: any,
+  contentOverride?: string,
+  options: { preserveWhitespace?: boolean } = {},
+) {
+  const rawContent = String(contentOverride ?? extractCopawMessageText(message) ?? "");
+  const content = options.preserveWhitespace ? rawContent : rawContent.trim();
 
   return {
     id: message.id || `response-${Date.now()}`,

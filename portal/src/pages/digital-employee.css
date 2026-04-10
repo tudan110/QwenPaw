@@ -1761,6 +1761,12 @@
   color: #e2e8f0;
 }
 
+.portal-digital-employee.theme-dark .message.agent .response-trace-inline {
+  background: linear-gradient(180deg, #182235 0%, #131c2c 100%);
+  border: 1px solid #223049;
+  box-shadow: 0 12px 28px rgba(2, 6, 23, 0.28);
+}
+
 .portal-digital-employee.theme-dark .streaming-text,
 .portal-digital-employee.theme-dark .markdown-bubble,
 .portal-digital-employee.theme-dark .tasks-welcome-title,

@@ -412,13 +412,15 @@ export function useRemoteChatSession({
 
     if (event.object === "content" && event.type === "text" && event.msg_id) {
       const assistantState = ensureAssistantMessage(event.msg_id, employee);
-      if (event.text) {
-        appendProcessBlock(
-          assistantState.frontendId,
-          buildResponseBlock({ id: event.msg_id }, event.text),
-        );
+        if (event.text) {
+          appendProcessBlock(
+            assistantState.frontendId,
+            buildResponseBlock({ id: event.msg_id }, event.text, {
+              preserveWhitespace: true,
+            }),
+          );
+        }
       }
-    }
   };
 
   const handleRemoteSendMessage = useCallback(async (
