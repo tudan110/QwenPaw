@@ -2943,12 +2943,12 @@ export default function DigitalEmployeePage({
                       </div>
                     </div>
                   ) : null}
-                  <div className="input-area">
-                    <div className="input-hint-row">
-                      <span>
-                        输入自然语言即可开始对话，使用 <code>@数字员工名</code> 可直接切换到指定员工。
-                      </span>
-                    </div>
+                    <div className="input-area">
+                      <div className="input-hint-row">
+                        <span>
+                        输入自然语言即可开始协同办公，使用 <code>@数字员工名</code> 可让数字员工协作处理。
+                        </span>
+                      </div>
                     <div className="input-wrapper">
                       <div className={isCreatingChat ? "input-box disabled" : "input-box"}>
                         <i className="fas fa-comment-dots" />
