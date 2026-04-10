@@ -1452,6 +1452,20 @@
   background: rgba(79, 110, 247, 0.04);
 }
 
+.portal-digital-employee .kanban-worker-stat-action {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.portal-digital-employee .kanban-worker-stat-action:hover {
+  transform: translateY(-1px);
+  border-color: rgba(79, 110, 247, 0.24);
+  background: rgba(79, 110, 247, 0.08);
+}
+
 .portal-digital-employee .kanban-worker-stat-label {
   font-size: 11px;
   color: var(--text-muted);
@@ -1473,6 +1487,20 @@
   font-size: 12px;
   line-height: 1.7;
   color: var(--text-secondary);
+}
+
+.portal-digital-employee .kanban-worker-note-action {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.portal-digital-employee .kanban-worker-note-action:hover {
+  transform: translateY(-1px);
+  border-color: rgba(79, 110, 247, 0.22);
+  background: rgba(79, 110, 247, 0.09);
 }
 
 .portal-digital-employee .kanban-card-footer {
@@ -1497,6 +1525,14 @@
   font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+.portal-digital-employee .kanban-card-link-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
 }
 
 .portal-digital-employee .kanban-card-time.urgent {

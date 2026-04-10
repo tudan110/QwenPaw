@@ -49,6 +49,7 @@ import {
   createAlarmWorkorderMessage,
   createUserMessage,
   createWelcomeMessage,
+  normalizeRemoteSessions,
   parsePortalAdvancedPanel,
   parsePortalView,
   type PortalAdvancedPanel,
@@ -74,7 +75,6 @@ const REMOTE_AGENT_IDS: Record<string, string> = {
   fault: "fault",
   query: "query",
 };
-const DASHBOARD_CHAT_USER_ID = "default";
 const DASHBOARD_CHAT_CHANNEL = "console";
 
 const PORTAL_HOME_AGENT_ID = "default";
@@ -130,6 +130,7 @@ type DashboardEmployeeSnapshot = {
   progress: number;
   workStatus: string;
   note: string;
+  latestSessionTitle: string;
   updatedAt: string;
   urgent: boolean;
 };
@@ -408,6 +409,7 @@ function buildDashboardWorkColumns(): DashboardWorkColumn[] {
 
 function buildDashboardEmployeeSnapshots(
   historyCounts: Record<string, number>,
+  latestSessionTitles: Record<string, string>,
 ): DashboardEmployeeSnapshot[] {
   const templates: Record<string, Omit<DashboardEmployeeSnapshot, "id" | "name" | "desc" | "color" | "historyCount" | "urgent">> = {
     resource: {
@@ -481,7 +483,8 @@ function buildDashboardEmployeeSnapshots(
       historyCount: historyCounts[employee.id] || 0,
       progress: template?.progress ?? 0,
       workStatus: template?.workStatus || (runtimeState === "running" ? "运行中" : "待命中"),
-      note: template?.note || "当前暂无补充说明。",
+      note: latestSessionTitles[employee.id] || template?.note || "当前暂无补充说明。",
+      latestSessionTitle: latestSessionTitles[employee.id] || "",
       updatedAt: template?.updatedAt || "刚刚",
       urgent: employee.urgent,
     };
@@ -522,6 +525,11 @@ type PendingPortalDispatch = {
 
 type PortalLocationState = {
   pendingPortalDispatch?: PendingPortalDispatch;
+  openHistoryForEmployeeId?: string;
+  openSession?: {
+    employeeId: string;
+    sessionId: string;
+  };
 };
 
 type SessionRecord = {
@@ -860,9 +868,16 @@ export default function DigitalEmployeePage({
   const [kanbanMode, setKanbanMode] = useState<DashboardKanbanMode>("employee");
   const [kanbanFilter, setKanbanFilter] = useState<DashboardKanbanFilter>("all");
   const [dashboardRemoteHistoryCounts, setDashboardRemoteHistoryCounts] = useState<Record<string, number>>({});
+  const [dashboardRemoteSessionsMap, setDashboardRemoteSessionsMap] = useState<Record<string, SessionRecord[]>>({});
   const [dashboardClock, setDashboardClock] = useState(() => formatDashboardClock(new Date()));
+  const [dashboardHistoryVisible, setDashboardHistoryVisible] = useState(false);
+  const [dashboardHistoryEmployeeId, setDashboardHistoryEmployeeId] = useState("");
+  const [dashboardHistorySessions, setDashboardHistorySessions] = useState<SessionRecord[]>([]);
+  const [dashboardHistoryLoading, setDashboardHistoryLoading] = useState(false);
+  const [dashboardHistoryError, setDashboardHistoryError] = useState("");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const handledPendingDispatchRef = useRef("");
+  const handledDashboardSessionOpenRef = useRef("");
   const chatInputRef = useRef<HTMLInputElement | null>(null);
   const homeComposerRef = useRef<HTMLTextAreaElement | null>(null);
   const employeeDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -957,6 +972,7 @@ export default function DigitalEmployeePage({
       view?: PortalView;
       panel?: PortalAdvancedPanel | null;
       replace?: boolean;
+      state?: PortalLocationState;
     } = {},
   ) => {
     navigate(
@@ -965,7 +981,12 @@ export default function DigitalEmployeePage({
         view: options.view,
         panel: options.panel,
       }),
-      options.replace ? { replace: true } : undefined,
+      options.replace || options.state
+        ? {
+            ...(options.replace ? { replace: true } : {}),
+            ...(options.state ? { state: options.state } : {}),
+          }
+        : undefined,
     );
   }, [navigate]);
 
@@ -1208,6 +1229,16 @@ export default function DigitalEmployeePage({
       ) as Record<string, number>,
     [conversationStore],
   );
+  const localLatestSessionTitles = useMemo(
+    () =>
+      Object.fromEntries(
+        digitalEmployees.map((employee) => {
+          const sessions = ensureSessionRecords(conversationStore[employee.id]);
+          return [employee.id, sessions[0]?.title || ""] as const;
+        }),
+      ) as Record<string, string>,
+    [conversationStore],
+  );
   const sidebarEmployees = useMemo(() => {
     const priorityIds = new Set(sidebarEmployeePriority);
     const prioritizedEmployees = sidebarEmployeePriority
@@ -1239,6 +1270,7 @@ export default function DigitalEmployeePage({
     const remoteEntries = Object.entries(REMOTE_AGENT_IDS);
     if (!remoteEntries.length) {
       setDashboardRemoteHistoryCounts({});
+      setDashboardRemoteSessionsMap({});
       return;
     }
 
@@ -1248,22 +1280,43 @@ export default function DigitalEmployeePage({
       remoteEntries.map(async ([employeeId, agentId]) => {
         try {
           const chats = await listChats(agentId, {
-            user_id: DASHBOARD_CHAT_USER_ID,
             channel: DASHBOARD_CHAT_CHANNEL,
           });
+          const chatList = Array.isArray(chats) ? chats : [];
           return [
             employeeId,
-            Array.isArray(chats) ? chats.length : 0,
+            {
+              count: chatList.length,
+              sessions: normalizeRemoteSessions(chatList, employeeId, {
+                fallbackToAllChats: true,
+              }),
+            },
           ] as const;
         } catch {
-          return [employeeId, localHistoryCounts[employeeId] || 0] as const;
+          return [
+            employeeId,
+            {
+              count: localHistoryCounts[employeeId] || 0,
+              sessions: null,
+            },
+          ] as const;
         }
       }),
     ).then((entries) => {
       if (cancelled) {
         return;
       }
-      setDashboardRemoteHistoryCounts(Object.fromEntries(entries));
+      setDashboardRemoteHistoryCounts((prev) => ({
+        ...prev,
+        ...Object.fromEntries(entries.map(([employeeId, data]) => [employeeId, data.count])),
+      }));
+      const resolvedEntries = entries
+        .filter((entry) => Array.isArray(entry[1].sessions))
+        .map(([employeeId, data]) => [employeeId, data.sessions as SessionRecord[]]);
+      setDashboardRemoteSessionsMap((prev) => ({
+        ...prev,
+        ...Object.fromEntries(resolvedEntries),
+      }));
     });
 
     return () => {
@@ -1283,10 +1336,38 @@ export default function DigitalEmployeePage({
       ) as Record<string, number>,
     [dashboardRemoteHistoryCounts, localHistoryCounts],
   );
+  const dashboardLatestSessionTitles = useMemo(
+    () =>
+      Object.fromEntries(
+        digitalEmployees.map((employee) => [
+          employee.id,
+          REMOTE_AGENT_IDS[employee.id]
+            ? (dashboardRemoteSessionsMap[employee.id]?.[0]?.title ?? localLatestSessionTitles[employee.id] ?? "")
+            : (localLatestSessionTitles[employee.id] ?? ""),
+        ]),
+      ) as Record<string, string>,
+    [dashboardRemoteSessionsMap, localLatestSessionTitles],
+  );
+  const dashboardLatestSessions = useMemo(
+    () =>
+      Object.fromEntries(
+        digitalEmployees.map((employee) => [
+          employee.id,
+          REMOTE_AGENT_IDS[employee.id]
+            ? (dashboardRemoteSessionsMap[employee.id]?.[0] ?? null)
+            : (ensureSessionRecords(conversationStore[employee.id])[0] ?? null),
+        ]),
+      ) as Record<string, SessionRecord | null>,
+    [conversationStore, dashboardRemoteSessionsMap],
+  );
+  const dashboardHistoryEmployee = useMemo(
+    () => (dashboardHistoryEmployeeId ? getEmployeeById(dashboardHistoryEmployeeId) : null),
+    [dashboardHistoryEmployeeId],
+  );
   const dashboardWorkColumns = useMemo(() => buildDashboardWorkColumns(), []);
   const dashboardEmployeeSnapshots = useMemo(
-    () => buildDashboardEmployeeSnapshots(dashboardHistoryCounts),
-    [dashboardHistoryCounts],
+    () => buildDashboardEmployeeSnapshots(dashboardHistoryCounts, dashboardLatestSessionTitles),
+    [dashboardHistoryCounts, dashboardLatestSessionTitles],
   );
   const kanbanFilterLabels = useMemo(
     () => getDashboardFilterLabels(kanbanMode),
@@ -1306,6 +1387,26 @@ export default function DigitalEmployeePage({
       }))
       .filter((column) => column.cards.length);
   }, [dashboardWorkColumns, kanbanFilter]);
+
+  useEffect(() => {
+    if (!dashboardHistoryVisible || !dashboardHistoryEmployeeId) {
+      return;
+    }
+
+    if (REMOTE_AGENT_IDS[dashboardHistoryEmployeeId]) {
+      setDashboardHistorySessions(dashboardRemoteSessionsMap[dashboardHistoryEmployeeId] || []);
+      return;
+    }
+
+    setDashboardHistorySessions(
+      ensureSessionRecords(conversationStore[dashboardHistoryEmployeeId]),
+    );
+  }, [
+    conversationStore,
+    dashboardHistoryEmployeeId,
+    dashboardHistoryVisible,
+    dashboardRemoteSessionsMap,
+  ]);
   const filteredDashboardEmployeeSnapshots = useMemo(() => {
     if (kanbanFilter === "urgent") {
       return dashboardEmployeeSnapshots.filter((worker) => worker.runtimeState === "running");
@@ -1583,6 +1684,30 @@ export default function DigitalEmployeePage({
   }, [
     currentEmployee,
     dispatchActiveMessage,
+    location.pathname,
+    location.search,
+    locationState,
+    navigate,
+  ]);
+
+  useEffect(() => {
+    const openHistoryForEmployeeId = locationState?.openHistoryForEmployeeId;
+    if (!openHistoryForEmployeeId || !currentEmployee) {
+      return;
+    }
+
+    if (openHistoryForEmployeeId !== currentEmployee.id) {
+      return;
+    }
+
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: {},
+    });
+    void handleOpenHistory();
+  }, [
+    currentEmployee,
+    handleOpenHistory,
     location.pathname,
     location.search,
     locationState,
@@ -1886,6 +2011,49 @@ export default function DigitalEmployeePage({
     await handleSelectRemoteHistory(session);
   };
 
+  useEffect(() => {
+    const openSession = locationState?.openSession;
+    if (!openSession || !currentEmployee) {
+      return;
+    }
+
+    if (openSession.employeeId !== currentEmployee.id) {
+      return;
+    }
+
+    const openKey = `${openSession.employeeId}:${openSession.sessionId}`;
+    const availableSessions = isRemoteEmployee
+      ? remoteSessions
+      : ensureSessionRecords(conversationStore[currentEmployee.id]);
+    const targetSession = availableSessions.find((session) => session.id === openSession.sessionId);
+
+    if (targetSession) {
+      handledDashboardSessionOpenRef.current = "";
+      navigate(`${location.pathname}${location.search}`, {
+        replace: true,
+        state: {},
+      });
+      void handleSelectHistory(targetSession);
+      return;
+    }
+
+    if (isRemoteEmployee && handledDashboardSessionOpenRef.current !== openKey) {
+      handledDashboardSessionOpenRef.current = openKey;
+      void refreshRemoteSessions(false);
+    }
+  }, [
+    conversationStore,
+    currentEmployee,
+    handleSelectHistory,
+    isRemoteEmployee,
+    location.pathname,
+    location.search,
+    locationState,
+    navigate,
+    refreshRemoteSessions,
+    remoteSessions,
+  ]);
+
   const handleStartNewConversation = useCallback(() => {
     if (!currentEmployee) {
       return;
@@ -1906,6 +2074,7 @@ export default function DigitalEmployeePage({
           }),
         ],
       });
+      void loadAlarmWorkorders();
       return;
     }
 
@@ -1925,6 +2094,7 @@ export default function DigitalEmployeePage({
     currentEmployee,
     isAlarmWorkbenchMode,
     isRemoteEmployee,
+    loadAlarmWorkorders,
     resetAlarmWorkbench,
     resetRemoteState,
     setHistoryVisible,
@@ -2091,7 +2261,7 @@ export default function DigitalEmployeePage({
     setExecutionVisible(true);
   };
 
-  const handleOpenTaskEmployeeChat = (employeeId: string) => {
+  const handleOpenTaskEmployeeChat = (employeeId: string, session?: SessionRecord | null) => {
     const employee = getEmployeeById(employeeId);
     if (!employee) {
       return;
@@ -2099,7 +2269,73 @@ export default function DigitalEmployeePage({
     navigateToEmployeePage(employee, {
       view: "chat",
       panel: null,
+      state: session
+        ? {
+            openSession: {
+              employeeId,
+              sessionId: session.id,
+            },
+          }
+        : undefined,
     });
+  };
+
+  const handleOpenDashboardLatestSession = (employeeId: string, session?: SessionRecord | null) => {
+    handleOpenTaskEmployeeChat(employeeId, session);
+  };
+
+  const handleOpenDashboardEmployeeHistory = async (employeeId: string) => {
+    const employee = getEmployeeById(employeeId);
+    if (!employee) {
+      return;
+    }
+
+    setDashboardHistoryEmployeeId(employee.id);
+    setDashboardHistoryVisible(true);
+    setDashboardHistoryError("");
+
+    if (!REMOTE_AGENT_IDS[employee.id]) {
+      setDashboardHistoryLoading(false);
+      setDashboardHistorySessions(ensureSessionRecords(conversationStore[employee.id]));
+      return;
+    }
+
+    const cachedSessions = dashboardRemoteSessionsMap[employee.id];
+    if (cachedSessions) {
+      setDashboardHistoryLoading(false);
+      setDashboardHistorySessions(cachedSessions);
+      return;
+    }
+
+    setDashboardHistoryLoading(true);
+    try {
+      const chats = await listChats(REMOTE_AGENT_IDS[employee.id], {
+        channel: DASHBOARD_CHAT_CHANNEL,
+      });
+      const normalizedSessions = normalizeRemoteSessions(
+        Array.isArray(chats) ? chats : [],
+        employee.id,
+        { fallbackToAllChats: true },
+      );
+      setDashboardRemoteSessionsMap((prev) => ({
+        ...prev,
+        [employee.id]: normalizedSessions,
+      }));
+      setDashboardHistorySessions(normalizedSessions);
+    } catch (error: any) {
+      setDashboardHistoryError(error?.message || "获取已处理任务失败，请稍后重试");
+      setDashboardHistorySessions([]);
+    } finally {
+      setDashboardHistoryLoading(false);
+    }
+  };
+
+  const handleSelectDashboardHistory = (employeeId: string, session: SessionRecord) => {
+    setDashboardHistoryVisible(false);
+    setDashboardHistoryEmployeeId("");
+    setDashboardHistorySessions([]);
+    setDashboardHistoryError("");
+    handleOpenTaskEmployeeChat(employeeId, session);
   };
 
   if (!currentEmployee) {
@@ -2470,6 +2706,7 @@ export default function DigitalEmployeePage({
                 <div className="kanban-board employee-dimension">
                   {filteredDashboardEmployeeSnapshots.length ? (
                     filteredDashboardEmployeeSnapshots.map((worker) => {
+                      const latestSession = dashboardLatestSessions[worker.id];
                       const runtimeLabel = worker.urgent
                         ? "紧急处理中"
                         : worker.runtimeState === "running"
@@ -2492,12 +2729,9 @@ export default function DigitalEmployeePage({
                           : "#cbd5e1";
 
                       return (
-                        <button
+                        <div
                           key={`kanban-worker-${worker.id}`}
-                          type="button"
                           className="kanban-card employee-worker-card"
-                          onClick={() => handleOpenTaskEmployeeChat(worker.id)}
-                          title={`进入 ${worker.name} 对话`}
                         >
                           <span
                             className="kanban-card-stripe"
@@ -2542,16 +2776,32 @@ export default function DigitalEmployeePage({
                             </div>
                           </div>
                           <div className="kanban-worker-summary">
-                            <div className="kanban-worker-stat">
+                            <button
+                              type="button"
+                              className="kanban-worker-stat kanban-worker-stat-action"
+                              onClick={() => handleOpenDashboardEmployeeHistory(worker.id)}
+                              title={`查看 ${worker.name} 已处理任务`}
+                            >
                               <div className="kanban-worker-stat-label">已处理任务</div>
                               <div className="kanban-worker-stat-value">{worker.historyCount} 条</div>
-                            </div>
+                            </button>
                             <div className="kanban-worker-stat">
                               <div className="kanban-worker-stat-label">工作状态</div>
                               <div className="kanban-worker-stat-value">{worker.workStatus}</div>
                             </div>
                           </div>
-                          <div className="kanban-worker-note">{worker.note}</div>
+                          {latestSession ? (
+                            <button
+                              type="button"
+                              className="kanban-worker-note kanban-worker-note-action"
+                              onClick={() => handleOpenDashboardLatestSession(worker.id, latestSession)}
+                              title={`进入 ${worker.name} 最近一条对话`}
+                            >
+                              {worker.note}
+                            </button>
+                          ) : (
+                            <div className="kanban-worker-note">{worker.note}</div>
+                          )}
                           <div className="kanban-card-footer">
                             <span
                               className="kanban-card-tag"
@@ -2559,9 +2809,16 @@ export default function DigitalEmployeePage({
                             >
                               {runtimeLabel}
                             </span>
-                            <span className="kanban-card-time">点击进入对话</span>
+                            <button
+                              type="button"
+                              className="kanban-card-time kanban-card-link-btn"
+                              onClick={() => handleOpenTaskEmployeeChat(worker.id, latestSession)}
+                              title={`进入 ${worker.name} 对话`}
+                            >
+                              点击进入对话
+                            </button>
                           </div>
-                        </button>
+                        </div>
                       );
                     })
                   ) : (
@@ -3030,6 +3287,59 @@ export default function DigitalEmployeePage({
           )}
         </div>
       </div>
+
+      {dashboardHistoryVisible ? (
+        <div className="history-modal show" onClick={() => setDashboardHistoryVisible(false)}>
+          <div className="history-content" onClick={(event) => event.stopPropagation()}>
+            <div className="history-header">
+              <h3>
+                <i className="fas fa-history" /> {dashboardHistoryEmployee?.name || "数字员工"}已处理任务
+              </h3>
+              <button className="history-close" onClick={() => setDashboardHistoryVisible(false)}>
+                <i className="fas fa-times" />
+              </button>
+            </div>
+            <div className="history-body">
+              {dashboardHistoryLoading ? (
+                <div className="history-empty">
+                  <i className="fas fa-spinner fa-spin" />
+                  <p>正在加载已处理任务...</p>
+                </div>
+              ) : dashboardHistoryError ? (
+                <div className="history-empty">
+                  <i className="fas fa-triangle-exclamation" />
+                  <p>{dashboardHistoryError}</p>
+                </div>
+              ) : dashboardHistorySessions.length ? (
+                <div className="history-timeline">
+                  {dashboardHistorySessions.map((session) => (
+                    <div key={session.id} className={`history-item ${session.status || ""}`.trim()}>
+                      <button
+                        type="button"
+                        className="history-item-main"
+                        onClick={() => handleSelectDashboardHistory(dashboardHistoryEmployeeId, session)}
+                      >
+                        <div className="history-time">
+                          {new Date(
+                            session.updatedAt || session.createdAt || new Date().toISOString(),
+                          ).toLocaleString("zh-CN")}
+                        </div>
+                        <div className="history-title">{session.title}</div>
+                        {session.detail ? <div className="history-detail">{session.detail}</div> : null}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="history-empty">
+                  <i className="fas fa-clock-rotate-left" />
+                  <p>当前暂无已处理任务</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {historyVisible ? (
         <div className="history-modal show" onClick={() => setHistoryVisible(false)}>

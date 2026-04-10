@@ -335,6 +335,9 @@ export function buildFaultWorkbenchDiagnosePrompt(workorder: any, workorders: an
     PORTAL_FAULT_WORKORDER_MARKER,
     "请按 CoPAW 标准故障处置流程继续当前工单分析，优先调用 fault-disposal skill。",
     "要求：保持在当前聊天会话中完成，不要创建子会话；先完成根因分析与处置建议，暂时不要直接执行动作；输出精炼 markdown，并保留 portal-action 代码块。",
+    "强约束：如果结论是存在可执行的下一步动作，最终回复末尾必须追加唯一一个 ```portal-action 代码块；不要只写“请回复执行建议动作”这类文字而不附 action。",
+    "portal-action 必须是合法 JSON，至少包含：id、type、title、summary、status、riskLevel、sessionId、sqlId、sourceWorkorderNo、rootCauseWorkorderNo、deviceName、manageIp、locateName。",
+    "如果建议动作是终止异常慢 SQL 会话，则 type 固定为 kill-slow-sql，title 固定使用“建议执行：终止异常慢 SQL 会话”。缺少 portal-action 视为无效回复，需要先补齐再输出。",
     "执行约束：不要把脚本命令原样回复给用户；如果已识别为工单驱动故障处置，直接进入 skill 分析；不要先查询实时告警列表或重复做无关信息收集。",
     "",
     "【工单上下文(JSON)】",
@@ -452,9 +455,16 @@ export function buildRemoteChatName(employeeName: string, firstMessage: string) 
   return trimmed.slice(0, 24);
 }
 
-export function normalizeRemoteSessions(chats: any[] = [], employeeId: string) {
-  const scopedChats = [...(chats || [])]
-    .filter((chat) => isRemoteSessionForEmployee(chat, employeeId))
+export function normalizeRemoteSessions(
+  chats: any[] = [],
+  employeeId: string,
+  { fallbackToAllChats = false }: { fallbackToAllChats?: boolean } = {},
+) {
+  const allChats = Array.isArray(chats) ? chats : [];
+  const matchedChats = allChats.filter((chat) => isRemoteSessionForEmployee(chat, employeeId));
+  const scopedChats = [...(
+    matchedChats.length || !fallbackToAllChats ? matchedChats : allChats
+  )]
     .sort((left, right) => {
       const leftTime = new Date(left.updated_at || left.created_at || 0).getTime();
       const rightTime = new Date(right.updated_at || right.created_at || 0).getTime();
@@ -803,15 +813,74 @@ function sanitizeRemoteUserText(content: string) {
 export function extractPortalActionPayload(content: string) {
   const rawContent = unwrapOuterMarkdownFence(String(content || ""));
   const match = rawContent.match(/```portal-action\s*([\s\S]*?)```/i);
-  if (!match?.[1]) {
+  if (match?.[1]) {
+    try {
+      return normalizeDisposalOperationPayload(JSON.parse(match[1].trim()));
+    } catch {
+      return null;
+    }
+  }
+
+  return inferFaultDisposalActionFromContent(rawContent);
+}
+
+function inferFaultDisposalActionFromContent(content: string) {
+  const normalized = String(content || "");
+  if (!/终止异常慢\s*SQL\s*会话|终止慢\s*SQL\s*会话|杀掉慢\s*SQL/iu.test(normalized)) {
     return null;
   }
 
-  try {
-    return normalizeDisposalOperationPayload(JSON.parse(match[1].trim()));
-  } catch {
+  const rootCauseWorkorderNo =
+    extractLabeledValue(normalized, ["根因工单", "关联工单"]) || "";
+  const sqlId = extractLabeledValue(normalized, ["SQL_ID", "SQL ID", "SQLId"]) || "";
+  const sessionId = extractLabeledValue(normalized, ["会话ID", "会话 Id", "Session ID"]) || "";
+  const locateName = extractLabeledValue(normalized, ["实例", "定位对象"]) || "";
+  const deviceName = extractLabeledValue(normalized, ["设备", "设备名称"]) || "";
+  const manageIp = extractLabeledValue(normalized, ["管理 IP", "设备 IP", "IP"]) || "";
+  const targetSummary =
+    extractLabeledValue(normalized, ["处置对象", "目标对象"]) || "数据库核心业务查询慢 SQL 会话";
+
+  if (!rootCauseWorkorderNo || !sqlId || !sessionId) {
     return null;
   }
+
+  return normalizeDisposalOperationPayload({
+    id: `kill-slow-sql-${rootCauseWorkorderNo}`,
+    type: "kill-slow-sql",
+    title: "建议执行：终止异常慢 SQL 会话",
+    summary:
+      "慢 SQL 会话持续占用数据库连接，已经造成应用实例连接池排队。建议先终止异常会话，再继续观察接口时延和连接池恢复情况。",
+    status: "ready",
+    riskLevel: "medium",
+    sessionId,
+    sqlId,
+    targetSummary,
+    sourceWorkorderNo: "",
+    rootCauseWorkorderNo,
+    deviceName,
+    manageIp,
+    locateName,
+  });
+}
+
+function extractLabeledValue(content: string, labels: string[]) {
+  for (const label of labels) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const patterns = [
+      new RegExp(`${escaped}\\s*[：:]\\s*([^\\n|]+)`, "iu"),
+      new RegExp(`\\|\\s*${escaped}\\s*\\|\\s*([^|\\n]+)`, "iu"),
+    ];
+
+    for (const pattern of patterns) {
+      const match = content.match(pattern);
+      const value = match?.[1]?.trim();
+      if (value) {
+        return value;
+      }
+    }
+  }
+
+  return "";
 }
 
 export function buildSessionTitle(employeeName: string, nextMessages: any[]) {

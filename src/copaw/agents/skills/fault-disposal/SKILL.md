@@ -146,3 +146,6 @@ cd skills/fault-disposal && python scripts/chat_skill_bridge.py execute --contex
 - 不要再在 skill 内额外走 `/api/chats` 或 `/console/chat` 创建子会话
 - 如果脚本已经输出适合展示的 markdown，请尽量保留原样，尤其不要丢掉 `portal-action` 和 `echarts` 代码块
 - 如果用户目标是根因定位，返回结果时应围绕“故障点、证据、处置动作、恢复状态”组织内容
+- 如果诊断结果存在明确可执行动作，最终回复中必须保留且只保留一个 `portal-action` 代码块；不能只写“请回复执行建议动作”而不附 action
+- 对于“终止异常慢 SQL 会话”这类动作，优先直接保留脚本输出中的 `portal-action` 原文，不要改写字段名、不要删减 JSON 字段
+- 如果模型准备自行整理自然语言总结，也必须在最终总结末尾补回 `portal-action` 代码块；缺少 `portal-action` 视为不完整回复
