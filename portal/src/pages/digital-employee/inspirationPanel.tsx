@@ -36,11 +36,11 @@ const inspirationItems: InspirationItem[] = [
     bg: "linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(14, 165, 233, 0.12))",
     steps: [
       "在定时任务中配置每日巡检、日志清理和报表生成。",
-      "在任务视图查看每日待办，确认关键节点状态。",
+      "在运维看板查看每日待办，确认关键节点状态。",
       "由数字员工自动执行，异常时再通知人工确认。",
     ],
-    tryText: "查看每日待办",
-    action: { type: "view", value: "tasks" },
+    tryText: "查看运维看板",
+    action: { type: "view", value: "dashboard" },
   },
   {
     title: "自然语言查询运维数据",
