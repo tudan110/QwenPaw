@@ -1068,6 +1068,535 @@
   background: rgba(79, 110, 247, 0.16);
 }
 
+.portal-digital-employee .kanban-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.portal-digital-employee .main-header.kanban-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, auto) minmax(420px, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.portal-digital-employee .main-title.kanban-main-title {
+  font-size: 22px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--text-primary), var(--text-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  flex-shrink: 0;
+}
+
+.portal-digital-employee .main-title.kanban-main-title small {
+  margin-left: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-muted);
+  -webkit-text-fill-color: var(--text-muted);
+}
+
+.portal-digital-employee .main-header-actions.kanban-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  justify-self: end;
+}
+
+.portal-digital-employee .ops-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+  justify-self: center;
+  width: 100%;
+}
+
+.portal-digital-employee .ops-filter-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.portal-digital-employee .ops-filter-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.portal-digital-employee .ops-dimension-tabs .ops-filter-tab {
+  min-width: 104px;
+}
+
+.portal-digital-employee .ops-filter-tab {
+  padding: 7px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-secondary);
+  transition:
+    border-color 0.25s ease,
+    color 0.25s ease,
+    background 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.portal-digital-employee .ops-filter-tab:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.portal-digital-employee .ops-filter-tab.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+  box-shadow: 0 0 14px rgba(99, 102, 241, 0.3);
+}
+
+.portal-digital-employee .ops-clock {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  background: var(--panel-soft);
+  border: 1px solid var(--border-light);
+  padding: 6px 14px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.portal-digital-employee .kanban-theme-toggle.theme-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border-light);
+  background: var(--panel-soft);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    border-color 0.25s ease,
+    color 0.25s ease,
+    background 0.25s ease,
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+  box-shadow: none;
+}
+
+.portal-digital-employee .kanban-theme-toggle.theme-toggle:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(79, 110, 247, 0.08);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.12);
+}
+
+.portal-digital-employee .ops-clock-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow:
+    0 0 0 2px rgba(34, 197, 94, 0.2),
+    0 0 8px rgba(34, 197, 94, 0.45);
+  animation: statusPulse 2.5s infinite;
+}
+
+.portal-digital-employee .kanban-board {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  overflow: auto;
+  padding-bottom: 4px;
+}
+
+.portal-digital-employee .kanban-board.employee-dimension {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: start;
+  align-items: start;
+}
+
+.portal-digital-employee .kanban-col,
+.portal-digital-employee .kanban-empty-column {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  border: 1px solid var(--border-light);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.portal-digital-employee .kanban-col-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.portal-digital-employee .kanban-col-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 10px currentColor;
+  flex-shrink: 0;
+}
+
+.portal-digital-employee .kanban-col-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .kanban-col-count {
+  margin-left: auto;
+  min-width: 26px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(79, 110, 247, 0.08);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.portal-digital-employee .kanban-col-body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  overflow: auto;
+}
+
+.portal-digital-employee .kanban-card {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  background: var(--bg-white);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.portal-digital-employee .kanban-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(79, 110, 247, 0.22);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
+}
+
+.portal-digital-employee .kanban-card-stripe {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  border-radius: 3px 0 0 3px;
+}
+
+.portal-digital-employee .kanban-card-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .kanban-card-title.compact {
+  margin: 0 0 2px;
+  font-size: 15px;
+}
+
+.portal-digital-employee .kanban-card-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+.portal-digital-employee .kanban-emp {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.portal-digital-employee .kanban-emp.divided {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-light);
+}
+
+.portal-digital-employee .kanban-emp-avatar.digital-employee-avatar {
+  --de-avatar-size: 24px;
+  --de-avatar-radius: 7px;
+  --de-avatar-icon-size: 10px;
+  --de-avatar-animation-size: 12px;
+  --de-avatar-zzz-size: 6px;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.portal-digital-employee .kanban-emp-avatar.small.digital-employee-avatar {
+  --de-avatar-size: 22px;
+  --de-avatar-radius: 6px;
+}
+
+.portal-digital-employee .kanban-emp-copy {
+  min-width: 0;
+}
+
+.portal-digital-employee .kanban-emp-name {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.portal-digital-employee .kanban-progress {
+  margin-top: 12px;
+}
+
+.portal-digital-employee .kanban-progress-bar {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(79, 110, 247, 0.1);
+  overflow: hidden;
+}
+
+.portal-digital-employee .kanban-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  position: relative;
+}
+
+.portal-digital-employee .kanban-progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  animation: opsProgressShine 2s linear infinite;
+}
+
+.portal-digital-employee .kanban-progress-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.portal-digital-employee .kanban-worker-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 8px;
+}
+
+.portal-digital-employee .kanban-worker-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 10px currentColor;
+  flex-shrink: 0;
+}
+
+.portal-digital-employee .kanban-worker-status-text {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .kanban-worker-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.portal-digital-employee .kanban-worker-stat {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(79, 110, 247, 0.04);
+}
+
+.portal-digital-employee .kanban-worker-stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.portal-digital-employee .kanban-worker-stat-value {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .kanban-worker-note {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(79, 110, 247, 0.1);
+  background: rgba(79, 110, 247, 0.06);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+.portal-digital-employee .kanban-card-footer {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.portal-digital-employee .kanban-card-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.portal-digital-employee .kanban-card-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.portal-digital-employee .kanban-card-time.urgent {
+  color: #ef4444;
+}
+
+.portal-digital-employee .kanban-score {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.portal-digital-employee .kanban-score .star {
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.portal-digital-employee .kanban-score .star.filled {
+  color: #f59e0b;
+}
+
+.portal-digital-employee .kanban-score-val {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #f59e0b;
+}
+
+.portal-digital-employee .employee-worker-card {
+  min-height: 0;
+  height: auto;
+  align-self: start;
+}
+
+.portal-digital-employee .kanban-empty-card {
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px dashed var(--border);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.portal-digital-employee.theme-dark .main-title.kanban-main-title,
+.portal-digital-employee.theme-dark .kanban-col-title,
+.portal-digital-employee.theme-dark .kanban-card-title,
+.portal-digital-employee.theme-dark .kanban-worker-status-text,
+.portal-digital-employee.theme-dark .kanban-worker-stat-value {
+  color: #e2e8f0;
+  background: none;
+  -webkit-text-fill-color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .main-title.kanban-main-title small,
+.portal-digital-employee.theme-dark .kanban-card-desc,
+.portal-digital-employee.theme-dark .kanban-emp-name,
+.portal-digital-employee.theme-dark .kanban-progress-label,
+.portal-digital-employee.theme-dark .kanban-card-time,
+.portal-digital-employee.theme-dark .kanban-worker-stat-label,
+.portal-digital-employee.theme-dark .kanban-worker-note,
+.portal-digital-employee.theme-dark .ops-clock {
+  color: #94a3b8;
+}
+
+.portal-digital-employee.theme-dark .ops-clock,
+.portal-digital-employee.theme-dark .ops-filter-tab,
+.portal-digital-employee.theme-dark .kanban-col,
+.portal-digital-employee.theme-dark .kanban-empty-column,
+.portal-digital-employee.theme-dark .kanban-card,
+.portal-digital-employee.theme-dark .kanban-empty-card,
+.portal-digital-employee.theme-dark .kanban-theme-toggle.theme-toggle {
+  background: #141b2d;
+  border-color: #223049;
+}
+
+.portal-digital-employee.theme-dark .ops-filter-tab {
+  color: #94a3b8;
+}
+
+.portal-digital-employee.theme-dark .ops-filter-tab:hover {
+  color: var(--primary);
+}
+
+.portal-digital-employee.theme-dark .ops-filter-tab.active {
+  color: #fff;
+}
+
+.portal-digital-employee.theme-dark .kanban-worker-stat {
+  background: rgba(79, 110, 247, 0.08);
+  border-color: rgba(79, 110, 247, 0.16);
+}
+
+.portal-digital-employee.theme-dark .kanban-worker-note {
+  background: rgba(79, 110, 247, 0.09);
+  border-color: rgba(79, 110, 247, 0.16);
+}
+
+.portal-digital-employee.theme-dark .kanban-progress-bar {
+  background: rgba(79, 110, 247, 0.16);
+}
+
 .portal-digital-employee.theme-dark .sidebar,
 .portal-digital-employee.theme-dark .top-bar,
 .portal-digital-employee.theme-dark .chat-container,
@@ -7798,6 +8327,15 @@
     min-height: auto;
   }
 
+  .portal-digital-employee .kanban-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .portal-digital-employee .kanban-board.employee-dimension {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .portal-digital-employee .ops-board-columns {
     height: auto;
   }
@@ -7853,6 +8391,11 @@
     padding-right: 0;
   }
 
+  .portal-digital-employee .kanban-toolbar {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
   .portal-digital-employee .ops-board-title span {
     display: block;
     margin-left: 0;
@@ -7864,7 +8407,26 @@
     width: 100%;
   }
 
+  .portal-digital-employee .ops-filter-bar,
+  .portal-digital-employee .kanban-header-actions {
+    justify-self: stretch;
+    justify-content: flex-start;
+  }
+
+  .portal-digital-employee .ops-filter-left {
+    align-items: flex-start;
+  }
+
   .portal-digital-employee .ops-board-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-digital-employee .kanban-board,
+  .portal-digital-employee .kanban-board.employee-dimension {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-digital-employee .kanban-worker-summary {
     grid-template-columns: 1fr;
   }
 

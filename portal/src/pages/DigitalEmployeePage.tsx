@@ -14,14 +14,13 @@ import {
   employeeWorkflows,
   executionHistory,
   getEmployeeById,
-  operationsBoardColumns,
 } from "../data/portalData";
 import {
   createConversationSession,
   loadConversationStore,
   saveConversationStore,
 } from "../lib/conversationStore";
-import { deleteChat, updateChat } from "../api/copawChat";
+import { deleteChat, listChats, updateChat } from "../api/copawChat";
 import DigitalEmployeeAvatar from "../components/DigitalEmployeeAvatar";
 import {
   AlarmWorkorderBoard,
@@ -71,6 +70,8 @@ const REMOTE_AGENT_IDS: Record<string, string> = {
   fault: "fault",
   query: "query",
 };
+const DASHBOARD_CHAT_USER_ID = "default";
+const DASHBOARD_CHAT_CHANNEL = "console";
 
 const PORTAL_HOME_AGENT_ID = "default";
 const EMPLOYEE_MENTION_ALIASES: Record<string, string[]> = {
@@ -85,12 +86,403 @@ const EMPLOYEE_MENTION_ALIASES: Record<string, string[]> = {
 const PAGE_THEME_STORAGE_KEY = "portal-digital-employee-theme";
 const PORTAL_HOME_ID = "portal-home";
 
-const operationsBoardDots = {
-  pending: "pending",
-  running: "running",
-  completed: "completed",
-  closed: "closed",
+type DashboardKanbanMode = "work" | "employee";
+type DashboardKanbanFilter = "all" | "urgent" | "running";
+type DashboardWorkColumnId = "pending" | "running" | "completed" | "closed";
+
+type DashboardWorkCard = {
+  id: string;
+  ownerEmployeeIds: string[];
+  ownerLabel: string;
+  ownerColor: string;
+  title: string;
+  description: string;
+  label: string;
+  tagBg: string;
+  tagColor: string;
+  timeText: string;
+  progress?: number;
+  score?: number;
+  isUrgent: boolean;
+  isRunning: boolean;
+};
+
+type DashboardWorkColumn = {
+  id: DashboardWorkColumnId;
+  title: string;
+  dot: string;
+  cards: DashboardWorkCard[];
+};
+
+type DashboardEmployeeSnapshot = {
+  id: string;
+  name: string;
+  desc: string;
+  color: string;
+  runtimeState: "running" | "idle";
+  currentJob: string;
+  workSummary: string;
+  historyCount: number;
+  progress: number;
+  workStatus: string;
+  note: string;
+  updatedAt: string;
+  urgent: boolean;
+};
+
+const DASHBOARD_EMPLOYEE_COLORS: Record<string, string> = {
+  resource: "#3b82f6",
+  fault: "#ef4444",
+  inspection: "#22c55e",
+  order: "#f59e0b",
+  query: "#8b5cf6",
+  knowledge: "#06b6d4",
+};
+
+const DASHBOARD_TAG_STYLES = {
+  resource: { bg: "rgba(59, 130, 246, 0.15)", color: "#60a5fa" },
+  fault: { bg: "rgba(239, 68, 68, 0.15)", color: "#f87171" },
+  inspection: { bg: "rgba(34, 197, 94, 0.15)", color: "#4ade80" },
+  order: { bg: "rgba(245, 158, 11, 0.15)", color: "#fbbf24" },
+  query: { bg: "rgba(139, 92, 246, 0.15)", color: "#a78bfa" },
+  knowledge: { bg: "rgba(6, 182, 212, 0.15)", color: "#22d3ee" },
+  collaboration: { bg: "rgba(168, 85, 247, 0.14)", color: "#c084fc" },
 } as const;
+
+function getDashboardEmployeeColor(employeeId: string) {
+  return DASHBOARD_EMPLOYEE_COLORS[employeeId] || "#6366f1";
+}
+
+function getDashboardFilterLabels(mode: DashboardKanbanMode) {
+  return mode === "employee"
+    ? {
+        all: "全部",
+        urgent: "运行中",
+        running: "闲置中",
+      }
+    : {
+        all: "全部",
+        urgent: "紧急",
+        running: "进行中",
+      };
+}
+
+function formatDashboardClock(value: Date) {
+  return value.toLocaleTimeString("zh-CN", {
+    hour12: false,
+  });
+}
+
+function buildDashboardWorkColumns(): DashboardWorkColumn[] {
+  const employee = (employeeId: string) => getEmployeeById(employeeId);
+  const employeeName = (employeeId: string) => employee(employeeId)?.name || employeeId;
+  const employeeColor = (employeeId: string) => getDashboardEmployeeColor(employeeId);
+  const employeeTag = (employeeId: keyof typeof DASHBOARD_TAG_STYLES) =>
+    DASHBOARD_TAG_STYLES[employeeId];
+  const collaborationTag = DASHBOARD_TAG_STYLES.collaboration;
+
+  return [
+    {
+      id: "pending",
+      title: "待处理",
+      dot: "#f59e0b",
+      cards: [
+        {
+          id: "pending-fault-port-down",
+          ownerEmployeeIds: ["fault"],
+          ownerLabel: employeeName("fault"),
+          ownerColor: employeeColor("fault"),
+          title: `${employeeName("fault")}核心交换端口 down 待接续`,
+          description: "南北向链路告警已聚合，等待继续执行根因定位与恢复策略。",
+          label: "故障",
+          tagBg: employeeTag("fault").bg,
+          tagColor: employeeTag("fault").color,
+          timeText: "6分钟前",
+          isUrgent: true,
+          isRunning: false,
+        },
+        {
+          id: "pending-inspection-baseline",
+          ownerEmployeeIds: ["inspection"],
+          ownerLabel: employeeName("inspection"),
+          ownerColor: employeeColor("inspection"),
+          title: `${employeeName("inspection")}夜间基线巡检待执行`,
+          description: "核心主机、数据库与中间件的例行健康检查窗口已排入待办。",
+          label: "巡检",
+          tagBg: employeeTag("inspection").bg,
+          tagColor: employeeTag("inspection").color,
+          timeText: "20分钟前",
+          isUrgent: false,
+          isRunning: false,
+        },
+        {
+          id: "pending-knowledge-archive",
+          ownerEmployeeIds: ["knowledge"],
+          ownerLabel: employeeName("knowledge"),
+          ownerColor: employeeColor("knowledge"),
+          title: `${employeeName("knowledge")}故障案例归档待同步`,
+          description: "上一轮数据库慢查询处置案例待结构化归档并写回知识库。",
+          label: "知识",
+          tagBg: employeeTag("knowledge").bg,
+          tagColor: employeeTag("knowledge").color,
+          timeText: "42分钟前",
+          isUrgent: false,
+          isRunning: false,
+        },
+      ],
+    },
+    {
+      id: "running",
+      title: "进行中",
+      dot: "#3b82f6",
+      cards: [
+        {
+          id: "running-resource-discovery",
+          ownerEmployeeIds: ["resource"],
+          ownerLabel: employeeName("resource"),
+          ownerColor: employeeColor("resource"),
+          title: `${employeeName("resource")}核心网段纳管扫描中`,
+          description: "正在发现新入网设备与服务端口，补全资源模型与纳管标签。",
+          label: "纳管",
+          tagBg: employeeTag("resource").bg,
+          tagColor: employeeTag("resource").color,
+          timeText: "进行中",
+          progress: 68,
+          isUrgent: false,
+          isRunning: true,
+        },
+        {
+          id: "running-fault-diagnosis",
+          ownerEmployeeIds: ["fault"],
+          ownerLabel: employeeName("fault"),
+          ownerColor: employeeColor("fault"),
+          title: `${employeeName("fault")}端口 down 根因定位中`,
+          description: "正在关联接口流量、邻接状态与拓扑路径，输出根因与处置建议。",
+          label: "故障",
+          tagBg: employeeTag("fault").bg,
+          tagColor: employeeTag("fault").color,
+          timeText: "紧急",
+          progress: 84,
+          isUrgent: true,
+          isRunning: true,
+        },
+        {
+          id: "running-query-report",
+          ownerEmployeeIds: ["query"],
+          ownerLabel: employeeName("query"),
+          ownerColor: employeeColor("query"),
+          title: `${employeeName("query")}设备分布报表生成中`,
+          description: "设备类型、区域分布和容量画像已进入聚合与图表输出阶段。",
+          label: "报表",
+          tagBg: employeeTag("query").bg,
+          tagColor: employeeTag("query").color,
+          timeText: "进行中",
+          progress: 57,
+          isUrgent: false,
+          isRunning: true,
+        },
+        {
+          id: "running-order-routing",
+          ownerEmployeeIds: ["order"],
+          ownerLabel: employeeName("order"),
+          ownerColor: employeeColor("order"),
+          title: `${employeeName("order")}告警派单流转中`,
+          description: "正在对接告警入口，将高优先级事件分派到对应数字员工流程。",
+          label: "工单",
+          tagBg: employeeTag("order").bg,
+          tagColor: employeeTag("order").color,
+          timeText: "进行中",
+          progress: 63,
+          isUrgent: false,
+          isRunning: true,
+        },
+        {
+          id: "running-collaboration-fault-query",
+          ownerEmployeeIds: ["fault", "query"],
+          ownerLabel: `${employeeName("fault")} + ${employeeName("query")}`,
+          ownerColor: "#8b5cf6",
+          title: "故障与数据协同复盘中",
+          description: "围绕链路抖动、响应时间与异常分布进行联合分析，输出复盘结论。",
+          label: "协同",
+          tagBg: collaborationTag.bg,
+          tagColor: collaborationTag.color,
+          timeText: "进行中",
+          progress: 49,
+          isUrgent: false,
+          isRunning: true,
+        },
+      ],
+    },
+    {
+      id: "completed",
+      title: "已完成",
+      dot: "#22c55e",
+      cards: [
+        {
+          id: "completed-query-summary",
+          ownerEmployeeIds: ["query"],
+          ownerLabel: employeeName("query"),
+          ownerColor: employeeColor("query"),
+          title: `${employeeName("query")}容量趋势分析已完成`,
+          description: "核心业务链路的容量曲线、峰值时段与增长趋势已归档。",
+          label: "分析",
+          tagBg: employeeTag("query").bg,
+          tagColor: employeeTag("query").color,
+          timeText: "1小时前",
+          isUrgent: false,
+          isRunning: false,
+        },
+        {
+          id: "completed-resource-onboard",
+          ownerEmployeeIds: ["resource"],
+          ownerLabel: employeeName("resource"),
+          ownerColor: employeeColor("resource"),
+          title: `${employeeName("resource")}新增设备纳管已完成`,
+          description: "新接入交换机与服务器已完成识别、分类与资源建模。",
+          label: "纳管",
+          tagBg: employeeTag("resource").bg,
+          tagColor: employeeTag("resource").color,
+          timeText: "2小时前",
+          isUrgent: false,
+          isRunning: false,
+        },
+        {
+          id: "completed-order-closure",
+          ownerEmployeeIds: ["order"],
+          ownerLabel: employeeName("order"),
+          ownerColor: employeeColor("order"),
+          title: `${employeeName("order")}告警闭环记录已输出`,
+          description: "上一轮自动派单、确认和关闭流程已生成处理摘要。",
+          label: "流程",
+          tagBg: employeeTag("order").bg,
+          tagColor: employeeTag("order").color,
+          timeText: "今天",
+          isUrgent: false,
+          isRunning: false,
+        },
+      ],
+    },
+    {
+      id: "closed",
+      title: "已关闭",
+      dot: "#64748b",
+      cards: [
+        {
+          id: "closed-knowledge-retro",
+          ownerEmployeeIds: ["knowledge"],
+          ownerLabel: employeeName("knowledge"),
+          ownerColor: employeeColor("knowledge"),
+          title: `${employeeName("knowledge")}历史方案归档已关闭`,
+          description: "重复知识条目合并完成，旧版本方案已下线归档。",
+          label: "知识",
+          tagBg: employeeTag("knowledge").bg,
+          tagColor: employeeTag("knowledge").color,
+          timeText: "昨天",
+          score: 4.8,
+          isUrgent: false,
+          isRunning: false,
+        },
+        {
+          id: "closed-fault-false-positive",
+          ownerEmployeeIds: ["fault"],
+          ownerLabel: employeeName("fault"),
+          ownerColor: employeeColor("fault"),
+          title: `${employeeName("fault")}误报告警复盘已关闭`,
+          description: "阈值误触发问题已定位，处置记录已完成回收与复盘闭环。",
+          label: "复盘",
+          tagBg: "rgba(100, 116, 139, 0.15)",
+          tagColor: "#94a3b8",
+          timeText: "2天前",
+          score: 4.6,
+          isUrgent: false,
+          isRunning: false,
+        },
+      ],
+    },
+  ];
+}
+
+function buildDashboardEmployeeSnapshots(
+  historyCounts: Record<string, number>,
+): DashboardEmployeeSnapshot[] {
+  const templates: Record<string, Omit<DashboardEmployeeSnapshot, "id" | "name" | "desc" | "color" | "historyCount" | "urgent">> = {
+    resource: {
+      runtimeState: "running",
+      currentJob: `${getEmployeeById("resource")?.name || "资产管理员"}核心网段纳管扫描中`,
+      workSummary: "正在持续发现新增主机、网络设备与中间件组件，补全 CMDB 资源关系。",
+      progress: 68,
+      workStatus: "纳管扫描中",
+      note: "当前扫描窗口聚焦生产网段，资源指纹和拓扑关系正在补录。",
+      updatedAt: "2分钟前",
+    },
+    fault: {
+      runtimeState: "running",
+      currentJob: `${getEmployeeById("fault")?.name || "故障处置员"}端口 down 根因定位中`,
+      workSummary: "已锁定异常链路，正在核对接口状态抖动、上联路径与业务影响范围。",
+      progress: 84,
+      workStatus: "根因定位中",
+      note: "告警上下文和处置证据已聚合，下一步将输出恢复建议与验证结论。",
+      updatedAt: "刚刚",
+    },
+    inspection: {
+      runtimeState: "idle",
+      currentJob: `${getEmployeeById("inspection")?.name || "巡检专员"}夜间健康巡检待执行`,
+      workSummary: "当前处于待命状态，巡检计划已排程，可接管主机、数据库与网络健康检查。",
+      progress: 12,
+      workStatus: "待执行",
+      note: "最近一次例行巡检已经完成，下一轮巡检窗口将在预定时间自动启动。",
+      updatedAt: "15分钟前",
+    },
+    order: {
+      runtimeState: "running",
+      currentJob: `${getEmployeeById("order")?.name || "工单调度员"}告警派单流转中`,
+      workSummary: "正在接收新告警并推进派单、确认与跟踪闭环，保持协作链路畅通。",
+      progress: 63,
+      workStatus: "流转处理中",
+      note: "高优先级告警已进入派单阶段，后续会继续回填处理节点和确认动作。",
+      updatedAt: "4分钟前",
+    },
+    query: {
+      runtimeState: "running",
+      currentJob: `${getEmployeeById("query")?.name || "数据分析员"}设备分布报表生成中`,
+      workSummary: "正在汇总设备类型、区域和可用性画像，生成面向门户看板的统计结论。",
+      progress: 57,
+      workStatus: "报表生成中",
+      note: "主要样本已完成聚合，剩余趋势对比、环比和异常标注正在输出。",
+      updatedAt: "7分钟前",
+    },
+    knowledge: {
+      runtimeState: "running",
+      currentJob: `${getEmployeeById("knowledge")?.name || "知识专员"}故障案例归档中`,
+      workSummary: "正在整理近期故障处置记录，提取标准步骤并同步到知识检索入口。",
+      progress: 46,
+      workStatus: "知识整理中",
+      note: "重复案例已完成合并，相似问题推荐和最佳实践摘要正在补充。",
+      updatedAt: "9分钟前",
+    },
+  };
+
+  return digitalEmployees.map((employee) => {
+    const template = templates[employee.id];
+    const runtimeState =
+      employee.status === "running" ? "running" : template?.runtimeState || "idle";
+    return {
+      id: employee.id,
+      name: employee.name,
+      desc: employee.desc,
+      color: getDashboardEmployeeColor(employee.id),
+      runtimeState,
+      currentJob: template?.currentJob || `${employee.name}任务处理中`,
+      workSummary: template?.workSummary || employee.desc,
+      historyCount: historyCounts[employee.id] || 0,
+      progress: template?.progress ?? 0,
+      workStatus: template?.workStatus || (runtimeState === "running" ? "运行中" : "待命中"),
+      note: template?.note || "当前暂无补充说明。",
+      updatedAt: template?.updatedAt || "刚刚",
+      urgent: employee.urgent,
+    };
+  });
+}
 
 const PORTAL_HOME_EMPLOYEE = {
   id: PORTAL_HOME_ID,
@@ -460,6 +852,10 @@ export default function DigitalEmployeePage({
   const [executionTitle, setExecutionTitle] = useState("执行历史");
   const [executionList, setExecutionList] = useState(executionHistory);
   const [pageTheme, setPageTheme] = useState<"light" | "dark">(loadPageTheme);
+  const [kanbanMode, setKanbanMode] = useState<DashboardKanbanMode>("employee");
+  const [kanbanFilter, setKanbanFilter] = useState<DashboardKanbanFilter>("all");
+  const [dashboardRemoteHistoryCounts, setDashboardRemoteHistoryCounts] = useState<Record<string, number>>({});
+  const [dashboardClock, setDashboardClock] = useState(() => formatDashboardClock(new Date()));
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const handledPendingDispatchRef = useRef("");
   const chatInputRef = useRef<HTMLInputElement | null>(null);
@@ -740,6 +1136,20 @@ export default function DigitalEmployeePage({
     persistPageTheme(pageTheme);
   }, [pageTheme]);
 
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      setDashboardClock(formatDashboardClock(new Date()));
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, []);
+
+  useEffect(() => {
+    setKanbanFilter("all");
+  }, [kanbanMode]);
+
   const totalTasks = useMemo(
     () => digitalEmployees.reduce((sum, employee) => sum + employee.tasks, 0),
     [],
@@ -748,6 +1158,16 @@ export default function DigitalEmployeePage({
     () =>
       digitalEmployees.filter((employee) => employee.status === "running").length,
     [],
+  );
+  const localHistoryCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        digitalEmployees.map((employee) => [
+          employee.id,
+          ensureSessionRecords(conversationStore[employee.id]).length,
+        ]),
+      ) as Record<string, number>,
+    [conversationStore],
   );
   const sidebarEmployees = useMemo(() => {
     const priorityIds = new Set(sidebarEmployeePriority);
@@ -771,6 +1191,91 @@ export default function DigitalEmployeePage({
     () => sidebarEmployees.filter((employee) => employee.id !== currentSidebarEmployee?.id),
     [currentSidebarEmployee?.id, sidebarEmployees],
   );
+
+  useEffect(() => {
+    if (currentView !== "dashboard") {
+      return;
+    }
+
+    const remoteEntries = Object.entries(REMOTE_AGENT_IDS);
+    if (!remoteEntries.length) {
+      setDashboardRemoteHistoryCounts({});
+      return;
+    }
+
+    let cancelled = false;
+
+    void Promise.all(
+      remoteEntries.map(async ([employeeId, agentId]) => {
+        try {
+          const chats = await listChats(agentId, {
+            user_id: DASHBOARD_CHAT_USER_ID,
+            channel: DASHBOARD_CHAT_CHANNEL,
+          });
+          return [
+            employeeId,
+            Array.isArray(chats) ? chats.length : 0,
+          ] as const;
+        } catch {
+          return [employeeId, localHistoryCounts[employeeId] || 0] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) {
+        return;
+      }
+      setDashboardRemoteHistoryCounts(Object.fromEntries(entries));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentChatId, currentView, localHistoryCounts, remoteSessions.length]);
+
+  const dashboardHistoryCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        digitalEmployees.map((employee) => [
+          employee.id,
+          REMOTE_AGENT_IDS[employee.id]
+            ? (dashboardRemoteHistoryCounts[employee.id] ?? localHistoryCounts[employee.id] ?? 0)
+            : (localHistoryCounts[employee.id] ?? 0),
+        ]),
+      ) as Record<string, number>,
+    [dashboardRemoteHistoryCounts, localHistoryCounts],
+  );
+  const dashboardWorkColumns = useMemo(() => buildDashboardWorkColumns(), []);
+  const dashboardEmployeeSnapshots = useMemo(
+    () => buildDashboardEmployeeSnapshots(dashboardHistoryCounts),
+    [dashboardHistoryCounts],
+  );
+  const kanbanFilterLabels = useMemo(
+    () => getDashboardFilterLabels(kanbanMode),
+    [kanbanMode],
+  );
+  const filteredDashboardWorkColumns = useMemo(() => {
+    if (kanbanFilter === "all") {
+      return dashboardWorkColumns;
+    }
+
+    return dashboardWorkColumns
+      .map((column) => ({
+        ...column,
+        cards: column.cards.filter((card) =>
+          kanbanFilter === "urgent" ? card.isUrgent : card.isRunning,
+        ),
+      }))
+      .filter((column) => column.cards.length);
+  }, [dashboardWorkColumns, kanbanFilter]);
+  const filteredDashboardEmployeeSnapshots = useMemo(() => {
+    if (kanbanFilter === "urgent") {
+      return dashboardEmployeeSnapshots.filter((worker) => worker.runtimeState === "running");
+    }
+    if (kanbanFilter === "running") {
+      return dashboardEmployeeSnapshots.filter((worker) => worker.runtimeState === "idle");
+    }
+    return dashboardEmployeeSnapshots;
+  }, [dashboardEmployeeSnapshots, kanbanFilter]);
 
   const safeMessages = ensureObjectArray(messages);
   const safeExecutionList = ensureObjectArray<ExecutionRecord>(executionList);
@@ -1693,7 +2198,7 @@ export default function DigitalEmployeePage({
                   : "main-content card-mode"
           }
         >
-          {!isPortalHomeChat ? (
+          {!isPortalHomeChat && currentView !== "dashboard" ? (
             <button
               type="button"
               className="ops-board-theme-toggle portal-global-theme-toggle"
@@ -1804,128 +2309,268 @@ export default function DigitalEmployeePage({
           ) : null}
 
           {currentView === "dashboard" ? (
-            <div className="ops-board-shell">
-              <div className="ops-board-header">
-                <div className="ops-board-title-group">
-                  <h3 className="ops-board-title">
-                    运维看板
-                    <span>实时任务概览</span>
-                  </h3>
+            <div className="kanban-shell">
+              <div className="kanban-toolbar main-header">
+                <div className="kanban-main-title main-title">
+                  运维看板
+                  <small>
+                    {kanbanMode === "employee"
+                      ? "数字员工维度 · 当前工作状态"
+                      : "工作维度 · 实时任务概览"}
+                  </small>
+                </div>
+                <div className="ops-filter-bar">
+                  <div className="ops-filter-left">
+                    <div className="ops-filter-tabs ops-dimension-tabs">
+                      <button
+                        type="button"
+                        className={kanbanMode === "work" ? "ops-filter-tab active" : "ops-filter-tab"}
+                        onClick={() => setKanbanMode("work")}
+                      >
+                        工作维度
+                      </button>
+                      <button
+                        type="button"
+                        className={kanbanMode === "employee" ? "ops-filter-tab active" : "ops-filter-tab"}
+                        onClick={() => setKanbanMode("employee")}
+                      >
+                        数字员工维度
+                      </button>
+                    </div>
+                    <div className="ops-filter-tabs">
+                      {(Object.entries(kanbanFilterLabels) as [DashboardKanbanFilter, string][])
+                        .map(([filterId, label]) => (
+                          <button
+                            key={`kanban-filter-${filterId}`}
+                            type="button"
+                            className={kanbanFilter === filterId ? "ops-filter-tab active" : "ops-filter-tab"}
+                            onClick={() => setKanbanFilter(filterId)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="kanban-header-actions main-header-actions">
+                  <div className="ops-clock">
+                    <span className="ops-clock-dot" />
+                    <span>{dashboardClock}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="kanban-theme-toggle theme-toggle"
+                    onClick={() => setPageTheme((value) => (value === "light" ? "dark" : "light"))}
+                    aria-label="切换整页主题"
+                    title="切换整页主题"
+                  >
+                    <i className={`fas ${pageTheme === "light" ? "fa-moon" : "fa-sun"}`} />
+                  </button>
                 </div>
               </div>
-              <div className="ops-board-columns">
-                {operationsBoardColumns.map((column) => (
-                  <section key={column.id} className={`ops-column ops-column-${column.id}`}>
-                    <div className="ops-column-header">
-                      <div className="ops-column-title">
-                        <span
-                          className={`ops-column-dot ${operationsBoardDots[column.id]}`}
-                        />
-                        <span>{column.title}</span>
-                      </div>
-                      <span className="ops-column-count">{column.items.length}</span>
-                    </div>
-                    <div className="ops-column-list">
-                      {column.items.map((item) => (
-                        <article
-                          key={item.id}
-                          className={
-                            typeof item.progress === "number"
-                              ? `ops-task-card tone-${item.tone} has-progress`
-                              : `ops-task-card tone-${item.tone}`
-                          }
+
+              {kanbanMode === "employee" ? (
+                <div className="kanban-board employee-dimension">
+                  {filteredDashboardEmployeeSnapshots.length ? (
+                    filteredDashboardEmployeeSnapshots.map((worker) => {
+                      const runtimeLabel = worker.urgent
+                        ? "紧急处理中"
+                        : worker.runtimeState === "running"
+                          ? "运行中"
+                          : "闲置中";
+                      const runtimeColor = worker.urgent
+                        ? "#f97316"
+                        : worker.runtimeState === "running"
+                          ? "#22c55e"
+                          : "#94a3b8";
+                      const runtimeBg = worker.urgent
+                        ? "rgba(249, 115, 22, 0.14)"
+                        : worker.runtimeState === "running"
+                          ? "rgba(34, 197, 94, 0.14)"
+                          : "rgba(100, 116, 139, 0.14)";
+                      const runtimeTextColor = worker.urgent
+                        ? "#fb923c"
+                        : worker.runtimeState === "running"
+                          ? "#86efac"
+                          : "#cbd5e1";
+
+                      return (
+                        <button
+                          key={`kanban-worker-${worker.id}`}
+                          type="button"
+                          className="kanban-card employee-worker-card"
+                          onClick={() => handleOpenTaskEmployeeChat(worker.id)}
+                          title={`进入 ${worker.name} 对话`}
                         >
-                          <div
-                            className="ops-task-stripe"
-                            style={{ background: item.ownerColor }}
+                          <span
+                            className="kanban-card-stripe"
+                            style={{ background: worker.color }}
                             aria-hidden="true"
                           />
-                          <div className="ops-task-owner-row">
+                          <div className="kanban-emp">
                             <DigitalEmployeeAvatar
-                              employee={getEmployeeById(item.ownerEmployeeIds[0])}
-                              className="ops-owner-avatar"
+                              employee={getEmployeeById(worker.id)}
+                              className="kanban-emp-avatar"
                             />
-                            <span className="ops-task-owner-text">{item.ownerLabel}</span>
+                            <div className="kanban-emp-copy">
+                              <div className="kanban-card-title compact">{worker.name}</div>
+                              <div className="kanban-emp-name">{worker.desc}</div>
+                            </div>
                           </div>
-                          <h4 className="ops-task-title">{item.title}</h4>
-                          <p className="ops-task-desc">{item.description}</p>
-                          {typeof item.progress === "number" ? (
-                            <>
-                              <div className="ops-progress-block">
-                                <div className="ops-progress-bar">
-                                  <span
-                                    style={{
-                                      width: `${item.progress}%`,
-                                      background: `linear-gradient(90deg, ${item.ownerColor}, ${item.ownerColor}cc)`,
-                                    }}
-                                  />
-                                </div>
-                                <div className="ops-progress-label">
-                                  <span>进度</span>
-                                  <strong style={{ color: item.ownerColor }}>
-                                    {item.progress}%
-                                  </strong>
-                                </div>
-                              </div>
-                              <div className="ops-task-footer ops-task-footer-progress">
-                                <span
-                                  className="ops-task-chip"
-                                  style={{ background: item.tagBg, color: item.tagColor }}
-                                >
-                                  {item.label}
-                                </span>
-                                <span
-                                  className={
-                                    item.statusText === "紧急"
-                                      ? "ops-task-meta alert"
-                                      : "ops-task-meta"
-                                  }
-                                >
-                                  {item.statusText || item.timeText}
-                                </span>
-                              </div>
-                            </>
-                          ) : null}
-                          {typeof item.score === "number" ? (
-                            <div className="ops-task-rating" aria-label={`评分 ${item.score}`}>
-                              {Array.from({ length: 5 }, (_, index) => (
-                                <i
-                                  key={`${item.id}-star-${index}`}
-                                  className={
-                                    item.score >= index + 0.5
-                                      ? "fas fa-star"
-                                      : "far fa-star"
-                                  }
-                                />
-                              ))}
-                              <strong>{item.score}</strong>
+                          <div className="kanban-worker-status">
+                            <span
+                              className="kanban-worker-status-dot"
+                              style={{ background: runtimeColor, color: runtimeColor }}
+                            />
+                            <span className="kanban-worker-status-text">{runtimeLabel}</span>
+                            <span className="kanban-card-time">{worker.updatedAt}</span>
+                          </div>
+                          <div className="kanban-card-title">{worker.currentJob}</div>
+                          <div className="kanban-card-desc">{worker.workSummary}</div>
+                          <div className="kanban-progress">
+                            <div className="kanban-progress-bar">
+                              <div
+                                className="kanban-progress-fill"
+                                style={{
+                                  width: `${worker.progress}%`,
+                                  background: `linear-gradient(90deg, ${worker.color}, ${worker.color}cc)`,
+                                }}
+                              />
                             </div>
-                          ) : null}
-                          {typeof item.progress !== "number" ? (
-                            <div className="ops-task-footer">
-                              <span
-                                className="ops-task-chip"
-                                style={{ background: item.tagBg, color: item.tagColor }}
-                              >
-                                {item.label}
-                              </span>
-                              <span
-                                className={
-                                  item.statusText === "紧急"
-                                    ? "ops-task-meta alert"
-                                    : "ops-task-meta"
-                                }
-                              >
-                                {item.statusText || item.timeText}
+                            <div className="kanban-progress-label">
+                              <span>当前工作进度</span>
+                              <span style={{ color: worker.color, fontWeight: 600 }}>
+                                {worker.progress}%
                               </span>
                             </div>
-                          ) : null}
-                        </article>
-                      ))}
+                          </div>
+                          <div className="kanban-worker-summary">
+                            <div className="kanban-worker-stat">
+                              <div className="kanban-worker-stat-label">已处理任务</div>
+                              <div className="kanban-worker-stat-value">{worker.historyCount} 条</div>
+                            </div>
+                            <div className="kanban-worker-stat">
+                              <div className="kanban-worker-stat-label">工作状态</div>
+                              <div className="kanban-worker-stat-value">{worker.workStatus}</div>
+                            </div>
+                          </div>
+                          <div className="kanban-worker-note">{worker.note}</div>
+                          <div className="kanban-card-footer">
+                            <span
+                              className="kanban-card-tag"
+                              style={{ background: runtimeBg, color: runtimeTextColor }}
+                            >
+                              {runtimeLabel}
+                            </span>
+                            <span className="kanban-card-time">点击进入对话</span>
+                          </div>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="kanban-empty-card">
+                      <div className="kanban-card-title">暂无匹配的数字员工</div>
+                      <div className="kanban-card-desc">请切换筛选条件，查看其他数字员工状态。</div>
                     </div>
-                  </section>
-                ))}
-              </div>
+                  )}
+                </div>
+              ) : (
+                <div className="kanban-board">
+                  {filteredDashboardWorkColumns.length ? (
+                    filteredDashboardWorkColumns.map((column) => (
+                      <section key={`kanban-column-${column.id}`} className="kanban-col">
+                        <div className="kanban-col-header">
+                          <div className="kanban-col-dot" style={{ background: column.dot, color: column.dot }} />
+                          <div className="kanban-col-title">{column.title}</div>
+                          <div className="kanban-col-count">{column.cards.length}</div>
+                        </div>
+                        <div className="kanban-col-body">
+                          {column.cards.map((card) => (
+                            <button
+                              key={card.id}
+                              type="button"
+                              className="kanban-card work-card"
+                              onClick={() => handleOpenTaskEmployeeChat(card.ownerEmployeeIds[0])}
+                            >
+                              <span
+                                className="kanban-card-stripe"
+                                style={{ background: card.ownerColor }}
+                                aria-hidden="true"
+                              />
+                              <div className="kanban-card-title">{card.title}</div>
+                              <div className="kanban-card-desc">{card.description}</div>
+                              <div className="kanban-emp divided">
+                                <DigitalEmployeeAvatar
+                                  employee={getEmployeeById(card.ownerEmployeeIds[0])}
+                                  className="kanban-emp-avatar small"
+                                />
+                                <div className="kanban-emp-name">{card.ownerLabel}</div>
+                              </div>
+                              {typeof card.progress === "number" ? (
+                                <div className="kanban-progress">
+                                  <div className="kanban-progress-bar">
+                                    <div
+                                      className="kanban-progress-fill"
+                                      style={{
+                                        width: `${card.progress}%`,
+                                        background: `linear-gradient(90deg, ${card.ownerColor}, ${card.ownerColor}cc)`,
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="kanban-progress-label">
+                                    <span>进度</span>
+                                    <span style={{ color: card.ownerColor, fontWeight: 600 }}>
+                                      {card.progress}%
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : null}
+                              {typeof card.score === "number" ? (
+                                <div className="kanban-score" aria-label={`评分 ${card.score}`}>
+                                  {Array.from({ length: 5 }, (_, index) => (
+                                    <span
+                                      key={`${card.id}-score-${index}`}
+                                      className={card.score >= index + 1 ? "star filled" : "star"}
+                                    >
+                                      ★
+                                    </span>
+                                  ))}
+                                  <span className="kanban-score-val">{card.score}</span>
+                                </div>
+                              ) : null}
+                              <div className="kanban-card-footer">
+                                <span
+                                  className="kanban-card-tag"
+                                  style={{ background: card.tagBg, color: card.tagColor }}
+                                >
+                                  {card.label}
+                                </span>
+                                <span className={card.isUrgent ? "kanban-card-time urgent" : "kanban-card-time"}>
+                                  {card.timeText}
+                                </span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    ))
+                  ) : (
+                    <div className="kanban-empty-column">
+                      <div className="kanban-col-header">
+                        <div className="kanban-col-dot" style={{ background: "#94a3b8", color: "#94a3b8" }} />
+                        <div className="kanban-col-title">当前筛选结果</div>
+                        <div className="kanban-col-count">0</div>
+                      </div>
+                      <div className="kanban-col-body">
+                        <div className="kanban-empty-card">
+                          <div className="kanban-card-title">暂无匹配内容</div>
+                          <div className="kanban-card-desc">请切换筛选条件，查看其他工作任务状态。</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : null}
 
@@ -2121,7 +2766,7 @@ export default function DigitalEmployeePage({
                             />
                           ) : null}
                           <button className="history-btn" onClick={() => void handleOpenHistory()}>
-                            <i className="fas fa-history" /> 历史会话
+                            <i className="fas fa-history" /> 已处理任务
                           </button>
                           <button className="history-btn new-chat-btn" onClick={handleStartNewConversation}>
                             <i className="fas fa-plus" /> 新对话
@@ -2147,7 +2792,7 @@ export default function DigitalEmployeePage({
                             />
                           ) : null}
                           <button className="history-btn" onClick={() => void handleOpenHistory()}>
-                            <i className="fas fa-history" /> 历史会话
+                            <i className="fas fa-history" /> 已处理任务
                           </button>
                           <button className="history-btn new-chat-btn" onClick={handleStartNewConversation}>
                             <i className="fas fa-plus" /> 新对话
@@ -2294,7 +2939,7 @@ export default function DigitalEmployeePage({
           <div className="history-content" onClick={(event) => event.stopPropagation()}>
             <div className="history-header">
               <h3>
-                <i className="fas fa-history" /> 历史会话
+                <i className="fas fa-history" /> 已处理任务
               </h3>
               <button className="history-close" onClick={() => setHistoryVisible(false)}>
                 <i className="fas fa-times" />
@@ -2310,7 +2955,7 @@ export default function DigitalEmployeePage({
               {historyLoading ? (
                 <div className="history-empty">
                   <i className="fas fa-spinner fa-spin" />
-                  <p>正在加载历史会话...</p>
+                  <p>正在加载已处理任务...</p>
                 </div>
               ) : historyError ? (
                 <div className="history-empty">
@@ -2423,7 +3068,7 @@ export default function DigitalEmployeePage({
               ) : (
                 <div className="history-empty">
                   <i className="fas fa-clock-rotate-left" />
-                  <p>当前暂无历史会话</p>
+                  <p>当前暂无已处理任务</p>
                 </div>
               )}
             </div>
