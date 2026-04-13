@@ -66,30 +66,38 @@ done
 ```bash
 # 同步并更新 config.json
 cp ~/.qwenpaw/config.json deploy-all/qwenpaw/data/qwenpaw/config.json
-sed -i '' 's|/Users/tudan/.qwenpaw|/app/working|g' deploy-all/qwenpaw/data/qwenpaw/config.json
+sed -i '' 's|/Users/[^/]*/\.qwenpaw|/app/working|g' deploy-all/qwenpaw/data/qwenpaw/config.json
+sed -i '' 's|/Users/[^/]*/\.copaw|/app/working|g' deploy-all/qwenpaw/data/qwenpaw/config.json
 sed -i '' 's|~/.qwenpaw|/app/working|g' deploy-all/qwenpaw/data/qwenpaw/config.json
+sed -i '' 's|~/.copaw|/app/working|g' deploy-all/qwenpaw/data/qwenpaw/config.json
 
 # 同步并更新各工作区的 agent.json
 for ws in $(ls ~/.qwenpaw/workspaces/); do
   if [ -f ~/.qwenpaw/workspaces/$ws/agent.json ]; then
     cp ~/.qwenpaw/workspaces/$ws/agent.json "deploy-all/qwenpaw/data/qwenpaw/workspaces/$ws/agent.json"
-    sed -i '' 's|/Users/tudan/.qwenpaw|/app/working|g' "deploy-all/qwenpaw/data/qwenpaw/workspaces/$ws/agent.json"
+    sed -i '' 's|/Users/[^/]*/\.qwenpaw|/app/working|g' "deploy-all/qwenpaw/data/qwenpaw/workspaces/$ws/agent.json"
+    sed -i '' 's|/Users/[^/]*/\.copaw|/app/working|g' "deploy-all/qwenpaw/data/qwenpaw/workspaces/$ws/agent.json"
     sed -i '' 's|~/.qwenpaw|/app/working|g' "deploy-all/qwenpaw/data/qwenpaw/workspaces/$ws/agent.json"
+    sed -i '' 's|~/.copaw|/app/working|g' "deploy-all/qwenpaw/data/qwenpaw/workspaces/$ws/agent.json"
   fi
 done
 
 # 更新 skill.json 路径
 for ws in $(ls ~/.qwenpaw/workspaces/); do
   if [ -f "deploy-all/qwenpaw/data/qwenpaw/workspaces/$ws/skill.json" ]; then
-    sed -i '' 's|/Users/tudan/.qwenpaw|/app/working|g' "deploy-all/qwenpaw/data/qwenpaw/workspaces/$ws/skill.json"
+    sed -i '' 's|/Users/[^/]*/\.qwenpaw|/app/working|g' "deploy-all/qwenpaw/data/qwenpaw/workspaces/$ws/skill.json"
+    sed -i '' 's|/Users/[^/]*/\.copaw|/app/working|g' "deploy-all/qwenpaw/data/qwenpaw/workspaces/$ws/skill.json"
     sed -i '' 's|~/.qwenpaw|/app/working|g' "deploy-all/qwenpaw/data/qwenpaw/workspaces/$ws/skill.json"
+    sed -i '' 's|~/.copaw|/app/working|g' "deploy-all/qwenpaw/data/qwenpaw/workspaces/$ws/skill.json"
   fi
 done
 
 # 更新 skill_pool/skill.json 路径
 if [ -f deploy-all/qwenpaw/data/qwenpaw/skill_pool/skill.json ]; then
-  sed -i '' 's|/Users/tudan/.qwenpaw|/app/working|g' deploy-all/qwenpaw/data/qwenpaw/skill_pool/skill.json
+  sed -i '' 's|/Users/[^/]*/\.qwenpaw|/app/working|g' deploy-all/qwenpaw/data/qwenpaw/skill_pool/skill.json
+  sed -i '' 's|/Users/[^/]*/\.copaw|/app/working|g' deploy-all/qwenpaw/data/qwenpaw/skill_pool/skill.json
   sed -i '' 's|~/.qwenpaw|/app/working|g' deploy-all/qwenpaw/data/qwenpaw/skill_pool/skill.json
+  sed -i '' 's|~/.copaw|/app/working|g' deploy-all/qwenpaw/data/qwenpaw/skill_pool/skill.json
 fi
 ```
 
@@ -159,10 +167,10 @@ find deploy-all/qwenpaw/data/qwenpaw -name ".DS_Store" -delete 2>/dev/null
 
 ```bash
 # 询问是否同步 .env 文件
-echo "是否同步 .env 文件？(y/n)"
+echo "是否保留 .env 文件？(Y/n)"
 read -r SYNC_ENV
 
-if [ "$SYNC_ENV" = "y" ]; then
+if [ -z "${SYNC_ENV:-}" ] || [ "$SYNC_ENV" = "y" ] || [ "$SYNC_ENV" = "Y" ]; then
   echo "保留 .env 文件..."
 else
   echo "删除 .env 文件..."
@@ -183,8 +191,10 @@ find deploy-all/qwenpaw/data/qwenpaw -name ".env" -type f -delete 2>/dev/null
 
 | 本地路径 | 容器路径 |
 |---------|---------|
-| `/Users/tudan/.qwenpaw` | `/app/working` |
+| `/Users/<用户名>/.qwenpaw` | `/app/working` |
+| `/Users/<用户名>/.copaw` | `/app/working` |
 | `~/.qwenpaw` | `/app/working` |
+| `~/.copaw` | `/app/working` |
 
 ## 已废弃的目录/文件
 
@@ -219,14 +229,20 @@ find deploy-all/qwenpaw/data/qwenpaw -name ".env" -type f -delete 2>/dev/null
 
 ## 一键同步脚本
 
-可以将以上步骤合并为一个脚本 `sync-from-local.sh`：
+可以将以上步骤合并为一个脚本 `sync-from-local.sh`（建议保存在**仓库根目录**）：
 
 ```bash
 #!/bin/bash
-set -e
+set -euo pipefail
 
-DEPLOY_DIR="deploy-all/qwenpaw/data/qwenpaw"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DEPLOY_ROOT="$SCRIPT_DIR/deploy-all/qwenpaw/data"
+DEPLOY_DIR="$DEPLOY_ROOT/qwenpaw"
+SECRET_DIR="$DEPLOY_ROOT/qwenpaw.secret"
 LOCAL_DIR="$HOME/.qwenpaw"
+LOCAL_SECRET_DIR="$HOME/.qwenpaw.secret"
+
+mkdir -p "$DEPLOY_DIR" "$SECRET_DIR" "$DEPLOY_DIR/workspaces"
 
 echo "=== Step 1: Clean old directories ==="
 cd "$DEPLOY_DIR"
@@ -252,19 +268,23 @@ done
 
 echo "=== Step 4: Sync config files and update paths ==="
 cp "$LOCAL_DIR/config.json" config.json
-sed -i '' 's|/Users/[^/]*/.copaw|/app/working|g' config.json
+sed -i '' 's|/Users/[^/]*/\.qwenpaw|/app/working|g' config.json
+sed -i '' 's|/Users/[^/]*/\.copaw|/app/working|g' config.json
 sed -i '' 's|~/.qwenpaw|/app/working|g' config.json
+sed -i '' 's|~/.copaw|/app/working|g' config.json
 
 for ws in $(ls "$LOCAL_DIR/workspaces/"); do
   if [ -f "$LOCAL_DIR/workspaces/$ws/agent.json" ]; then
     cp "$LOCAL_DIR/workspaces/$ws/agent.json" "workspaces/$ws/agent.json"
-    sed -i '' 's|/Users/[^/]*/.copaw|/app/working|g' "workspaces/$ws/agent.json"
+    sed -i '' 's|/Users/[^/]*/\.qwenpaw|/app/working|g' "workspaces/$ws/agent.json"
+    sed -i '' 's|/Users/[^/]*/\.copaw|/app/working|g' "workspaces/$ws/agent.json"
     sed -i '' 's|~/.qwenpaw|/app/working|g' "workspaces/$ws/agent.json"
+    sed -i '' 's|~/.copaw|/app/working|g' "workspaces/$ws/agent.json"
   fi
-  [ -f "workspaces/$ws/skill.json" ] && sed -i '' 's|~/.qwenpaw|/app/working|g; s|/Users/[^/]*/.copaw|/app/working|g' "workspaces/$ws/skill.json"
+  [ -f "workspaces/$ws/skill.json" ] && sed -i '' 's|~/.qwenpaw|/app/working|g; s|~/.copaw|/app/working|g; s|/Users/[^/]*/\.qwenpaw|/app/working|g; s|/Users/[^/]*/\.copaw|/app/working|g' "workspaces/$ws/skill.json"
 done
 
-[ -f skill_pool/skill.json ] && sed -i '' 's|~/.qwenpaw|/app/working|g; s|/Users/[^/]*/.copaw|/app/working|g' skill_pool/skill.json
+[ -f skill_pool/skill.json ] && sed -i '' 's|~/.qwenpaw|/app/working|g; s|~/.copaw|/app/working|g; s|/Users/[^/]*/\.qwenpaw|/app/working|g; s|/Users/[^/]*/\.copaw|/app/working|g' skill_pool/skill.json
 
 echo "=== Step 5: Sync workspace files ==="
 for ws in $(ls "$LOCAL_DIR/workspaces/"); do
@@ -274,9 +294,9 @@ for ws in $(ls "$LOCAL_DIR/workspaces/"); do
 done
 
 echo "=== Step 6: Sync qwenpaw.secret (model providers) ==="
-rm -rf ../qwenpaw.secret 2>/dev/null || true
-mkdir -p ../qwenpaw.secret
-rsync -a --exclude='.DS_Store' "$HOME/.qwenpaw.secret/" ../qwenpaw.secret/
+rm -rf "$SECRET_DIR" 2>/dev/null || true
+mkdir -p "$SECRET_DIR"
+rsync -a --exclude='.DS_Store' "$LOCAL_SECRET_DIR/" "$SECRET_DIR/"
 
 echo "=== Step 7: Clean runtime data ==="
 for ws in $(ls workspaces/); do
@@ -292,9 +312,9 @@ find . -name ".DS_Store" -delete 2>/dev/null || true
 
 echo "=== Step 9: Handle .env files ==="
 echo "Skills 目录下可能包含 .env 文件（如 real-alarm/.env 包含 API Token）"
-echo "是否同步 .env 文件？(y/n)"
+echo "是否保留 .env 文件？(Y/n)"
 read -r SYNC_ENV
-if [ "$SYNC_ENV" = "y" ]; then
+if [ -z "${SYNC_ENV:-}" ] || [ "$SYNC_ENV" = "y" ] || [ "$SYNC_ENV" = "Y" ]; then
   echo "保留 .env 文件..."
 else
   echo "删除 .env 文件..."
@@ -321,13 +341,13 @@ cat deploy-all/qwenpaw/data/qwenpaw.secret/providers/active_model.json
 # 检查路径是否正确替换
 grep "/app/working" deploy-all/qwenpaw/data/qwenpaw/config.json | head -5
 
-# 检查是否有残留的本地路径
-grep -r "~/.qwenpaw\|/Users/" deploy-all/qwenpaw/data/qwenpaw/*.json || echo "No local paths found"
+# 检查是否有残留的本地路径（递归检查所有 JSON）
+grep -r "~/.qwenpaw\|~/.copaw\|/Users/.*/\.\(qwenpaw\|copaw\)" deploy-all/qwenpaw/data/qwenpaw || echo "No local paths found"
 ```
 
 ## 版本升级检查
 
-CoPaw 版本升级后，目录结构可能发生变化。同步前请先检查以下代码文件确认当前结构：
+QwenPaw 版本升级后，目录结构可能发生变化。同步前请先检查以下代码文件确认当前结构：
 
 ### 1. 检查工作区目录结构
 
@@ -378,8 +398,8 @@ grep -rn "sessions\|file_store\|tool_result\|chats\.json\|token_usage" \
 # 检查 .env 文件的处理方式
 grep -rn "\.env\|dotenv" src/qwenpaw/agents/skills_manager.py
 
-# 检查 qwenpaw.secret 目录定义
-grep -rn "secret\|SECRET_DIR\|copaw\.secret" src/qwenpaw/constant.py
+# 检查 qwenpaw.secret / copaw.secret 兼容目录定义
+grep -rn "secret\|SECRET_DIR\|qwenpaw\.secret\|copaw\.secret" src/qwenpaw/constant.py
 ```
 
 ### 6. 检查大模型配置目录 (qwenpaw.secret)
