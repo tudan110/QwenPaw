@@ -22,6 +22,7 @@ resolve_working_dir() {
 WORKING_DIR="$(resolve_working_dir)"
 export QWENPAW_WORKING_DIR="$WORKING_DIR"
 VENV_DIR=".venv"
+PYTHON_BIN="$SCRIPT_DIR/$VENV_DIR/bin/python"
 
 REBUILD_FRONTEND=false
 ARGS=()
@@ -59,7 +60,7 @@ fi
 
 # 安装依赖（不包含 mlx，仅支持 Apple Silicon arm64）
 echo "[3/5] 安装依赖..."
-UV_HTTP_TIMEOUT=300 uv pip install -e ".[dev]"
+UV_HTTP_TIMEOUT=300 uv pip install --python "$PYTHON_BIN" -e ".[dev]"
 
 # 构建前端（如果需要）
 CONSOLE_DIST="$SCRIPT_DIR/console/dist"
@@ -98,11 +99,9 @@ fi
 CONFIG_FILE="$WORKING_DIR/config.json"
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "[5/5] 初始化配置..."
-    source "$VENV_DIR/bin/activate"
-    qwenpaw init --defaults
+    "$PYTHON_BIN" -m qwenpaw init --defaults
 else
     echo "[5/5] 配置已存在，跳过初始化"
-    source "$VENV_DIR/bin/activate"
 fi
 
 echo ""
@@ -133,4 +132,4 @@ __all__ = ["register_app_routes"]
 PY
 
 # 启动应用
-qwenpaw app "${ARGS[@]}"
+"$PYTHON_BIN" -m qwenpaw app "${ARGS[@]}"

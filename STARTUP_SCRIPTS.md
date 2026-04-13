@@ -1,12 +1,12 @@
-# CoPaw 启动脚本说明
+# QwenPaw 启动脚本说明
 
 ## 概述
 
-本项目提供两个启动脚本，分别用于启动 CoPaw 主应用和 Portal 前端开发服务器。
+本项目提供两个启动脚本，分别用于启动 QwenPaw 主应用和 Portal 前端开发服务器。
 
 ---
 
-## start-copaw.sh - CoPaw 主应用启动脚本
+## start-qwenpaw.sh - QwenPaw 主应用启动脚本
 
 ### 功能说明
 
@@ -16,19 +16,19 @@
 - 安装项目依赖
 - 构建前端资源
 - 初始化配置文件
-- 启动 CoPaw 应用
+- 启动 QwenPaw 应用
 
 ### 使用方法
 
 ```bash
 # 基本启动
-./start-copaw.sh
+./start-qwenpaw.sh
 
 # 强制重新构建前端
-./start-copaw.sh --rebuild
+./start-qwenpaw.sh --rebuild
 
-# 传递参数给 copaw app 命令
-./start-copaw.sh [任意参数]
+# 传递参数给 qwenpaw app 命令
+./start-qwenpaw.sh [任意参数]
 ```
 
 ### 参数说明
@@ -36,7 +36,7 @@
 | 参数 | 说明 |
 |------|------|
 | `--rebuild` | 强制重新构建前端资源（删除旧的构建产物后重新构建） |
-| 其他参数 | 传递给 `copaw app` 命令 |
+| 其他参数 | 传递给 `qwenpaw app` 命令 |
 
 ### 前置要求
 
@@ -50,14 +50,14 @@
 2. **创建虚拟环境**：在项目根目录创建 `.venv` 目录
 3. **安装依赖**：使用 uv 安装项目开发依赖
 4. **构建前端**：在 `console` 目录构建前端资源（如需要）
-5. **初始化配置**：创建 `~/.copaw/config.json` 配置文件（如不存在）
-6. **启动应用**：运行 `copaw app` 命令
+5. **初始化配置**：创建 `~/.qwenpaw/config.json` 配置文件（如不存在）
+6. **启动应用**：运行 `qwenpaw app` 命令
 
 ### 注意事项
 
 - 首次运行会自动安装 uv 和创建虚拟环境
 - 前端构建产物位于 `console/dist` 目录
-- 配置文件位于 `~/.copaw/config.json`
+- 配置文件位于 `~/.qwenpaw/config.json`
 
 ---
 
@@ -108,10 +108,10 @@ VITE_PORTAL_APP_TITLE="数字员工门户" ./start-portal.sh
 
 ## 快速开始
 
-### 首次启动 CoPaw 主应用
+### 首次启动 QwenPaw 主应用
 
 ```bash
-./start-copaw.sh
+./start-qwenpaw.sh
 ```
 
 ### 开发 Portal 前端
@@ -123,7 +123,7 @@ VITE_PORTAL_APP_TITLE="数字员工门户" ./start-portal.sh
 ### 重新构建前端
 
 ```bash
-./start-copaw.sh --rebuild
+./start-qwenpaw.sh --rebuild
 ```
 
 ---
