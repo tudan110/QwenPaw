@@ -1,5 +1,5 @@
 #!/bin/bash
-# CoPaw 项目启动脚本 (使用 uv)
+# QwenPaw 项目启动脚本 (使用 uv)
 
 # 兼容 sh 调用：若非 bash 则自动切换到 bash 执行
 if [ -z "$BASH_VERSION" ]; then
@@ -11,6 +11,16 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
+resolve_working_dir() {
+    if [ -n "${QWENPAW_WORKING_DIR:-}" ]; then
+        printf '%s\n' "$QWENPAW_WORKING_DIR"
+        return
+    fi
+    printf '%s\n' "$HOME/.qwenpaw"
+}
+
+WORKING_DIR="$(resolve_working_dir)"
+export QWENPAW_WORKING_DIR="$WORKING_DIR"
 VENV_DIR=".venv"
 
 REBUILD_FRONTEND=false
@@ -24,7 +34,7 @@ for arg in "$@"; do
 done
 
 echo "=========================================="
-echo "  CoPaw 启动脚本"
+echo "  QwenPaw 启动脚本"
 echo "=========================================="
 
 # 检查并安装 uv
@@ -85,11 +95,11 @@ if [ "$NEED_BUILD" = true ]; then
 fi
 
 # 初始化配置（如果需要）
-CONFIG_FILE="$HOME/.copaw/config.json"
+CONFIG_FILE="$WORKING_DIR/config.json"
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "[5/5] 初始化配置..."
     source "$VENV_DIR/bin/activate"
-    copaw init --defaults
+    qwenpaw init --defaults
 else
     echo "[5/5] 配置已存在，跳过初始化"
     source "$VENV_DIR/bin/activate"
@@ -97,30 +107,30 @@ fi
 
 echo ""
 echo "=========================================="
-echo "  启动 CoPaw..."
+echo "  启动 QwenPaw..."
 echo "=========================================="
 echo ""
 
 # 同步故障处置 builtin skill 到 fault 工作区，避免工作区副本滞后
-FAULT_WORKSPACE_SKILL_DIR="$HOME/.copaw/workspaces/fault/skills/fault-disposal"
-FAULT_SOURCE_SKILL_DIR="$SCRIPT_DIR/src/copaw/agents/skills/fault-disposal"
+FAULT_WORKSPACE_SKILL_DIR="$WORKING_DIR/workspaces/fault/skills/fault-disposal"
+FAULT_SOURCE_SKILL_DIR="$SCRIPT_DIR/src/qwenpaw/agents/skills/fault-disposal"
 if [ -d "$FAULT_SOURCE_SKILL_DIR" ] && [ -d "$(dirname "$FAULT_WORKSPACE_SKILL_DIR")" ]; then
     echo "[sync] 同步 fault-disposal skill 到工作区..."
     mkdir -p "$FAULT_WORKSPACE_SKILL_DIR"
     rsync -a --delete "$FAULT_SOURCE_SKILL_DIR/" "$FAULT_WORKSPACE_SKILL_DIR/"
 fi
 
-# 同步 portal 扩展路由到 CoPAW custom_channels，避免换机器后 /api/portal/* 丢失
-PORTAL_CUSTOM_CHANNEL_DIR="$HOME/.copaw/custom_channels"
+# 同步 portal 扩展路由到 QwenPaw custom_channels，避免换机器后 /api/portal/* 丢失
+PORTAL_CUSTOM_CHANNEL_DIR="$WORKING_DIR/custom_channels"
 PORTAL_CUSTOM_CHANNEL_FILE="$PORTAL_CUSTOM_CHANNEL_DIR/portal_api.py"
 echo "[sync] 同步 portal_api custom channel..."
 mkdir -p "$PORTAL_CUSTOM_CHANNEL_DIR"
 cat > "$PORTAL_CUSTOM_CHANNEL_FILE" <<'PY'
-from copaw.extensions.api.portal_backend import register_app_routes
+from qwenpaw.extensions.api.portal_backend import register_app_routes
 
 
 __all__ = ["register_app_routes"]
 PY
 
 # 启动应用
-copaw app "${ARGS[@]}"
+qwenpaw app "${ARGS[@]}"

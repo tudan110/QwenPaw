@@ -1,6 +1,6 @@
-# CoPaw 部署说明
+# QwenPaw 部署说明
 
-CoPaw 应用的容器化部署配置，包含前后端一体化镜像，支持 Docker 和 Kubernetes (k3s) 部署。
+QwenPaw 应用的容器化部署配置，包含前后端一体化镜像，支持 Docker 和 Kubernetes (k3s) 部署。
 
 ## 目录结构
 
@@ -24,9 +24,9 @@ deploy-all/copaw/
 
 ## 应用说明
 
-CoPaw 是一个前后端一体化应用：
+QwenPaw 是一个前后端一体化应用：
 - **前端**: console（React 应用）
-- **后端**: Python 应用（copaw）
+- **后端**: Python 应用（qwenpaw）
 - **端口**: 8088
 - **特性**: 内置 Chromium 浏览器，支持自动化任务
 - **Portal 扩展路由**: 容器启动时会自动写入 `custom_channels/portal_api.py`，确保 `/api/portal/*` 可供 Portal 前端访问
@@ -36,7 +36,7 @@ CoPaw 是一个前后端一体化应用：
 在项目根目录执行：
 
 ```bash
-docker build -f deploy-all/copaw/Dockerfile -t copaw:latest .
+docker build -f deploy-all/copaw/Dockerfile -t qwenpaw:latest .
 ```
 
 ### ARM64 版本构建
@@ -51,29 +51,29 @@ cd deploy-all/copaw
 导出镜像用于传输：
 
 ```bash
-docker save -o copaw-arm64.tar copaw:latest
+docker save -o qwenpaw-arm64.tar qwenpaw:latest
 ```
 
 在目标设备上加载：
 
 ```bash
-docker load -i copaw-arm64.tar
+docker load -i qwenpaw-arm64.tar
 ```
 
 ## Helm 部署 (k3s)
 
 ```bash
 # 打包
-helm package ./copaw
+helm package ./deploy-all/copaw/helm/copaw
 
 # 安装
-helm install copaw ./deploy-all/copaw/helm/copaw
+helm install qwenpaw ./deploy-all/copaw/helm/copaw
 
 # 升级
-helm upgrade copaw ./deploy-all/copaw/helm/copaw
+helm upgrade qwenpaw ./deploy-all/copaw/helm/copaw
 
 # 卸载
-helm uninstall copaw
+helm uninstall qwenpaw
 ```
 
 ## 配置说明
@@ -82,7 +82,7 @@ helm uninstall copaw
 
 ```yaml
 image:
-  repository: copaw
+  repository: qwenpaw
   tag: latest
   pullPolicy: IfNotPresent
 ```
@@ -115,8 +115,8 @@ persistence:
 
 ```yaml
 env:
-  COPAW_PORT: "8088"
-  COPAW_DISABLED_CHANNELS: "imessage"
+  QWENPAW_PORT: "8088"
+  QWENPAW_DISABLED_CHANNELS: "imessage"
 ```
 
 ### 自定义配置
@@ -124,5 +124,5 @@ env:
 创建自定义 values 文件：
 
 ```bash
-helm install copaw ./deploy-all/copaw/helm/copaw -f my-values.yaml
+helm install qwenpaw ./deploy-all/copaw/helm/copaw -f my-values.yaml
 ```

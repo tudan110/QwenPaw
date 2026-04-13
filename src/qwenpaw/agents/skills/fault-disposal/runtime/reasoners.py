@@ -16,8 +16,8 @@ def _candidate_project_roots() -> list[Path]:
     candidates: list[Path] = []
 
     for env_name in (
-        "COPAW_FAULT_DISPOSAL_PROJECT_ROOT",
-        "COPAW_PORTAL_PROJECT_ROOT",
+        "QWENPAW_FAULT_DISPOSAL_PROJECT_ROOT",
+        "QWENPAW_PORTAL_PROJECT_ROOT",
     ):
         raw = str((os.environ.get(env_name) or "")).strip()
         if raw:
@@ -39,18 +39,28 @@ def _candidate_project_roots() -> list[Path]:
     return deduped
 
 
+def _default_project_root() -> Path:
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "pyproject.toml").exists():
+            return parent
+    return here.parents[6]
+
+
 def _resolve_project_root() -> Path:
     for root in _candidate_project_roots():
-        if (root / "portal" / "vite.config.js").exists() or (
+        if (root / "portal" / "vite.config.js").exists():
+            return root
+        if (
             root
             / "src"
-            / "copaw"
+            / "qwenpaw"
             / "extensions"
             / "integrations"
             / "alarm_workorders"
         ).exists():
             return root
-    return Path(__file__).resolve().parents[2]
+    return _default_project_root()
 
 
 FAULT_SNAPSHOT_NOTE = "注：已生成故障快照。"
@@ -675,7 +685,7 @@ class CopawReasoner:
         self.last_used_reasoner = self.name
         self.last_error = ""
         self.base_url = (
-            os.getenv("FAULT_DISPOSAL_COPAW_BASE_URL", "http://127.0.0.1:8088/api").rstrip("/")
+            os.getenv("QWENPAW_FAULT_DISPOSAL_BASE_URL", "http://127.0.0.1:8088/api").rstrip("/")
         )
         self.agent_id = os.getenv("FAULT_DISPOSAL_REASONER_AGENT_ID", "fault").strip() or "fault"
         self.fallback_agent_id = (

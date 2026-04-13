@@ -1,12 +1,12 @@
 #!/bin/bash
 # =========================
-# CoPaw AMD64 版本 Docker 镜像构建脚本
+# QwenPaw AMD64 版本 Docker 镜像构建脚本
 # =========================
 
 set -e  # 任意命令失败则退出
 
 # --- 配置区 ---
-IMAGE_NAME="copaw"
+IMAGE_NAME="qwenpaw"
 TAG="latest"
 DOCKERFILE="Dockerfile"
 CONTEXT="../.."  # 构建上下文为项目根目录
@@ -28,7 +28,7 @@ echo "✅ 构建完成！"
 echo "🚀 镜像已构建并标记为: $IMAGE_NAME:$TAG"
 echo ""
 echo "💡 导出镜像："
-echo "docker save -o copaw-amd64.tar $IMAGE_NAME:$TAG"
+echo "docker save -o qwenpaw-amd64.tar $IMAGE_NAME:$TAG"
 echo ""
 echo "💡 在目标设备上加载镜像："
-echo "docker load -i copaw-amd64.tar"
+echo "docker load -i qwenpaw-amd64.tar"

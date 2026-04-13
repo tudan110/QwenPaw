@@ -60,7 +60,7 @@ python scripts/chat_skill_bridge.py execute --context-file /tmp/business_context
 ## 扩展约定
 
 - 新场景优先在 `runtime/playbooks/` 新增 playbook
-- 新外部能力优先封装到 `runtime/tool_adapters.py` 或 `src/copaw/extensions/integrations/*`
+- 新外部能力优先封装到 `runtime/tool_adapters.py` 或 `src/qwenpaw/extensions/integrations/*`
 - 不要让 Portal 直接执行业务脚本
 - 不要在 skill 内另起 CoPAW 子会话
 

@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "copaw.fullname" . }}-data
+  name: {{ include "qwenpaw.fullname" . }}-data
   labels:
-    {{- include "copaw.labels" . | nindent 4 }}
+    {{- include "qwenpaw.labels" . | nindent 4 }}
 spec:
   accessModes:
     - {{ .Values.persistence.accessMode }}

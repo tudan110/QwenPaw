@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
 
-from copaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
+from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
     query_alarm_workorders,
 )
 
@@ -72,7 +72,7 @@ def _compact_ui_message(message: dict) -> dict:
 
 
 async def _get_workspace_and_session(request: Request):
-    from copaw.app.agent_context import get_agent_for_request
+    from qwenpaw.app.agent_context import get_agent_for_request
 
     workspace = await get_agent_for_request(request)
     return workspace, workspace.runner.session
@@ -369,7 +369,7 @@ async def fault_disposal_history(
 
 
 def register_app_routes(fastapi_app) -> None:
-    """Register portal routes on the main CoPAW FastAPI app."""
+    """Register portal routes on the main QwenPaw FastAPI app."""
     fastapi_app.include_router(router)
 
 

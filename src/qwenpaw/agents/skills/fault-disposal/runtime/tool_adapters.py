@@ -19,8 +19,8 @@ def _candidate_project_roots() -> list[Path]:
     candidates: list[Path] = []
 
     for env_name in (
-        "COPAW_FAULT_DISPOSAL_PROJECT_ROOT",
-        "COPAW_PORTAL_PROJECT_ROOT",
+        "QWENPAW_FAULT_DISPOSAL_PROJECT_ROOT",
+        "QWENPAW_PORTAL_PROJECT_ROOT",
     ):
         raw = str((os.environ.get(env_name) or "")).strip()
         if raw:
@@ -42,45 +42,53 @@ def _candidate_project_roots() -> list[Path]:
     return deduped
 
 
+def _default_project_root() -> Path:
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "pyproject.toml").exists():
+            return parent
+    return here.parents[6]
+
+
 def _resolve_project_root() -> Path:
     for root in _candidate_project_roots():
         if (
             root
             / "src"
-            / "copaw"
+            / "qwenpaw"
             / "extensions"
             / "integrations"
             / "alarm_workorders"
             / "query_alarm_workorders.py"
         ).exists():
             return root
-    return Path(__file__).resolve().parents[2]
+    return _default_project_root()
 
 
 PROJECT_ROOT = _resolve_project_root()
 CLEAR_ALARM_URL = os.getenv(
-    "COPAW_CLEAR_ALARM_URL",
+    "QWENPAW_CLEAR_ALARM_URL",
     "http://172.28.75.4:30080/resource/realalarm/clearAlarm",
 ).strip()
 CLEAR_ALARM_AUTHORIZATION = os.getenv(
-    "COPAW_CLEAR_ALARM_AUTHORIZATION",
+    "QWENPAW_CLEAR_ALARM_AUTHORIZATION",
     "Bearer eyJhbGciOiJIUzUxMiJ9.eyJ1c2VyX2lkIjoxLCJ1c2VyX2tleSI6ImU5ZGIyMTljLTRiNmUtNGJkNS1hYmViLWExOWEyOTQ2YzQzYSIsInVzZXJuYW1lIjoieGlhb2sifQ.EpCFu6WKBPmirfqZHkBR-qPy72p9rZ8WgIPXFuDAJzg4KhH8ou88G7NvbfjwF9BN-hnRdCeh9mKJfbeuCVMetA",
 ).strip()
 CLEAR_ALARM_UNIQUE_ID = os.getenv(
-    "COPAW_CLEAR_ALARM_UNIQUE_ID",
+    "QWENPAW_CLEAR_ALARM_UNIQUE_ID",
     "HN_IPM_1747382481288_1923287641253916673",
 ).strip()
 CLEAR_ALARM_TIMEOUT_SECONDS = float(
-    os.getenv("COPAW_CLEAR_ALARM_TIMEOUT_SECONDS", "2").strip() or "2",
+    os.getenv("QWENPAW_CLEAR_ALARM_TIMEOUT_SECONDS", "2").strip() or "2",
 )
 CLEAR_ALARM_ENABLED = str(
-    os.getenv("COPAW_CLEAR_ALARM_ENABLED", "false")
+    os.getenv("QWENPAW_CLEAR_ALARM_ENABLED", "false")
 ).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _load_alarm_workorder_module():
     configured = str(
-        os.environ.get("COPAW_PORTAL_ALARM_WORKORDERS_SCRIPT", "")
+        os.environ.get("QWENPAW_PORTAL_ALARM_WORKORDERS_SCRIPT", "")
     ).strip()
     if configured:
         script_path = Path(configured).expanduser().resolve()
@@ -88,7 +96,7 @@ def _load_alarm_workorder_module():
         script_path = (
             PROJECT_ROOT
             / "src"
-            / "copaw"
+            / "qwenpaw"
             / "extensions"
             / "integrations"
             / "alarm_workorders"
@@ -135,7 +143,7 @@ def _find_workorder(
 
 
 def _build_ssl_context() -> ssl.SSLContext:
-    verify_ssl = os.getenv("COPAW_CLEAR_ALARM_VERIFY_SSL", "false").strip().lower()
+    verify_ssl = os.getenv("QWENPAW_CLEAR_ALARM_VERIFY_SSL", "false").strip().lower()
     if verify_ssl in {"1", "true", "yes", "on"}:
         return ssl.create_default_context()
     return ssl._create_unverified_context()
@@ -152,8 +160,8 @@ def _normalize_authorization_header_value(value: str) -> str:
 
 def _is_clear_alarm_debug_enabled() -> bool:
     value = str(
-        os.getenv("COPAW_CLEAR_ALARM_DEBUG")
-        or os.getenv("COPAW_FAULT_DISPOSAL_DEBUG")
+        os.getenv("QWENPAW_CLEAR_ALARM_DEBUG")
+        or os.getenv("QWENPAW_FAULT_DISPOSAL_DEBUG")
         or ""
     ).strip().lower()
     return value in {"1", "true", "yes", "on", "debug"}
@@ -426,7 +434,7 @@ class FaultDisposalToolbox:
         if not request_payload:
             _debug_log_clear_alarm(
                 "skip-no-alarm-id",
-                envVar="COPAW_CLEAR_ALARM_AUTHORIZATION",
+                envVar="QWENPAW_CLEAR_ALARM_AUTHORIZATION",
                 alarmUniqueId=alarm_unique_id,
                 clearAlarmUrl=CLEAR_ALARM_URL,
             )
@@ -473,7 +481,7 @@ class FaultDisposalToolbox:
             body = json.dumps(request_payload, ensure_ascii=False).encode("utf-8")
             _debug_log_clear_alarm(
                 "request",
-                envVar="COPAW_CLEAR_ALARM_AUTHORIZATION",
+                envVar="QWENPAW_CLEAR_ALARM_AUTHORIZATION",
                 clearAlarmUrl=CLEAR_ALARM_URL,
                 alarmUniqueId=alarm_unique_id,
                 authorizationPresent=bool(CLEAR_ALARM_AUTHORIZATION.strip()),

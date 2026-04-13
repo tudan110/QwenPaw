@@ -2,7 +2,7 @@
 
 把这套目录复制到：
 
-`src/copaw/agents/skills/<your-skill-name>/`
+`src/qwenpaw/agents/skills/<your-skill-name>/`
 
 推荐目录结构：
 

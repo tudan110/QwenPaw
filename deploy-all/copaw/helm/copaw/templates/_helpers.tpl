@@ -1,14 +1,14 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "copaw.name" -}}
+{{- define "qwenpaw.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Create a default fully qualified app name.
 */}}
-{{- define "copaw.fullname" -}}
+{{- define "qwenpaw.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -24,16 +24,16 @@ Create a default fully qualified app name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "copaw.chart" -}}
+{{- define "qwenpaw.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "copaw.labels" -}}
-helm.sh/chart: {{ include "copaw.chart" . }}
-{{ include "copaw.selectorLabels" . }}
+{{- define "qwenpaw.labels" -}}
+helm.sh/chart: {{ include "qwenpaw.chart" . }}
+{{ include "qwenpaw.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -43,7 +43,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "copaw.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "copaw.name" . }}
+{{- define "qwenpaw.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "qwenpaw.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}

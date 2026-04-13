@@ -1,6 +1,6 @@
 # 镜像
 image:
-  repository: copaw
+  repository: qwenpaw
   tag: latest
   pullPolicy: IfNotPresent
 
@@ -17,9 +17,9 @@ securityContext:
 # 环境变量
 env:
   timezone: "Asia/Shanghai"
-  COPAW_PORT: "8088"
-  COPAW_DISABLED_CHANNELS: "imessage"
-  # COPAW_ENABLED_CHANNELS: ""
+  QWENPAW_PORT: "8088"
+  QWENPAW_DISABLED_CHANNELS: "imessage"
+  # QWENPAW_ENABLED_CHANNELS: ""
 
 # 资源限制
 resources:
@@ -32,7 +32,7 @@ resources:
 
 # 服务端口
 service:
-  name: copaw
+  name: qwenpaw
   type: NodePort
   port: 8088
   targetPort: 8088

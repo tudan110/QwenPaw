@@ -126,18 +126,18 @@ cd skills/fault-disposal && python scripts/chat_skill_bridge.py execute --contex
 
 其中部分能力会复用 CoPAW 包内的扩展集成资源，例如：
 
-- `src/copaw/extensions/integrations/alarm_workorders/query_alarm_workorders.py`
+- `src/qwenpaw/extensions/integrations/alarm_workorders/query_alarm_workorders.py`
 
 这类依赖仍属于公共接入资源，不属于 Portal 页面逻辑。
 
 如果 skill 无法定位仓库根目录，可通过环境变量指定：
 
-- `COPAW_FAULT_DISPOSAL_PROJECT_ROOT`
-- `COPAW_PORTAL_PROJECT_ROOT`
+- `QWENPAW_FAULT_DISPOSAL_PROJECT_ROOT`
+- `QWENPAW_PORTAL_PROJECT_ROOT`
 
 如需显式指定告警工单桥接脚本，也可设置：
 
-- `COPAW_PORTAL_ALARM_WORKORDERS_SCRIPT`
+- `QWENPAW_PORTAL_ALARM_WORKORDERS_SCRIPT`
 
 ## 执行要求
 

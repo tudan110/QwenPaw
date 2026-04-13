@@ -4,8 +4,8 @@
 
 设计原则：
 
-- Skill 继续放在 `src/copaw/agents/skills/<skill-name>/`
-- 外部系统接入继续放在 `src/copaw/extensions/integrations/`
+- Skill 继续放在 `src/qwenpaw/agents/skills/<skill-name>/`
+- 外部系统接入继续放在 `src/qwenpaw/extensions/integrations/`
 - Portal 只负责前端展示，不再编排业务流程
 - 所有业务交互统一沉淀到 CoPAW 聊天会话
 
@@ -14,7 +14,7 @@
 1. 先复制 `skill_scaffold/`，生成新的 skill 目录
 2. 修改 `SKILL.template.md`，明确触发条件、输入协议、执行要求
 3. 按业务场景补 `runtime/router.py` 和 `runtime/playbooks/*.py`
-4. 把外部接口包装进 `runtime/tool_adapters.py` 或 `src/copaw/extensions/integrations/*`
+4. 把外部接口包装进 `runtime/tool_adapters.py` 或 `src/qwenpaw/extensions/integrations/*`
 5. 输出 `portal-action` / `echarts` 时，遵循 `protocols/` 下的协议模板
 
 模板目录说明：

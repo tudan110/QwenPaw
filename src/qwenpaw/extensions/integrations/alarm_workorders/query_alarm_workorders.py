@@ -53,7 +53,10 @@ if hasattr(sys.stderr, "reconfigure"):
 def _candidate_project_roots() -> list[Path]:
     candidates: list[Path] = []
 
-    for env_name in ("COPAW_PORTAL_PROJECT_ROOT", "COPAW_FAULT_DISPOSAL_PROJECT_ROOT"):
+    for env_name in (
+        "QWENPAW_PORTAL_PROJECT_ROOT",
+        "QWENPAW_FAULT_DISPOSAL_PROJECT_ROOT",
+    ):
         raw = os.getenv(env_name, "").strip()
         if raw:
             candidates.append(Path(raw).expanduser().resolve())
@@ -74,22 +77,38 @@ def _candidate_project_roots() -> list[Path]:
     return deduped
 
 
+def _default_project_root() -> Path:
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "pyproject.toml").exists():
+            return parent
+    return here.parents[5]
+
+
 def _resolve_project_root() -> Path:
     for root in _candidate_project_roots():
-        if (root / "src" / "copaw" / "agents" / "skills").exists():
+        if (root / "src" / "qwenpaw" / "agents" / "skills").exists():
             return root
-    return Path(__file__).resolve().parents[5]
+    return _default_project_root()
 
 
 PROJECT_ROOT = _resolve_project_root()
 
 
+def _default_working_dir() -> Path:
+    env_dir = os.getenv("QWENPAW_WORKING_DIR", "").strip()
+    if env_dir:
+        return Path(env_dir).expanduser().resolve()
+
+    return Path("~/.qwenpaw").expanduser().resolve()
+
+
 def _read_active_workspace_dir() -> Path:
-    env_workspace = os.getenv("COPAW_PORTAL_WORKSPACE_DIR", "").strip()
+    env_workspace = os.getenv("QWENPAW_PORTAL_WORKSPACE_DIR", "").strip()
     if env_workspace:
         return Path(env_workspace).expanduser().resolve()
 
-    config_path = Path.home() / ".copaw" / "config.json"
+    config_path = _default_working_dir() / "config.json"
     if config_path.exists():
         config = json.loads(config_path.read_text(encoding="utf-8"))
         agents = config.get("agents", {})
@@ -99,11 +118,11 @@ def _read_active_workspace_dir() -> Path:
         if workspace_dir:
             return Path(workspace_dir).expanduser().resolve()
 
-    return (Path.home() / ".copaw" / "workspaces" / "default").resolve()
+    return (_default_working_dir() / "workspaces" / "default").resolve()
 
 
 def _resolve_real_alarm_script() -> Path:
-    env_script = os.getenv("COPAW_PORTAL_REAL_ALARM_SCRIPT", "").strip()
+    env_script = os.getenv("QWENPAW_PORTAL_REAL_ALARM_SCRIPT", "").strip()
     if env_script:
         return Path(env_script).expanduser().resolve()
 
@@ -111,7 +130,7 @@ def _resolve_real_alarm_script() -> Path:
         _read_active_workspace_dir() / "skills" / "real-alarm" / "scripts" / "get_alarms.py",
         PROJECT_ROOT
         / "src"
-        / "copaw"
+        / "qwenpaw"
         / "agents"
         / "skills"
         / "real-alarm"
@@ -304,4 +323,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-REAL_ALARM_TIMEOUT_SECONDS = float(os.getenv("COPAW_PORTAL_REAL_ALARM_TIMEOUT", "8"))
+REAL_ALARM_TIMEOUT_SECONDS = float(
+    os.getenv("QWENPAW_PORTAL_REAL_ALARM_TIMEOUT", "8").strip() or "8"
+)
