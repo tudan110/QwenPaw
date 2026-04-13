@@ -1,6 +1,6 @@
 apiVersion: v2
 name: cnos-inoe-agent
-description: CNOS Inoe Agent - 包含 portal 和 copaw 的完整部署
+description: CNOS Inoe Agent - 包含 portal 和 qwenpaw 的完整部署
 type: application
 version: 1.0.0
 appVersion: "0.1.0"
@@ -9,6 +9,6 @@ dependencies:
   - name: digital-workforce-portal
     version: "1.0.0"
     repository: "file://charts/digital-workforce-portal"
-  - name: copaw
+  - name: qwenpaw
     version: "1.0.0"
-    repository: "file://charts/copaw"
+    repository: "file://charts/qwenpaw"

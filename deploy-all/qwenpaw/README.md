@@ -5,14 +5,14 @@ QwenPaw 应用的容器化部署配置，包含前后端一体化镜像，支持
 ## 目录结构
 
 ```
-deploy-all/copaw/
+deploy-all/qwenpaw/
 ├── Dockerfile                  # 多阶段构建配置
 ├── entrypoint.sh               # 容器入口脚本
 ├── build-arm.sh                # ARM64 版本构建脚本
 ├── config/
 │   └── supervisord.conf.template  # Supervisor 配置模板
 └── helm/
-    └── copaw/
+    └── qwenpaw/
         ├── Chart.yaml
         ├── values.yaml
         └── templates/
@@ -36,7 +36,7 @@ QwenPaw 是一个前后端一体化应用：
 在项目根目录执行：
 
 ```bash
-docker build -f deploy-all/copaw/Dockerfile -t qwenpaw:latest .
+docker build -f deploy-all/qwenpaw/Dockerfile -t qwenpaw:latest .
 ```
 
 ### ARM64 版本构建
@@ -44,7 +44,7 @@ docker build -f deploy-all/copaw/Dockerfile -t qwenpaw:latest .
 用于 ARM 架构设备（如树莓派、AWS Graviton 等）：
 
 ```bash
-cd deploy-all/copaw
+cd deploy-all/qwenpaw
 ./build-arm.sh
 ```
 
@@ -64,13 +64,13 @@ docker load -i qwenpaw-arm64.tar
 
 ```bash
 # 打包
-helm package ./deploy-all/copaw/helm/copaw
+helm package ./deploy-all/qwenpaw/helm/qwenpaw
 
 # 安装
-helm install qwenpaw ./deploy-all/copaw/helm/copaw
+helm install qwenpaw ./deploy-all/qwenpaw/helm/qwenpaw
 
 # 升级
-helm upgrade qwenpaw ./deploy-all/copaw/helm/copaw
+helm upgrade qwenpaw ./deploy-all/qwenpaw/helm/qwenpaw
 
 # 卸载
 helm uninstall qwenpaw
@@ -124,5 +124,5 @@ env:
 创建自定义 values 文件：
 
 ```bash
-helm install qwenpaw ./deploy-all/copaw/helm/copaw -f my-values.yaml
+helm install qwenpaw ./deploy-all/qwenpaw/helm/qwenpaw -f my-values.yaml
 ```

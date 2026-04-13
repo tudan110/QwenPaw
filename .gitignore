@@ -21,7 +21,7 @@ console/.cursor/
 console/pnpm-lock.yaml
 
 # 智能体本地初始化数据
-deploy-all/copaw/data/
+deploy-all/qwenpaw/data/
 
 # 敏感知识库目录
 knowledge/

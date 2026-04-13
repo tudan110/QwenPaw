@@ -26,7 +26,7 @@ digital-workforce-portal:
   # 环境变量
   env:
     timezone: "Asia/Shanghai"
-    FAULT_DISPOSAL_COPAW_BASE_URL: "http://copaw:8088/api"
+    FAULT_DISPOSAL_COPAW_BASE_URL: "http://qwenpaw:8088/api"
 
   # 资源限制
   resources:
@@ -44,14 +44,14 @@ digital-workforce-portal:
     targetPort: 80
     nodePort: 30083
 
-# ----- copaw 配置 -----
-copaw:
+# ----- qwenpaw 配置 -----
+qwenpaw:
   # 固定服务名（nginx 通过此名称访问）
-  fullnameOverride: "copaw"
+  fullnameOverride: "qwenpaw"
 
   # 镜像
   image:
-    repository: copaw
+    repository: qwenpaw
     tag: latest
     pullPolicy: IfNotPresent
 
@@ -68,8 +68,8 @@ copaw:
   # 环境变量
   env:
     timezone: "Asia/Shanghai"
-    COPAW_PORT: "8088"
-    COPAW_DISABLED_CHANNELS: "imessage"
+    QWENPAW_PORT: "8088"
+    QWENPAW_DISABLED_CHANNELS: "imessage"
 
   # 资源限制
   resources:

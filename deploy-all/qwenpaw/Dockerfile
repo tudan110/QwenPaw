@@ -134,9 +134,9 @@ RUN pip install --no-cache-dir --timeout 600 --retries 5 .[ollama]
 RUN qwenpaw init --defaults --accept-security
 
 # Copy working directory data to backup (for PVC init on first start)
-COPY deploy-all/copaw/data/copaw/ /app/.working.backup/
+COPY deploy-all/qwenpaw/data/qwenpaw/ /app/.working.backup/
 # Copy secret directory data to backup
-COPY deploy-all/copaw/data/copaw.secret/ /app/.working.secret.backup/
+COPY deploy-all/qwenpaw/data/qwenpaw.secret/ /app/.working.secret.backup/
 
 # Create empty working directories (PVC will mount over these)
 RUN mkdir -p /app/working /app/working.secret
@@ -147,8 +147,8 @@ COPY knowledge/ /app/knowledge/
 # QwenPaw app port (default 8088). Override at runtime with -e QWENPAW_PORT=3000.
 ENV QWENPAW_PORT=8088
 
-COPY deploy-all/copaw/config/supervisord.conf.template /etc/supervisor/conf.d/supervisord.conf.template
-COPY --chmod=755 deploy-all/copaw/entrypoint.sh /entrypoint.sh
+COPY deploy-all/qwenpaw/config/supervisord.conf.template /etc/supervisor/conf.d/supervisord.conf.template
+COPY --chmod=755 deploy-all/qwenpaw/entrypoint.sh /entrypoint.sh
 
 EXPOSE 8088
 
