@@ -22,6 +22,7 @@ import {
   createRemoteSessionId,
   createUserMessage,
   extractCopawMessageText,
+  mergeStreamingText,
   mergeProcessBlocks,
   normalizeRemoteHistoryMessages,
   normalizeRemoteSessions,
@@ -175,6 +176,31 @@ export function useRemoteChatSession({
     scheduleStreamFlush();
   };
 
+  const appendAssistantContent = useCallback((
+    messageId: string,
+    incomingText: string,
+    { replace = false }: { replace?: boolean } = {},
+  ) => {
+    const nextText = String(incomingText || "");
+    if (!nextText) {
+      return;
+    }
+
+    setMessages((prevMessages) =>
+      prevMessages.map((message) => {
+        if (message.id !== messageId) {
+          return message;
+        }
+
+        const currentText = String(message.content || "");
+        return {
+          ...message,
+          content: replace ? nextText : mergeStreamingText(currentText, nextText),
+        };
+      }),
+    );
+  }, [setMessages]);
+
   const flushStreamUpdates = () => {
     if (flushTimerRef.current) {
       window.clearTimeout(flushTimerRef.current);
@@ -212,7 +238,7 @@ export function useRemoteChatSession({
           ...prevMessages,
           createAgentMessage(currentEmployeeRef.current, {
             id: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            processBlocks: [buildResponseBlock({ content: fallbackText })],
+            content: fallbackText,
           }),
         ]);
       }
@@ -222,14 +248,10 @@ export function useRemoteChatSession({
     const activeMessageId = activeAssistantMessageIdRef.current;
     setMessages((prevMessages) =>
       prevMessages.map((message) =>
-        message.id === activeMessageId &&
-        !message.content &&
-        !(message.processBlocks || []).some((block: any) => block.kind === "response")
+        message.id === activeMessageId && !message.content
           ? {
               ...message,
-              processBlocks: mergeProcessBlocks(message.processBlocks || [], [
-                buildResponseBlock({ content: fallbackText }),
-              ]),
+              content: fallbackText,
             }
           : message,
       ),
@@ -398,29 +420,19 @@ export function useRemoteChatSession({
       const assistantState = ensureAssistantMessage(event.id, employee);
       const finalText = extractCopawMessageText(event);
       if (event.status === "completed" && finalText) {
-        const responseBlock = buildResponseBlock(event, finalText);
-        appendProcessBlock(
-          assistantState.frontendId,
-          {
-            ...responseBlock,
-            replaceContent: true,
-          },
-        );
+        appendAssistantContent(assistantState.frontendId, finalText, {
+          replace: true,
+        });
       }
       return;
     }
 
     if (event.object === "content" && event.type === "text" && event.msg_id) {
       const assistantState = ensureAssistantMessage(event.msg_id, employee);
-        if (event.text) {
-          appendProcessBlock(
-            assistantState.frontendId,
-            buildResponseBlock({ id: event.msg_id }, event.text, {
-              preserveWhitespace: true,
-            }),
-          );
-        }
+      if (event.text) {
+        appendAssistantContent(assistantState.frontendId, event.text);
       }
+    }
   };
 
   const handleRemoteSendMessage = useCallback(async (

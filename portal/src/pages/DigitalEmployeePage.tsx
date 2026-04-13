@@ -3076,7 +3076,7 @@ export default function DigitalEmployeePage({
                         </strong>
                         <span>支持历史追溯、模型切换与专属能力调用</span>
                       </div>
-                      {isRemoteEmployee || isAlarmWorkbenchMode ? (
+                      {!isRemoteEmployee && isAlarmWorkbenchMode ? (
                         <span
                           className={
                             isAlarmWorkbenchMode
@@ -3119,12 +3119,14 @@ export default function DigitalEmployeePage({
                               onOpenConfig={openModelConfig}
                             />
                           ) : null}
-                          <button className="history-btn" onClick={() => void handleOpenHistory()}>
-                            <i className="fas fa-history" /> 已处理任务
-                          </button>
-                          <button className="history-btn new-chat-btn" onClick={handleStartNewConversation}>
-                            <i className="fas fa-plus" /> 新对话
-                          </button>
+                          <>
+                            <button className="history-btn" onClick={() => void handleOpenHistory()}>
+                              <i className="fas fa-history" /> 已处理任务
+                            </button>
+                            <button className="history-btn new-chat-btn" onClick={handleStartNewConversation}>
+                              <i className="fas fa-plus" /> 新对话
+                            </button>
+                          </>
                           <span className="capability-tag active static-tag">
                             <i className="fas fa-file-lines" /> 工单视图
                           </span>
@@ -3145,140 +3147,147 @@ export default function DigitalEmployeePage({
                               onOpenConfig={openModelConfig}
                             />
                           ) : null}
-                          <button className="history-btn" onClick={() => void handleOpenHistory()}>
-                            <i className="fas fa-history" /> 已处理任务
-                          </button>
-                          <button className="history-btn new-chat-btn" onClick={handleStartNewConversation}>
-                            <i className="fas fa-plus" /> 新对话
-                          </button>
+                          <>
+                            <button className="history-btn" onClick={() => void handleOpenHistory()}>
+                              <i className="fas fa-history" /> 已处理任务
+                            </button>
+                            <button className="history-btn new-chat-btn" onClick={handleStartNewConversation}>
+                              <i className="fas fa-plus" /> 新对话
+                            </button>
+                          </>
+                          <span className="capability-tag active static-tag">
+                            <i className="fas fa-file-lines" /> 工单视图
+                          </span>
                         </>
                       )}
                     </div>
                   </div>
                   ) : null}
 
-                  <div className="chat-messages">
-                    {safeMessages.map((message) => (
-                      <ChatMessageItem
-                        key={message.id}
-                        currentEmployee={currentEmployee}
-                        isStreamingMessage={
-                          Boolean(message.streaming) ||
-                          (isStreaming && message.id === activeAssistantMessageIdRef.current)
-                        }
-                        message={message}
-                        onDisposalAction={handleAlarmDisposalOperationRequest}
-                        onTicketAction={handleAlarmWorkbenchTicketAction}
-                        onTicketRefresh={() => void loadAlarmWorkorders()}
-                        ticketActionNotice={ticketActionNotice}
-                      />
-                    ))}
-                    <div ref={messagesEndRef} />
-                  </div>
-
-                  {!isAlarmWorkbenchMode ? (
-                    <div className="quick-commands">
-                      <div className="capabilities-row">
-                        {safeCapabilities.map((item) => (
-                          <span key={item} className="capability-label">
-                            {item}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="quick-cmd-row">
-                        {safeQuickCommands.map((command) => (
-                          <button
-                            key={command}
-                            className="quick-cmd"
-                            onClick={() => void handleSendMessage(command)}
-                            disabled={isCreatingChat || isStreaming}
-                          >
-                            <i className="fas fa-bolt" />
-                            {command}
-                          </button>
-                        ))}
-                      </div>
+                  <>
+                    <div className="chat-messages">
+                      {safeMessages.map((message) => (
+                        <ChatMessageItem
+                          key={message.id}
+                          currentEmployee={currentEmployee}
+                          isStreamingMessage={
+                            Boolean(message.streaming) ||
+                            (isStreaming && message.id === activeAssistantMessageIdRef.current)
+                          }
+                          message={message}
+                          onDisposalAction={handleAlarmDisposalOperationRequest}
+                          onTicketAction={handleAlarmWorkbenchTicketAction}
+                          onTicketRefresh={() => void loadAlarmWorkorders()}
+                          ticketActionNotice={ticketActionNotice}
+                        />
+                      ))}
+                      <div ref={messagesEndRef} />
                     </div>
-                  ) : null}
+
+                    {!isAlarmWorkbenchMode ? (
+                      <div className="quick-commands">
+                        <div className="capabilities-row">
+                          {safeCapabilities.map((item) => (
+                            <span key={item} className="capability-label">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="quick-cmd-row">
+                          {safeQuickCommands.map((command) => (
+                            <button
+                              key={command}
+                              className="quick-cmd"
+                              onClick={() => void handleSendMessage(command)}
+                              disabled={isCreatingChat || isStreaming}
+                            >
+                              <i className="fas fa-bolt" />
+                              {command}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="input-area">
                       <div className="input-hint-row">
                         <span>
                         输入自然语言即可开始协同办公，使用 <code>@数字员工名</code> 可让数字员工协作处理。
                         </span>
                       </div>
-                    <div className="input-wrapper">
-                      <div className={isCreatingChat ? "input-box disabled" : "input-box"}>
-                        <i className="fas fa-comment-dots" />
-                        <input
-                          ref={chatInputRef}
-                          type="text"
-                          value={inputMessage}
-                          disabled={isCreatingChat || isStreaming}
-                          onBlur={() => window.setTimeout(() => setInputCursor(null), 120)}
-                          onClick={handleInputSelection}
-                          onChange={(event) => {
-                            setInputMessage(event.target.value);
-                            setInputCursor(event.target.selectionStart ?? event.target.value.length);
-                          }}
-                          onKeyDown={(event) => handleComposerKeyDown(event)}
-                          onKeyUp={handleInputSelection}
-                          placeholder={`向 ${currentEmployee.name} 描述您的需求...`}
-                        />
-                      </div>
-                      {mentionSuggestions.length ? (
-                        <div className="mention-suggestions">
-                          {mentionSuggestions.map((item, index) => (
-                            <button
-                              key={`mention-${item.employee.id}`}
-                              type="button"
-                              className={
-                                index === mentionActiveIndex
-                                  ? "mention-suggestion active"
-                                  : "mention-suggestion"
-                              }
-                              onMouseDown={(event) => {
-                                event.preventDefault();
-                                applyMentionSuggestion(item.employee.name);
-                              }}
-                            >
-                              <DigitalEmployeeAvatar
-                                employee={item.employee}
-                                className="mention-suggestion-avatar"
-                              />
-                              <span className="mention-suggestion-copy">
-                                <strong>{item.employee.name}</strong>
-                                <small>{item.employee.desc}</small>
-                              </span>
-                            </button>
-                          ))}
+                      <div className="input-wrapper">
+                        <div className={isCreatingChat ? "input-box disabled" : "input-box"}>
+                          <i className="fas fa-comment-dots" />
+                          <input
+                            ref={chatInputRef}
+                            type="text"
+                            value={inputMessage}
+                            disabled={isCreatingChat || isStreaming}
+                            onBlur={() => window.setTimeout(() => setInputCursor(null), 120)}
+                            onClick={handleInputSelection}
+                            onChange={(event) => {
+                              setInputMessage(event.target.value);
+                              setInputCursor(event.target.selectionStart ?? event.target.value.length);
+                            }}
+                            onKeyDown={(event) => handleComposerKeyDown(event)}
+                            onKeyUp={handleInputSelection}
+                            placeholder={`向 ${currentEmployee.name} 描述您的需求...`}
+                          />
                         </div>
-                      ) : null}
-                      <button
-                        className={
-                          isCreatingChat
-                            ? "send-btn disabled"
-                            : isStreaming
-                              ? "send-btn stop-mode"
-                              : "send-btn"
-                        }
-                        onClick={() => {
-                          if (isStreaming) {
-                            stopActiveStream(true);
-                            return;
+                        {mentionSuggestions.length ? (
+                          <div className="mention-suggestions">
+                            {mentionSuggestions.map((item, index) => (
+                              <button
+                                key={`mention-${item.employee.id}`}
+                                type="button"
+                                className={
+                                  index === mentionActiveIndex
+                                    ? "mention-suggestion active"
+                                    : "mention-suggestion"
+                                }
+                                onMouseDown={(event) => {
+                                  event.preventDefault();
+                                  applyMentionSuggestion(item.employee.name);
+                                }}
+                              >
+                                <DigitalEmployeeAvatar
+                                  employee={item.employee}
+                                  className="mention-suggestion-avatar"
+                                />
+                                <span className="mention-suggestion-copy">
+                                  <strong>{item.employee.name}</strong>
+                                  <small>{item.employee.desc}</small>
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                        <button
+                          className={
+                            isCreatingChat
+                              ? "send-btn disabled"
+                              : isStreaming
+                                ? "send-btn stop-mode"
+                                : "send-btn"
                           }
-                          void handleSendMessage();
-                        }}
-                        disabled={isCreatingChat}
-                        aria-label={isStreaming ? "停止聊天" : "发送消息"}
-                      >
-                        {isStreaming ? (
-                          <span className="send-btn-stop-icon" aria-hidden="true" />
-                        ) : (
-                          <i className="fas fa-paper-plane" />
-                        )}
-                      </button>
+                          onClick={() => {
+                            if (isStreaming) {
+                              stopActiveStream(true);
+                              return;
+                            }
+                            void handleSendMessage();
+                          }}
+                          disabled={isCreatingChat}
+                          aria-label={isStreaming ? "停止聊天" : "发送消息"}
+                        >
+                          {isStreaming ? (
+                            <span className="send-btn-stop-icon" aria-hidden="true" />
+                          ) : (
+                            <i className="fas fa-paper-plane" />
+                          )}
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  </>
                 </>
               )}
             </div>

@@ -1,0 +1,203 @@
+.portal-qwenpaw-markdown {
+  color: inherit;
+  max-width: 100%;
+}
+
+.portal-qwenpaw-markdown blockquote {
+  padding-inline: 0.6em 0;
+  margin: 1em 0;
+  border-inline-start: 4px solid rgba(148, 163, 184, 0.35);
+  opacity: 0.88;
+}
+
+.portal-qwenpaw-markdown figure {
+  margin: 0;
+}
+
+.portal-qwenpaw-markdown p {
+  margin-bottom: 0.5714285714em;
+}
+
+.portal-qwenpaw-markdown h1,
+.portal-qwenpaw-markdown h2,
+.portal-qwenpaw-markdown h3,
+.portal-qwenpaw-markdown h4,
+.portal-qwenpaw-markdown h5,
+.portal-qwenpaw-markdown h6 {
+  margin-top: 0.5714285714em;
+  margin-bottom: 0.5714285714em;
+  font-weight: 500;
+  line-height: 1.7777;
+  color: inherit;
+}
+
+.portal-qwenpaw-markdown h1 {
+  font-size: 1.2857142857em;
+}
+
+.portal-qwenpaw-markdown h2 {
+  font-size: 1.1428571429em;
+}
+
+.portal-qwenpaw-markdown h3,
+.portal-qwenpaw-markdown h4,
+.portal-qwenpaw-markdown h5,
+.portal-qwenpaw-markdown h6 {
+  font-size: 1em;
+}
+
+.portal-qwenpaw-markdown hr {
+  border-color: rgba(148, 163, 184, 0.25);
+  border-style: solid;
+  border-width: 1px 0 0;
+  margin: 1em 0;
+}
+
+.portal-qwenpaw-markdown code {
+  font-size: 0.8571428571em;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  margin-inline: 3px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.14);
+  color: inherit;
+}
+
+.portal-qwenpaw-markdown pre code {
+  border: none;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.portal-qwenpaw-markdown table {
+  border-collapse: collapse;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
+}
+
+.portal-qwenpaw-markdown table th {
+  background: rgba(148, 163, 184, 0.12);
+  text-align: left;
+}
+
+.portal-qwenpaw-markdown table td,
+.portal-qwenpaw-markdown table th {
+  padding: 0.75em 1.5em;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  white-space: pre;
+}
+
+.portal-qwenpaw-markdown img {
+  margin: 0;
+  max-width: 480px;
+}
+
+.portal-qwenpaw-markdown > *:first-child {
+  margin-top: 0 !important;
+}
+
+.portal-qwenpaw-markdown > *:last-child {
+  margin-bottom: 0 !important;
+}
+
+.portal-qwenpaw-code-block {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 1em 0;
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.portal-qwenpaw-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 12px;
+  background: rgba(148, 163, 184, 0.12);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  user-select: none;
+}
+
+.portal-qwenpaw-code-header-lang {
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: lowercase;
+}
+
+.portal-qwenpaw-code-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.portal-qwenpaw-code-header-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.portal-qwenpaw-code-body {
+  background: #fff;
+}
+
+.portal-qwenpaw-code-body pre {
+  margin: 0 !important;
+  overflow: auto;
+}
+
+.portal-qwenpaw-markdown-footnotes > h2,
+.portal-qwenpaw-markdown-footnotes [data-footnote-backref] {
+  display: none;
+}
+
+.portal-qwenpaw-markdown-footnotes > ol {
+  margin: 0 0 0 1em;
+}
+
+.portal-digital-employee.theme-dark .portal-qwenpaw-markdown blockquote {
+  border-inline-start-color: rgba(148, 163, 184, 0.28);
+}
+
+.portal-digital-employee.theme-dark .portal-qwenpaw-markdown code {
+  background: rgba(148, 163, 184, 0.18);
+  border-color: rgba(148, 163, 184, 0.18);
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .portal-qwenpaw-markdown hr {
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+.portal-digital-employee.theme-dark .portal-qwenpaw-markdown table th {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.portal-digital-employee.theme-dark .portal-qwenpaw-markdown table td,
+.portal-digital-employee.theme-dark .portal-qwenpaw-markdown table th {
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+.portal-digital-employee.theme-dark .portal-qwenpaw-code-block {
+  background: #111827;
+  border-color: #334155;
+}
+
+.portal-digital-employee.theme-dark .portal-qwenpaw-code-header {
+  background: rgba(148, 163, 184, 0.1);
+  border-bottom-color: #334155;
+}
+
+.portal-digital-employee.theme-dark .portal-qwenpaw-code-body {
+  background: #0f172a;
+}

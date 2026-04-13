@@ -1810,38 +1810,38 @@
   color: #e2e8f0;
 }
 
-.portal-digital-employee.theme-dark .markdown-bubble :not(pre) > code {
+.portal-digital-employee.theme-dark .markdown-bubble > *:not(.portal-x-markdown) :not(pre) > code {
   background: rgba(148, 163, 184, 0.18);
   color: #e2e8f0;
 }
 
-.portal-digital-employee.theme-dark .markdown-bubble table {
+.portal-digital-employee.theme-dark .markdown-bubble > *:not(.portal-x-markdown) table {
   background: #182235;
   border-color: #2a3b56;
   color: #e2e8f0;
 }
 
-.portal-digital-employee.theme-dark .markdown-bubble th,
-.portal-digital-employee.theme-dark .markdown-bubble td {
+.portal-digital-employee.theme-dark .markdown-bubble > *:not(.portal-x-markdown) th,
+.portal-digital-employee.theme-dark .markdown-bubble > *:not(.portal-x-markdown) td {
   border-bottom-color: rgba(148, 163, 184, 0.18);
 }
 
-.portal-digital-employee.theme-dark .markdown-bubble th {
+.portal-digital-employee.theme-dark .markdown-bubble > *:not(.portal-x-markdown) th {
   background: rgba(148, 163, 184, 0.12);
   color: #f8fafc;
 }
 
-.portal-digital-employee.theme-dark .message.user .markdown-bubble table {
+.portal-digital-employee.theme-dark .message.user .markdown-bubble > *:not(.portal-x-markdown) table {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.16);
 }
 
-.portal-digital-employee.theme-dark .message.user .markdown-bubble th,
-.portal-digital-employee.theme-dark .message.user .markdown-bubble td {
+.portal-digital-employee.theme-dark .message.user .markdown-bubble > *:not(.portal-x-markdown) th,
+.portal-digital-employee.theme-dark .message.user .markdown-bubble > *:not(.portal-x-markdown) td {
   border-bottom-color: rgba(255, 255, 255, 0.14);
 }
 
-.portal-digital-employee.theme-dark .message.user .markdown-bubble th {
+.portal-digital-employee.theme-dark .message.user .markdown-bubble > *:not(.portal-x-markdown) th {
   background: rgba(255, 255, 255, 0.12);
 }
 
@@ -4148,6 +4148,21 @@
   gap: 12px;
 }
 
+.portal-digital-employee .portal-runtime-chat-shell {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-white);
+}
+
+.portal-digital-employee .portal-runtime-chat-shell > * {
+  flex: 1;
+  min-height: 0;
+}
+
 .portal-digital-employee .message {
   display: flex;
   gap: 12px;
@@ -4299,52 +4314,52 @@
   margin-bottom: 0;
 }
 
-.portal-digital-employee .markdown-bubble p,
-.portal-digital-employee .markdown-bubble ul,
-.portal-digital-employee .markdown-bubble ol,
-.portal-digital-employee .markdown-bubble pre,
-.portal-digital-employee .markdown-bubble table,
-.portal-digital-employee .markdown-bubble blockquote {
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) p,
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) ul,
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) ol,
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) pre,
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) table,
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) blockquote {
   margin: 0 0 12px;
 }
 
-.portal-digital-employee .markdown-bubble ul,
-.portal-digital-employee .markdown-bubble ol {
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) ul,
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) ol {
   padding-left: 22px;
 }
 
-.portal-digital-employee .markdown-bubble li + li {
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) li + li {
   margin-top: 4px;
 }
 
-.portal-digital-employee .markdown-bubble h1,
-.portal-digital-employee .markdown-bubble h2,
-.portal-digital-employee .markdown-bubble h3,
-.portal-digital-employee .markdown-bubble h4 {
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) h1,
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) h2,
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) h3,
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) h4 {
   margin: 0 0 10px;
   line-height: 1.35;
 }
 
-.portal-digital-employee .markdown-bubble code {
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) code {
   font-family:
     "SFMono-Regular", SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas,
     "Liberation Mono", "Courier New", monospace;
   font-size: 12px;
 }
 
-.portal-digital-employee .markdown-bubble :not(pre) > code {
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) :not(pre) > code {
   padding: 2px 6px;
   border-radius: 6px;
   background: rgba(15, 23, 42, 0.08);
   color: #0f172a;
 }
 
-.portal-digital-employee .message.user .markdown-bubble :not(pre) > code {
+.portal-digital-employee .message.user .markdown-bubble > *:not(.portal-x-markdown) :not(pre) > code {
   background: rgba(255, 255, 255, 0.16);
   color: #fff;
 }
 
-.portal-digital-employee .markdown-bubble pre {
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) pre {
   overflow-x: auto;
   padding: 14px 16px;
   border-radius: 12px;
@@ -4352,17 +4367,17 @@
   color: #e2e8f0;
 }
 
-.portal-digital-employee .message.user .markdown-bubble pre {
+.portal-digital-employee .message.user .markdown-bubble > *:not(.portal-x-markdown) pre {
   background: rgba(15, 23, 42, 0.3);
 }
 
-.portal-digital-employee .markdown-bubble pre code {
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) pre code {
   color: inherit;
   background: transparent;
   padding: 0;
 }
 
-.portal-digital-employee .markdown-bubble table {
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) table {
   width: 100%;
   border-collapse: collapse;
   overflow: hidden;
@@ -4371,34 +4386,34 @@
   background: rgba(255, 255, 255, 0.72);
 }
 
-.portal-digital-employee .markdown-bubble th,
-.portal-digital-employee .markdown-bubble td {
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) th,
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) td {
   padding: 10px 12px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
   text-align: left;
   vertical-align: top;
 }
 
-.portal-digital-employee .markdown-bubble th {
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) th {
   background: rgba(59, 130, 246, 0.08);
   font-weight: 600;
 }
 
-.portal-digital-employee .message.user .markdown-bubble table {
+.portal-digital-employee .message.user .markdown-bubble > *:not(.portal-x-markdown) table {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.18);
 }
 
-.portal-digital-employee .message.user .markdown-bubble th,
-.portal-digital-employee .message.user .markdown-bubble td {
+.portal-digital-employee .message.user .markdown-bubble > *:not(.portal-x-markdown) th,
+.portal-digital-employee .message.user .markdown-bubble > *:not(.portal-x-markdown) td {
   border-bottom-color: rgba(255, 255, 255, 0.14);
 }
 
-.portal-digital-employee .message.user .markdown-bubble th {
+.portal-digital-employee .message.user .markdown-bubble > *:not(.portal-x-markdown) th {
   background: rgba(255, 255, 255, 0.12);
 }
 
-.portal-digital-employee .markdown-bubble blockquote {
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) blockquote {
   padding: 10px 14px;
   border-left: 4px solid rgba(59, 130, 246, 0.5);
   background: rgba(59, 130, 246, 0.06);
@@ -4406,16 +4421,30 @@
   border-radius: 8px;
 }
 
-.portal-digital-employee .message.user .markdown-bubble blockquote {
+.portal-digital-employee .message.user .markdown-bubble > *:not(.portal-x-markdown) blockquote {
   border-left-color: rgba(255, 255, 255, 0.5);
   background: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.88);
 }
 
-.portal-digital-employee .markdown-bubble a {
+.portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) a {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+.portal-digital-employee .markdown-bubble .portal-x-markdown {
+  font-size: 14px;
+  line-height: 1.75;
+  background: transparent;
+}
+
+.portal-digital-employee .markdown-bubble .portal-x-markdown table {
+  width: 100%;
+}
+
+.portal-digital-employee .markdown-bubble .portal-x-markdown pre {
+  overflow-x: auto;
 }
 
 .portal-digital-employee .process-trace {

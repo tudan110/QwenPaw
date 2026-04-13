@@ -23,6 +23,61 @@ interface StreamChatOptions {
   onEvent?: (event: Record<string, any>) => void;
 }
 
+function safeJsonParse(value: string) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function extractErrorMessage(error: unknown): string {
+  if (!error) {
+    return "";
+  }
+
+  if (typeof error === "string") {
+    const trimmed = error.trim();
+    if (!trimmed) {
+      return "";
+    }
+
+    const parsed = safeJsonParse(trimmed);
+    if (parsed && parsed !== error) {
+      const nestedMessage = extractErrorMessage(parsed);
+      if (nestedMessage) {
+        return nestedMessage;
+      }
+    }
+
+    return trimmed;
+  }
+
+  if (error instanceof Error) {
+    return extractErrorMessage(error.message) || "请求失败";
+  }
+
+  if (Array.isArray(error)) {
+    return error
+      .map((item) => extractErrorMessage(item))
+      .filter(Boolean)
+      .join("; ");
+  }
+
+  if (typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    return (
+      extractErrorMessage(record.message) ||
+      extractErrorMessage(record.detail) ||
+      extractErrorMessage(record.error) ||
+      extractErrorMessage(record.reason) ||
+      ""
+    );
+  }
+
+  return String(error);
+}
+
 function getAgentCandidates(agentId?: string) {
   const fallbackAgentId =
     import.meta.env.VITE_COPAW_FALLBACK_AGENT_ID || DEFAULT_FALLBACK_AGENT_ID;
@@ -62,11 +117,15 @@ async function requestCopaw<T = any>(
     lastStatus = response.status;
     lastErrorText = await response.text().catch(() => "");
     if (!isMissingAgentResponse(response.status, lastErrorText)) {
-      throw new Error(lastErrorText || `CoPAW 请求失败：${response.status}`);
+      throw new Error(
+        extractErrorMessage(lastErrorText) || `CoPAW 请求失败：${response.status}`,
+      );
     }
   }
 
-  throw new Error(lastErrorText || `CoPAW 请求失败：${lastStatus}`);
+  throw new Error(
+    extractErrorMessage(lastErrorText) || `CoPAW 请求失败：${lastStatus}`,
+  );
 }
 
 export function listChats(agentId?: string, params: ChatListParams = {}) {
@@ -150,12 +209,17 @@ export async function streamChat(
     lastStatus = candidateResponse.status;
     lastErrorText = await candidateResponse.text().catch(() => "");
     if (!isMissingAgentResponse(candidateResponse.status, lastErrorText)) {
-      throw new Error(lastErrorText || `CoPAW 流式请求失败：${candidateResponse.status}`);
+      throw new Error(
+        extractErrorMessage(lastErrorText) ||
+          `CoPAW 流式请求失败：${candidateResponse.status}`,
+      );
     }
   }
 
   if (!response) {
-    throw new Error(lastErrorText || `CoPAW 流式请求失败：${lastStatus}`);
+    throw new Error(
+      extractErrorMessage(lastErrorText) || `CoPAW 流式请求失败：${lastStatus}`,
+    );
   }
 
   if (!response.body) {
@@ -182,7 +246,9 @@ export async function streamChat(
         continue;
       }
       if (event.error) {
-        throw new Error(String(event.error));
+        throw new Error(
+          extractErrorMessage(event.error) || "CoPAW 流式请求失败",
+        );
       }
       onEvent?.(event);
     }
@@ -191,7 +257,9 @@ export async function streamChat(
   const finalEvent = parseSseChunk(buffer);
   if (finalEvent) {
     if (finalEvent.error) {
-      throw new Error(String(finalEvent.error));
+      throw new Error(
+        extractErrorMessage(finalEvent.error) || "CoPAW 流式请求失败",
+      );
     }
     onEvent?.(finalEvent);
   }

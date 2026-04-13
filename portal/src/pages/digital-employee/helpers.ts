@@ -24,7 +24,7 @@ export type PortalAdvancedPanel = (typeof PORTAL_ADVANCED_PANEL_OPTIONS)[number]
 export type PortalRouteSection = (typeof PORTAL_ROUTE_SECTION_OPTIONS)[number];
 
 export type VisualBlock = {
-  type: "echarts" | "mermaid" | "portal-visualization";
+  type: "echarts" | "portal-visualization";
   raw: string;
 };
 
@@ -550,13 +550,13 @@ export function normalizeRemoteHistoryMessages(
     }
 
     if (message.role === "assistant" && (!message.type || message.type === "message")) {
-      const block = buildResponseBlock(message);
-      if (!block.content) {
+      const textContent = extractCopawMessageText(message);
+      if (!textContent) {
         continue;
       }
-      activeAgentMessage.processBlocks = mergeProcessBlocks(
-        activeAgentMessage.processBlocks,
-        [block],
+      activeAgentMessage.content = mergeStreamingText(
+        activeAgentMessage.content || "",
+        textContent,
       );
     }
   }
@@ -777,11 +777,17 @@ function normalizeContentToText(content: any): string {
     return content;
   }
   if (Array.isArray(content)) {
-    return content.map((item) => normalizeContentToText(item)).join("");
+    return content
+      .map((item) => normalizeContentToText(item))
+      .filter((item) => item !== "")
+      .join("\n");
   }
   if (typeof content === "object") {
     if (typeof content.text === "string") {
       return content.text;
+    }
+    if (typeof content.content === "string") {
+      return content.content;
     }
     if (Array.isArray(content.content)) {
       return normalizeContentToText(content.content);
@@ -998,24 +1004,147 @@ export function normalizeMarkdownDisplayContent(
   if (isStreaming) {
     normalized = normalized
       .replace(/```echarts\s*[\s\S]*?```/gi, "")
-      .replace(/```mermaid\s*[\s\S]*?```/gi, "")
       .replace(/```portal-visualization\s*[\s\S]*?```/gi, "")
       .replace(/```portal-action[\s\S]*$/i, "")
       .replace(/```json\s*([\s\S]*?)```/gi, (fullMatch, raw) =>
         looksLikeEChartsConfig(raw) ? "" : fullMatch,
       )
       .replace(/```echarts[\s\S]*$/i, "\n\n> 图表加载中，正在生成可视化配置...\n\n")
-      .replace(/```mermaid[\s\S]*$/i, "\n\n> 拓扑图加载中，正在生成可视化配置...\n\n")
-      .replace(/```portal-visualization[\s\S]*$/i, "\n\n> 图表加载中，正在生成可视化配置...\n\n")
-      .replace(/```json[\s\S]*$/i, "\n\n> 图表加载中，正在生成可视化配置...\n\n");
+      .replace(/```portal-visualization[\s\S]*$/i, "\n\n> 图表加载中，正在生成可视化配置...\n\n");
   } else {
-    normalized = normalized.replace(/```(?:echarts|mermaid|portal-visualization)\s*[\s\S]*?```/gi, "");
+    normalized = normalized.replace(/```(?:echarts|portal-visualization)\s*[\s\S]*?```/gi, "");
     normalized = normalized.replace(/```json\s*([\s\S]*?)```/gi, (fullMatch, raw) => {
       return looksLikeEChartsConfig(raw) ? "" : fullMatch;
     });
   }
 
   return normalized;
+}
+
+function normalizeMarkdownStructure(
+  content: string,
+  { isStreaming = false }: { isStreaming?: boolean } = {},
+) {
+  const segments = splitMarkdownByCodeFence(content);
+  const normalized = segments
+    .map((segment) =>
+      segment.type === "code"
+        ? segment.content
+        : normalizeMarkdownTextSegment(segment.content, { isStreaming }),
+    )
+    .join("");
+
+  return isStreaming ? closeUnbalancedMarkdownFence(normalized) : normalized;
+}
+
+function splitMarkdownByCodeFence(content: string) {
+  const lines = String(content || "").split("\n");
+  const segments: Array<{ type: "text" | "code"; content: string }> = [];
+  const textBuffer: string[] = [];
+  const codeBuffer: string[] = [];
+  let activeFence = "";
+
+  const flushText = () => {
+    if (!textBuffer.length) {
+      return;
+    }
+    segments.push({ type: "text", content: `${textBuffer.join("\n")}\n` });
+    textBuffer.length = 0;
+  };
+
+  const flushCode = () => {
+    if (!codeBuffer.length) {
+      return;
+    }
+    segments.push({ type: "code", content: `${codeBuffer.join("\n")}\n` });
+    codeBuffer.length = 0;
+  };
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    const fenceMatch = trimmed.match(/^(`{3,}|~{3,})/);
+
+    if (activeFence) {
+      codeBuffer.push(line);
+      if (fenceMatch && trimmed.startsWith(activeFence)) {
+        activeFence = "";
+        flushCode();
+      }
+      return;
+    }
+
+    if (fenceMatch) {
+      flushText();
+      activeFence = fenceMatch[1];
+      codeBuffer.push(line);
+      if (index === lines.length - 1 && !activeFence) {
+        flushCode();
+      }
+      return;
+    }
+
+    textBuffer.push(line);
+  });
+
+  if (codeBuffer.length) {
+    flushCode();
+  }
+  if (textBuffer.length) {
+    flushText();
+  }
+
+  return segments;
+}
+
+function normalizeMarkdownTextSegment(
+  content: string,
+  { isStreaming = false }: { isStreaming?: boolean } = {},
+) {
+  let normalized = String(content || "").replace(/\r\n?/g, "\n");
+
+  normalized = normalized
+    .replace(/([^\n])((?:#{1,6})(?=\s*[^\s#]))/g, "$1\n\n$2")
+    .replace(/([^\n])((?:[-*+]\s+[^\s]|\d+\.\s+[^\s]))/g, "$1\n$2")
+    .replace(/([^\n])(```)/g, "$1\n\n$2")
+    .replace(/(^|\n)(#{1,6})(?=\S)/g, "$1$2 ")
+    .replace(/(^|\n)([-*+])(?=\S)/g, "$1$2 ")
+    .replace(/(^|\n)(\d+)\.(?=\S)/g, "$1$2. ");
+
+  if (isStreaming) {
+    normalized = normalized.replace(/\n{4,}/g, "\n\n\n");
+  }
+
+  return normalized;
+}
+
+function closeUnbalancedMarkdownFence(content: string) {
+  const lines = String(content || "").split("\n");
+  let activeFence = "";
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const fenceMatch = trimmed.match(/^(`{3,}|~{3,})/);
+    if (!fenceMatch) {
+      continue;
+    }
+
+    const fence = fenceMatch[1];
+    if (activeFence && trimmed.startsWith(activeFence)) {
+      activeFence = "";
+      continue;
+    }
+
+    if (!activeFence) {
+      activeFence = fence;
+    }
+  }
+
+  if (!activeFence) {
+    return content;
+  }
+
+  const suffix = content.endsWith("\n") ? "" : "\n";
+  return `${content}${suffix}${activeFence}`;
 }
 
 function normalizeOperationalMarkdownSections(content: string) {
@@ -1135,13 +1264,6 @@ export function extractVisualBlocks(content: string): VisualBlock[] {
       });
       continue;
     }
-    if (type === "mermaid") {
-      blocks.push({
-        type: "mermaid",
-        raw,
-      });
-      continue;
-    }
     if (type === "portal-visualization") {
       blocks.push({
         type: "portal-visualization",
@@ -1155,9 +1277,23 @@ export function extractVisualBlocks(content: string): VisualBlock[] {
 
 function unwrapOuterMarkdownFence(content: string) {
   const normalized = String(content || "").trim();
-  const match = normalized.match(/^```(?:markdown|md|text)?\s*\n([\s\S]*?)\n```$/i);
-  if (!match?.[1]) {
+  if (!normalized) {
+    return "";
+  }
+
+  const lines = normalized.split("\n");
+  const openingLine = lines[0]?.trim() || "";
+  const openingMatch = openingLine.match(/^(`{3,}|~{3,})(?:markdown|md|text)?\s*$/i);
+  if (!openingMatch) {
     return normalized;
   }
-  return match[1].trim();
+
+  const fence = openingMatch[1];
+  const bodyLines = lines.slice(1);
+  const lastLine = bodyLines[bodyLines.length - 1]?.trim() || "";
+  if (lastLine === fence) {
+    bodyLines.pop();
+  }
+
+  return bodyLines.join("\n").trim();
 }

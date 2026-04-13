@@ -1,10 +1,8 @@
 import { memo, useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { employeeStepDescriptions } from "../../data/portalData";
 import { EChartsBlock } from "../../components/EChartsBlock";
-import { MermaidBlock } from "../../components/MermaidBlock";
 import { PortalVisualizationBlock } from "../../components/PortalVisualizationBlock";
+import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
 import {
   extractVisualBlocks,
   extractPortalActionPayload,
@@ -206,13 +204,17 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   const latestResponseContent = [...(message.processBlocks || [])]
     .reverse()
     .find((block: any) => block?.kind === "response" && block.content)?.content || "";
+  const renderedMessageContent = message.content || latestResponseContent;
+  const traceBlocks = (message.processBlocks || []).filter(
+    (block: any) => block?.kind !== "response",
+  );
   const hasWorkorders =
     Boolean(message.workorders?.length) ||
     Boolean(message.workordersLoading) ||
     Boolean(message.workordersError);
   const effectiveDisposalOperation =
     message.disposalOperation ||
-    extractPortalActionPayload(message.content || latestResponseContent);
+    extractPortalActionPayload(renderedMessageContent);
   const shouldShowDisposalOperation =
     Boolean(effectiveDisposalOperation) &&
     effectiveDisposalOperation.status !== "success" &&
@@ -227,18 +229,10 @@ export const ChatMessageItem = memo(function ChatMessageItem({
         <i className={`fas ${message.type === "user" ? "fa-user" : message.icon}`} />
       </div>
       <div className="message-content">
-        {message.processBlocks?.length ? (
+        {traceBlocks.length ? (
           <div className="process-trace">
-            {message.processBlocks.map((block: any, index: number) =>
-              block.kind === "response" ? (
-                <ResponseTraceBlock
-                  key={block.id}
-                  block={block}
-                  isStreaming={
-                    isStreamingMessage && index === message.processBlocks.length - 1
-                  }
-                />
-              ) : (
+            {traceBlocks.map((block: any) =>
+              (
                 <details
                   key={block.id}
                   className={`trace-block ${block.kind}`}
@@ -261,7 +255,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
                     )}
                   </div>
                 </details>
-              ),
+              )
             )}
           </div>
         ) : null}
@@ -283,7 +277,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
               workorders={message.workorders || []}
             />
           </div>
-        ) : message.content ? (
+        ) : renderedMessageContent ? (
           <div
             className={
               isStreamingMessage
@@ -292,17 +286,17 @@ export const ChatMessageItem = memo(function ChatMessageItem({
             }
           >
             <MessageMarkdown
-              content={message.content}
+              content={renderedMessageContent}
               isStreaming={isStreamingMessage}
             />
             {isStreamingMessage ? <span className="streaming-cursor" /> : null}
           </div>
         ) : null}
 
-        {message.type === "agent" && message.content && !hasWorkorders && !isStreamingMessage ? (
+        {message.type === "agent" && renderedMessageContent && !hasWorkorders && !isStreamingMessage ? (
           <div className="message-copy-row">
             <CopyActionButton
-              text={String(message.content || "").trim()}
+              text={String(renderedMessageContent || "").trim()}
               label="复制回复"
               buttonClassName="message-copy-btn"
               iconClassName="message-copy-icon"
@@ -637,9 +631,13 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   isStreaming?: boolean;
 }) {
   const visualBlocks = extractVisualBlocks(content);
-  const normalizedContent = normalizeMarkdownDisplayContent(content, {
+  const normalizedContent = stripFrontmatter(normalizeMarkdownDisplayContent(content, {
     isStreaming,
-  });
+  }));
+  const isDarkTheme =
+    typeof document !== "undefined"
+    && document.querySelector(".portal-digital-employee")?.classList.contains("theme-dark");
+  const markdownThemeClass = isDarkTheme ? "x-markdown-dark" : "x-markdown-light";
   const hasText = Boolean(normalizedContent.trim());
   const visualContainer = visualBlocks.length ? (
     <div style={{ display: "grid", gap: 16, marginTop: hasText && !isStreaming ? 16 : 0, marginBottom: isStreaming && hasText ? 16 : 0 }}>
@@ -654,12 +652,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
             key={`portal-visualization-${index}`}
             raw={block.raw}
           />
-        ) : (
-          <MermaidBlock
-            key={`mermaid-${index}`}
-            chart={block.raw}
-          />
-        ),
+        ) : null,
       )}
     </div>
   ) : null;
@@ -667,24 +660,16 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   return (
     <>
       {isStreaming ? visualContainer : null}
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ node, ...props }) => (
-            <a {...props} target="_blank" rel="noreferrer" />
-          ),
-          code: ({ node, className, children, inline, ...props }: any) => {
-            return (
-              <code className={className} {...props}>
-                {children}
-              </code>
-            );
-          },
-        }}
-      >
-        {normalizedContent}
-      </ReactMarkdown>
+      <PortalQwenPawMarkdown
+        className={`portal-x-markdown ${markdownThemeClass}`}
+        content={normalizedContent}
+        isStreaming={isStreaming}
+      />
       {!isStreaming ? visualContainer : null}
     </>
   );
 });
+
+function stripFrontmatter(content: string) {
+  return String(content || "").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+}
