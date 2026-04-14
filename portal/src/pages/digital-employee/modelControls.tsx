@@ -210,7 +210,7 @@ export function AdvancedModelEntry({
   onOpenInspiration: () => void;
   onOpenCli: () => void;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
 
   return (
     <div className="sidebar-advanced">
