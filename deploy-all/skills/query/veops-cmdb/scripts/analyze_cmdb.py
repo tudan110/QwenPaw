@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-VEOPS CMDB 汇总与图表脚本
+CMDB 汇总与图表脚本
 
 使用方式：
     python3 scripts/analyze_cmdb.py --mode summary --output markdown
@@ -314,7 +314,7 @@ def render_chart_only_markdown(result: Dict[str, Any]) -> str:
 
 def render_markdown(result: Dict[str, Any]) -> str:
     mode = result["mode"]
-    lines: List[str] = ["# VEOPS CMDB 分析结果", ""]
+    lines: List[str] = ["# CMDB 分析结果", ""]
 
     if mode == "summary":
         summary = result["summary"]
@@ -428,7 +428,7 @@ def print_result(result: Dict[str, Any], output_format: str) -> None:
         print(
             "\n".join(
                 [
-                    "# VEOPS CMDB 分析失败",
+                    "# 分析失败",
                     "",
                     f"- 错误码：{result.get('code', '-')}",
                     f"- 错误信息：{result.get('msg', '未知错误')}",
@@ -447,7 +447,7 @@ def print_result(result: Dict[str, Any], output_format: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="VEOPS CMDB 汇总与图表输出")
+    parser = argparse.ArgumentParser(description="CMDB 汇总与图表输出")
     parser.add_argument("--mode", choices=sorted(ALLOWED_MODES), default="summary")
     parser.add_argument("--output", choices=sorted(ALLOWED_OUTPUTS), default="markdown")
     args = parser.parse_args()
@@ -459,7 +459,7 @@ def main() -> int:
         print(
             "\n".join(
                 [
-                    "# VEOPS CMDB 分析失败",
+                    "# 分析失败",
                     "",
                     f"- 错误信息：缺少环境变量文件 {env_path}",
                 ]
