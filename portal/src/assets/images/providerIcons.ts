@@ -12,7 +12,9 @@ import lmstudioIcon from "./provider-icons/lmstudio.png";
 import minimaxIcon from "./provider-icons/minimax.png";
 import modelscopeIcon from "./provider-icons/modelscope.png";
 import ollamaIcon from "./provider-icons/ollama.png";
+import opencodeIcon from "./provider-icons/opencode.png";
 import openaiIcon from "./provider-icons/openai.png";
+import openrouterIcon from "./provider-icons/openrouter.png";
 import siliconflowIcon from "./provider-icons/siliconflow.png";
 import zhipuIcon from "./provider-icons/zhipu.png";
 
@@ -27,9 +29,11 @@ export const PROVIDER_ICON_BY_ID: Record<string, string> = {
   "kimi-intl": kimiIcon,
   anthropic: anthropicIcon,
   ollama: ollamaIcon,
+  opencode: opencodeIcon,
   "minimax-cn": minimaxIcon,
   minimax: minimaxIcon,
   openai: openaiIcon,
+  openrouter: openrouterIcon,
   "siliconflow-cn": siliconflowIcon,
   "siliconflow-intl": siliconflowIcon,
   dashscope: dashscopeIcon,
@@ -59,6 +63,12 @@ export function getProviderFallbackIcon(key: string) {
   }
   if (key.includes("openai")) {
     return openaiIcon;
+  }
+  if (key.includes("openrouter")) {
+    return openrouterIcon;
+  }
+  if (key.includes("opencode")) {
+    return opencodeIcon;
   }
   if (key.includes("siliconflow")) {
     return siliconflowIcon;
