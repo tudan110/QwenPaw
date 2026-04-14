@@ -566,9 +566,9 @@ function enhanceToolbox(
 
   nextOption.toolbox = {
     show: true,
-    right: 16,
-    top: 16,
-    itemSize: 18,
+    right: 2,
+    top: 2,
+    itemSize: 16,
     iconStyle: {
       borderColor: "#64748b",
     },
