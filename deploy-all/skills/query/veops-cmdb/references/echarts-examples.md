@@ -1,6 +1,6 @@
 # ECharts 示例
 
-下面是本技能最常见的 3 类图。
+下面是本技能最常见的 4 类图。
 
 ## 模型分组分布饼图
 
@@ -102,6 +102,105 @@
       "type": "bar",
       "barMaxWidth": 40,
       "data": [1, 1, 1, 1]
+    }
+  ]
+}
+```
+
+## 应用关系拓扑树图（从左到右）
+
+```echarts
+{
+  "title": {
+    "text": "应用关系拓扑",
+    "left": "center"
+  },
+  "tooltip": {
+    "trigger": "item",
+    "triggerOn": "mousemove"
+  },
+  "series": [
+    {
+      "type": "tree",
+      "orient": "LR",
+      "top": "8%",
+      "left": "8%",
+      "bottom": "8%",
+      "right": "22%",
+      "symbol": "emptyCircle",
+      "symbolSize": 10,
+      "expandAndCollapse": true,
+      "initialTreeDepth": -1,
+      "label": {
+        "position": "left",
+        "verticalAlign": "middle",
+        "align": "right",
+        "fontSize": 12
+      },
+      "leaves": {
+        "label": {
+          "position": "right",
+          "verticalAlign": "middle",
+          "align": "left"
+        }
+      },
+      "lineStyle": {
+        "curveness": 0.5
+      },
+      "data": [
+        {
+          "name": "实际应用名",
+          "children": [
+            {
+              "name": "所属产品",
+              "children": [
+                { "name": "实际产品名" }
+              ]
+            },
+            {
+              "name": "运行资源",
+              "children": [
+                {
+                  "name": "虚拟机",
+                  "children": [
+                    { "name": "vserver-01" }
+                  ]
+                },
+                {
+                  "name": "中间件",
+                  "children": [
+                    { "name": "Kafka" },
+                    { "name": "Redis" }
+                  ]
+                },
+                {
+                  "name": "数据库",
+                  "children": [
+                    { "name": "PostgreSQL" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "基础设施",
+              "children": [
+                {
+                  "name": "机柜",
+                  "children": [
+                    { "name": "Rack-A01" }
+                  ]
+                },
+                {
+                  "name": "IP 地址",
+                  "children": [
+                    { "name": "192.168.130.101" }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }
