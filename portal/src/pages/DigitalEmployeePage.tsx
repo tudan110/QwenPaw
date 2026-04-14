@@ -60,6 +60,7 @@ import { useAlarmWorkbench } from "./digital-employee/useAlarmWorkbench";
 import { usePortalModels } from "./digital-employee/usePortalModels";
 import { useRemoteChatSession } from "./digital-employee/useRemoteChatSession";
 import { portalAppTitle } from "../config/portalBranding";
+import portalLogo from "../assets/images/portal-logo.png";
 import "./digital-employee.css";
 
 const sidebarEmployeePriority = [
@@ -2368,7 +2369,7 @@ export default function DigitalEmployeePage({
             }
           >
             <div className="logo-icon">
-              <i className="fas fa-brain" />
+              <img src={portalLogo} alt={portalAppTitle} className="logo-icon-image" />
             </div>
             <div className="logo-text">
               <h1>{portalAppTitle}</h1>
@@ -2952,10 +2953,10 @@ export default function DigitalEmployeePage({
                       <span className="portal-home-orbit-ring outer" />
                       <span className="portal-home-orbit-ring inner" />
                       <span className="portal-home-orbit-core">
-                        <i className="fas fa-brain" />
+                        <img src={portalLogo} alt="智观 AI" className="portal-home-orbit-image" />
                       </span>
                     </div>
-                    <h2>数字员工聊天门户</h2>
+                    <h2>智观 AI</h2>
                     <p>以对话方式发起运维协同</p>
                   </div>
 

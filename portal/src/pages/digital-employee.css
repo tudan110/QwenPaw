@@ -121,17 +121,19 @@
 .portal-digital-employee .logo-icon {
   width: 44px;
   height: 44px;
-  background: linear-gradient(135deg, var(--primary), var(--purple));
-  border-radius: 14px;
+  background: transparent;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  box-shadow: none;
+  overflow: hidden;
 }
 
-.portal-digital-employee .logo-icon i {
-  font-size: 22px;
-  color: white;
+.portal-digital-employee .logo-icon-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .portal-digital-employee .logo-text h1 {
@@ -3285,16 +3287,17 @@
 .portal-digital-employee .portal-home-orbit-core {
   position: relative;
   z-index: 1;
-  width: 52px;
-  height: 52px;
-  border-radius: 18px;
+  width: 64px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  font-size: 22px;
-  background: linear-gradient(135deg, #7c3aed, #2563eb);
-  box-shadow: 0 12px 30px rgba(99, 102, 241, 0.26);
+}
+
+.portal-digital-employee .portal-home-orbit-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .portal-digital-employee .portal-home-composer-card {
