@@ -554,9 +554,10 @@ export function normalizeRemoteHistoryMessages(
       if (!textContent) {
         continue;
       }
-      activeAgentMessage.content = mergeStreamingText(
-        activeAgentMessage.content || "",
-        textContent,
+      const responseBlock = buildResponseBlock(message, textContent);
+      activeAgentMessage.processBlocks = mergeProcessBlocks(
+        activeAgentMessage.processBlocks,
+        [responseBlock],
       );
     }
   }

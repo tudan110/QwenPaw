@@ -4454,6 +4454,13 @@
   gap: 8px;
 }
 
+.portal-digital-employee .interleaved-response-bubble {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 4px 0;
+}
+
 .portal-digital-employee .trace-block {
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 14px;

@@ -201,20 +201,38 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   onTicketRefresh,
   ticketActionNotice,
 }: any) {
-  const latestResponseContent = [...(message.processBlocks || [])]
-    .reverse()
-    .find((block: any) => block?.kind === "response" && block.content)?.content || "";
-  const renderedMessageContent = message.content || latestResponseContent;
-  const traceBlocks = (message.processBlocks || []).filter(
-    (block: any) => block?.kind !== "response",
+  const allBlocks = message.processBlocks || [];
+  const hasInterleavedResponses = allBlocks.some(
+    (block: any) => block?.kind === "response" && block.content,
   );
+
+  // Interleaved mode: response blocks exist in processBlocks (loaded history)
+  // Legacy mode: no response blocks, text lives in message.content (streaming)
+  const displayBlocks = hasInterleavedResponses
+    ? allBlocks
+    : allBlocks.filter((block: any) => block?.kind !== "response");
+
+  const renderedMessageContent = hasInterleavedResponses
+    ? (isStreamingMessage ? message.content : null)
+    : (message.content || [...allBlocks].reverse().find(
+        (block: any) => block?.kind === "response" && block.content,
+      )?.content || "");
+
+  // For copy button: collect all response text from interleaved blocks or use renderedMessageContent
+  const copyableContent = hasInterleavedResponses
+    ? allBlocks
+        .filter((block: any) => block?.kind === "response" && block.content)
+        .map((block: any) => block.content)
+        .join("\n\n")
+    : renderedMessageContent;
+
   const hasWorkorders =
     Boolean(message.workorders?.length) ||
     Boolean(message.workordersLoading) ||
     Boolean(message.workordersError);
   const effectiveDisposalOperation =
     message.disposalOperation ||
-    extractPortalActionPayload(renderedMessageContent);
+    extractPortalActionPayload(renderedMessageContent || message.content || "");
   const shouldShowDisposalOperation =
     Boolean(effectiveDisposalOperation) &&
     effectiveDisposalOperation.status !== "success" &&
@@ -229,10 +247,17 @@ export const ChatMessageItem = memo(function ChatMessageItem({
         <i className={`fas ${message.type === "user" ? "fa-user" : message.icon}`} />
       </div>
       <div className="message-content">
-        {traceBlocks.length ? (
+        {displayBlocks.length ? (
           <div className="process-trace">
-            {traceBlocks.map((block: any) =>
-              (
+            {displayBlocks.map((block: any) =>
+              block.kind === "response" ? (
+                <div
+                  key={block.id}
+                  className="message-bubble markdown-bubble interleaved-response-bubble"
+                >
+                  <MessageMarkdown content={block.content} />
+                </div>
+              ) : (
                 <details
                   key={block.id}
                   className={`trace-block ${block.kind}`}
@@ -293,10 +318,10 @@ export const ChatMessageItem = memo(function ChatMessageItem({
           </div>
         ) : null}
 
-        {message.type === "agent" && renderedMessageContent && !hasWorkorders && !isStreamingMessage ? (
+        {message.type === "agent" && copyableContent && !hasWorkorders && !isStreamingMessage ? (
           <div className="message-copy-row">
             <CopyActionButton
-              text={String(renderedMessageContent || "").trim()}
+              text={String(copyableContent || "").trim()}
               label="复制回复"
               buttonClassName="message-copy-btn"
               iconClassName="message-copy-icon"
