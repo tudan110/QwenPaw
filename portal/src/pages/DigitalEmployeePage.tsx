@@ -2993,7 +2993,7 @@ export default function DigitalEmployeePage({
                       }}
                       onKeyDown={(event) => handleComposerKeyDown(event, { multiline: true })}
                       onKeyUp={handleInputSelection}
-                      placeholder="输入 @ 选择数字员工，或直接输入您的问题..."
+                      placeholder="输入您的问题..."
                     />
                     {mentionSuggestions.length ? (
                       <div className="mention-suggestions home">
@@ -3211,7 +3211,7 @@ export default function DigitalEmployeePage({
                     <div className="input-area">
                       <div className="input-hint-row">
                         <span>
-                        输入自然语言即可开始协同办公，使用 <code>@数字员工名</code> 可让数字员工协作处理。
+                        输入自然语言即可开始协同办公。
                         </span>
                       </div>
                       <div className="input-wrapper">
