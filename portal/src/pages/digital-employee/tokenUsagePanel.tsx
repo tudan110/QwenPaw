@@ -449,6 +449,8 @@ export function TokenUsagePanel({
                     <thead>
                       <tr>
                         <th>日期</th>
+                        <th>输入 Token</th>
+                        <th>输出 Token</th>
                         <th>总计</th>
                         <th>调用次数</th>
                       </tr>
@@ -457,6 +459,8 @@ export function TokenUsagePanel({
                       {byDateRowsDesc.map((row) => (
                         <tr key={row.key}>
                           <td>{row.date}</td>
+                          <td>{formatNumber(row.prompt_tokens)}</td>
+                          <td>{formatNumber(row.completion_tokens)}</td>
                           <td className="token-usage-emphasis">{formatNumber(row.total_tokens)}</td>
                           <td>{formatNumber(row.call_count)}</td>
                         </tr>
