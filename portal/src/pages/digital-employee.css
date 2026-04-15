@@ -740,6 +740,17 @@
   z-index: 6;
 }
 
+.portal-digital-employee .portal-home-traditional-toggle {
+  width: auto;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.portal-digital-employee .portal-home-traditional-toggle i {
+  font-size: 14px;
+}
+
 .portal-digital-employee .ops-board-columns {
   flex: 1;
   min-height: 0;
@@ -8638,6 +8649,11 @@
 
   .portal-digital-employee .portal-home-toolbar {
     justify-content: space-between;
+  }
+
+  .portal-digital-employee .portal-home-traditional-toggle {
+    padding: 0 10px;
+    font-size: 12px;
   }
 
   .portal-digital-employee .mention-suggestions,

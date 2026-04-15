@@ -2953,6 +2953,21 @@ export default function DigitalEmployeePage({
                     >
                       <i className={`fas ${pageTheme === "light" ? "fa-moon" : "fa-sun"}`} />
                     </button>
+                    <button
+                      type="button"
+                      className="ops-board-theme-toggle portal-home-traditional-toggle"
+                      onClick={() =>
+                        navigateToPortalHome({
+                          entry: null,
+                          view: "dashboard",
+                          panel: null,
+                        })}
+                      aria-label="切换传统视图"
+                      title="切换传统视图"
+                    >
+                      <i className="fas fa-table-cells-large" />
+                      <span>切换传统视图</span>
+                    </button>
                   </div>
                   <div className="portal-home-hero">
                     <div className="portal-home-orbit">
