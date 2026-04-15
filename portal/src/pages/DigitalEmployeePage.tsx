@@ -2671,24 +2671,7 @@ export default function DigitalEmployeePage({
                   </span>
                 </div>
               </div>
-              <div className="top-bar-actions">
-                {currentView === "chat" ? (
-                  <div className="top-bar-stats">
-                    <div className="top-stat">
-                      <div className="top-stat-value">{totalTasks}</div>
-                      <div className="top-stat-label">总任务数</div>
-                    </div>
-                    <div className="top-stat">
-                      <div className="top-stat-value">{runningTasks}</div>
-                      <div className="top-stat-label">进行中</div>
-                    </div>
-                    <div className="top-stat">
-                      <div className="top-stat-value">45s</div>
-                      <div className="top-stat-label">平均耗时</div>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+              <div className="top-bar-actions" />
             </div>
           ) : null}
 
