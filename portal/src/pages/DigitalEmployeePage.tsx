@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   digitalEmployees,
@@ -132,12 +133,9 @@ type DashboardEmployeeSnapshot = {
   color: string;
   runtimeState: "running" | "idle";
   currentJob: string;
-  workSummary: string;
   historyCount: number;
   progress: number;
   workStatus: string;
-  note: string;
-  latestSessionTitle: string;
   updatedAt: string;
   urgent: boolean;
 };
@@ -416,67 +414,51 @@ function buildDashboardWorkColumns(): DashboardWorkColumn[] {
 
 function buildDashboardEmployeeSnapshots(
   historyCounts: Record<string, number>,
-  latestSessionTitles: Record<string, string>,
 ): DashboardEmployeeSnapshot[] {
   const templates: Record<
     string,
-    Omit<
-      DashboardEmployeeSnapshot,
-      "id" | "name" | "desc" | "color" | "historyCount" | "urgent" | "latestSessionTitle"
-    >
+    Omit<DashboardEmployeeSnapshot, "id" | "name" | "desc" | "color" | "historyCount" | "urgent">
   > = {
     resource: {
       runtimeState: "running",
       currentJob: `${getEmployeeById("resource")?.name || "资产管理员"}核心网段纳管扫描中`,
-      workSummary: "正在持续发现新增主机、网络设备与中间件组件，补全 CMDB 资源关系。",
       progress: 68,
       workStatus: "纳管扫描中",
-      note: "当前扫描窗口聚焦生产网段，资源指纹和拓扑关系正在补录。",
       updatedAt: "2分钟前",
     },
     fault: {
       runtimeState: "running",
       currentJob: `${getEmployeeById("fault")?.name || "故障处置员"}端口 down 根因定位中`,
-      workSummary: "已锁定异常链路，正在核对接口状态抖动、上联路径与业务影响范围。",
       progress: 84,
       workStatus: "根因定位中",
-      note: "告警上下文和处置证据已聚合，下一步将输出恢复建议与验证结论。",
       updatedAt: "刚刚",
     },
     inspection: {
       runtimeState: "idle",
       currentJob: `${getEmployeeById("inspection")?.name || "巡检专员"}夜间健康巡检待执行`,
-      workSummary: "当前处于待命状态，巡检计划已排程，可接管主机、数据库与网络健康检查。",
       progress: 12,
       workStatus: "待执行",
-      note: "最近一次例行巡检已经完成，下一轮巡检窗口将在预定时间自动启动。",
       updatedAt: "15分钟前",
     },
     order: {
       runtimeState: "running",
       currentJob: `${getEmployeeById("order")?.name || "工单调度员"}告警派单流转中`,
-      workSummary: "正在接收新告警并推进派单、确认与跟踪闭环，保持协作链路畅通。",
       progress: 63,
       workStatus: "流转处理中",
-      note: "高优先级告警已进入派单阶段，后续会继续回填处理节点和确认动作。",
       updatedAt: "4分钟前",
     },
     query: {
       runtimeState: "running",
       currentJob: `${getEmployeeById("query")?.name || "数据分析员"}设备分布报表生成中`,
-      workSummary: "正在汇总设备类型、区域和可用性画像，生成面向门户看板的统计结论。",
       progress: 57,
       workStatus: "报表生成中",
-      note: "主要样本已完成聚合，剩余趋势对比、环比和异常标注正在输出。",
       updatedAt: "7分钟前",
     },
     knowledge: {
       runtimeState: "running",
       currentJob: `${getEmployeeById("knowledge")?.name || "知识专员"}故障案例归档中`,
-      workSummary: "正在整理近期故障处置记录，提取标准步骤并同步到知识检索入口。",
       progress: 46,
       workStatus: "知识整理中",
-      note: "重复案例已完成合并，相似问题推荐和最佳实践摘要正在补充。",
       updatedAt: "9分钟前",
     },
   };
@@ -492,12 +474,9 @@ function buildDashboardEmployeeSnapshots(
       color: getDashboardEmployeeColor(employee.id),
       runtimeState,
       currentJob: template?.currentJob || `${employee.name}任务处理中`,
-      workSummary: template?.workSummary || employee.desc,
       historyCount: historyCounts[employee.id] || 0,
       progress: template?.progress ?? 0,
       workStatus: template?.workStatus || (runtimeState === "running" ? "运行中" : "待命中"),
-      note: latestSessionTitles[employee.id] || template?.note || "当前暂无补充说明。",
-      latestSessionTitle: latestSessionTitles[employee.id] || "",
       updatedAt: template?.updatedAt || "刚刚",
       urgent: employee.urgent,
     };
@@ -544,6 +523,76 @@ type PortalLocationState = {
     sessionId: string;
   };
 };
+
+type PortalOpsAlertLevel = "critical" | "urgent" | "warning" | "info";
+
+type PortalOpsAlert = {
+  id: string;
+  employeeId: string;
+  level: PortalOpsAlertLevel;
+  message: string;
+  timeLabel: string;
+  routeEntry?: string | null;
+  dispatchContent?: string;
+  visibleContent?: string;
+};
+
+const PORTAL_ALERT_LEVEL_LABELS: Record<PortalOpsAlertLevel, string> = {
+  critical: "紧急",
+  urgent: "严重",
+  warning: "警告",
+  info: "通知",
+};
+
+const PORTAL_ALERT_LEVEL_COLORS: Record<PortalOpsAlertLevel, string> = {
+  critical: "#ef4444",
+  urgent: "#f97316",
+  warning: "#f59e0b",
+  info: "#22d3ee",
+};
+
+const PORTAL_OPS_ALERTS_INITIAL: PortalOpsAlert[] = [
+  {
+    id: "alert-fault-payment-pool",
+    employeeId: "fault",
+    level: "critical",
+    message: "支付服务连接池耗尽，故障处置员待执行自动修复。",
+    timeLabel: "2分钟前",
+    routeEntry: ALARM_WORKORDER_ENTRY,
+  },
+  {
+    id: "alert-fault-slow-sql",
+    employeeId: "fault",
+    level: "urgent",
+    message: "核心交易库慢 SQL 告警持续 12 分钟，请进入工单处置。",
+    timeLabel: "5分钟前",
+    routeEntry: ALARM_WORKORDER_ENTRY,
+  },
+  {
+    id: "alert-query-error-rate",
+    employeeId: "query",
+    level: "warning",
+    message: "API 错误率升至 4.2%，请生成趋势分析并定位异常时间段。",
+    timeLabel: "8分钟前",
+    dispatchContent: "请分析告警：API 错误率升至 4.2%，按时间维度给出趋势、异常波峰和可能原因。",
+  },
+  {
+    id: "alert-knowledge-kafka",
+    employeeId: "knowledge",
+    level: "warning",
+    message: "Kafka 消费堆积告警触发，请检索相似案例与处置建议。",
+    timeLabel: "12分钟前",
+    dispatchContent: "请检索 Kafka 消费堆积告警的相似故障案例，并给出处置建议和排查顺序。",
+  },
+  {
+    id: "alert-resource-discovery",
+    employeeId: "resource",
+    level: "info",
+    message: "发现一批新增云主机，建议资产管理员执行自动纳管。",
+    timeLabel: "18分钟前",
+    dispatchContent: "收到新增云主机告警，请帮我梳理待纳管资源，并给出纳管建议。",
+  },
+];
 
 type SessionRecord = {
   id: string;
@@ -878,6 +927,8 @@ export default function DigitalEmployeePage({
   const [executionTitle, setExecutionTitle] = useState("执行历史");
   const [executionList, setExecutionList] = useState(executionHistory);
   const [pageTheme, setPageTheme] = useState<"light" | "dark">(loadPageTheme);
+  const [opsAlerts, setOpsAlerts] = useState<PortalOpsAlert[]>(PORTAL_OPS_ALERTS_INITIAL);
+  const [alertPopupOpen, setAlertPopupOpen] = useState(false);
   const [kanbanMode, setKanbanMode] = useState<DashboardKanbanMode>("employee");
   const [kanbanFilter, setKanbanFilter] = useState<DashboardKanbanFilter>("all");
   const themeToggleIcon: ReactNode = pageTheme === "light" ? (
@@ -919,6 +970,23 @@ export default function DigitalEmployeePage({
       <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
     </svg>
   );
+  const alertBellIcon: ReactNode = (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
   const [dashboardRemoteHistoryCounts, setDashboardRemoteHistoryCounts] = useState<Record<string, number>>({});
   const [dashboardRemoteSessionsMap, setDashboardRemoteSessionsMap] = useState<Record<string, SessionRecord[]>>({});
   const [dashboardClock, setDashboardClock] = useState(() => formatDashboardClock(new Date()));
@@ -933,10 +1001,13 @@ export default function DigitalEmployeePage({
   const chatInputRef = useRef<HTMLInputElement | null>(null);
   const homeComposerRef = useRef<HTMLTextAreaElement | null>(null);
   const employeeDropdownRef = useRef<HTMLDivElement | null>(null);
+  const alertPopupRef = useRef<HTMLDivElement | null>(null);
+  const activeAlertTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [historyEditingId, setHistoryEditingId] = useState("");
   const [historyDraftTitle, setHistoryDraftTitle] = useState("");
   const [historyActionSessionId, setHistoryActionSessionId] = useState("");
   const [historyActionError, setHistoryActionError] = useState("");
+  const [alertPopupPosition, setAlertPopupPosition] = useState<{ top: number; left: number } | null>(null);
 
   const {
     currentSessionId,
@@ -1394,18 +1465,6 @@ export default function DigitalEmployeePage({
       ) as Record<string, number>,
     [dashboardRemoteHistoryCounts, localHistoryCounts],
   );
-  const dashboardLatestSessionTitles = useMemo(
-    () =>
-      Object.fromEntries(
-        digitalEmployees.map((employee) => [
-          employee.id,
-          REMOTE_AGENT_IDS[employee.id]
-            ? (dashboardRemoteSessionsMap[employee.id]?.[0]?.title ?? localLatestSessionTitles[employee.id] ?? "")
-            : (localLatestSessionTitles[employee.id] ?? ""),
-        ]),
-      ) as Record<string, string>,
-    [dashboardRemoteSessionsMap, localLatestSessionTitles],
-  );
   const dashboardLatestSessions = useMemo(
     () =>
       Object.fromEntries(
@@ -1424,9 +1483,19 @@ export default function DigitalEmployeePage({
   );
   const dashboardWorkColumns = useMemo(() => buildDashboardWorkColumns(), []);
   const dashboardEmployeeSnapshots = useMemo(
-    () => buildDashboardEmployeeSnapshots(dashboardHistoryCounts, dashboardLatestSessionTitles),
-    [dashboardHistoryCounts, dashboardLatestSessionTitles],
+    () => buildDashboardEmployeeSnapshots(dashboardHistoryCounts),
+    [dashboardHistoryCounts],
   );
+  const sortedOpsAlerts = useMemo(() => {
+    const order: Record<PortalOpsAlertLevel, number> = {
+      critical: 0,
+      urgent: 1,
+      warning: 2,
+      info: 3,
+    };
+
+    return [...opsAlerts].sort((left, right) => order[left.level] - order[right.level]);
+  }, [opsAlerts]);
   const kanbanFilterLabels = useMemo(
     () => getDashboardFilterLabels(kanbanMode),
     [kanbanMode],
@@ -1465,6 +1534,64 @@ export default function DigitalEmployeePage({
     dashboardHistoryVisible,
     dashboardRemoteSessionsMap,
   ]);
+
+  useEffect(() => {
+    if (!alertPopupOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (activeAlertTriggerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      if (alertPopupRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setAlertPopupOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [alertPopupOpen]);
+
+  useEffect(() => {
+    setAlertPopupOpen(false);
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    if (!alertPopupOpen) {
+      return;
+    }
+
+    const updateAlertPopupPosition = () => {
+      const trigger = activeAlertTriggerRef.current;
+      if (!trigger) {
+        return;
+      }
+
+      const rect = trigger.getBoundingClientRect();
+      const popupWidth = Math.min(400, window.innerWidth - 32);
+      const left = Math.min(
+        Math.max(16, rect.right - popupWidth),
+        window.innerWidth - popupWidth - 16,
+      );
+      const top = Math.min(rect.bottom + 8, window.innerHeight - 24);
+
+      setAlertPopupPosition({ top, left });
+    };
+
+    updateAlertPopupPosition();
+    window.addEventListener("resize", updateAlertPopupPosition);
+    window.addEventListener("scroll", updateAlertPopupPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updateAlertPopupPosition);
+      window.removeEventListener("scroll", updateAlertPopupPosition, true);
+    };
+  }, [alertPopupOpen]);
+
   const filteredDashboardEmployeeSnapshots = useMemo(() => {
     if (kanbanFilter === "urgent") {
       return dashboardEmployeeSnapshots.filter((worker) => worker.runtimeState === "running");
@@ -1600,6 +1727,57 @@ export default function DigitalEmployeePage({
       } satisfies PortalLocationState,
     });
   }, [navigate]);
+
+  const handlePortalAlertAction = useCallback((alert: PortalOpsAlert) => {
+    setAlertPopupOpen(false);
+    setOpsAlerts((currentAlerts) => currentAlerts.filter((item) => item.id !== alert.id));
+
+    const employee = getEmployeeById(alert.employeeId);
+    if (!employee) {
+      return;
+    }
+
+    if (alert.routeEntry === ALARM_WORKORDER_ENTRY) {
+      navigateToEmployeePage(employee, {
+        entry: ALARM_WORKORDER_ENTRY,
+        view: "chat",
+        panel: null,
+      });
+      return;
+    }
+
+    queueMentionDispatch(
+      employee,
+      alert.dispatchContent || alert.message,
+      alert.visibleContent || alert.message,
+    );
+  }, [navigateToEmployeePage, queueMentionDispatch]);
+
+  const handleClearPortalAlerts = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    setOpsAlerts([]);
+    setAlertPopupOpen(false);
+  }, []);
+
+  const handleToggleAlertPopup = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+
+    const trigger = event.currentTarget;
+    const isSameTrigger = activeAlertTriggerRef.current === trigger;
+    const popupWidth = Math.min(400, window.innerWidth - 32);
+    const rect = trigger.getBoundingClientRect();
+    const left = Math.min(
+      Math.max(16, rect.right - popupWidth),
+      window.innerWidth - popupWidth - 16,
+    );
+
+    activeAlertTriggerRef.current = trigger;
+    setAlertPopupPosition({
+      top: Math.min(rect.bottom + 8, window.innerHeight - 24),
+      left,
+    });
+    setAlertPopupOpen((value) => (isSameTrigger ? !value : true));
+  }, []);
 
   const runLocalEmployeeFlow = useCallback((
     employee: any,
@@ -2338,10 +2516,6 @@ export default function DigitalEmployeePage({
     });
   };
 
-  const handleOpenDashboardLatestSession = (employeeId: string, session?: SessionRecord | null) => {
-    handleOpenTaskEmployeeChat(employeeId, session);
-  };
-
   const handleOpenDashboardEmployeeHistory = async (employeeId: string) => {
     const employee = getEmployeeById(employeeId);
     if (!employee) {
@@ -2395,6 +2569,109 @@ export default function DigitalEmployeePage({
     setDashboardHistoryError("");
     handleOpenTaskEmployeeChat(employeeId, session);
   };
+
+  const renderAlertBell = () => (
+    <div className="alert-bell-wrap">
+      <button
+        type="button"
+        className={opsAlerts.length ? "alert-bell has-alerts" : "alert-bell"}
+        onClick={handleToggleAlertPopup}
+        aria-label="查看运维告警"
+        title="运维告警"
+      >
+        {alertBellIcon}
+        <span className="bell-badge">{opsAlerts.length > 99 ? "99+" : opsAlerts.length}</span>
+      </button>
+    </div>
+  );
+
+  const alertPopup = alertPopupOpen && alertPopupPosition && typeof document !== "undefined"
+    ? createPortal(
+        <div
+          ref={alertPopupRef}
+          className={pageTheme === "dark" ? "portal-alert-popup theme-dark show" : "portal-alert-popup show"}
+          style={{
+            top: alertPopupPosition.top,
+            left: alertPopupPosition.left,
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="alert-popup-header">
+            <div className="alert-popup-title">
+              {alertBellIcon}
+              <span>运维告警</span>
+              {opsAlerts.length ? <span className="alert-count">{opsAlerts.length}</span> : null}
+            </div>
+            {opsAlerts.length ? (
+              <button type="button" className="alert-popup-clear" onClick={handleClearPortalAlerts}>
+                全部清除
+              </button>
+            ) : null}
+          </div>
+          <div className="alert-popup-body">
+            {sortedOpsAlerts.length ? (
+              sortedOpsAlerts.map((alert) => {
+                const employee = getEmployeeById(alert.employeeId);
+                const employeeColor = getDashboardEmployeeColor(alert.employeeId);
+
+                return (
+                  <button
+                    key={alert.id}
+                    type="button"
+                    className="alert-popup-item"
+                    onClick={() => handlePortalAlertAction(alert)}
+                  >
+                    <div
+                      className="alert-popup-item-icon"
+                      style={{
+                        background: `${employeeColor}20`,
+                        color: employeeColor,
+                      }}
+                    >
+                      {employee ? (
+                        <DigitalEmployeeAvatar
+                          employee={employee}
+                          className="portal-alert-popup-avatar"
+                        />
+                      ) : (
+                        alertBellIcon
+                      )}
+                    </div>
+                    <div className="alert-popup-item-body">
+                      <div className="alert-popup-item-msg">{alert.message}</div>
+                      <div className="alert-popup-item-meta">
+                        <span className="alert-popup-item-emp" style={{ color: employeeColor }}>
+                          {employee?.name || alert.employeeId}
+                        </span>
+                        <span
+                          className="alert-popup-item-level"
+                          style={{
+                            color: PORTAL_ALERT_LEVEL_COLORS[alert.level],
+                            background: `${PORTAL_ALERT_LEVEL_COLORS[alert.level]}15`,
+                            borderColor: `${PORTAL_ALERT_LEVEL_COLORS[alert.level]}30`,
+                          }}
+                        >
+                          {PORTAL_ALERT_LEVEL_LABELS[alert.level]}
+                        </span>
+                        <span className="alert-popup-item-time">{alert.timeLabel}</span>
+                      </div>
+                    </div>
+                    <span className="alert-popup-item-go" aria-hidden="true">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="alert-popup-empty">暂无待处理告警</div>
+            )}
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
 
   if (!currentEmployee) {
     return null;
@@ -2560,15 +2837,18 @@ export default function DigitalEmployeePage({
           }
         >
           {!isPortalHomeChat && currentView !== "dashboard" ? (
-            <button
-              type="button"
-              className="ops-board-theme-toggle portal-global-theme-toggle"
-              onClick={() => setPageTheme((value) => (value === "light" ? "dark" : "light"))}
-              aria-label="切换整页主题"
-              title="切换整页主题"
-            >
-              {themeToggleIcon}
-            </button>
+            <div className="portal-global-quick-actions">
+              {renderAlertBell()}
+              <button
+                type="button"
+                className="ops-board-theme-toggle"
+                onClick={() => setPageTheme((value) => (value === "light" ? "dark" : "light"))}
+                aria-label="切换整页主题"
+                title="切换整页主题"
+              >
+                {themeToggleIcon}
+              </button>
+            </div>
           ) : null}
           {isModelConfigMode ? (
               <ModelConfigModal
@@ -2731,6 +3011,7 @@ export default function DigitalEmployeePage({
                     <span className="ops-clock-dot" />
                     <span>{dashboardClock}</span>
                   </div>
+                  {renderAlertBell()}
                   <button
                     type="button"
                     className="kanban-theme-toggle theme-toggle"
@@ -2798,7 +3079,6 @@ export default function DigitalEmployeePage({
                             <span className="kanban-card-time">{worker.updatedAt}</span>
                           </div>
                           <div className="kanban-card-title">{worker.currentJob}</div>
-                          <div className="kanban-card-desc">{worker.workSummary}</div>
                           <div className="kanban-progress">
                             <div className="kanban-progress-bar">
                               <div
@@ -2831,18 +3111,6 @@ export default function DigitalEmployeePage({
                               <div className="kanban-worker-stat-value">{worker.workStatus}</div>
                             </div>
                           </div>
-                          {latestSession ? (
-                            <button
-                              type="button"
-                              className="kanban-worker-note kanban-worker-note-action"
-                              onClick={() => handleOpenDashboardLatestSession(worker.id, latestSession)}
-                              title={`进入 ${worker.name} 最近一条对话`}
-                            >
-                              {worker.note}
-                            </button>
-                          ) : (
-                            <div className="kanban-worker-note">{worker.note}</div>
-                          )}
                           <div className="kanban-card-footer">
                             <span
                               className="kanban-card-tag"
@@ -2978,6 +3246,7 @@ export default function DigitalEmployeePage({
               {showPortalHomeHero ? (
                 <div className="portal-home-stage">
                   <div className="portal-home-toolbar">
+                    {renderAlertBell()}
                     <button
                       type="button"
                       className="ops-board-theme-toggle portal-home-theme-toggle"
@@ -3363,6 +3632,8 @@ export default function DigitalEmployeePage({
           )}
         </div>
       </div>
+
+      {alertPopup}
 
       {dashboardHistoryVisible ? (
         <div className="history-modal show" onClick={() => setDashboardHistoryVisible(false)}>
