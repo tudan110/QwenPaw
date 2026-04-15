@@ -14,6 +14,7 @@
   --text-muted: #94a3b8;
   --border: #e2e8f0;
   --border-light: #f1f5f9;
+  --portal-quick-actions-space: 112px;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
@@ -546,7 +547,7 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  padding: 0 56px 0 0;
+  padding: 0 var(--portal-quick-actions-space) 0 0;
   background: transparent;
   border-radius: 0;
   margin-bottom: 18px;
@@ -693,7 +694,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding-right: 56px;
+  padding-right: var(--portal-quick-actions-space);
 }
 
 .portal-digital-employee .ops-board-title {
@@ -2799,7 +2800,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding-right: 56px;
+  padding-right: var(--portal-quick-actions-space);
 }
 
 .portal-digital-employee .task-view-title {
@@ -5910,7 +5911,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
-  padding-right: 56px;
+  padding-right: var(--portal-quick-actions-space);
   margin-bottom: 18px;
 }
 

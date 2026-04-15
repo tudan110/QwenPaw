@@ -550,11 +550,11 @@ export function SkillPoolPanel() {
                   </div>
 
                   <div className="skill-pool-card-actions">
-                    <button
-                      type="button"
-                      className="portal-model-btn secondary compact"
-                      onClick={(event) => {
-                        event.stopPropagation();
+                   <button
+                     type="button"
+                     className="portal-model-btn secondary compact"
+                     onClick={(event) => {
+                       event.stopPropagation();
                         setSelectedSkillName(skill.name);
                       }}
                     >
@@ -570,20 +570,9 @@ export function SkillPoolPanel() {
                         } else {
                           openEditModal(skill);
                         }
-                      }}
+                     }}
                     >
                       {skill.protected || skill.source === "builtin" ? "复制" : "编辑"}
-                    </button>
-                    <button
-                      type="button"
-                      className="portal-model-btn secondary compact danger"
-                      disabled={skill.protected || skill.source === "builtin"}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void handleDelete(skill);
-                      }}
-                    >
-                      删除
                     </button>
                   </div>
                 </article>

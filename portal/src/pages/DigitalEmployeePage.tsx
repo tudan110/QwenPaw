@@ -22,6 +22,10 @@ import {
   saveConversationStore,
 } from "../lib/conversationStore";
 import { deleteChat, listChats, updateChat } from "../api/copawChat";
+import {
+  getPortalEmployeeStatuses,
+  type PortalEmployeeRuntimeStatus,
+} from "../api/portalEmployeeStatus";
 import DigitalEmployeeAvatar from "../components/DigitalEmployeeAvatar";
 import {
   AlarmWorkorderBoard,
@@ -161,6 +165,39 @@ const DASHBOARD_TAG_STYLES = {
 
 function getDashboardEmployeeColor(employeeId: string) {
   return DASHBOARD_EMPLOYEE_COLORS[employeeId] || "#6366f1";
+}
+
+function formatRuntimeUpdatedAt(value: string) {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return value || "";
+  }
+
+  const diffMs = Math.max(0, Date.now() - timestamp);
+  const diffMinutes = Math.floor(diffMs / 60000);
+  if (diffMinutes < 1) {
+    return "刚刚";
+  }
+  if (diffMinutes < 60) {
+    return `${diffMinutes}分钟前`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours}小时前`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) {
+    return `${diffDays}天前`;
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
 }
 
 function getDashboardFilterLabels(mode: DashboardKanbanMode) {
@@ -414,48 +451,47 @@ function buildDashboardWorkColumns(): DashboardWorkColumn[] {
 
 function buildDashboardEmployeeSnapshots(
   historyCounts: Record<string, number>,
+  employees: typeof digitalEmployees,
+  runtimeStatuses: Record<string, PortalEmployeeRuntimeStatus>,
 ): DashboardEmployeeSnapshot[] {
   const templates: Record<
     string,
-    Omit<DashboardEmployeeSnapshot, "id" | "name" | "desc" | "color" | "historyCount" | "urgent">
+    Omit<
+      DashboardEmployeeSnapshot,
+      "id" | "name" | "desc" | "color" | "runtimeState" | "historyCount" | "urgent"
+    >
   > = {
     resource: {
-      runtimeState: "running",
       currentJob: `${getEmployeeById("resource")?.name || "资产管理员"}核心网段纳管扫描中`,
       progress: 68,
       workStatus: "纳管扫描中",
       updatedAt: "2分钟前",
     },
     fault: {
-      runtimeState: "running",
       currentJob: `${getEmployeeById("fault")?.name || "故障处置员"}端口 down 根因定位中`,
       progress: 84,
       workStatus: "根因定位中",
       updatedAt: "刚刚",
     },
     inspection: {
-      runtimeState: "idle",
       currentJob: `${getEmployeeById("inspection")?.name || "巡检专员"}夜间健康巡检待执行`,
       progress: 12,
       workStatus: "待执行",
       updatedAt: "15分钟前",
     },
     order: {
-      runtimeState: "running",
       currentJob: `${getEmployeeById("order")?.name || "工单调度员"}告警派单流转中`,
       progress: 63,
       workStatus: "流转处理中",
       updatedAt: "4分钟前",
     },
     query: {
-      runtimeState: "running",
       currentJob: `${getEmployeeById("query")?.name || "数据分析员"}设备分布报表生成中`,
       progress: 57,
       workStatus: "报表生成中",
       updatedAt: "7分钟前",
     },
     knowledge: {
-      runtimeState: "running",
       currentJob: `${getEmployeeById("knowledge")?.name || "知识专员"}故障案例归档中`,
       progress: 46,
       workStatus: "知识整理中",
@@ -463,21 +499,27 @@ function buildDashboardEmployeeSnapshots(
     },
   };
 
-  return digitalEmployees.map((employee) => {
+  return employees.map((employee) => {
     const template = templates[employee.id];
-    const runtimeState =
-      employee.status === "running" ? "running" : template?.runtimeState || "idle";
+    const runtime = runtimeStatuses[employee.id];
+    const runtimeState = employee.status === "running" ? "running" : "idle";
     return {
       id: employee.id,
       name: employee.name,
       desc: employee.desc,
       color: getDashboardEmployeeColor(employee.id),
       runtimeState,
-      currentJob: template?.currentJob || `${employee.name}任务处理中`,
+      currentJob:
+        runtime?.currentJob ||
+        template?.currentJob ||
+        (runtimeState === "running" ? `${employee.name}任务处理中` : "暂无对话"),
       historyCount: historyCounts[employee.id] || 0,
       progress: template?.progress ?? 0,
-      workStatus: template?.workStatus || (runtimeState === "running" ? "运行中" : "待命中"),
-      updatedAt: template?.updatedAt || "刚刚",
+      workStatus:
+        runtime?.workStatus ||
+        template?.workStatus ||
+        (employee.urgent ? "紧急任务" : runtimeState === "running" ? "运行中" : "待机"),
+      updatedAt: formatRuntimeUpdatedAt(runtime?.updatedAt || "") || template?.updatedAt || "刚刚",
       urgent: employee.urgent,
     };
   });
@@ -898,7 +940,6 @@ export default function DigitalEmployeePage({
     return digitalEmployees.find((item) => item.id === routeEmployeeId) || null;
   }, [employeeId, routeSearchParams]);
   const portalHomeEmployee = useMemo(() => ({ ...PORTAL_HOME_EMPLOYEE }), []);
-  const currentEmployee = selectedEmployee || portalHomeEmployee;
   const routeSection = forcedSection || null;
   const remoteAgentId = selectedEmployee
     ? (REMOTE_AGENT_IDS[selectedEmployee.id] || null)
@@ -928,9 +969,34 @@ export default function DigitalEmployeePage({
   const [executionList, setExecutionList] = useState(executionHistory);
   const [pageTheme, setPageTheme] = useState<"light" | "dark">(loadPageTheme);
   const [opsAlerts, setOpsAlerts] = useState<PortalOpsAlert[]>(PORTAL_OPS_ALERTS_INITIAL);
+  const [employeeRuntimeStatusMap, setEmployeeRuntimeStatusMap] = useState<
+    Record<string, PortalEmployeeRuntimeStatus>
+  >({});
   const [alertPopupOpen, setAlertPopupOpen] = useState(false);
   const [kanbanMode, setKanbanMode] = useState<DashboardKanbanMode>("employee");
   const [kanbanFilter, setKanbanFilter] = useState<DashboardKanbanFilter>("all");
+  const employeesWithRuntimeStatus = useMemo(
+    () =>
+      digitalEmployees.map((employee) => {
+        const runtime = employeeRuntimeStatusMap[employee.id];
+        return {
+          ...employee,
+          status: runtime?.status || employee.status,
+          urgent: Boolean(runtime?.urgent),
+        };
+      }),
+    [employeeRuntimeStatusMap],
+  );
+  const selectedEmployeeRuntime = useMemo(() => {
+    if (!selectedEmployee) {
+      return null;
+    }
+    return (
+      employeesWithRuntimeStatus.find((item) => item.id === selectedEmployee.id) ||
+      selectedEmployee
+    );
+  }, [employeesWithRuntimeStatus, selectedEmployee]);
+  const currentEmployee = selectedEmployeeRuntime || portalHomeEmployee;
   const themeToggleIcon: ReactNode = pageTheme === "light" ? (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -1203,7 +1269,7 @@ export default function DigitalEmployeePage({
   }, [navigate]);
 
   const openEmployeeChat = useCallback((targetEmployeeId: string) => {
-    const employee = digitalEmployees.find((item) => item.id === targetEmployeeId);
+    const employee = employeesWithRuntimeStatus.find((item) => item.id === targetEmployeeId);
     if (!employee) {
       return;
     }
@@ -1212,7 +1278,7 @@ export default function DigitalEmployeePage({
       view: "chat",
       panel: null,
     });
-  }, [navigateToEmployeePage]);
+  }, [employeesWithRuntimeStatus, navigateToEmployeePage]);
 
   useEffect(() => {
     if (!currentEmployee) {
@@ -1326,6 +1392,46 @@ export default function DigitalEmployeePage({
   }, [pageTheme]);
 
   useEffect(() => {
+    let cancelled = false;
+    let loading = false;
+
+    const loadEmployeeStatuses = async () => {
+      if (loading) {
+        return;
+      }
+
+      loading = true;
+      try {
+        const response = await getPortalEmployeeStatuses();
+        if (cancelled) {
+          return;
+        }
+        setEmployeeRuntimeStatusMap(
+          Object.fromEntries(
+            (response.employees || []).map((status) => [status.employeeId, status]),
+          ),
+        );
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to load portal employee statuses:", error);
+        }
+      } finally {
+        loading = false;
+      }
+    };
+
+    void loadEmployeeStatuses();
+    const timerId = window.setInterval(() => {
+      void loadEmployeeStatuses();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timerId);
+    };
+  }, []);
+
+  useEffect(() => {
     const timerId = window.setInterval(() => {
       setDashboardClock(formatDashboardClock(new Date()));
     }, 1000);
@@ -1340,47 +1446,49 @@ export default function DigitalEmployeePage({
   }, [kanbanMode]);
 
   const totalTasks = useMemo(
-    () => digitalEmployees.reduce((sum, employee) => sum + employee.tasks, 0),
-    [],
+    () => employeesWithRuntimeStatus.reduce((sum, employee) => sum + employee.tasks, 0),
+    [employeesWithRuntimeStatus],
   );
   const runningTasks = useMemo(
     () =>
-      digitalEmployees.filter((employee) => employee.status === "running").length,
-    [],
+      employeesWithRuntimeStatus.filter((employee) => employee.status === "running").length,
+    [employeesWithRuntimeStatus],
   );
   const localHistoryCounts = useMemo(
     () =>
       Object.fromEntries(
-        digitalEmployees.map((employee) => [
+        employeesWithRuntimeStatus.map((employee) => [
           employee.id,
           ensureSessionRecords(conversationStore[employee.id]).length,
         ]),
       ) as Record<string, number>,
-    [conversationStore],
+    [conversationStore, employeesWithRuntimeStatus],
   );
   const localLatestSessionTitles = useMemo(
     () =>
       Object.fromEntries(
-        digitalEmployees.map((employee) => {
+        employeesWithRuntimeStatus.map((employee) => {
           const sessions = ensureSessionRecords(conversationStore[employee.id]);
           return [employee.id, sessions[0]?.title || ""] as const;
         }),
       ) as Record<string, string>,
-    [conversationStore],
+    [conversationStore, employeesWithRuntimeStatus],
   );
   const sidebarEmployees = useMemo(() => {
     const priorityIds = new Set<string>(sidebarEmployeePriority);
     const prioritizedEmployees = sidebarEmployeePriority
-      .map((employeeId) => digitalEmployees.find((employee) => employee.id === employeeId))
+      .map((employeeId) =>
+        employeesWithRuntimeStatus.find((employee) => employee.id === employeeId),
+      )
       .filter(
         (employee): employee is (typeof digitalEmployees)[number] => Boolean(employee),
       );
 
     return [
       ...prioritizedEmployees,
-      ...digitalEmployees.filter((employee) => !priorityIds.has(employee.id)),
+      ...employeesWithRuntimeStatus.filter((employee) => !priorityIds.has(employee.id)),
     ];
-  }, []);
+  }, [employeesWithRuntimeStatus]);
   const [lastSidebarEmployeeId, setLastSidebarEmployeeId] = useState<string | null>(null);
   const currentSidebarEmployee = useMemo(() => {
     const employeeId = selectedEmployee?.id || lastSidebarEmployeeId || sidebarEmployees[0]?.id || null;
@@ -1456,26 +1564,26 @@ export default function DigitalEmployeePage({
   const dashboardHistoryCounts = useMemo(
     () =>
       Object.fromEntries(
-        digitalEmployees.map((employee) => [
+        employeesWithRuntimeStatus.map((employee) => [
           employee.id,
           REMOTE_AGENT_IDS[employee.id]
             ? (dashboardRemoteHistoryCounts[employee.id] ?? localHistoryCounts[employee.id] ?? 0)
             : (localHistoryCounts[employee.id] ?? 0),
         ]),
       ) as Record<string, number>,
-    [dashboardRemoteHistoryCounts, localHistoryCounts],
+    [dashboardRemoteHistoryCounts, employeesWithRuntimeStatus, localHistoryCounts],
   );
   const dashboardLatestSessions = useMemo(
     () =>
       Object.fromEntries(
-        digitalEmployees.map((employee) => [
+        employeesWithRuntimeStatus.map((employee) => [
           employee.id,
           REMOTE_AGENT_IDS[employee.id]
             ? (dashboardRemoteSessionsMap[employee.id]?.[0] ?? null)
             : (ensureSessionRecords(conversationStore[employee.id])[0] ?? null),
         ]),
       ) as Record<string, SessionRecord | null>,
-    [conversationStore, dashboardRemoteSessionsMap],
+    [conversationStore, dashboardRemoteSessionsMap, employeesWithRuntimeStatus],
   );
   const dashboardHistoryEmployee = useMemo(
     () => (dashboardHistoryEmployeeId ? getEmployeeById(dashboardHistoryEmployeeId) : null),
@@ -1483,8 +1591,13 @@ export default function DigitalEmployeePage({
   );
   const dashboardWorkColumns = useMemo(() => buildDashboardWorkColumns(), []);
   const dashboardEmployeeSnapshots = useMemo(
-    () => buildDashboardEmployeeSnapshots(dashboardHistoryCounts),
-    [dashboardHistoryCounts],
+    () =>
+      buildDashboardEmployeeSnapshots(
+        dashboardHistoryCounts,
+        employeesWithRuntimeStatus,
+        employeeRuntimeStatusMap,
+      ),
+    [dashboardHistoryCounts, employeeRuntimeStatusMap, employeesWithRuntimeStatus],
   );
   const sortedOpsAlerts = useMemo(() => {
     const order: Record<PortalOpsAlertLevel, number> = {
@@ -2017,12 +2130,12 @@ export default function DigitalEmployeePage({
 
   const getEmployeeStatusLabel = useCallback((employee: any) => {
     if (employee.urgent) {
-      return "紧急";
+      return "紧急任务";
     }
     if (employee.status === "running") {
       return "运行中";
     }
-    return "已停止";
+    return "待机";
   }, []);
 
   const renderSidebarEmployeeCard = useCallback((
@@ -3303,7 +3416,7 @@ export default function DigitalEmployeePage({
 
                   <div className="portal-employee-switcher compact stage">
                     <div className="portal-employee-switcher-grid compact stage">
-                      {digitalEmployees.map((employee) => (
+                      {employeesWithRuntimeStatus.map((employee) => (
                         <button
                           key={`compact-stage-${employee.id}`}
                           type="button"

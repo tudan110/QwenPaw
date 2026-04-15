@@ -13,7 +13,7 @@ export interface AlarmWorkorderListResponse {
   source?: string;
 }
 
-async function requestPortalApi<T = unknown>(
+export async function requestPortalApi<T = unknown>(
   path: string,
   init: RequestInit = {},
   timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,

@@ -8,9 +8,11 @@ import tempfile
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
 
+from qwenpaw.config.utils import load_config
 from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
     query_alarm_workorders,
 )
@@ -18,6 +20,23 @@ from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders imp
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 app = FastAPI(title="Portal Backend")
 FAULT_DISPOSAL_SCRIPT_TIMEOUT_SECONDS = 45
+PORTAL_EMPLOYEE_STATUS_IDS = (
+    "query",
+    "fault",
+    "knowledge",
+    "resource",
+    "inspection",
+    "order",
+)
+PORTAL_EMPLOYEE_STATUS_NAMES = {
+    "query": "数据分析员",
+    "fault": "故障处置员",
+    "knowledge": "知识专员",
+    "resource": "资产管理员",
+    "inspection": "巡检专员",
+    "order": "工单调度员",
+}
+PORTAL_FAULT_ALERT_LIMIT = 20
 
 
 def _load_fault_disposal_runtime():
@@ -76,6 +95,153 @@ async def _get_workspace_and_session(request: Request):
 
     workspace = await get_agent_for_request(request)
     return workspace, workspace.runner.session
+
+
+def _datetime_to_iso(value: Any) -> str:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc).isoformat()
+        return value.astimezone(timezone.utc).isoformat()
+    text = str(value or "").strip()
+    return text
+
+
+def _build_portal_employee_status_payload(
+    employee_id: str,
+    *,
+    available: bool,
+    total_chat_count: int,
+    active_task_count: int,
+    active_chat_count: int,
+    alert_count: int,
+    latest_session_title: str,
+    updated_at: str,
+) -> dict[str, Any]:
+    urgent = alert_count > 0
+    status = "running" if active_task_count > 0 else "idle"
+    has_conversation = total_chat_count > 0
+
+    if urgent:
+        current_job = f"待处理告警 {alert_count} 条"
+        work_status = "紧急任务"
+        state_label = "紧急任务"
+    elif status == "running":
+        current_job = (
+            f"正在处理 {active_chat_count or active_task_count} 个对话任务"
+        )
+        work_status = "运行中"
+        state_label = "运行中"
+    elif has_conversation and latest_session_title:
+        current_job = f"最近会话：{latest_session_title}"
+        work_status = "待机"
+        state_label = "待机"
+    else:
+        current_job = "暂无对话"
+        work_status = "待机"
+        state_label = "待机"
+
+    return {
+        "employeeId": employee_id,
+        "employeeName": PORTAL_EMPLOYEE_STATUS_NAMES.get(employee_id, employee_id),
+        "available": available,
+        "status": status,
+        "urgent": urgent,
+        "stateLabel": state_label,
+        "workStatus": work_status,
+        "currentJob": current_job,
+        "hasConversation": has_conversation,
+        "totalChatCount": total_chat_count,
+        "activeTaskCount": active_task_count,
+        "activeChatCount": active_chat_count,
+        "alertCount": alert_count,
+        "latestSessionTitle": latest_session_title,
+        "updatedAt": updated_at,
+    }
+
+
+async def _get_portal_employee_workspace(
+    request: Request,
+    employee_id: str,
+):
+    config = load_config()
+    profile = config.agents.profiles.get(employee_id)
+    if profile is None or not getattr(profile, "enabled", True):
+        return None
+
+    manager = getattr(request.app.state, "multi_agent_manager", None)
+    if manager is None:
+        raise HTTPException(
+            status_code=500,
+            detail="MultiAgentManager not initialized",
+        )
+
+    try:
+        return await manager.get_agent(employee_id)
+    except ValueError:
+        return None
+
+
+async def _get_employee_alert_count(employee_id: str) -> int:
+    if employee_id != "fault":
+        return 0
+
+    result = query_alarm_workorders(PORTAL_FAULT_ALERT_LIMIT)
+    items = result.get("items") or []
+    return int(result.get("total") or len(items))
+
+
+async def collect_portal_employee_statuses(
+    request: Request,
+    *,
+    employee_ids: tuple[str, ...] = PORTAL_EMPLOYEE_STATUS_IDS,
+) -> list[dict[str, Any]]:
+    statuses: list[dict[str, Any]] = []
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    for employee_id in employee_ids:
+        workspace = await _get_portal_employee_workspace(request, employee_id)
+        if workspace is None:
+            statuses.append(
+                _build_portal_employee_status_payload(
+                    employee_id,
+                    available=False,
+                    total_chat_count=0,
+                    active_task_count=0,
+                    active_chat_count=0,
+                    alert_count=0,
+                    latest_session_title="",
+                    updated_at=now_iso,
+                )
+            )
+            continue
+
+        chats = await workspace.chat_manager.list_chats()
+        active_task_keys = set(await workspace.task_tracker.list_active_tasks())
+        active_chat_count = sum(1 for chat in chats if chat.id in active_task_keys)
+        latest_chat = max(
+            chats,
+            key=lambda chat: chat.updated_at or chat.created_at,
+            default=None,
+        )
+        latest_session_title = latest_chat.name.strip() if latest_chat else ""
+        updated_at = _datetime_to_iso(
+            latest_chat.updated_at if latest_chat else now_iso,
+        )
+        alert_count = await _get_employee_alert_count(employee_id)
+        statuses.append(
+            _build_portal_employee_status_payload(
+                employee_id,
+                available=True,
+                total_chat_count=len(chats),
+                active_task_count=len(active_task_keys),
+                active_chat_count=active_chat_count,
+                alert_count=alert_count,
+                latest_session_title=latest_session_title,
+                updated_at=updated_at,
+            )
+        )
+
+    return statuses
 
 
 async def _load_portal_fault_history(
@@ -219,6 +385,25 @@ async def get_alarm_workorders(limit: int = 5):
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] get_alarm_workorders failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/employee-status")
+async def get_portal_employee_statuses(
+    request: Request,
+):
+    try:
+        employees = await collect_portal_employee_statuses(request)
+        return {
+            "employees": employees,
+            "updatedAt": datetime.now(timezone.utc).isoformat(),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] get_portal_employee_statuses failed: {error_detail}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
