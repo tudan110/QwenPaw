@@ -136,7 +136,9 @@ RUN qwenpaw init --defaults --accept-security
 # Copy working directory data to backup (for PVC init on first start)
 COPY deploy-all/qwenpaw/data/qwenpaw/ /app/.working.backup/
 # Copy query workspace skills into the backup workspace
-COPY deploy-all/skills/query/ /app/.working.backup/workspaces/query/skills
+COPY deploy-all/workspaces/query/skills /app/.working.backup/workspaces/query/skills
+COPY deploy-all/workspaces/fault/skills /app/.working.backup/workspaces/fault/skills
+COPY deploy-all/workspaces/knowledge/skills /app/.working.backup/workspaces/knowledge/skills
 # Copy secret directory data to backup
 COPY deploy-all/qwenpaw/data/qwenpaw.secret/ /app/.working.secret.backup/
 
