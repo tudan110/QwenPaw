@@ -200,6 +200,19 @@ function formatRuntimeUpdatedAt(value: string) {
   }).format(new Date(timestamp));
 }
 
+function areEmployeeRuntimeStatusMapsEqual(
+  left: Record<string, PortalEmployeeRuntimeStatus>,
+  right: Record<string, PortalEmployeeRuntimeStatus>,
+) {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  return leftKeys.every((key) => JSON.stringify(left[key]) === JSON.stringify(right[key]));
+}
+
 function getDashboardFilterLabels(mode: DashboardKanbanMode) {
   return mode === "employee"
     ? {
@@ -1350,6 +1363,10 @@ export default function DigitalEmployeePage({
   }, [pageTheme]);
 
   useEffect(() => {
+    if (isStreaming || isCreatingChat) {
+      return;
+    }
+
     let cancelled = false;
     let loading = false;
 
@@ -1364,10 +1381,13 @@ export default function DigitalEmployeePage({
         if (cancelled) {
           return;
         }
-        setEmployeeRuntimeStatusMap(
-          Object.fromEntries(
-            (response.employees || []).map((status) => [status.employeeId, status]),
-          ),
+        const nextStatusMap = Object.fromEntries(
+          (response.employees || []).map((status) => [status.employeeId, status]),
+        );
+        setEmployeeRuntimeStatusMap((previousMap) =>
+          areEmployeeRuntimeStatusMapsEqual(previousMap, nextStatusMap)
+            ? previousMap
+            : nextStatusMap,
         );
       } catch (error) {
         if (!cancelled) {
@@ -1387,7 +1407,7 @@ export default function DigitalEmployeePage({
       cancelled = true;
       window.clearInterval(timerId);
     };
-  }, []);
+  }, [isCreatingChat, isStreaming]);
 
   useEffect(() => {
     const timerId = window.setInterval(() => {
@@ -3584,7 +3604,7 @@ export default function DigitalEmployeePage({
                       {safeMessages.map((message) => (
                         <ChatMessageItem
                           key={message.id}
-                          currentEmployee={currentEmployee}
+                          currentEmployee={currentEmployeeBase}
                           isStreamingMessage={
                             Boolean(message.streaming) ||
                             (isStreaming && message.id === activeAssistantMessageIdRef.current)
