@@ -1584,11 +1584,17 @@ export default function DigitalEmployeePage({
 
     updateAlertPopupPosition();
     window.addEventListener("resize", updateAlertPopupPosition);
-    window.addEventListener("scroll", updateAlertPopupPosition, true);
+    const handleScroll = (event: Event) => {
+      if (alertPopupRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      updateAlertPopupPosition();
+    };
+    window.addEventListener("scroll", handleScroll, true);
 
     return () => {
       window.removeEventListener("resize", updateAlertPopupPosition);
-      window.removeEventListener("scroll", updateAlertPopupPosition, true);
+      window.removeEventListener("scroll", handleScroll, true);
     };
   }, [alertPopupOpen]);
 
