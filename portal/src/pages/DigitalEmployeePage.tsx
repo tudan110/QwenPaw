@@ -593,49 +593,6 @@ const PORTAL_ALERT_LEVEL_COLORS: Record<PortalOpsAlertLevel, string> = {
   info: "#22d3ee",
 };
 
-const PORTAL_OPS_ALERTS_INITIAL: PortalOpsAlert[] = [
-  {
-    id: "alert-fault-payment-pool",
-    employeeId: "fault",
-    level: "critical",
-    message: "支付服务连接池耗尽，故障处置员待执行自动修复。",
-    timeLabel: "2分钟前",
-    routeEntry: ALARM_WORKORDER_ENTRY,
-  },
-  {
-    id: "alert-fault-slow-sql",
-    employeeId: "fault",
-    level: "urgent",
-    message: "核心交易库慢 SQL 告警持续 12 分钟，请进入工单处置。",
-    timeLabel: "5分钟前",
-    routeEntry: ALARM_WORKORDER_ENTRY,
-  },
-  {
-    id: "alert-query-error-rate",
-    employeeId: "query",
-    level: "warning",
-    message: "API 错误率升至 4.2%，请生成趋势分析并定位异常时间段。",
-    timeLabel: "8分钟前",
-    dispatchContent: "请分析告警：API 错误率升至 4.2%，按时间维度给出趋势、异常波峰和可能原因。",
-  },
-  {
-    id: "alert-knowledge-kafka",
-    employeeId: "knowledge",
-    level: "warning",
-    message: "Kafka 消费堆积告警触发，请检索相似案例与处置建议。",
-    timeLabel: "12分钟前",
-    dispatchContent: "请检索 Kafka 消费堆积告警的相似故障案例，并给出处置建议和排查顺序。",
-  },
-  {
-    id: "alert-resource-discovery",
-    employeeId: "resource",
-    level: "info",
-    message: "发现一批新增云主机，建议资产管理员执行自动纳管。",
-    timeLabel: "18分钟前",
-    dispatchContent: "收到新增云主机告警，请帮我梳理待纳管资源，并给出纳管建议。",
-  },
-];
-
 type SessionRecord = {
   id: string;
   title: string;
@@ -968,7 +925,7 @@ export default function DigitalEmployeePage({
   const [executionTitle, setExecutionTitle] = useState("执行历史");
   const [executionList, setExecutionList] = useState(executionHistory);
   const [pageTheme, setPageTheme] = useState<"light" | "dark">(loadPageTheme);
-  const [opsAlerts, setOpsAlerts] = useState<PortalOpsAlert[]>(PORTAL_OPS_ALERTS_INITIAL);
+  const [opsAlerts, setOpsAlerts] = useState<PortalOpsAlert[]>([]);
   const [employeeRuntimeStatusMap, setEmployeeRuntimeStatusMap] = useState<
     Record<string, PortalEmployeeRuntimeStatus>
   >({});
@@ -2699,7 +2656,9 @@ export default function DigitalEmployeePage({
         title="运维告警"
       >
         {alertBellIcon}
-        <span className="bell-badge">{opsAlerts.length > 99 ? "99+" : opsAlerts.length}</span>
+        {opsAlerts.length ? (
+          <span className="bell-badge">{opsAlerts.length > 99 ? "99+" : opsAlerts.length}</span>
+        ) : null}
       </button>
     </div>
   );
