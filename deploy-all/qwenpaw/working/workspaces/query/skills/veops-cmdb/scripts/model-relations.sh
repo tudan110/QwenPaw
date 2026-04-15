@@ -11,16 +11,33 @@ if [[ -z "${TYPE_ID}" ]]; then
   exit 1
 fi
 
-"${SCRIPT_DIR}/login.sh" >/dev/null
+JSON_RESPONSE="$("${SCRIPT_DIR}/fetch-json.sh" "/api/v0.1/ci_type_relations?ci_type_id=${TYPE_ID}")"
 
-RAW_RESPONSE="$(
-  ab eval "fetch('/api/v0.1/ci_type_relations?ci_type_id=${TYPE_ID}', {credentials:'include'}).then(r => r.json()).then(d => JSON.stringify(d.relations.filter(x => (x.parent && x.parent.id === ${TYPE_ID}) || (x.child && x.child.id === ${TYPE_ID})).map(x => ({来源模型: x.parent?.name || '', 来源显示名: x.parent?.alias || '', 关系类型: x.relation_type?.name || x.relation_type_name || '', 目标模型: x.child?.name || '', 目标显示名: x.child?.alias || '', 约束: x.constraint || '', 属性映射: x.attr_map || x.attribute_map || null})), null, 2))"
-)"
-
-RAW_RESPONSE="${RAW_RESPONSE}" python - <<'PY'
+TYPE_ID="${TYPE_ID}" JSON_RESPONSE="${JSON_RESPONSE}" python - <<'PY'
 import json
 import os
 
-raw = os.environ["RAW_RESPONSE"].strip()
-print(json.dumps(json.loads(json.loads(raw)), ensure_ascii=False, indent=2))
+type_id = int(os.environ.get("TYPE_ID", "0"))
+payload = json.loads(os.environ["JSON_RESPONSE"])["响应体"]
+relations = payload.get("relations", [])
+result = []
+
+for item in relations:
+    parent = item.get("parent") or {}
+    child = item.get("child") or {}
+    if parent.get("id") != type_id and child.get("id") != type_id:
+        continue
+    result.append(
+        {
+            "来源模型": parent.get("name", ""),
+            "来源显示名": parent.get("alias", ""),
+            "关系类型": (item.get("relation_type") or {}).get("name", "") or item.get("relation_type_name", ""),
+            "目标模型": child.get("name", ""),
+            "目标显示名": child.get("alias", ""),
+            "约束": item.get("constraint", ""),
+            "属性映射": item.get("attr_map") or item.get("attribute_map"),
+        }
+    )
+
+print(json.dumps(result, ensure_ascii=False, indent=2))
 PY

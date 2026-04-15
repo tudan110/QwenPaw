@@ -10,7 +10,7 @@ CMDB 汇总与图表脚本
 
 说明：
     - 默认读取技能目录下的 .env
-    - 先复用 login.sh 完成登录，再通过 agent-browser 会话读取接口
+    - 通过后台 HTTP 会话登录并读取接口，不打开浏览器
     - 分布类输出支持 ECharts 代码块，适合页面直接渲染
 """
 
@@ -23,6 +23,12 @@ import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from veops_http import build_url, create_session, login  # noqa: E402
 
 ALLOWED_MODES = {"summary", "model-groups", "relation-types", "app-relations"}
 ALLOWED_OUTPUTS = {"json", "markdown", "markdown-echarts-only"}
@@ -94,25 +100,13 @@ def build_error(message: str, code: int = 500) -> Dict[str, Any]:
     }
 
 
-def fetch_json(api_path: str, skill_root: Path, env: Dict[str, str]) -> Dict[str, Any]:
-    session_name = env.get("VEOPS_SESSION_NAME", "veops-cmdb")
-    agent_browser_bin = env.get("AGENT_BROWSER_BIN") or "agent-browser"
-    js = (
-        f"fetch({json.dumps(api_path)}, {{credentials:'include'}})"
-        ".then(async r => JSON.stringify({status:r.status, body:await r.text()}))"
-    )
-    raw = run_command(
-        [agent_browser_bin, "--session-name", session_name, "eval", js],
-        skill_root,
-    )
-    envelope = json.loads(raw)
-    payload = json.loads(envelope)
-    body = payload["body"]
+def fetch_json(api_path: str, session: Any, base_url: str) -> Dict[str, Any]:
+    response = session.get(build_url(base_url, api_path), timeout=30)
     try:
-        body = json.loads(body)
+        body = response.json()
     except json.JSONDecodeError:
-        pass
-    return {"状态码": payload["status"], "响应体": body}
+        body = response.text
+    return {"状态码": response.status_code, "响应体": body}
 
 
 def summarize_groups(counter: Counter[str], total: int) -> List[Dict[str, Any]]:
@@ -123,22 +117,22 @@ def summarize_groups(counter: Counter[str], total: int) -> List[Dict[str, Any]]:
     return groups
 
 
-def load_models(skill_root: Path, env: Dict[str, str]) -> List[Dict[str, Any]]:
-    payload = fetch_json("/api/v0.1/ci_types?per_page=200", skill_root, env)
+def load_models(session: Any, base_url: str) -> List[Dict[str, Any]]:
+    payload = fetch_json("/api/v0.1/ci_types?per_page=200", session, base_url)
     if payload["状态码"] != 200:
         raise RuntimeError(f"获取模型列表失败：HTTP {payload['状态码']}")
     return payload["响应体"]["ci_types"]
 
 
-def load_all_relations(skill_root: Path, env: Dict[str, str]) -> List[Dict[str, Any]]:
-    payload = fetch_json("/api/v0.1/ci_type_relations?ci_type_id=3", skill_root, env)
+def load_all_relations(session: Any, base_url: str) -> List[Dict[str, Any]]:
+    payload = fetch_json("/api/v0.1/ci_type_relations?ci_type_id=3", session, base_url)
     if payload["状态码"] != 200:
         raise RuntimeError(f"获取关系配置失败：HTTP {payload['状态码']}")
     return payload["响应体"]["relations"]
 
 
-def load_relation_types(skill_root: Path, env: Dict[str, str]) -> List[Dict[str, Any]]:
-    payload = fetch_json("/api/v0.1/relation_types", skill_root, env)
+def load_relation_types(session: Any, base_url: str) -> List[Dict[str, Any]]:
+    payload = fetch_json("/api/v0.1/relation_types", session, base_url)
     if payload["状态码"] != 200:
         raise RuntimeError(f"获取关系类型失败：HTTP {payload['状态码']}")
     return payload["响应体"]
@@ -409,10 +403,16 @@ def render_markdown(result: Dict[str, Any]) -> str:
 
 
 def analyze(mode: str, skill_root: Path, env: Dict[str, str]) -> Dict[str, Any]:
-    run_command([str(skill_root / "scripts" / "login.sh")], skill_root)
-    models = load_models(skill_root, env)
-    relations = load_all_relations(skill_root, env)
-    relation_types = load_relation_types(skill_root, env)
+    session = create_session()
+    login(
+        session,
+        env["VEOPS_BASE_URL"],
+        env["VEOPS_USERNAME"],
+        env["VEOPS_PASSWORD"],
+    )
+    models = load_models(session, env["VEOPS_BASE_URL"])
+    relations = load_all_relations(session, env["VEOPS_BASE_URL"])
+    relation_types = load_relation_types(session, env["VEOPS_BASE_URL"])
 
     if mode == "summary":
         return {"code": 200, "mode": mode, "summary": build_summary(models, relations, relation_types)}

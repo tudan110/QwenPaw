@@ -15,26 +15,4 @@ if [[ "${API_PATH}" != /* ]]; then
   API_PATH="/${API_PATH}"
 fi
 
-"${SCRIPT_DIR}/login.sh" >/dev/null
-
-RAW_RESPONSE="$(
-  ab eval "fetch('${API_PATH}', {credentials:'include'}).then(async r => JSON.stringify({status:r.status, body:await r.text()}))"
-)"
-
-RAW_RESPONSE="${RAW_RESPONSE}" python - <<'PY'
-import json
-import os
-import sys
-
-raw = os.environ["RAW_RESPONSE"].strip()
-envelope = json.loads(raw)
-payload = json.loads(envelope)
-body = payload["body"]
-
-try:
-    body = json.loads(body)
-except json.JSONDecodeError:
-    pass
-
-print(json.dumps({"状态码": payload["status"], "响应体": body}, ensure_ascii=False, indent=2))
-PY
+"${VEOPS_PYTHON_BIN}" "${SCRIPT_DIR}/veops_http.py" fetch "${API_PATH}"

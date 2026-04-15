@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/_env.sh"
 TYPE_ID="${1:-}"
 
 if [[ -z "${TYPE_ID}" ]]; then
@@ -11,7 +12,7 @@ fi
 
 JSON_RESPONSE="$("${SCRIPT_DIR}/fetch-json.sh" "/api/v0.1/ci_types/${TYPE_ID}/attributes")"
 
-JSON_RESPONSE="${JSON_RESPONSE}" python - <<'PY'
+JSON_RESPONSE="${JSON_RESPONSE}" "${VEOPS_PYTHON_BIN}" - <<'PY'
 import json
 import os
 

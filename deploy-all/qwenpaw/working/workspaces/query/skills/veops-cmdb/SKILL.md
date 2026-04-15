@@ -12,27 +12,29 @@ description: 用于检查 192.168.130.211:8000 上这套特定的 VEOPS/OneOps C
 - 优先使用随 skill 附带的脚本。
 - 除非用户明确询问页面布局、截图或仅能在页面上看到的配置，否则**不要**打开浏览器。
 - 除非需要接口名或已整理的场景关系，否则**不要**读取 `references/endpoints.md`。
-- 涉及统计分布、目标数量对比类图表时，优先使用 `scripts/analyze_cmdb.py`。
-- 涉及具体应用的关系拓扑，先查 CMDB 里实际管理的是哪个应用实例，再使用 `tmp/veops-cmdb/scripts/fetch-json.sh "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1,2,3"` 拉关系，输出 ECharts 从左到右树状图；不要用柱状图替代拓扑。
+- 涉及统计分布、目标数量对比类图表时，优先使用 `scripts/veops-cmdb.sh analyze ...`。
+- 涉及具体应用的关系拓扑，先查 CMDB 里实际管理的是哪个应用实例，再使用 `scripts/veops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1,2,3"` 拉关系；不要再引用 `tmp/veops-cmdb/...` 这类本地副本路径。
 - 当用户要求展示某个应用的关系拓扑图时，默认使用 ECharts `series.type = 'tree'`，并设置为从左到右展开；根节点使用 CMDB 中实际应用名。
 - 除非用户明确要求导出独立页面，否则**不要**生成 `.html` 图表文件；默认直接输出可渲染的 ```echarts 代码块。
 - 默认返回精简总结，不返回原始 JSON；只有用户明确要求时才返回原始响应。
 
 ## 快速路径
 
-1. 需要鉴权时，先运行一次 `scripts/login.sh`。
-2. 按问题选择最小可用脚本：
+1. 统一主入口是 `scripts/veops-cmdb.sh`。
+2. 需要鉴权时，先运行一次 `scripts/veops-cmdb.sh login`。
+   它现在走后台 HTTP 会话，不会再打开桌面浏览器。
+3. 按问题选择最小可用命令：
 
 ```bash
-tmp/veops-cmdb/scripts/list-models.sh
-tmp/veops-cmdb/scripts/model-attributes.sh <type_id>
-tmp/veops-cmdb/scripts/model-relations.sh <type_id>
-tmp/veops-cmdb/scripts/fetch-json.sh "/api/v0.1/relation_types"
-tmp/veops-cmdb/scripts/fetch-json.sh "/api/v0.1/ci/s?q=_type:project&count=20"
-tmp/veops-cmdb/scripts/fetch-json.sh "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1,2,3"
-python3 tmp/veops-cmdb/scripts/analyze_cmdb.py --mode summary --output markdown
-python3 tmp/veops-cmdb/scripts/analyze_cmdb.py --mode app-relations --output markdown
-python3 tmp/veops-cmdb/scripts/analyze_cmdb.py --mode summary --output markdown-echarts-only
+scripts/veops-cmdb.sh list-models
+scripts/veops-cmdb.sh model-attributes <type_id>
+scripts/veops-cmdb.sh model-relations <type_id>
+scripts/veops-cmdb.sh fetch "/api/v0.1/relation_types"
+scripts/veops-cmdb.sh fetch "/api/v0.1/ci/s?q=_type:project&count=20"
+scripts/veops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1,2,3"
+scripts/veops-cmdb.sh analyze --mode summary --output markdown
+scripts/veops-cmdb.sh analyze --mode app-relations --output markdown
+scripts/veops-cmdb.sh analyze --mode summary --output markdown-echarts-only
 ```
 
 ## 输出风格
