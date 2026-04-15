@@ -58,6 +58,7 @@ const CLI_COMMAND_NAME_SET = new Set(CLI_COMMANDS.map((command) => command.name)
 const REMOTE_AGENT_IDS: Record<string, string> = {
   fault: "fault",
   query: "query",
+  knowledge: "knowledge",
 };
 const COPAW_USER_ID = "default";
 const COPAW_CHANNEL = "console";

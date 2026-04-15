@@ -75,6 +75,7 @@ const sidebarEmployeePriority = [
 const REMOTE_AGENT_IDS: Record<string, string> = {
   fault: "fault",
   query: "query",
+  knowledge: "knowledge",
 };
 const DASHBOARD_CHAT_CHANNEL = "console";
 
