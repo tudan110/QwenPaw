@@ -412,7 +412,13 @@ function buildDashboardEmployeeSnapshots(
   historyCounts: Record<string, number>,
   latestSessionTitles: Record<string, string>,
 ): DashboardEmployeeSnapshot[] {
-  const templates: Record<string, Omit<DashboardEmployeeSnapshot, "id" | "name" | "desc" | "color" | "historyCount" | "urgent">> = {
+  const templates: Record<
+    string,
+    Omit<
+      DashboardEmployeeSnapshot,
+      "id" | "name" | "desc" | "color" | "historyCount" | "urgent" | "latestSessionTitle"
+    >
+  > = {
     resource: {
       runtimeState: "running",
       currentJob: `${getEmployeeById("resource")?.name || "资产管理员"}核心网段纳管扫描中`,
@@ -1241,7 +1247,7 @@ export default function DigitalEmployeePage({
     [conversationStore],
   );
   const sidebarEmployees = useMemo(() => {
-    const priorityIds = new Set(sidebarEmployeePriority);
+    const priorityIds = new Set<string>(sidebarEmployeePriority);
     const prioritizedEmployees = sidebarEmployeePriority
       .map((employeeId) => digitalEmployees.find((employee) => employee.id === employeeId))
       .filter(
