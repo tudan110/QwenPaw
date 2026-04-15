@@ -953,6 +953,7 @@ export default function DigitalEmployeePage({
       selectedEmployee
     );
   }, [employeesWithRuntimeStatus, selectedEmployee]);
+  const currentEmployeeBase = selectedEmployee || portalHomeEmployee;
   const currentEmployee = selectedEmployeeRuntime || portalHomeEmployee;
   const themeToggleIcon: ReactNode = pageTheme === "light" ? (
     <svg
@@ -1052,7 +1053,7 @@ export default function DigitalEmployeePage({
     handleSelectRemoteHistory,
     resetRemoteState,
   } = useRemoteChatSession({
-    currentEmployee,
+    currentEmployee: currentEmployeeBase,
     isRemoteEmployee,
     remoteAgentId,
     setMessages,
@@ -1073,7 +1074,7 @@ export default function DigitalEmployeePage({
     handleConfirmDisposalAction,
     resetAlarmWorkbench,
   } = useAlarmWorkbench({
-    currentEmployee,
+    currentEmployee: currentEmployeeBase,
     isAlarmWorkbenchMode,
     currentSessionId,
     handleRemoteSendMessage,
@@ -1238,7 +1239,7 @@ export default function DigitalEmployeePage({
   }, [employeesWithRuntimeStatus, navigateToEmployeePage]);
 
   useEffect(() => {
-    if (!currentEmployee) {
+    if (!currentEmployeeBase) {
       return;
     }
 
@@ -1257,7 +1258,7 @@ export default function DigitalEmployeePage({
     }
   }, [
     activeAdvancedPanel,
-    currentEmployee,
+    currentEmployeeBase?.id,
     currentEntry,
     currentView,
     employeeId,
@@ -1269,7 +1270,7 @@ export default function DigitalEmployeePage({
   ]);
 
   useEffect(() => {
-    if (!currentEmployee) {
+    if (!currentEmployeeBase) {
       return;
     }
 
@@ -1280,7 +1281,7 @@ export default function DigitalEmployeePage({
     if (isAlarmWorkbenchMode) {
       resetRemoteState({
         initialMessages: [
-          createAlarmWorkorderMessage(currentEmployee, {
+          createAlarmWorkorderMessage(currentEmployeeBase, {
             content: "告警已触发，我正在为您查询待处置工单...",
             workorders: [],
             workordersLoading: true,
@@ -1293,17 +1294,17 @@ export default function DigitalEmployeePage({
 
     if (!isRemoteEmployee) {
       resetRemoteState();
-      const initialMessages = isPortalHome ? [] : [createWelcomeMessage(currentEmployee)];
+      const initialMessages = isPortalHome ? [] : [createWelcomeMessage(currentEmployeeBase)];
       const nextSession = isPortalHome
         ? null
-        : createConversationSession(currentEmployee, initialMessages);
+        : createConversationSession(currentEmployeeBase, initialMessages);
 
       if (nextSession) {
         setConversationStore((prevStore) => {
-          const previousSessions = ensureSessionRecords(prevStore[currentEmployee.id]);
+          const previousSessions = ensureSessionRecords(prevStore[currentEmployeeBase.id]);
           const nextStore: ConversationStoreState = {
             ...prevStore,
-            [currentEmployee.id]: [
+            [currentEmployeeBase.id]: [
               nextSession as SessionRecord,
               ...previousSessions,
             ],
@@ -1319,10 +1320,10 @@ export default function DigitalEmployeePage({
     }
 
     resetRemoteState({
-      initialMessages: isPortalHome ? [] : [createWelcomeMessage(currentEmployee)],
+      initialMessages: isPortalHome ? [] : [createWelcomeMessage(currentEmployeeBase)],
     });
   }, [
-    currentEmployee,
+    currentEmployeeBase?.id,
     isPortalHome,
     isAlarmWorkbenchMode,
     isRemoteEmployee,
