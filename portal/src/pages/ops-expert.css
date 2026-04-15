@@ -17,11 +17,18 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  overflow-y: auto;
-  padding: 0 20px 0;
-  scrollbar-gutter: stable;
+  gap: 10px;
+  overflow: hidden;
+  padding: 0;
   container-type: inline-size;
+}
+
+.ops-expert-results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding-right: 0;
 }
 
 .ops-expert-header {
@@ -46,8 +53,9 @@
 
 .ops-expert-search {
   display: flex;
+  flex-shrink: 0;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 6px;
 }
 
 .ops-expert-search-input {
@@ -90,8 +98,9 @@
 
 .ops-expert-tabs {
   display: flex;
+  flex-shrink: 0;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 2px;
   flex-wrap: wrap;
 }
 
@@ -119,8 +128,9 @@
 
 .ops-expert-category-tabs {
   display: flex;
+  flex-shrink: 0;
   gap: 8px;
-  margin-bottom: 24px;
+  margin-bottom: 0;
   flex-wrap: wrap;
 }
 

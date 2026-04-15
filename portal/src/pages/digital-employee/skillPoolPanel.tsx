@@ -477,9 +477,10 @@ export function SkillPoolPanel() {
           </div>
         </div>
 
-        {notice ? (
-          <div className={`skill-pool-notice ${notice.type}`}>{notice.message}</div>
-        ) : null}
+        <div className="skill-pool-results">
+          {notice ? (
+            <div className={`skill-pool-notice ${notice.type}`}>{notice.message}</div>
+          ) : null}
 
         {loading ? (
           <div className="skill-pool-empty">
@@ -597,7 +598,7 @@ export function SkillPoolPanel() {
           </div>
         )}
 
-        {selectedSkill ? (
+          {selectedSkill ? (
           <section className="skill-pool-detail">
             <div className="skill-pool-detail-header">
               <div>
@@ -713,7 +714,8 @@ export function SkillPoolPanel() {
               </aside>
             </div>
           </section>
-        ) : null}
+          ) : null}
+        </div>
       </div>
 
       {isModalOpen ? (

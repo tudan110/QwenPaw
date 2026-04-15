@@ -54,7 +54,6 @@ const CLI_COMMANDS: CliCommandDefinition[] = [
   { name: "deploy", usage: "deploy <service>", description: "发起部署任务", requiresArgs: true },
   { name: "scan", usage: "scan <target>", description: "发起扫描任务", requiresArgs: true },
 ];
-const TERMINAL_SHORTCUTS = ["help", "list", "status", "agents", "history", "clear"] as const;
 const CLI_COMMAND_NAME_SET = new Set(CLI_COMMANDS.map((command) => command.name));
 const REMOTE_AGENT_IDS: Record<string, string> = {
   fault: "fault",
@@ -888,19 +887,6 @@ export function CliTerminalPanel({
       </div>
 
       <div className="cli-terminal-content">
-        <div className="cli-terminal-shortcuts">
-          {TERMINAL_SHORTCUTS.map((shortcut) => (
-            <button
-              key={shortcut}
-              type="button"
-              className="cli-terminal-shortcut"
-              onClick={() => void runCommand(shortcut)}
-            >
-              {shortcut}
-            </button>
-          ))}
-        </div>
-
         <div className="cli-terminal-shell">
           <div className="cli-terminal-topbar">
             <div className="cli-terminal-dots" aria-hidden="true">
