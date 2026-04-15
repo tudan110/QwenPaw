@@ -425,6 +425,12 @@ class MemorySummaryConfig(BaseModel):
         ),
     )
 
+    dream_cron: str = Field(
+        default="0 23 * * *",
+        description="Cron expression for dream-based memory optimization job "
+        "(empty to disable)",
+    )
+
     force_memory_search: bool = Field(
         default=False,
         description="Whether to force memory search on every turn",

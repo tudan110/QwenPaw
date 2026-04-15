@@ -247,6 +247,7 @@
     "downloadedToWorkspace": "Downloaded to current workspace",
     "builtinUpgradeTitle": "Upgrade Built-in Skill",
     "builtinUpgradeContent": "A newer version of built-in skill \"{{name}}\" is available in the pool. Overwrite the current version?",
+    "overwriteExistingList": "The following skills already exist and will be overwritten:",
     "nameConflict": "Name conflict detected. Suggested rename has been filled.",
     "uploadToPoolHint": "Upload selected workspace skills to the shared local skill pool",
     "downloadFromPoolHint": "Download selected pool skills into the current workspace",
@@ -348,6 +349,8 @@
     "broadcastSuccess": "Broadcast completed",
     "broadcastFailed": "Broadcast failed",
     "overwriteConfirm": "Overwrite existing skills?",
+    "overwriteTargetsContent": "The following existing targets will be overwritten:",
+    "builtinOverwriteTargetsContent": "The following built-in targets have different versions and will be overwritten:",
     "renameAndRetry": "A skill with this name already exists. Use the suggested name?",
     "multiConflictTitle": "Multiple Conflicts Detected",
     "multiConflictDesc": "The following skills already exist. Please resolve conflicts individually and retry:",
@@ -1057,6 +1060,9 @@
     "memorySummaryTitle": "Long-term Memory Config",
     "memorySummaryEnabled": "Activate Memory Summary",
     "memorySummaryEnabledTooltip": "Automatically generate and save memory summaries during context compaction",
+    "dreamCron": "Dream",
+    "dreamCronTooltip": "Cron expression for periodically optimizing long-term memories through dream state (leave empty to disable)",
+    "dreamCronPlaceholder": "0 23 * * *",
     "forceMemorySearch": "Force Memory Search (beta)",
     "forceMemorySearchTooltip": "Force memory search to run on every conversation turn. Each query will retrieve relevant memories, helping QwenPaw understand you better — but this increases token consumption. Note: enabling force memory search will break the KV cache, reducing cache hit rate. Use with caution.",
     "forceMaxResults": "Force Search Max Results",
@@ -1203,7 +1209,8 @@
       "noResults": "No results found",
       "resultsCount": "Found {{count}} result(s)",
       "userMessage": "User",
-      "assistantMessage": "Assistant"
+      "assistantMessage": "Assistant",
+      "titleMatch": "Title"
     }
   },
   "security": {
