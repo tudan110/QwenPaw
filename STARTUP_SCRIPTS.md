@@ -2,7 +2,7 @@
 
 ## 概述
 
-本项目提供两个启动脚本，分别用于启动 QwenPaw 主应用和 Portal 前端开发服务器。
+本项目提供多个常用脚本，分别用于启动 QwenPaw 主应用、同步本地工作目录，以及启动 Portal 前端开发服务器。
 
 ---
 
@@ -61,6 +61,41 @@
 
 ---
 
+## sync-qwenpaw-working.sh - 同步工作目录脚本
+
+### 功能说明
+
+将仓库内的 `deploy-all/qwenpaw/working/` 内容同步到本地工作目录，默认目标为 `~/.qwenpaw/`。
+
+默认行为会**覆盖同名文件**，但会**保留目标目录中额外存在的文件**；如需严格镜像，可使用 `--delete`。
+
+### 使用方法
+
+```bash
+# 同步到默认目录 ~/.qwenpaw
+./sync-qwenpaw-working.sh
+
+# 严格镜像（删除目标目录中多余文件）
+./sync-qwenpaw-working.sh --delete
+
+# 同步到自定义目录
+./sync-qwenpaw-working.sh /tmp/qwenpaw-working
+```
+
+### 参数说明
+
+| 参数 | 说明 |
+|------|------|
+| `--delete` | 删除目标目录中源目录不存在的文件，执行严格镜像 |
+| `target_dir` | 可选，自定义目标目录；默认值为 `~/.qwenpaw/` |
+
+### 说明
+
+- 默认目标目录也可通过环境变量 `QWENPAW_WORKING_DIR` 覆盖
+- 同步依赖系统已安装 `rsync`
+
+---
+
 ## start-portal.sh - Portal 前端启动脚本
 
 ### 功能说明
@@ -112,6 +147,14 @@ VITE_PORTAL_APP_TITLE="数字员工门户" ./start-portal.sh
 
 ```bash
 ./start-qwenpaw.sh
+```
+
+### 同步本地工作目录
+
+会同步本地开发的技能，需要在 qwenpaw 里面点击“从磁盘刷新技能”按钮
+
+```bash
+./sync-qwenpaw-working.sh
 ```
 
 ### 开发 Portal 前端
