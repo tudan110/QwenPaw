@@ -6,6 +6,7 @@ description: 用于检查 192.168.130.211:8000 上这套特定的 VEOPS/OneOps C
 # VEOPS CMDB 测试环境技能
 
 仅面向 `.env` 中配置的这套测试环境。
+`.env.example` 只是模板示例，运行时实际读取的是 `.env`。
 
 ## 默认行为
 
@@ -13,7 +14,7 @@ description: 用于检查 192.168.130.211:8000 上这套特定的 VEOPS/OneOps C
 - 除非用户明确询问页面布局、截图或仅能在页面上看到的配置，否则**不要**打开浏览器。
 - 除非需要接口名或已整理的场景关系，否则**不要**读取 `references/endpoints.md`。
 - 涉及统计分布、目标数量对比类图表时，优先使用 `scripts/veops-cmdb.sh analyze ...`。
-- 涉及具体应用的关系拓扑，先查 CMDB 里实际管理的是哪个应用实例，再使用 `scripts/veops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1,2,3"` 拉关系；不要再引用 `tmp/veops-cmdb/...` 这类本地副本路径。
+- 涉及具体应用的关系拓扑，先查 CMDB 里实际管理的是哪个应用实例，再使用 `scripts/veops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1,2,3"` 拉关系；只以当前代码目录下的脚本路径为准。
 - 当用户要求展示某个应用的关系拓扑图时，默认使用 ECharts `series.type = 'tree'`，并设置为从左到右展开；根节点使用 CMDB 中实际应用名。
 - 除非用户明确要求导出独立页面，否则**不要**生成 `.html` 图表文件；默认直接输出可渲染的 ```echarts 代码块。
 - 默认返回精简总结，不返回原始 JSON；只有用户明确要求时才返回原始响应。

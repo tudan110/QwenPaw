@@ -28,11 +28,11 @@
 ## 调用方式
 
 ```bash
-python3 tmp/veops-cmdb/scripts/analyze_cmdb.py --mode summary --output markdown
-python3 tmp/veops-cmdb/scripts/analyze_cmdb.py --mode model-groups --output markdown
-python3 tmp/veops-cmdb/scripts/analyze_cmdb.py --mode relation-types --output markdown
-python3 tmp/veops-cmdb/scripts/analyze_cmdb.py --mode app-relations --output markdown
-python3 tmp/veops-cmdb/scripts/analyze_cmdb.py --mode summary --output markdown-echarts-only
+bash scripts/veops-cmdb.sh analyze --mode summary --output markdown
+bash scripts/veops-cmdb.sh analyze --mode model-groups --output markdown
+bash scripts/veops-cmdb.sh analyze --mode relation-types --output markdown
+bash scripts/veops-cmdb.sh analyze --mode app-relations --output markdown
+bash scripts/veops-cmdb.sh analyze --mode summary --output markdown-echarts-only
 ```
 
 ## 模式说明
