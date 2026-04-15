@@ -18,13 +18,6 @@ dist/
 .wheelshim/
 # Console frontend build (generated in Docker/CI, do not commit)
 console/.cursor/
-console/pnpm-lock.yaml
-
-# 智能体本地初始化数据
-deploy-all/qwenpaw/data/
-
-# 敏感知识库目录
-knowledge/
 src/qwenpaw/console/dist/
 src/qwenpaw/console/
 
@@ -115,5 +108,18 @@ src/.hypothesis/
 # Worktrees
 .worktrees/
 
+###### Custom ignore files start ######
+
+# pnpm lockfiles (only ignore in subpackages, not root)
+console/pnpm-lock.yaml
+
+# 智能体本地初始化数据
+deploy-all/qwenpaw/data/
+
+# 敏感知识库目录
+/knowledge/
+
 # 临时文件
 tmp/
+
+###### Custom ignore files end ######
