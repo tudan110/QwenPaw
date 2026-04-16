@@ -370,7 +370,7 @@ export function useRemoteChatSession({
           const portalMessages = portalHistory.messages || [];
           if (portalMessages.length) {
             history = portalHistory;
-            nextMessages = portalMessages.map((message: any) =>
+            nextMessages = portalMessages.map((message) =>
               message?.type === "agent"
                 ? createAgentMessage(nextEmployee, {
                     ...message,
