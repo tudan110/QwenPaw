@@ -1,10 +1,9 @@
 from .fault_scenario_models import FaultScenarioDetection
 
 
-SCENE_KEYWORDS = ("cmdb", "添加", "新增", "插入", "死锁", "lock", "mysql")
 
 
-def detect_fault_scenario(*, employee_id: str, content: str) -> FaultScenarioDetection:
+def detect_fault_scenario(*, employee_id: str, content: str | None) -> FaultScenarioDetection:
     normalized = str(content or "").strip().lower()
     if employee_id != "fault":
         return FaultScenarioDetection(False, "", "")
