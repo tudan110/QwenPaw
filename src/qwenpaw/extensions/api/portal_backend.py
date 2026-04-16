@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
 
 from qwenpaw.config.utils import load_config
+from qwenpaw.extensions.api.fault_scenario_service import run_fault_scenario_diagnose
 from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
     query_alarm_workorders,
 )
@@ -86,6 +87,7 @@ def _compact_ui_message(message: dict) -> dict:
         "content": message.get("content", ""),
         "processBlocks": message.get("processBlocks", []) or [],
         "disposalOperation": message.get("disposalOperation"),
+        "faultScenarioResult": message.get("faultScenarioResult"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -539,6 +541,51 @@ async def fault_disposal_execute(
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] fault_disposal_execute failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/fault-scenarios/diagnose")
+async def portal_fault_scenario_diagnose(
+    request: Request,
+    payload: dict = Body(default_factory=dict),
+):
+    try:
+        session_id = str(payload.get("sessionId") or "").strip()
+        if not session_id:
+            raise ValueError("sessionId is required")
+
+        result = run_fault_scenario_diagnose(payload)
+        if hasattr(request.app.state, "multi_agent_manager"):
+            history = await _load_portal_fault_history(request, session_id=session_id)
+            history.append(
+                _compact_ui_message(
+                    {
+                        "id": f"user-{datetime.now(timezone.utc).timestamp()}",
+                        "type": "user",
+                        "content": payload.get("content", ""),
+                    }
+                )
+            )
+            history.append(
+                _compact_ui_message(
+                    {
+                        "id": f"agent-{datetime.now(timezone.utc).timestamp()}",
+                        "type": "agent",
+                        "content": result["result"]["summary"],
+                        "faultScenarioResult": result["result"],
+                    }
+                )
+            )
+            await _save_portal_fault_history(
+                request,
+                session_id=session_id,
+                messages=history,
+            )
+        return result
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] portal_fault_scenario_diagnose failed: {error_detail}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 

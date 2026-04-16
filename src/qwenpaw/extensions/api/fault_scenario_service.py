@@ -14,3 +14,18 @@ def detect_fault_scenario(*, employee_id: str, content: str | None) -> FaultScen
         scene_code="cmdb_add_failed_mysql_deadlock",
         entry_summary="正在关联分析...",
     )
+
+
+def run_fault_scenario_diagnose(payload: dict) -> dict:
+    return {
+        "session": {
+            "sessionId": payload["sessionId"],
+            "scene": "cmdb_add_failed_mysql_deadlock",
+        },
+        "result": {
+            "summary": "已定位为数据库死锁导致 CMDB 新增失败",
+            "rootCause": {"type": "数据库异常"},
+            "steps": [],
+            "logEntries": [],
+        },
+    }
