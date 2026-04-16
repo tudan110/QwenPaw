@@ -790,6 +790,89 @@
   display: inline-flex;
 }
 
+.portal-digital-employee .danmaku-toast {
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: 420px;
+  padding: 6px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(249, 115, 22, 0.25);
+  background: transparent;
+  color: #f97316;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 120;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+  animation: portal-alert-toast-in 0.5s ease-out;
+}
+
+.portal-digital-employee .danmaku-toast:hover {
+  background: rgba(249, 115, 22, 0.08);
+  border-color: #f97316;
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .danmaku-dot {
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #f97316;
+  flex-shrink: 0;
+  animation: portal-alert-dot-pulse 1.5s infinite;
+}
+
+.portal-digital-employee .danmaku-toast-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.portal-digital-employee .danmaku-emp {
+  margin-left: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+@keyframes portal-alert-toast-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) translateX(20px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+@keyframes portal-alert-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.4);
+  }
+
+  50% {
+    opacity: 0.6;
+    box-shadow: 0 0 0 4px rgba(249, 115, 22, 0);
+  }
+}
+
 @keyframes portal-alert-bell-shake {
   0%,
   100% {
@@ -1399,6 +1482,16 @@
   border-color: rgba(79, 110, 247, 0.22);
   color: #cbd5e1;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
+
+.portal-digital-employee.theme-dark .danmaku-toast {
+  color: #fb923c;
+  border-color: rgba(251, 146, 60, 0.3);
+}
+
+.portal-digital-employee.theme-dark .danmaku-toast:hover {
+  background: rgba(249, 115, 22, 0.12);
+  color: #e2e8f0;
 }
 
 .portal-digital-employee.theme-dark .ops-column {

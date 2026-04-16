@@ -592,6 +592,11 @@ type PortalOpsAlert = {
   visibleContent?: string;
 };
 
+type PortalAlertToastState = {
+  alert: PortalOpsAlert;
+  visible: boolean;
+};
+
 const PORTAL_ALERT_LEVEL_LABELS: Record<PortalOpsAlertLevel, string> = {
   critical: "紧急",
   urgent: "严重",
@@ -939,6 +944,7 @@ export default function DigitalEmployeePage({
   const [executionList, setExecutionList] = useState(executionHistory);
   const [pageTheme, setPageTheme] = useState<"light" | "dark">(loadPageTheme);
   const [opsAlerts, setOpsAlerts] = useState<PortalOpsAlert[]>([]);
+  const [alertToast, setAlertToast] = useState<PortalAlertToastState | null>(null);
   const [employeeRuntimeStatusMap, setEmployeeRuntimeStatusMap] = useState<
     Record<string, PortalEmployeeRuntimeStatus>
   >({});
@@ -1045,6 +1051,8 @@ export default function DigitalEmployeePage({
   const [historyActionSessionId, setHistoryActionSessionId] = useState("");
   const [historyActionError, setHistoryActionError] = useState("");
   const [alertPopupPosition, setAlertPopupPosition] = useState<{ top: number; left: number } | null>(null);
+  const alertToastTimerRef = useRef<number | null>(null);
+  const knownAlertIdsRef = useRef<string[]>([]);
 
   const {
     currentSessionId,
@@ -1651,6 +1659,47 @@ export default function DigitalEmployeePage({
     setAlertPopupOpen(false);
   }, [location.pathname, location.search]);
 
+  useEffect(
+    () => () => {
+      if (alertToastTimerRef.current) {
+        window.clearTimeout(alertToastTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const nextAlertIds = opsAlerts.map((alert) => alert.id);
+    const previousAlertIds = knownAlertIdsRef.current;
+    const incomingAlerts = opsAlerts.filter((alert) => !previousAlertIds.includes(alert.id));
+
+    knownAlertIdsRef.current = nextAlertIds;
+
+    if (!incomingAlerts.length) {
+      if (opsAlerts.length === 0) {
+        setAlertToast(null);
+      }
+      return;
+    }
+
+    const latestAlert = incomingAlerts[incomingAlerts.length - 1];
+    if (alertToastTimerRef.current) {
+      window.clearTimeout(alertToastTimerRef.current);
+    }
+    setAlertToast({
+      alert: latestAlert,
+      visible: true,
+    });
+    alertToastTimerRef.current = window.setTimeout(() => {
+      setAlertToast((current) =>
+        current?.alert.id === latestAlert.id
+          ? null
+          : current,
+      );
+      alertToastTimerRef.current = null;
+    }, 6000);
+  }, [opsAlerts]);
+
   useEffect(() => {
     if (!alertPopupOpen) {
       return;
@@ -1826,7 +1875,12 @@ export default function DigitalEmployeePage({
   }, [navigate]);
 
   const handlePortalAlertAction = useCallback((alert: PortalOpsAlert) => {
+    if (alertToastTimerRef.current) {
+      window.clearTimeout(alertToastTimerRef.current);
+      alertToastTimerRef.current = null;
+    }
     setAlertPopupOpen(false);
+    setAlertToast((current) => (current?.alert.id === alert.id ? null : current));
     setOpsAlerts((currentAlerts) => currentAlerts.filter((item) => item.id !== alert.id));
 
     const employee = getEmployeeById(alert.employeeId);
@@ -1852,6 +1906,11 @@ export default function DigitalEmployeePage({
 
   const handleClearPortalAlerts = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
+    if (alertToastTimerRef.current) {
+      window.clearTimeout(alertToastTimerRef.current);
+      alertToastTimerRef.current = null;
+    }
+    setAlertToast(null);
     setOpsAlerts([]);
     setAlertPopupOpen(false);
   }, []);
@@ -2669,6 +2728,19 @@ export default function DigitalEmployeePage({
 
   const renderAlertBell = () => (
     <div className="alert-bell-wrap">
+      {alertToast?.visible ? (
+        <button
+          type="button"
+          className="danmaku-toast"
+          onClick={() => handlePortalAlertAction(alertToast.alert)}
+        >
+          <span className="danmaku-dot" />
+          <span className="danmaku-toast-message">{alertToast.alert.message}</span>
+          <span className="danmaku-emp">
+            {getEmployeeById(alertToast.alert.employeeId)?.name || alertToast.alert.employeeId}
+          </span>
+        </button>
+      ) : null}
       <button
         type="button"
         className={opsAlerts.length ? "alert-bell has-alerts" : "alert-bell"}
