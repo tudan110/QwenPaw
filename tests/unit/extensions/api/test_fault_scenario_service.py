@@ -31,6 +31,15 @@ def test_detect_fault_scenario_ignores_non_fault_employee() -> None:
     assert detection.scene_code == ""
 
 
+def test_detect_fault_scenario_does_not_trigger_for_plain_fault_question() -> None:
+    detection = detect_fault_scenario(
+        employee_id="fault",
+        content="帮我看一下今天的告警情况",
+    )
+
+    assert detection.triggered is False
+
+
 def test_run_fault_scenario_diagnose_requires_session_id() -> None:
     with pytest.raises(ValueError, match="sessionId is required"):
         run_fault_scenario_diagnose({})
@@ -48,6 +57,13 @@ def test_parse_fault_scenario_output_keeps_root_cause_and_logs() -> None:
 
     assert payload["rootCause"]["object"] == "cmdb_device"
     assert payload["logEntries"][0]["stage"] == "database-analysis"
+
+
+def test_parse_fault_scenario_output_defaults_partial_status() -> None:
+    payload = parse_fault_scenario_output('{"summary":"部分完成"}')
+
+    assert payload["steps"] == []
+    assert payload["logEntries"] == []
 
 
 def test_fault_skill_root_prefers_env_override(monkeypatch: pytest.MonkeyPatch) -> None:

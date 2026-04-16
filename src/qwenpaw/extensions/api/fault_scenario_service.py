@@ -11,6 +11,8 @@ def detect_fault_scenario(*, employee_id: str, content: str | None) -> FaultScen
     normalized = str(content or "").strip().lower()
     if employee_id != "fault":
         return FaultScenarioDetection(False, "", "")
+    if "告警" in normalized and "cmdb" not in normalized:
+        return FaultScenarioDetection(False, "", "")
     if "cmdb" not in normalized or ("死锁" not in normalized and "mysql" not in normalized):
         return FaultScenarioDetection(False, "", "")
     return FaultScenarioDetection(
@@ -22,8 +24,11 @@ def detect_fault_scenario(*, employee_id: str, content: str | None) -> FaultScen
 
 def parse_fault_scenario_output(stdout_text: str) -> dict:
     payload = json.loads(stdout_text)
+    payload.setdefault("summary", "诊断已完成")
+    payload.setdefault("rootCause", {})
     payload.setdefault("steps", [])
     payload.setdefault("logEntries", [])
+    payload.setdefault("actions", [])
     return payload
 
 

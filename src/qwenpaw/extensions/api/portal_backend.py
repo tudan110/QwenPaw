@@ -87,8 +87,10 @@ def _compact_ui_message(message: dict) -> dict:
         "content": message.get("content", ""),
         "processBlocks": message.get("processBlocks", []) or [],
         "disposalOperation": message.get("disposalOperation"),
-        "faultScenarioResult": message.get("faultScenarioResult"),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "faultScenarioResult": _shape_fault_scenario_result(
+            message.get("faultScenarioResult")
+        ),
+        "timestamp": message.get("timestamp") or datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -277,6 +279,42 @@ async def _save_portal_fault_history(
         messages,
         user_id=user_id,
     )
+
+
+def _shape_fault_scenario_result(result: Any) -> dict | None:
+    if result is None:
+        return None
+
+    payload = result if isinstance(result, dict) else {}
+    shaped = dict(payload)
+    shaped["summary"] = str(payload.get("summary") or "诊断已完成")
+    shaped["rootCause"] = (
+        payload.get("rootCause") if isinstance(payload.get("rootCause"), dict) else {}
+    )
+    shaped["steps"] = payload.get("steps") if isinstance(payload.get("steps"), list) else []
+    shaped["logEntries"] = (
+        payload.get("logEntries") if isinstance(payload.get("logEntries"), list) else []
+    )
+    shaped["actions"] = (
+        payload.get("actions") if isinstance(payload.get("actions"), list) else []
+    )
+    return shaped
+
+
+def _shape_fault_scenario_response(result: dict[str, Any]) -> dict[str, Any]:
+    shaped = dict(result)
+    shaped["result"] = _shape_fault_scenario_result(result.get("result")) or {
+        "summary": "诊断已完成",
+        "rootCause": {},
+        "steps": [],
+        "logEntries": [],
+        "actions": [],
+    }
+    return shaped
+
+
+def _normalize_portal_fault_history_messages(messages: list[dict]) -> list[dict]:
+    return [_compact_ui_message(message) for message in messages if isinstance(message, dict)]
 
 
 def _build_fault_context(payload: dict, *, source: str = "portal-chat"):
@@ -555,7 +593,7 @@ async def portal_fault_scenario_diagnose(
         if not session_id:
             raise HTTPException(status_code=422, detail="sessionId is required")
 
-        result = run_fault_scenario_diagnose(payload)
+        result = _shape_fault_scenario_response(run_fault_scenario_diagnose(payload))
         if hasattr(request.app.state, "multi_agent_manager"):
             history = await _load_portal_fault_history(request, session_id=session_id)
             history.append(
@@ -599,7 +637,10 @@ async def fault_disposal_history(
 ):
     try:
         history = await _load_portal_fault_history(request, session_id=session_id)
-        return {"messages": history, "status": "idle"}
+        return {
+            "messages": _normalize_portal_fault_history_messages(history),
+            "status": "idle",
+        }
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] fault_disposal_history failed: {error_detail}")

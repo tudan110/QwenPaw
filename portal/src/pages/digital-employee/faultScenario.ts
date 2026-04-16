@@ -47,6 +47,16 @@ function isTargetFaultScenario(content: string) {
   );
 }
 
+export function normalizeFaultScenarioResult(result: any) {
+  return {
+    summary: result?.summary || "诊断已完成",
+    rootCause: result?.rootCause || {},
+    steps: Array.isArray(result?.steps) ? result.steps : [],
+    logEntries: Array.isArray(result?.logEntries) ? result.logEntries : [],
+    actions: Array.isArray(result?.actions) ? result.actions : [],
+  };
+}
+
 export async function maybeHandleFaultScenarioMessage({
   currentEmployee,
   content,
@@ -78,7 +88,7 @@ export async function maybeHandleFaultScenarioMessage({
       employeeId: "fault",
       content,
     }, { signal });
-    const result = getFaultScenarioResult(response);
+    const result = normalizeFaultScenarioResult(getFaultScenarioResult(response));
 
     setMessages((prevMessages) =>
       prevMessages.map((item) =>
