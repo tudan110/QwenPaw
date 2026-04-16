@@ -81,17 +81,19 @@ def _fault_disposal_bridge_script() -> Path:
 
 
 def _compact_ui_message(message: dict) -> dict:
-    return {
-        "id": message.get("id"),
-        "type": message.get("type"),
-        "content": message.get("content", ""),
-        "processBlocks": message.get("processBlocks", []) or [],
-        "disposalOperation": message.get("disposalOperation"),
-        "faultScenarioResult": _shape_fault_scenario_result(
-            message.get("faultScenarioResult")
-        ),
-        "timestamp": message.get("timestamp") or datetime.now(timezone.utc).isoformat(),
-    }
+    compact_message = dict(message)
+    compact_message["id"] = message.get("id")
+    compact_message["type"] = message.get("type")
+    compact_message["content"] = message.get("content", "")
+    compact_message["processBlocks"] = message.get("processBlocks", []) or []
+    compact_message["disposalOperation"] = message.get("disposalOperation")
+    compact_message["faultScenarioResult"] = _shape_fault_scenario_result(
+        message.get("faultScenarioResult")
+    )
+    compact_message["timestamp"] = (
+        message.get("timestamp") or datetime.now(timezone.utc).isoformat()
+    )
+    return compact_message
 
 
 async def _get_workspace_and_session(request: Request):
@@ -621,6 +623,8 @@ async def portal_fault_scenario_diagnose(
                 messages=history,
             )
         return result
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except HTTPException:
         raise
     except Exception as exc:

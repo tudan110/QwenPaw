@@ -45,6 +45,17 @@ def test_run_fault_scenario_diagnose_requires_session_id() -> None:
         run_fault_scenario_diagnose({})
 
 
+def test_run_fault_scenario_diagnose_rejects_non_matching_fault_payload() -> None:
+    with pytest.raises(ValueError, match="unsupported fault scenario"):
+        run_fault_scenario_diagnose(
+            {
+                "sessionId": "fault-scenario-1",
+                "employeeId": "fault",
+                "content": "帮我看一下 Redis 命中率",
+            }
+        )
+
+
 def test_parse_fault_scenario_output_keeps_root_cause_and_logs() -> None:
     payload = parse_fault_scenario_output(
         """
@@ -74,7 +85,13 @@ def test_fault_skill_root_prefers_env_override(monkeypatch: pytest.MonkeyPatch) 
 
 def test_run_fault_scenario_diagnose_returns_scaffold_result_without_shelling_out(
 ) -> None:
-    payload = run_fault_scenario_diagnose({"sessionId": "fault-scenario-1"})
+    payload = run_fault_scenario_diagnose(
+        {
+            "sessionId": "fault-scenario-1",
+            "employeeId": "fault",
+            "content": "CMDB 添加设备失败了，怀疑 mysql 死锁，帮我分析一下",
+        }
+    )
 
     assert payload["session"]["sessionId"] == "fault-scenario-1"
     assert payload["session"]["scene"] == "cmdb_add_failed_mysql_deadlock"

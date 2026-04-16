@@ -5,15 +5,32 @@ from pathlib import Path
 from .fault_scenario_models import FaultScenarioDetection
 
 
+CMDB_KEYWORDS = ("cmdb",)
+CMDB_WRITE_ACTION_KEYWORDS = ("新增", "插入")
+DATABASE_FAULT_KEYWORDS = ("mysql", "死锁")
+FAILURE_HINT_KEYWORDS = ("失败", "报错", "超时")
+
+
+def _contains_any_keyword(text: str, keywords: tuple[str, ...]) -> bool:
+    return any(keyword in text for keyword in keywords)
+
+
 
 
 def detect_fault_scenario(*, employee_id: str, content: str | None) -> FaultScenarioDetection:
     normalized = str(content or "").strip().lower()
     if employee_id != "fault":
         return FaultScenarioDetection(False, "", "")
-    if "告警" in normalized and "cmdb" not in normalized:
-        return FaultScenarioDetection(False, "", "")
-    if "cmdb" not in normalized or ("死锁" not in normalized and "mysql" not in normalized):
+
+    has_cmdb_keyword = _contains_any_keyword(normalized, CMDB_KEYWORDS)
+    has_cmdb_write_action = _contains_any_keyword(normalized, CMDB_WRITE_ACTION_KEYWORDS)
+    has_database_fault = _contains_any_keyword(normalized, DATABASE_FAULT_KEYWORDS)
+    has_failure_hint = _contains_any_keyword(normalized, FAILURE_HINT_KEYWORDS)
+
+    if not (
+        (has_cmdb_keyword and has_cmdb_write_action and has_failure_hint)
+        or (has_database_fault and (has_cmdb_keyword or has_cmdb_write_action))
+    ):
         return FaultScenarioDetection(False, "", "")
     return FaultScenarioDetection(
         triggered=True,
@@ -52,10 +69,17 @@ def run_fault_scenario_diagnose(payload: dict) -> dict:
     if not session_id:
         raise ValueError("sessionId is required")
 
+    detection = detect_fault_scenario(
+        employee_id=str(payload.get("employeeId") or "fault"),
+        content=payload.get("content"),
+    )
+    if not detection.triggered:
+        raise ValueError("unsupported fault scenario")
+
     return {
         "session": {
             "sessionId": session_id,
-            "scene": "cmdb_add_failed_mysql_deadlock",
+            "scene": detection.scene_code,
         },
         "result": parse_fault_scenario_output(
             json.dumps(

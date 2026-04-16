@@ -198,6 +198,22 @@ def test_fault_scenario_diagnose_route_rejects_missing_session_id() -> None:
     assert response.json()["detail"] == "sessionId is required"
 
 
+def test_fault_scenario_diagnose_route_rejects_non_matching_payload() -> None:
+    client = TestClient(portal_backend.app)
+
+    response = client.post(
+        "/api/portal/fault-scenarios/diagnose",
+        json={
+            "sessionId": "fault-scenario-1",
+            "employeeId": "fault",
+            "content": "帮我看一下 Redis 命中率",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "unsupported fault scenario" in response.json()["detail"]
+
+
 def test_fault_scenario_diagnose_route_persists_history_with_unique_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -332,3 +348,33 @@ def test_fault_disposal_history_normalizes_fault_scenario_result(
     payload = response.json()
     assert payload["messages"][0]["faultScenarioResult"]["steps"] == []
     assert payload["messages"][0]["faultScenarioResult"]["logEntries"] == []
+
+
+def test_fault_disposal_history_preserves_unknown_message_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+
+    async def fake_load_history(_request, *, session_id: str, user_id: str = "default") -> list[dict]:
+        return [
+            {
+                "id": "agent-1",
+                "type": "agent",
+                "content": "部分完成",
+                "customField": {"source": "persisted"},
+                "extraFlag": True,
+                "faultScenarioResult": {
+                    "summary": "部分完成",
+                },
+            }
+        ]
+
+    monkeypatch.setattr(portal_backend, "_load_portal_fault_history", fake_load_history)
+
+    response = client.get("/api/portal/fault-disposal/history/fault-scenario-1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["messages"][0]["customField"] == {"source": "persisted"}
+    assert payload["messages"][0]["extraFlag"] is True
+    assert payload["messages"][0]["faultScenarioResult"]["steps"] == []
