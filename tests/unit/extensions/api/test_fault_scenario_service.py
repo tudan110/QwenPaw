@@ -1,6 +1,9 @@
+from pathlib import Path
+
 import pytest
 
 from qwenpaw.extensions.api.fault_scenario_service import (
+    _fault_skill_root,
     detect_fault_scenario,
     parse_fault_scenario_output,
     run_fault_scenario_diagnose,
@@ -47,8 +50,19 @@ def test_parse_fault_scenario_output_keeps_root_cause_and_logs() -> None:
     assert payload["logEntries"][0]["stage"] == "database-analysis"
 
 
-def test_run_fault_scenario_diagnose_returns_structured_skill_output() -> None:
+def test_fault_skill_root_prefers_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("QWENPAW_FAULT_SKILL_ROOT", "/configured/fault-skills")
+
+    assert _fault_skill_root() == Path("/configured/fault-skills")
+
+
+def test_run_fault_scenario_diagnose_returns_scaffold_result_without_shelling_out(
+) -> None:
     payload = run_fault_scenario_diagnose({"sessionId": "fault-scenario-1"})
 
+    assert payload["session"]["sessionId"] == "fault-scenario-1"
+    assert payload["session"]["scene"] == "cmdb_add_failed_mysql_deadlock"
+    assert "脚手架" in payload["result"]["summary"]
     assert payload["result"]["rootCause"]["object"] == "cmdb_device"
+    assert payload["result"]["steps"][0]["status"] == "scaffolded"
     assert payload["result"]["logEntries"][0]["stage"] == "database-analysis"

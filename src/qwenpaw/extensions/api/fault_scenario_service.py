@@ -1,6 +1,5 @@
 import json
-import subprocess
-import sys
+import os
 from pathlib import Path
 
 from .fault_scenario_models import FaultScenarioDetection
@@ -29,6 +28,9 @@ def parse_fault_scenario_output(stdout_text: str) -> dict:
 
 
 def _fault_skill_root() -> Path:
+    configured_root = os.getenv("QWENPAW_FAULT_SKILL_ROOT", "").strip()
+    if configured_root:
+        return Path(configured_root)
     return (
         Path(__file__).resolve().parents[4]
         / "deploy-all"
@@ -45,23 +47,28 @@ def run_fault_scenario_diagnose(payload: dict) -> dict:
     if not session_id:
         raise ValueError("sessionId is required")
 
-    script_path = (
-        _fault_skill_root()
-        / "scenario-root-cause-analyst"
-        / "scripts"
-        / "analyze_scenario.py"
-    )
-    completed = subprocess.run(
-        [sys.executable, str(script_path)],
-        capture_output=True,
-        check=True,
-        text=True,
-    )
-
     return {
         "session": {
             "sessionId": session_id,
             "scene": "cmdb_add_failed_mysql_deadlock",
         },
-        "result": parse_fault_scenario_output(completed.stdout),
+        "result": parse_fault_scenario_output(
+            json.dumps(
+                {
+                    "summary": "已建立场景根因分析脚手架，后续将接入 MySQL 死锁证据采集。",
+                    "rootCause": {"type": "待分析", "object": "cmdb_device"},
+                    "steps": [
+                        {"id": "database-analysis", "status": "scaffolded"},
+                        {"id": "decision-merge", "status": "scaffolded"},
+                    ],
+                    "logEntries": [
+                        {
+                            "stage": "database-analysis",
+                            "summary": "MySQL 死锁证据采集尚未接线，当前返回脚手架结果。",
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        ),
     }
