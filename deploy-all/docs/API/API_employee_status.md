@@ -79,6 +79,7 @@ GET /api/portal/employee-status
       "urgent": false,
       "stateLabel": "待机",
       "workStatus": "待机",
+      "progress": "100%",
       "currentJob": "最近会话：CPU 使用率分析",
       "hasConversation": true,
       "totalChatCount": 3,
@@ -96,6 +97,7 @@ GET /api/portal/employee-status
       "urgent": true,
       "stateLabel": "紧急任务",
       "workStatus": "紧急任务",
+      "progress": "0%",
       "currentJob": "待处理告警 2 条",
       "hasConversation": true,
       "totalChatCount": 5,
@@ -130,6 +132,7 @@ GET /api/portal/employee-status
 | `urgent` | `boolean` | 是否处于紧急状态 |
 | `stateLabel` | `string` | 展示用状态文案，如 `运行中` / `待机` / `紧急任务` |
 | `workStatus` | `string` | 展示用工作状态文案 |
+| `progress` | `string` | 当前进度展示值，取值：`0%` / `50%` / `100%` / `--` |
 | `currentJob` | `string` | 当前任务描述 |
 | `hasConversation` | `boolean` | 是否存在历史会话 |
 | `totalChatCount` | `number` | 总会话数 |
@@ -159,6 +162,7 @@ GET /api/portal/employee-status
 - `urgent = true`
 - `stateLabel = "紧急任务"`
 - `workStatus = "紧急任务"`
+- `progress = "0%"`
 
 ### 2. 运行中
 
@@ -167,6 +171,7 @@ GET /api/portal/employee-status
 - `status = "running"`
 - `urgent = false`
 - `stateLabel = "运行中"`
+- `progress = "50%"`
 
 ### 3. 待机
 
@@ -176,7 +181,15 @@ GET /api/portal/employee-status
 - `urgent = false`
 - `stateLabel = "待机"`
 
-若有历史会话，则 `currentJob` 会显示最近会话标题；否则显示 `暂无对话`。
+若有历史会话，则：
+
+- `currentJob` 会显示最近会话标题
+- `progress = "100%"`
+
+若没有历史会话，则：
+
+- `currentJob = "暂无对话"`
+- `progress = "--"`
 
 ## 当前告警来源说明
 

@@ -1104,6 +1104,8 @@ export default function DigitalEmployeePage({
           ...employee,
           status: runtime?.status || employee.status,
           urgent: Boolean(runtime?.urgent),
+          statusLabel:
+            runtime?.stateLabel || (employee.urgent ? "紧急处理中" : employee.status === "running" ? "运行中" : "已停止"),
         };
       }),
     [employeeRuntimeStatusMap],
@@ -3361,6 +3363,7 @@ export default function DigitalEmployeePage({
             <OverviewPanel
               pageTheme={pageTheme}
               onOpenEmployeeChat={handleOpenTaskEmployeeChat}
+              employees={employeesWithRuntimeStatus}
             />
           ) : null}
 

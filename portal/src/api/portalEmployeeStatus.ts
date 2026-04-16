@@ -8,6 +8,7 @@ export interface PortalEmployeeRuntimeStatus {
   urgent: boolean;
   stateLabel: string;
   workStatus: string;
+  progress: "0%" | "50%" | "100%" | "--";
   currentJob: string;
   hasConversation: boolean;
   totalChatCount: number;

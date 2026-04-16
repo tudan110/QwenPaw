@@ -120,21 +120,25 @@ def _build_portal_employee_status_payload(
     urgent = alert_count > 0
     status = "running" if active_task_count > 0 else "idle"
     has_conversation = total_chat_count > 0
+    progress = "--"
 
     if urgent:
         current_job = f"待处理告警 {alert_count} 条"
         work_status = "紧急任务"
         state_label = "紧急任务"
+        progress = "0%"
     elif status == "running":
         current_job = (
             f"正在处理 {active_chat_count or active_task_count} 个对话任务"
         )
         work_status = "运行中"
         state_label = "运行中"
+        progress = "50%"
     elif has_conversation and latest_session_title:
         current_job = f"最近会话：{latest_session_title}"
         work_status = "待机"
         state_label = "待机"
+        progress = "100%"
     else:
         current_job = "暂无对话"
         work_status = "待机"
@@ -148,6 +152,7 @@ def _build_portal_employee_status_payload(
         "urgent": urgent,
         "stateLabel": state_label,
         "workStatus": work_status,
+        "progress": progress,
         "currentJob": current_job,
         "hasConversation": has_conversation,
         "totalChatCount": total_chat_count,

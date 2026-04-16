@@ -4,9 +4,14 @@ import ReactECharts from "echarts-for-react";
 import DigitalEmployeeAvatar from "../../components/DigitalEmployeeAvatar";
 import { digitalEmployees } from "../../data/portalData";
 
+type OverviewEmployee = (typeof digitalEmployees)[number] & {
+  statusLabel?: string;
+};
+
 type OverviewPanelProps = {
   pageTheme: "light" | "dark";
   onOpenEmployeeChat: (employeeId: string) => void;
+  employees: OverviewEmployee[];
 };
 
 type OverviewKpi = {
@@ -60,6 +65,7 @@ const EMPLOYEE_ORDER = [
 const STATUS_LABELS: Record<string, string> = {
   running: "运行中",
   urgent: "紧急处理中",
+  idle: "待机",
   stopped: "已停止",
   pending: "待执行",
   completed: "已完成",
@@ -244,15 +250,24 @@ const ALERT_TREND_HOURS = Array.from({ length: 24 }, (_, index) => `${String(ind
 const ALERT_TREND_SERIES_CRITICAL = [2, 1, 1, 0, 1, 0, 0, 1, 3, 5, 8, 6, 4, 3, 5, 7, 4, 3, 2, 3, 4, 2, 1, 1];
 const ALERT_TREND_SERIES_WARNING = [5, 4, 3, 2, 3, 2, 1, 4, 6, 9, 12, 10, 8, 7, 9, 11, 8, 6, 5, 6, 7, 5, 4, 3];
 
-export function OverviewPanel({ pageTheme, onOpenEmployeeChat }: OverviewPanelProps) {
+export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: OverviewPanelProps) {
   const isDark = pageTheme === "dark";
 
   const orderedEmployees = useMemo(
     () =>
       EMPLOYEE_ORDER
-        .map((id) => digitalEmployees.find((employee) => employee.id === id))
-        .filter((employee): employee is (typeof digitalEmployees)[number] => Boolean(employee)),
-    [],
+        .map((id) => employees.find((employee) => employee.id === id))
+        .filter((employee): employee is OverviewEmployee => Boolean(employee)),
+    [employees],
+  );
+  const orderedEmployeesWithStatus = useMemo(
+    () =>
+      orderedEmployees.map((employee) => ({
+        ...employee,
+        statusClass: employee.urgent ? "urgent" : employee.status === "running" ? "running" : "stopped",
+        statusText: employee.statusLabel || STATUS_LABELS[employee.status] || employee.status,
+      })),
+    [orderedEmployees],
   );
 
   const chartOption = useMemo<EChartsOption>(
@@ -380,7 +395,7 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat }: OverviewPanelPr
             数字员工状态
           </div>
           <div className="overview-ref-employee-grid">
-            {orderedEmployees.map((employee) => (
+            {orderedEmployeesWithStatus.map((employee) => (
               <button
                 key={employee.id}
                 type="button"
@@ -389,8 +404,8 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat }: OverviewPanelPr
               >
                 <DigitalEmployeeAvatar employee={employee} className="overview-ref-employee-avatar" />
                 <div className="overview-ref-employee-name">{employee.name}</div>
-                <div className={`overview-ref-employee-status ${employee.status}`}>
-                  {STATUS_LABELS[employee.status] || employee.status}
+                <div className={`overview-ref-employee-status ${employee.statusClass}`}>
+                  {employee.statusText}
                 </div>
               </button>
             ))}
