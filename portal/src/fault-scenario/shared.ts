@@ -22,11 +22,18 @@ export interface FaultScenarioRootCause {
   object?: string;
 }
 
+export interface FaultScenarioAction {
+  // Lightweight action shape; backend/front-end currently produce varied action objects.
+  // Extend this with specific fields when a stronger contract exists.
+  [key: string]: unknown;
+}
+
 export interface FaultScenarioResult {
   summary?: string;
   rootCause?: FaultScenarioRootCause;
   steps?: FaultScenarioStep[];
   logEntries?: FaultScenarioLogEntry[];
+  actions?: FaultScenarioAction[];
 }
 
 export interface FaultScenarioDiagnosisResponse {
