@@ -95,6 +95,8 @@ const EMPLOYEE_MENTION_ALIASES: Record<string, string[]> = {
 };
 
 const PAGE_THEME_STORAGE_KEY = "portal-digital-employee-theme";
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "portal-sidebar-collapsed";
+const CHAT_SIDEBAR_COLLAPSED_STORAGE_KEY = "portal-chat-sidebar-collapsed";
 const PORTAL_HOME_ID = "portal-home";
 const PORTAL_CLOSE_DRAWER_MESSAGE = {
   source: "qwenpaw-portal",
@@ -538,6 +540,82 @@ function buildDashboardEmployeeSnapshots(
   });
 }
 
+function formatEmployeeStatsLabel(employee: (typeof digitalEmployees)[number]) {
+  const total = employee.tasks.toLocaleString("zh-CN");
+  switch (employee.id) {
+    case "query":
+      return `已分析 ${total} 份报表`;
+    case "fault":
+      return `已处置 ${total} 条事件`;
+    case "resource":
+      return `已管理 ${total} 台主机`;
+    case "inspection":
+      return `已巡检 ${total} 次`;
+    case "order":
+      return `已流转 ${total} 张工单`;
+    case "knowledge":
+      return `已命中 ${total} 条知识`;
+    default:
+      return `累计处理 ${total} 次`;
+  }
+}
+
+function getEmployeeProfileMotto(employeeId: string, fallback: string) {
+  const mottos: Record<string, string> = {
+    query: "精准洞察，数据即答案",
+    fault: "秒级响应，闭环处置",
+    resource: "精准纳管，一网打尽",
+    inspection: "主动巡检，防患未然",
+    order: "流转有序，协同闭环",
+    knowledge: "知识即战力，随问随答",
+  };
+
+  return mottos[employeeId] || fallback;
+}
+
+function getChatSidebarActivities(employeeId: string): ChatSidebarActivityItem[] {
+  const activities: Record<string, ChatSidebarActivityItem[]> = {
+    query: [
+      { id: "query-activity-1", time: "10:23", text: "执行趋势分析任务", tone: "green" },
+      { id: "query-activity-2", time: "09:45", text: "生成设备分布报表", tone: "blue" },
+      { id: "query-activity-3", time: "09:12", text: "完成容量复盘摘要", tone: "purple" },
+      { id: "query-activity-4", time: "08:30", text: "同步今日分析看板", tone: "slate" },
+    ],
+    fault: [
+      { id: "fault-activity-1", time: "10:28", text: "接管 P1 告警工单", tone: "green" },
+      { id: "fault-activity-2", time: "09:56", text: "完成根因定位分析", tone: "blue" },
+      { id: "fault-activity-3", time: "09:20", text: "执行自动修复脚本", tone: "purple" },
+      { id: "fault-activity-4", time: "08:48", text: "同步恢复验证结果", tone: "slate" },
+    ],
+    resource: [
+      { id: "resource-activity-1", time: "10:15", text: "新增主机纳管入库", tone: "green" },
+      { id: "resource-activity-2", time: "09:41", text: "同步云账号资产", tone: "blue" },
+      { id: "resource-activity-3", time: "09:08", text: "生成资源拓扑关系", tone: "purple" },
+      { id: "resource-activity-4", time: "08:20", text: "启动网段扫描任务", tone: "slate" },
+    ],
+    inspection: [
+      { id: "inspection-activity-1", time: "10:02", text: "输出巡检日报", tone: "green" },
+      { id: "inspection-activity-2", time: "09:36", text: "执行健康基线检查", tone: "blue" },
+      { id: "inspection-activity-3", time: "08:58", text: "归档异常巡检项", tone: "purple" },
+      { id: "inspection-activity-4", time: "08:12", text: "加载今日巡检计划", tone: "slate" },
+    ],
+    order: [
+      { id: "order-activity-1", time: "10:18", text: "派发紧急变更工单", tone: "green" },
+      { id: "order-activity-2", time: "09:44", text: "流转待审批任务", tone: "blue" },
+      { id: "order-activity-3", time: "09:05", text: "关闭已完成工单", tone: "purple" },
+      { id: "order-activity-4", time: "08:22", text: "同步 SLA 统计报表", tone: "slate" },
+    ],
+    knowledge: [
+      { id: "knowledge-activity-1", time: "10:11", text: "更新知识条目摘要", tone: "green" },
+      { id: "knowledge-activity-2", time: "09:39", text: "检索相似故障案例", tone: "blue" },
+      { id: "knowledge-activity-3", time: "09:10", text: "生成处置建议草稿", tone: "purple" },
+      { id: "knowledge-activity-4", time: "08:26", text: "同步知识库快照", tone: "slate" },
+    ],
+  };
+
+  return activities[employeeId] || activities.query;
+}
+
 const PORTAL_HOME_EMPLOYEE = {
   id: PORTAL_HOME_ID,
   name: "数字员工协同入口",
@@ -595,6 +673,15 @@ type PortalOpsAlert = {
 type PortalAlertToastState = {
   alert: PortalOpsAlert;
   visible: boolean;
+};
+
+type ChatSidebarSectionKey = "profile" | "activity" | "efficiency" | "collaboration";
+
+type ChatSidebarActivityItem = {
+  id: string;
+  text: string;
+  time: string;
+  tone: "green" | "blue" | "purple" | "slate";
 };
 
 const PORTAL_ALERT_LEVEL_LABELS: Record<PortalOpsAlertLevel, string> = {
@@ -657,6 +744,54 @@ function persistPageTheme(theme: "light" | "dark"): void {
     window.localStorage.setItem(PAGE_THEME_STORAGE_KEY, theme);
   } catch (error) {
     console.error("Failed to persist page theme:", error);
+  }
+}
+
+function loadSidebarCollapsed(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function persistSidebarCollapsed(collapsed: boolean): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(collapsed));
+  } catch {
+    // ignore
+  }
+}
+
+function loadChatSidebarCollapsed(): boolean {
+  if (typeof window === "undefined") {
+    return true;
+  }
+  try {
+    const storedValue = window.localStorage.getItem(CHAT_SIDEBAR_COLLAPSED_STORAGE_KEY);
+    if (storedValue === null) {
+      return true;
+    }
+    return storedValue === "true";
+  } catch {
+    return true;
+  }
+}
+
+function persistChatSidebarCollapsed(collapsed: boolean): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(CHAT_SIDEBAR_COLLAPSED_STORAGE_KEY, String(collapsed));
+  } catch {
+    // ignore
   }
 }
 
@@ -943,8 +1078,18 @@ export default function DigitalEmployeePage({
   const [executionTitle, setExecutionTitle] = useState("执行历史");
   const [executionList, setExecutionList] = useState(executionHistory);
   const [pageTheme, setPageTheme] = useState<"light" | "dark">(loadPageTheme);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(loadSidebarCollapsed);
+  const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState<boolean>(loadChatSidebarCollapsed);
   const [opsAlerts, setOpsAlerts] = useState<PortalOpsAlert[]>([]);
   const [alertToast, setAlertToast] = useState<PortalAlertToastState | null>(null);
+  const [chatSidebarCollapsedSections, setChatSidebarCollapsedSections] = useState<
+    Record<ChatSidebarSectionKey, boolean>
+  >({
+    profile: false,
+    activity: false,
+    efficiency: false,
+    collaboration: false,
+  });
   const [employeeRuntimeStatusMap, setEmployeeRuntimeStatusMap] = useState<
     Record<string, PortalEmployeeRuntimeStatus>
   >({});
@@ -974,6 +1119,52 @@ export default function DigitalEmployeePage({
   }, [employeesWithRuntimeStatus, selectedEmployee]);
   const currentEmployeeBase = selectedEmployee || portalHomeEmployee;
   const currentEmployee = selectedEmployeeRuntime || portalHomeEmployee;
+  const currentEmployeeActivities = useMemo(
+    () => getChatSidebarActivities(currentEmployee.id),
+    [currentEmployee.id],
+  );
+  const chatSidebarWorkload = useMemo(() => {
+    const templates: Record<string, number[]> = {
+      query: [58, 82, 64, 92, 76, 61, 88],
+      fault: [72, 90, 68, 95, 84, 73, 87],
+      resource: [45, 66, 57, 79, 74, 62, 70],
+      inspection: [51, 63, 59, 77, 81, 67, 72],
+      order: [60, 74, 69, 88, 92, 70, 78],
+      knowledge: [48, 71, 65, 82, 75, 69, 80],
+    };
+
+    return templates[currentEmployee.id] || templates.query;
+  }, [currentEmployee.id]);
+  const chatSidebarEfficiency = useMemo(() => {
+    const templates: Record<string, { completed: number; total: number; response: string; collaboration: number }> = {
+      query: { completed: 23, total: 25, response: "1.2s", collaboration: 42 },
+      fault: { completed: 18, total: 20, response: "0.8s", collaboration: 57 },
+      resource: { completed: 16, total: 18, response: "1.4s", collaboration: 31 },
+      inspection: { completed: 21, total: 21, response: "1.1s", collaboration: 28 },
+      order: { completed: 19, total: 22, response: "1.0s", collaboration: 46 },
+      knowledge: { completed: 24, total: 26, response: "0.9s", collaboration: 39 },
+    };
+
+    return templates[currentEmployee.id] || templates.query;
+  }, [currentEmployee.id]);
+  const chatSidebarCollaborators = useMemo(() => {
+    const collaborationCountMap: Record<string, Record<string, number>> = {
+      query: { fault: 18, resource: 13, knowledge: 24, inspection: 9, order: 11 },
+      fault: { query: 18, order: 22, knowledge: 15, resource: 10, inspection: 8 },
+      resource: { order: 16, query: 13, fault: 10, inspection: 12, knowledge: 7 },
+      inspection: { knowledge: 14, query: 9, order: 8, resource: 12, fault: 8 },
+      order: { fault: 22, resource: 16, query: 11, knowledge: 12, inspection: 8 },
+      knowledge: { query: 24, fault: 15, inspection: 14, order: 12, resource: 7 },
+    };
+
+    return employeesWithRuntimeStatus
+      .filter((employee) => employee.id !== currentEmployee.id)
+      .slice(0, 3)
+      .map((employee) => ({
+        ...employee,
+        collaborationCount: collaborationCountMap[currentEmployee.id]?.[employee.id] || 6,
+      }));
+  }, [currentEmployee.id, employeesWithRuntimeStatus]);
   const themeToggleIcon: ReactNode = pageTheme === "light" ? (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -1259,6 +1450,13 @@ export default function DigitalEmployeePage({
     });
   }, [employeesWithRuntimeStatus, navigateToEmployeePage]);
 
+  const toggleChatSidebarSection = useCallback((section: ChatSidebarSectionKey) => {
+    setChatSidebarCollapsedSections((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
+  }, []);
+
   useEffect(() => {
     if (!currentEmployeeBase) {
       return;
@@ -1369,6 +1567,14 @@ export default function DigitalEmployeePage({
   useEffect(() => {
     persistPageTheme(pageTheme);
   }, [pageTheme]);
+
+  useEffect(() => {
+    persistSidebarCollapsed(sidebarCollapsed);
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    persistChatSidebarCollapsed(chatSidebarCollapsed);
+  }, [chatSidebarCollapsed]);
 
   useEffect(() => {
     if (isStreaming || isCreatingChat) {
@@ -2848,6 +3054,23 @@ export default function DigitalEmployeePage({
     return null;
   }
 
+  const currentEmployeeModelLabel = activeModelLabel || "默认模型";
+  const currentEmployeeStatusLabel = getEmployeeStatusLabel(currentEmployee);
+  const currentEmployeeStatsLabel = formatEmployeeStatsLabel(currentEmployeeBase);
+  const currentEmployeeMotto = getEmployeeProfileMotto(currentEmployee.id, currentEmployee.desc);
+  const showChatSidebarToggle = Boolean(!isPortalHomeChat && selectedEmployee);
+  const chatSidebarToggleButton = showChatSidebarToggle ? (
+    <button
+      type="button"
+      className="history-btn chat-sidebar-header-toggle"
+      onClick={() => setChatSidebarCollapsed((value) => !value)}
+      title={chatSidebarCollapsed ? "展开右侧信息栏" : "收起右侧信息栏"}
+      aria-label={chatSidebarCollapsed ? "展开右侧信息栏" : "收起右侧信息栏"}
+    >
+      <i className={chatSidebarCollapsed ? "fas fa-chevron-left" : "fas fa-chevron-right"} />
+    </button>
+  ) : null;
+
   return (
     <DigitalEmployeeErrorBoundary>
       <div
@@ -2861,7 +3084,15 @@ export default function DigitalEmployeePage({
       </div>
 
       <div className="app-container">
-        <div className="sidebar">
+        <div className={sidebarCollapsed ? "sidebar sidebar-collapsed" : "sidebar"}>
+          <button
+            type="button"
+            className="sidebar-collapse-btn"
+            onClick={() => setSidebarCollapsed((v) => !v)}
+            title={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+          >
+            <i className={sidebarCollapsed ? "fas fa-chevron-right" : "fas fa-chevron-left"} />
+          </button>
           <button
             type="button"
             className={isPortalHomeChat ? "logo active" : "logo"}
@@ -3413,7 +3644,15 @@ export default function DigitalEmployeePage({
           ) : null}
 
           {currentView === "chat" ? (
-            <div className={isPortalHomeChat ? "chat-container portal-home-chat" : "chat-container"}>
+            <div
+              className={
+                isPortalHomeChat
+                  ? "chat-container portal-home-chat"
+                  : selectedEmployee
+                    ? "chat-container show-cards"
+                    : "chat-container"
+              }
+            >
               {showPortalHomeHero ? (
                 <div className="portal-home-stage">
                   <div className="portal-home-toolbar">
@@ -3572,106 +3811,102 @@ export default function DigitalEmployeePage({
                 </div>
               ) : (
                 <>
-                  {!isPortalHomeChat ? (
-                  <div className="chat-header">
-                    <div className="chat-header-main">
-                      <div className="chat-header-copy">
-                        <strong>
-                          {isAlarmWorkbenchMode
-                            ? `${currentEmployee.name} - 告警工单处置`
-                            : `${currentEmployee.name} - 智能服务`}
-                        </strong>
-                        <span>支持历史追溯、模型切换与专属能力调用</span>
+                  <div className="chat-main">
+                    {!isPortalHomeChat ? (
+                    <div className="chat-header">
+                      <div className="chat-header-main">
+                        <div className="chat-header-copy">
+                          <strong>
+                            {isAlarmWorkbenchMode
+                              ? `${currentEmployee.name} - 告警工单处置`
+                              : `${currentEmployee.name} - 智能服务`}
+                          </strong>
+                          <span>支持历史追溯、模型切换与专属能力调用</span>
+                        </div>
+                        {!isRemoteEmployee && isAlarmWorkbenchMode ? (
+                          <span
+                            className={
+                              isAlarmWorkbenchMode
+                                ? "chat-status-pill alert"
+                                : isStreaming || currentChatStatus === "running"
+                                  ? "chat-status-pill running"
+                                  : "chat-status-pill"
+                            }
+                          >
+                            {isAlarmWorkbenchMode
+                              ? "告警触发"
+                              : isCreatingChat
+                                ? "创建中"
+                                : isStreaming || currentChatStatus === "running"
+                                  ? "对话中"
+                                  : currentChatId
+                                    ? "历史可追溯"
+                                    : "等待发起"}
+                          </span>
+                        ) : null}
                       </div>
-                      {!isRemoteEmployee && isAlarmWorkbenchMode ? (
-                        <span
-                          className={
-                            isAlarmWorkbenchMode
-                              ? "chat-status-pill alert"
-                              : isStreaming || currentChatStatus === "running"
-                                ? "chat-status-pill running"
-                                : "chat-status-pill"
-                          }
-                        >
-                          {isAlarmWorkbenchMode
-                            ? "告警触发"
-                            : isCreatingChat
-                              ? "创建中"
-                              : isStreaming || currentChatStatus === "running"
-                                ? "对话中"
-                                : currentChatId
-                                  ? "历史可追溯"
-                                  : "等待发起"}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div
-                      className={
-                        isAlarmWorkbenchMode ? "chat-capabilities alarm-mode" : "chat-capabilities"
-                      }
-                    >
-                      {isAlarmWorkbenchMode ? (
-                        <>
-                          {showModelSelector ? (
-                            <ChatModelSelector
-                              activeModelLabel={activeModelLabel}
-                              activeProviderId={activeProviderId}
-                              activeModelId={activeModelId}
-                              eligibleProviders={eligibleProviders}
-                              loading={modelsLoading}
-                              switching={modelsSwitching}
-                              disabled={isCreatingChat || isStreaming}
-                              notice={modelNotice}
-                              onSelectModel={handleSelectModel}
-                              onOpenConfig={openModelConfig}
-                            />
-                          ) : null}
+                      <div
+                        className={
+                          isAlarmWorkbenchMode ? "chat-capabilities alarm-mode" : "chat-capabilities"
+                        }
+                      >
+                        {isAlarmWorkbenchMode ? (
                           <>
-                            <button className="history-btn" onClick={() => void handleOpenHistory()}>
-                              <i className="fas fa-history" /> 已处理任务
-                            </button>
-                            <button className="history-btn new-chat-btn" onClick={handleStartNewConversation}>
-                              <i className="fas fa-plus" /> 新对话
-                            </button>
+                            {showModelSelector ? (
+                              <ChatModelSelector
+                                activeModelLabel={activeModelLabel}
+                                activeProviderId={activeProviderId}
+                                activeModelId={activeModelId}
+                                eligibleProviders={eligibleProviders}
+                                loading={modelsLoading}
+                                switching={modelsSwitching}
+                                disabled={isCreatingChat || isStreaming}
+                                notice={modelNotice}
+                                onSelectModel={handleSelectModel}
+                                onOpenConfig={openModelConfig}
+                              />
+                            ) : null}
+                            <>
+                              <button className="history-btn" onClick={() => void handleOpenHistory()}>
+                                <i className="fas fa-history" /> 已处理任务
+                              </button>
+                              <button className="history-btn new-chat-btn" onClick={handleStartNewConversation}>
+                                <i className="fas fa-plus" /> 新对话
+                              </button>
+                            </>
+                            {chatSidebarToggleButton}
                           </>
-                          <span className="capability-tag active static-tag">
-                            <i className="fas fa-file-lines" /> 工单视图
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          {showModelSelector ? (
-                            <ChatModelSelector
-                              activeModelLabel={activeModelLabel}
-                              activeProviderId={activeProviderId}
-                              activeModelId={activeModelId}
-                              eligibleProviders={eligibleProviders}
-                              loading={modelsLoading}
-                              switching={modelsSwitching}
-                              disabled={isCreatingChat || isStreaming}
-                              notice={modelNotice}
-                              onSelectModel={handleSelectModel}
-                              onOpenConfig={openModelConfig}
-                            />
-                          ) : null}
+                        ) : (
                           <>
-                            <button className="history-btn" onClick={() => void handleOpenHistory()}>
-                              <i className="fas fa-history" /> 已处理任务
-                            </button>
-                            <button className="history-btn new-chat-btn" onClick={handleStartNewConversation}>
-                              <i className="fas fa-plus" /> 新对话
-                            </button>
+                            {showModelSelector ? (
+                              <ChatModelSelector
+                                activeModelLabel={activeModelLabel}
+                                activeProviderId={activeProviderId}
+                                activeModelId={activeModelId}
+                                eligibleProviders={eligibleProviders}
+                                loading={modelsLoading}
+                                switching={modelsSwitching}
+                                disabled={isCreatingChat || isStreaming}
+                                notice={modelNotice}
+                                onSelectModel={handleSelectModel}
+                                onOpenConfig={openModelConfig}
+                              />
+                            ) : null}
+                            <>
+                              <button className="history-btn" onClick={() => void handleOpenHistory()}>
+                                <i className="fas fa-history" /> 已处理任务
+                              </button>
+                              <button className="history-btn new-chat-btn" onClick={handleStartNewConversation}>
+                                <i className="fas fa-plus" /> 新对话
+                              </button>
+                            </>
+                            {chatSidebarToggleButton}
                           </>
-                          <span className="capability-tag active static-tag">
-                            <i className="fas fa-file-lines" /> 工单视图
-                          </span>
-                        </>
-                      )}
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  ) : null}
+                    ) : null}
 
-                  <>
                     <div className="chat-messages">
                       {safeMessages.map((message) => (
                         <ChatMessageItem
@@ -3794,7 +4029,250 @@ export default function DigitalEmployeePage({
                         </button>
                       </div>
                     </div>
-                  </>
+                  </div>
+
+                  {!isPortalHomeChat && selectedEmployee ? (
+                    <div
+                      className={
+                        chatSidebarCollapsed
+                          ? "chat-sidebar-shell chat-sidebar-shell-collapsed"
+                          : "chat-sidebar-shell"
+                      }
+                    >
+                      <aside
+                        className={chatSidebarCollapsed ? "chat-sidebar chat-sidebar-collapsed" : "chat-sidebar"}
+                      >
+                        {!chatSidebarCollapsed ? (
+                          <>
+                      <section className="chat-side-card">
+                        <button
+                          type="button"
+                          className="chat-side-card-header"
+                          onClick={() => toggleChatSidebarSection("profile")}
+                        >
+                          <h4>员工档案</h4>
+                          <span
+                            className={
+                              chatSidebarCollapsedSections.profile
+                                ? "chat-side-card-toggle collapsed"
+                                : "chat-side-card-toggle"
+                            }
+                            aria-hidden="true"
+                          >
+                            <i className="fas fa-chevron-down" />
+                          </span>
+                        </button>
+                        {!chatSidebarCollapsedSections.profile ? (
+                          <div className="chat-side-card-body">
+                            <div className="chat-side-profile-hero">
+                              <div className="chat-side-profile-avatar-wrap">
+                                <DigitalEmployeeAvatar
+                                  employee={currentEmployee}
+                                  className="chat-side-profile-avatar"
+                                />
+                              </div>
+                              <div className="chat-side-profile-meta">
+                                <strong>{currentEmployee.name}</strong>
+                                <p>"{currentEmployeeMotto}"</p>
+                              </div>
+                            </div>
+                            <div className="chat-side-info-list">
+                              <div className="chat-side-info-row">
+                                <span className="chat-side-info-label">状态</span>
+                                <span className="chat-side-info-value">
+                                  <span
+                                    className={
+                                      currentEmployee.urgent
+                                        ? "chat-side-status-badge urgent"
+                                        : currentEmployee.status === "running"
+                                          ? "chat-side-status-badge running"
+                                          : "chat-side-status-badge stopped"
+                                    }
+                                  >
+                                    {currentEmployeeStatusLabel}
+                                  </span>
+                                </span>
+                              </div>
+                              <div className="chat-side-info-row">
+                                <span className="chat-side-info-label">当前模型</span>
+                                <span className="chat-side-info-value">{currentEmployeeModelLabel}</span>
+                              </div>
+                              <div className="chat-side-info-row">
+                                <span className="chat-side-info-label">统计</span>
+                                <span className="chat-side-info-value">{currentEmployeeStatsLabel}</span>
+                              </div>
+                            </div>
+                            <div className="chat-side-capability-block">
+                              <div className="chat-side-capability-row">
+                                <div className="chat-side-capability-title">核心能力</div>
+                                <div className="chat-side-tag-group">
+                                  {currentEmployee.capabilities.slice(0, 3).map((capability, index) => (
+                                    <span
+                                      key={capability}
+                                      className={
+                                        index % 3 === 1
+                                          ? "chat-side-capability-tag green"
+                                          : index % 3 === 2
+                                            ? "chat-side-capability-tag purple"
+                                            : "chat-side-capability-tag"
+                                      }
+                                    >
+                                      {capability}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </section>
+
+                      <section className="chat-side-card">
+                        <button
+                          type="button"
+                          className="chat-side-card-header"
+                          onClick={() => toggleChatSidebarSection("activity")}
+                        >
+                          <h4>最近活动</h4>
+                          <span
+                            className={
+                              chatSidebarCollapsedSections.activity
+                                ? "chat-side-card-toggle collapsed"
+                                : "chat-side-card-toggle"
+                            }
+                            aria-hidden="true"
+                          >
+                            <i className="fas fa-chevron-down" />
+                          </span>
+                        </button>
+                        {!chatSidebarCollapsedSections.activity ? (
+                          <div className="chat-side-card-body">
+                            <div className="chat-side-activity-list">
+                              {currentEmployeeActivities.map((activity) => (
+                                <div key={activity.id} className="chat-side-activity-item">
+                                  <span className={`chat-side-activity-dot ${activity.tone}`} />
+                                  <span className="chat-side-activity-time">{activity.time}</span>
+                                  <span className="chat-side-activity-text">{activity.text}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </section>
+
+                      <section className="chat-side-card">
+                        <button
+                          type="button"
+                          className="chat-side-card-header"
+                          onClick={() => toggleChatSidebarSection("efficiency")}
+                        >
+                          <h4>工作效能</h4>
+                          <span
+                            className={
+                              chatSidebarCollapsedSections.efficiency
+                                ? "chat-side-card-toggle collapsed"
+                                : "chat-side-card-toggle"
+                            }
+                            aria-hidden="true"
+                          >
+                            <i className="fas fa-chevron-down" />
+                          </span>
+                        </button>
+                        {!chatSidebarCollapsedSections.efficiency ? (
+                          <div className="chat-side-card-body">
+                            <div className="chat-side-stats-list">
+                              <div className="chat-side-stat-row">
+                                <span>今日任务</span>
+                                <strong>{chatSidebarEfficiency.completed}/{chatSidebarEfficiency.total}</strong>
+                              </div>
+                              <div className="chat-side-stat-row">
+                                <span>响应速度</span>
+                                <strong>{chatSidebarEfficiency.response}</strong>
+                              </div>
+                              <div className="chat-side-stat-row">
+                                <span>满意度</span>
+                                <strong>{currentEmployee.success}</strong>
+                              </div>
+                              <div className="chat-side-stat-row">
+                                <span>协作次数</span>
+                                <strong>{chatSidebarEfficiency.collaboration} 次</strong>
+                              </div>
+                            </div>
+                            <div className="chat-side-workload">
+                              <div className="chat-side-workload-title">本周工作量</div>
+                              <div className="chat-side-workload-bars">
+                                {chatSidebarWorkload.map((value, index) => (
+                                  <span
+                                    key={`${currentEmployee.id}-workload-${index}`}
+                                    className="chat-side-workload-bar"
+                                    style={{ height: `${value}%` }}
+                                  />
+                                ))}
+                              </div>
+                              <div className="chat-side-workload-labels">
+                                <span>一</span>
+                                <span>二</span>
+                                <span>三</span>
+                                <span>四</span>
+                                <span>五</span>
+                                <span>六</span>
+                                <span>日</span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </section>
+
+                      <section className="chat-side-card">
+                        <button
+                          type="button"
+                          className="chat-side-card-header"
+                          onClick={() => toggleChatSidebarSection("collaboration")}
+                        >
+                          <h4>协作关系</h4>
+                          <span
+                            className={
+                              chatSidebarCollapsedSections.collaboration
+                                ? "chat-side-card-toggle collapsed"
+                                : "chat-side-card-toggle"
+                            }
+                            aria-hidden="true"
+                          >
+                            <i className="fas fa-chevron-down" />
+                          </span>
+                        </button>
+                        {!chatSidebarCollapsedSections.collaboration ? (
+                          <div className="chat-side-card-body">
+                            <div className="chat-side-collaboration-list">
+                              {chatSidebarCollaborators.map((employee) => (
+                                <button
+                                  key={`chat-sidebar-${employee.id}`}
+                                  type="button"
+                                  className="chat-side-collaboration-item"
+                                  onClick={() => openEmployeeChat(employee.id)}
+                                >
+                                  <DigitalEmployeeAvatar
+                                    employee={employee}
+                                    className="chat-side-collaboration-avatar"
+                                  />
+                                  <span className="chat-side-collaboration-copy">
+                                    <strong>{employee.name}</strong>
+                                    <span>{employee.desc}</span>
+                                  </span>
+                                  <span className="chat-side-collaboration-count">
+                                    协作 {employee.collaborationCount} 次
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </section>
+                          </>
+                        ) : null}
+                      </aside>
+                    </div>
+                  ) : null}
                 </>
               )}
             </div>
