@@ -6,6 +6,39 @@ const DATABASE_FAULT_KEYWORD_RE = /(mysql|死锁)/i;
 const CMDB_WRITE_ACTION_RE = /(新增|插入)/i;
 const FAILURE_HINT_RE = /(失败|报错|超时)/i;
 
+export const FAULT_SCENARIO_ANALYZING_PLACEHOLDER = "正在关联分析...";
+
+type FaultScenarioMessage = {
+  id: string;
+  content?: string;
+  [key: string]: unknown;
+};
+
+type SetFaultScenarioMessages = (
+  value:
+    | FaultScenarioMessage[]
+    | ((prevMessages: FaultScenarioMessage[]) => FaultScenarioMessage[]),
+) => void;
+
+type FaultScenarioDiagnosisResult = {
+  summary?: string;
+  [key: string]: unknown;
+};
+
+type FaultScenarioDiagnosisResponse = {
+  result?: FaultScenarioDiagnosisResult;
+};
+
+interface MaybeHandleFaultScenarioMessageParams {
+  currentEmployee: { id?: string } | null | undefined;
+  content: string;
+  visibleContent?: string;
+  sessionId?: string;
+  signal?: AbortSignal;
+  setActiveAssistantMessageId?: (messageId: string | null) => void;
+  setMessages: SetFaultScenarioMessages;
+}
+
 function isTargetFaultScenario(content: string) {
   const normalized = String(content || "");
   return (
@@ -25,7 +58,7 @@ export async function maybeHandleFaultScenarioMessage({
   signal,
   setActiveAssistantMessageId,
   setMessages,
-}: any) {
+}: MaybeHandleFaultScenarioMessageParams) {
   if (currentEmployee?.id !== "fault" || !isTargetFaultScenario(content || "")) {
     return { handled: false, succeeded: false };
   }
@@ -33,12 +66,12 @@ export async function maybeHandleFaultScenarioMessage({
   const agentMessageId = `fault-scenario-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   setActiveAssistantMessageId?.(agentMessageId);
 
-  setMessages((prev: any[]) => [
-    ...prev,
+  setMessages((prevMessages) => [
+    ...prevMessages,
     createUserMessage(visibleContent || content),
     createAgentMessage(currentEmployee, {
       id: agentMessageId,
-      content: "正在关联分析...",
+      content: FAULT_SCENARIO_ANALYZING_PLACEHOLDER,
     }),
   ]);
 
@@ -47,10 +80,10 @@ export async function maybeHandleFaultScenarioMessage({
       sessionId: sessionId || `fault-scenario-${Date.now()}`,
       employeeId: "fault",
       content,
-    }, { signal });
+    }, { signal }) as FaultScenarioDiagnosisResponse;
 
-    setMessages((prev: any[]) =>
-      prev.map((item) =>
+    setMessages((prevMessages) =>
+      prevMessages.map((item) =>
         item.id === agentMessageId
           ? {
               ...item,
@@ -67,8 +100,8 @@ export async function maybeHandleFaultScenarioMessage({
       return { handled: true, succeeded: false };
     }
 
-    setMessages((prev: any[]) =>
-      prev.map((item) =>
+    setMessages((prevMessages) =>
+      prevMessages.map((item) =>
         item.id === agentMessageId
           ? {
               ...item,

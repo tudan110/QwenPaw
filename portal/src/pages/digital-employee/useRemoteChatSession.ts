@@ -27,10 +27,27 @@ import {
   normalizeRemoteHistoryMessages,
   normalizeRemoteSessions,
 } from "./helpers";
-import { maybeHandleFaultScenarioMessage } from "./faultScenario";
+import {
+  FAULT_SCENARIO_ANALYZING_PLACEHOLDER,
+  maybeHandleFaultScenarioMessage,
+} from "./faultScenario";
 
 const COPAW_USER_ID = "default";
 const COPAW_CHANNEL = "console";
+
+type FaultDisposalHistoryMessage = {
+  id?: string;
+  type?: string;
+  content?: string;
+  processBlocks?: unknown[];
+  disposalOperation?: unknown;
+  [key: string]: unknown;
+};
+
+type FaultDisposalHistory = {
+  status?: string;
+  messages?: FaultDisposalHistoryMessage[];
+};
 
 function normalizeRemoteChatErrorMessage(error: any) {
   const rawMessage = String(error?.message || "").trim();
@@ -250,7 +267,7 @@ export function useRemoteChatSession({
     setMessages((prevMessages) =>
       prevMessages.map((message) =>
         message.id === activeMessageId
-          && (!message.content || message.content === "正在关联分析...")
+          && (!message.content || message.content === FAULT_SCENARIO_ANALYZING_PLACEHOLDER)
         ? {
             ...message,
             content: fallbackText,
@@ -347,7 +364,9 @@ export function useRemoteChatSession({
 
       if (isPortalFaultWorkbench) {
         try {
-          const portalHistory = await getFaultDisposalHistory(session.sessionId || "");
+          const portalHistory = await getFaultDisposalHistory(
+            session.sessionId || "",
+          ) as FaultDisposalHistory;
           const portalMessages = portalHistory.messages || [];
           if (portalMessages.length) {
             history = portalHistory;
