@@ -4193,10 +4193,6 @@ export default function DigitalEmployeePage({
                                 <strong>{chatSidebarEfficiency.response}</strong>
                               </div>
                               <div className="chat-side-stat-row">
-                                <span>满意度</span>
-                                <strong>{currentEmployee.success}</strong>
-                              </div>
-                              <div className="chat-side-stat-row">
                                 <span>协作次数</span>
                                 <strong>{chatSidebarEfficiency.collaboration} 次</strong>
                               </div>
