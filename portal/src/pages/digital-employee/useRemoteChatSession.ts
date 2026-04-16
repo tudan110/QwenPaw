@@ -27,6 +27,7 @@ import {
   normalizeRemoteHistoryMessages,
   normalizeRemoteSessions,
 } from "./helpers";
+import { maybeHandleFaultScenarioMessage } from "./faultScenario";
 
 const COPAW_USER_ID = "default";
 const COPAW_CHANNEL = "console";
@@ -248,12 +249,13 @@ export function useRemoteChatSession({
     const activeMessageId = activeAssistantMessageIdRef.current;
     setMessages((prevMessages) =>
       prevMessages.map((message) =>
-        message.id === activeMessageId && !message.content
-          ? {
-              ...message,
-              content: fallbackText,
-            }
-          : message,
+        message.id === activeMessageId
+          && (!message.content || message.content === "正在关联分析...")
+        ? {
+            ...message,
+            content: fallbackText,
+          }
+        : message,
       ),
     );
   }, [setMessages]);
@@ -467,8 +469,6 @@ export function useRemoteChatSession({
     streamAssistantMapRef.current = new Map();
     activeAssistantMessageIdRef.current = null;
 
-    setMessages((prevMessages) => [...prevMessages, userMessage]);
-
     const controller = new AbortController();
     streamAbortRef.current = controller;
     setIsStreaming(true);
@@ -477,6 +477,25 @@ export function useRemoteChatSession({
     let streamSucceeded = false;
 
     try {
+      const scenarioResult = await maybeHandleFaultScenarioMessage({
+        currentEmployee: nextEmployee,
+        content,
+        visibleContent: normalizedVisibleContent,
+        sessionId: sessionId || currentSessionIdRef.current,
+        signal: controller.signal,
+        setActiveAssistantMessageId: (messageId: string | null) => {
+          activeAssistantMessageIdRef.current = messageId;
+        },
+        setMessages,
+      });
+      if (scenarioResult.handled) {
+        setIsStreaming(false);
+        setCurrentChatStatus("idle");
+        return scenarioResult.succeeded;
+      }
+
+      setMessages((prevMessages) => [...prevMessages, userMessage]);
+
       let ensuredChat;
       if (!forceNewChat && currentChatIdRef.current && currentSessionIdRef.current) {
         ensuredChat = {
