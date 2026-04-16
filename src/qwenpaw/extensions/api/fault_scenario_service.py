@@ -17,9 +17,13 @@ def detect_fault_scenario(*, employee_id: str, content: str | None) -> FaultScen
 
 
 def run_fault_scenario_diagnose(payload: dict) -> dict:
+    session_id = str(payload.get("sessionId") or "").strip()
+    if not session_id:
+        raise ValueError("sessionId is required")
+
     return {
         "session": {
-            "sessionId": payload["sessionId"],
+            "sessionId": session_id,
             "scene": "cmdb_add_failed_mysql_deadlock",
         },
         "result": {

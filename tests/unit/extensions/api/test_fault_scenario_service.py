@@ -1,4 +1,9 @@
-from qwenpaw.extensions.api.fault_scenario_service import detect_fault_scenario
+import pytest
+
+from qwenpaw.extensions.api.fault_scenario_service import (
+    detect_fault_scenario,
+    run_fault_scenario_diagnose,
+)
 
 
 def test_detect_fault_scenario_matches_fault_chat_deadlock_keywords() -> None:
@@ -20,3 +25,8 @@ def test_detect_fault_scenario_ignores_non_fault_employee() -> None:
 
     assert detection.triggered is False
     assert detection.scene_code == ""
+
+
+def test_run_fault_scenario_diagnose_requires_session_id() -> None:
+    with pytest.raises(ValueError, match="sessionId is required"):
+        run_fault_scenario_diagnose({})

@@ -183,6 +183,21 @@ def test_fault_scenario_diagnose_route_returns_structured_result(
     assert response.json()["result"]["rootCause"]["type"] == "数据库异常"
 
 
+def test_fault_scenario_diagnose_route_rejects_missing_session_id() -> None:
+    client = TestClient(portal_backend.app)
+
+    response = client.post(
+        "/api/portal/fault-scenarios/diagnose",
+        json={
+            "employeeId": "fault",
+            "content": "CMDB 添加失败，怀疑 mysql 死锁",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "sessionId is required"
+
+
 def test_fault_scenario_diagnose_route_persists_history_with_unique_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -553,7 +553,7 @@ async def portal_fault_scenario_diagnose(
     try:
         session_id = str(payload.get("sessionId") or "").strip()
         if not session_id:
-            raise ValueError("sessionId is required")
+            raise HTTPException(status_code=422, detail="sessionId is required")
 
         result = run_fault_scenario_diagnose(payload)
         if hasattr(request.app.state, "multi_agent_manager"):
@@ -583,6 +583,8 @@ async def portal_fault_scenario_diagnose(
                 messages=history,
             )
         return result
+    except HTTPException:
+        raise
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] portal_fault_scenario_diagnose failed: {error_detail}")
