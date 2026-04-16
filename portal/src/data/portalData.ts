@@ -128,7 +128,7 @@ export const digitalEmployees: DigitalEmployee[] = [
     urgent: false,
     gradient: "linear-gradient(135deg, #8B5CF6, #7C3AED)",
     capabilities: ["指标查询", "报表生成", "趋势分析", "数据可视化", "自定义取数"],
-    quickCommands: ["查询CPU使用率TOP10", "生成业务可用性报表", "分析告警趋势", "导出性能数据"],
+    quickCommands: ["导入资源清单", "生成业务可用性报表", "分析告警趋势", "导出性能数据"],
     welcome:
       "您好！我是数据分析员。数据分析与报表生成。<br><br>我可以帮您完成以下工作：<br>• 指标查询 - 自然语言查询各类监控指标<br>• 报表生成 - 自动生成日报、周报、月报<br>• 趋势分析 - 分析指标趋势，预测容量需求<br>• 数据可视化 - 生成直观的图表和仪表盘<br>• 自定义取数 - 按需提取数据，支持多种格式导出<br><br>请直接输入您的数据需求，或选择下方的快捷命令。",
   },

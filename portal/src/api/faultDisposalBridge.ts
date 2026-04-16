@@ -1,5 +1,20 @@
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 
+export type FaultDisposalHistoryMessage = {
+  id?: string;
+  type?: "agent" | "user" | string;
+  content?: string;
+  processBlocks?: any[];
+  disposalOperation?: Record<string, unknown>;
+};
+
+export type FaultDisposalHistoryResponse = {
+  id?: string;
+  sessionId?: string;
+  status?: string;
+  messages?: FaultDisposalHistoryMessage[];
+};
+
 async function requestFaultDisposalApi<T = unknown>(
   path: string,
   init: RequestInit = {},
@@ -50,7 +65,7 @@ export async function executeFaultDisposal(payload: Record<string, any>) {
 }
 
 export async function getFaultDisposalHistory(sessionId: string) {
-  return requestFaultDisposalApi(
+  return requestFaultDisposalApi<FaultDisposalHistoryResponse>(
     `/fault-disposal/history/${encodeURIComponent(sessionId)}`,
   );
 }

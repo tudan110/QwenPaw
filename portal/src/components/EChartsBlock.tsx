@@ -418,6 +418,77 @@ function parseEChartsConfig(chart: string) {
   }
 }
 
+function normalizeTreeSeriesData(data: unknown) {
+  if (Array.isArray(data)) {
+    return data;
+  }
+  if (data && typeof data === "object") {
+    return [data];
+  }
+  return [];
+}
+
+function normalizeShorthandEChartsOption(config: Record<string, any> | null) {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    return config;
+  }
+  if (Array.isArray(config.series) && config.series.length) {
+    return config;
+  }
+
+  const shorthandType = typeof config.type === "string" ? config.type.trim() : "";
+  if (!shorthandType) {
+    return config;
+  }
+
+  const optionLevelKeys = new Set([
+    "title",
+    "tooltip",
+    "legend",
+    "toolbox",
+    "grid",
+    "xAxis",
+    "yAxis",
+    "dataset",
+    "graphic",
+    "aria",
+    "color",
+    "backgroundColor",
+    "textStyle",
+    "animation",
+    "animationThreshold",
+    "animationDuration",
+    "animationEasing",
+    "animationDelay",
+    "animationDurationUpdate",
+    "animationEasingUpdate",
+    "animationDelayUpdate",
+    "__mockStream",
+  ]);
+
+  const option: Record<string, any> = {};
+  const series: Record<string, any> = { type: shorthandType };
+
+  Object.entries(config).forEach(([key, value]) => {
+    if (key === "type") {
+      return;
+    }
+    if (optionLevelKeys.has(key)) {
+      option[key] = value;
+      return;
+    }
+    series[key] = value;
+  });
+
+  if (shorthandType === "tree") {
+    series.data = normalizeTreeSeriesData(series.data);
+    option.tooltip = option.tooltip || { trigger: "item", triggerOn: "mousemove" };
+  }
+
+  option.series = [series];
+  return option;
+}
+
 function cloneChartConfig<T>(config: T): T {
   if (typeof config === "function") {
     return config;
@@ -608,7 +679,7 @@ export function EChartsBlock({ chart, style }: EChartsBlockProps) {
       return null;
     }
     setError("");
-    return config;
+    return normalizeShorthandEChartsOption(config);
   }, [chart]);
   const { option: baseOption, mockStream } = useMemo(
     () => stripRuntimeMeta(parsedConfig),

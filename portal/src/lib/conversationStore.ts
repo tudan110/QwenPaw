@@ -25,6 +25,18 @@ function truncateText(value: unknown, maxLength: number) {
   return `${text.slice(0, maxLength)}...`;
 }
 
+function cloneJsonSafe<T>(value: T): T | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(value)) as T;
+  } catch {
+    return undefined;
+  }
+}
+
 function sanitizeMessage(
   message: unknown,
   maxContentLength: number,
@@ -44,6 +56,18 @@ function sanitizeMessage(
   }
   if (typeof message.gradient === "string") {
     next.gradient = message.gradient;
+  }
+  if (Array.isArray(message.processBlocks)) {
+    next.processBlocks = cloneJsonSafe(message.processBlocks);
+  }
+  if (message.disposalOperation && isPlainRecord(message.disposalOperation)) {
+    next.disposalOperation = cloneJsonSafe(message.disposalOperation);
+  }
+  if (Array.isArray(message.workorders)) {
+    next.workorders = cloneJsonSafe(message.workorders);
+  }
+  if (isPlainRecord(message.resourceImportFlow)) {
+    next.resourceImportFlow = cloneJsonSafe(message.resourceImportFlow);
   }
 
   return next;
@@ -88,6 +112,11 @@ function sanitizeSession(
     updatedAt:
       typeof session.updatedAt === "string" ? session.updatedAt : new Date().toISOString(),
     messages,
+    sessionId: typeof session.sessionId === "string" ? session.sessionId : undefined,
+    status: typeof session.status === "string" ? session.status : undefined,
+    detail: typeof session.detail === "string" ? truncateText(session.detail, 240) : undefined,
+    tag: typeof session.tag === "string" ? truncateText(session.tag, 40) : undefined,
+    meta: isPlainRecord(session.meta) ? cloneJsonSafe(session.meta) : undefined,
   };
 }
 

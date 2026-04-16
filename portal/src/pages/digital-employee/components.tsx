@@ -9,6 +9,7 @@ import {
   getSeverityClassName,
   normalizeMarkdownDisplayContent,
 } from "./helpers";
+import { ResourceImportConversationCard } from "./resourceImportConversationCard";
 
 export function AlarmWorkorderBoard({
   workorders,
@@ -193,10 +194,25 @@ export function DisposalOperationCard({ action, onExecute }: any) {
 }
 
 export const ChatMessageItem = memo(function ChatMessageItem({
+  agentId,
   currentEmployee,
   isStreamingMessage,
   message,
   onDisposalAction,
+  onResourceImportBackToConfirm,
+  onResourceImportBuildTopology,
+  onResourceImportConfirmStructure,
+  onResourceImportContinue,
+  onResourceImportOpenSystemTopology,
+  onResourceImportParseFailed,
+  onResourceImportParseResolved,
+  onResourceImportReturnToUpload,
+  onResourceImportStartParse,
+  onResourceImportScrollToStage,
+  onResourceImportSubmitImport,
+  onResourceImportUploadFiles,
+  releaseResourceImportFiles,
+  resolveResourceImportFiles,
   onTicketAction,
   onTicketRefresh,
   ticketActionNotice,
@@ -230,6 +246,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     Boolean(message.workorders?.length) ||
     Boolean(message.workordersLoading) ||
     Boolean(message.workordersError);
+  const hasResourceImportFlow = Boolean(message.resourceImportFlow);
   const effectiveDisposalOperation =
     message.disposalOperation ||
     extractPortalActionPayload(renderedMessageContent || message.content || "");
@@ -239,7 +256,10 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     !message.hideDisposalOperation;
 
   return (
-    <div className={message.type === "user" ? "message user" : "message agent"}>
+    <div
+      id={`message-${message.id}`}
+      className={message.type === "user" ? "message user" : "message agent"}
+    >
       <div
         className="message-avatar"
         style={message.type === "agent" ? { background: message.gradient } : {}}
@@ -300,6 +320,27 @@ export const ChatMessageItem = memo(function ChatMessageItem({
               onAction={onTicketAction}
               onRefresh={onTicketRefresh}
               workorders={message.workorders || []}
+            />
+          </div>
+        ) : hasResourceImportFlow ? (
+          <div className="message-bubble markdown-bubble resource-import-flow-bubble">
+            <ResourceImportConversationCard
+              agentId={agentId}
+              message={message}
+              onBackToConfirm={onResourceImportBackToConfirm}
+              onBuildTopology={onResourceImportBuildTopology}
+              onConfirmStructure={onResourceImportConfirmStructure}
+              onContinueImport={onResourceImportContinue}
+              onOpenSystemTopology={onResourceImportOpenSystemTopology}
+              onParseFailed={onResourceImportParseFailed}
+              onParseResolved={onResourceImportParseResolved}
+              onReturnToUpload={onResourceImportReturnToUpload}
+              onStartParse={onResourceImportStartParse}
+              onScrollToStage={onResourceImportScrollToStage}
+              onSubmitImport={onResourceImportSubmitImport}
+              onUploadFiles={onResourceImportUploadFiles}
+              releaseFiles={releaseResourceImportFiles}
+              resolveFiles={resolveResourceImportFiles}
             />
           </div>
         ) : renderedMessageContent ? (

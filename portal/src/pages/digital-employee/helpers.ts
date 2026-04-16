@@ -5,7 +5,7 @@ export const ALARM_WORKORDER_ENTRY = "alarm-workorders";
 export const ALARM_WORKORDER_LIMIT = 5;
 export const PORTAL_FAULT_WORKORDER_MARKER = "# PORTAL FAULT WORKORDER MODE";
 export const PORTAL_VIEW_OPTIONS = ["chat", "overview", "dashboard", "tasks"] as const;
-export const PORTAL_ADVANCED_PANEL_OPTIONS = ["model-config", "token-usage", "ops-expert", "mcp", "skill-pool", "inspiration", "cli"] as const;
+export const PORTAL_ADVANCED_PANEL_OPTIONS = ["model-config", "token-usage", "ops-expert", "mcp", "skill-pool", "inspiration", "cli", "resource-import"] as const;
 export const PORTAL_ROUTE_SECTION_OPTIONS = [
   "overview",
   "dashboard",
@@ -17,6 +17,7 @@ export const PORTAL_ROUTE_SECTION_OPTIONS = [
   "skill-pool",
   "inspiration",
   "cli",
+  "resource-import",
 ] as const;
 
 export type PortalView = (typeof PORTAL_VIEW_OPTIONS)[number];
@@ -544,6 +545,23 @@ export function normalizeRemoteHistoryMessages(
         activeAgentMessage.processBlocks = mergeProcessBlocks(
           activeAgentMessage.processBlocks,
           [block],
+        );
+      }
+      if (
+        message.type === "plugin_call_output"
+        && block.outputContent
+        && extractVisualBlocks(block.outputContent).length > 0
+      ) {
+        activeAgentMessage.processBlocks = mergeProcessBlocks(
+          activeAgentMessage.processBlocks,
+          [
+            {
+              id: `${message.id || `tool-visual-${normalizedMessages.length}`}-visual`,
+              kind: "response",
+              content: block.outputContent,
+              replaceContent: true,
+            },
+          ],
         );
       }
       continue;

@@ -23,6 +23,9 @@ import {
 } from "../lib/conversationStore";
 import { deleteChat, listChats, updateChat } from "../api/copawChat";
 import {
+  submitResourceImport,
+} from "../api/resourceImport";
+import {
   getPortalEmployeeStatuses,
   type PortalEmployeeRuntimeStatus,
 } from "../api/portalEmployeeStatus";
@@ -41,6 +44,7 @@ import { CliTerminalPanel } from "./digital-employee/cliTerminalPanel";
 import { InspirationPanel } from "./digital-employee/inspirationPanel";
 import { McpPanel } from "./digital-employee/mcpPanel";
 import { OverviewPanel } from "./digital-employee/overviewPanel";
+import { ResourceImportPanel } from "./digital-employee/resourceImportPanel";
 import { SkillPoolPanel } from "./digital-employee/skillPoolPanel";
 import { TokenUsagePanel } from "./digital-employee/tokenUsagePanel";
 import { OpsExpertPanel } from "./digital-employee/opsExpertPanel";
@@ -103,7 +107,110 @@ const PORTAL_CLOSE_DRAWER_MESSAGE = {
   type: "portal:close-drawer",
   reason: "switch-traditional-view",
 } as const;
+const RESOURCE_IMPORT_OWNER_ID = "query";
+const RESOURCE_IMPORT_COMMAND = "导入资源清单";
+const PORTAL_RESOURCE_IMPORT_SOURCE = "portal-resource-import";
+const RESOURCE_IMPORT_INTENT_PATTERN =
+  /(导入资源清单|资源清单导入|批量导入|资源纳管|导入资源|智能导入|上传台账导入)/;
 
+function createResourceImportFlowId() {
+  return `resource-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function isResourceImportIntent(value: string) {
+  const normalized = String(value || "").replace(/\s+/g, "");
+  return RESOURCE_IMPORT_INTENT_PATTERN.test(normalized);
+}
+
+function isPortalResourceImportSession(session: SessionRecord | null | undefined) {
+  return String(session?.meta?.source || "") === PORTAL_RESOURCE_IMPORT_SOURCE;
+}
+
+function resolveResourceImportApplicationName(flow: any): string {
+  const resourceGroups = Array.isArray(flow?.preview?.resourceGroups) ? flow.preview.resourceGroups : [];
+  const projectGroup = resourceGroups.find((group: any) => group?.ciType === "project");
+  const firstProjectRecord = Array.isArray(projectGroup?.records) ? projectGroup.records[0] : null;
+  return String(
+    firstProjectRecord?.attributes?.project_name
+      || firstProjectRecord?.name
+      || "",
+  ).trim();
+}
+
+function buildResourceImportSessionRecord(
+  employee: { id: string; name: string },
+  messages: any[],
+  {
+    sessionId,
+    visibleContent,
+    previous,
+  }: {
+    sessionId?: string;
+    visibleContent?: string;
+    previous?: SessionRecord | null;
+  } = {},
+): SessionRecord {
+  const now = new Date().toISOString();
+  const latestFlow = [...messages]
+    .reverse()
+    .map((message) => message?.resourceImportFlow)
+    .find(Boolean) as Record<string, any> | undefined;
+
+  const stageLabelMap: Record<string, string> = {
+    intro: "等待上传文件",
+    parsing: "文件解析中",
+    structure: "分组与模型预检查",
+    confirm: "确认导入内容",
+    topology: "拓扑关系预览",
+    importing: "写入 CMDB 中",
+    result: "导入结果",
+  };
+  const detail = latestFlow
+    ? stageLabelMap[String(latestFlow.stage || "")] || "资源导入处理中"
+    : "资源导入处理中";
+  const status =
+    latestFlow?.status === "error"
+      ? "error"
+      : latestFlow?.stage === "result"
+        ? "completed"
+        : latestFlow?.status === "running"
+          ? "running"
+          : "idle";
+
+  return {
+    id: sessionId || previous?.id || `portal-resource-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    employeeId: employee.id,
+    title: previous?.title || `资源导入 · ${new Date().toLocaleString("zh-CN")}`,
+    createdAt: previous?.createdAt || now,
+    updatedAt: now,
+    messages,
+    status,
+    detail,
+    tag: "资源导入",
+    meta: {
+      ...(previous?.meta || {}),
+      source: PORTAL_RESOURCE_IMPORT_SOURCE,
+      visibleContent: visibleContent || previous?.meta?.visibleContent || RESOURCE_IMPORT_COMMAND,
+    },
+  };
+}
+
+function mergeSessionRecords(primary: SessionRecord[], secondary: SessionRecord[]) {
+  const seen = new Set<string>();
+  return [...primary, ...secondary]
+    .filter((session) => {
+      if (!session?.id || seen.has(session.id)) {
+        return false;
+      }
+      seen.add(session.id);
+      return true;
+    })
+    .sort((left, right) => {
+      const leftTime = new Date(left.updatedAt || left.createdAt || 0).getTime();
+      const rightTime = new Date(right.updatedAt || right.createdAt || 0).getTime();
+      return rightTime - leftTime;
+    });
+}
 type DashboardKanbanMode = "work" | "employee";
 type DashboardKanbanFilter = "all" | "urgent" | "running";
 type DashboardWorkColumnId = "pending" | "running" | "completed" | "closed";
@@ -650,6 +757,11 @@ type PendingPortalDispatch = {
 
 type PortalLocationState = {
   pendingPortalDispatch?: PendingPortalDispatch;
+  pendingResourceImport?: {
+    token: string;
+    targetEmployeeId: string;
+    visibleContent: string;
+  };
   openHistoryForEmployeeId?: string;
   openSession?: {
     employeeId: string;
@@ -700,6 +812,7 @@ const PORTAL_ALERT_LEVEL_COLORS: Record<PortalOpsAlertLevel, string> = {
 
 type SessionRecord = {
   id: string;
+  employeeId?: string;
   title: string;
   createdAt?: string;
   updatedAt?: string;
@@ -1232,7 +1345,10 @@ export default function DigitalEmployeePage({
   const [dashboardHistoryLoading, setDashboardHistoryLoading] = useState(false);
   const [dashboardHistoryError, setDashboardHistoryError] = useState("");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const resourceImportFilesRef = useRef<Map<string, File[]>>(new Map());
   const handledPendingDispatchRef = useRef("");
+  const handledPendingResourceImportRef = useRef("");
+  const [activePortalResourceImportSessionId, setActivePortalResourceImportSessionId] = useState("");
   const handledDashboardSessionOpenRef = useRef("");
   const chatInputRef = useRef<HTMLInputElement | null>(null);
   const homeComposerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1251,6 +1367,7 @@ export default function DigitalEmployeePage({
     currentSessionId,
     setCurrentSessionId,
     currentChatId,
+    setCurrentChatId,
     currentChatStatus,
     historyVisible,
     setHistoryVisible,
@@ -1267,7 +1384,7 @@ export default function DigitalEmployeePage({
     handleSelectRemoteHistory,
     resetRemoteState,
   } = useRemoteChatSession({
-    currentEmployee: currentEmployeeBase,
+    currentEmployee,
     isRemoteEmployee,
     remoteAgentId,
     setMessages,
@@ -1288,7 +1405,7 @@ export default function DigitalEmployeePage({
     handleConfirmDisposalAction,
     resetAlarmWorkbench,
   } = useAlarmWorkbench({
-    currentEmployee: currentEmployeeBase,
+    currentEmployee,
     isAlarmWorkbenchMode,
     currentSessionId,
     handleRemoteSendMessage,
@@ -1436,6 +1553,503 @@ export default function DigitalEmployeePage({
     );
   }, [navigate, selectedEmployee?.id]);
 
+  const resourceImportEmployee = useMemo(
+    () => digitalEmployees.find((item) => item.id === RESOURCE_IMPORT_OWNER_ID) || null,
+    [],
+  );
+
+  const upsertPortalSession = useCallback((
+    employeeId: string,
+    nextSession: SessionRecord,
+  ) => {
+    setConversationStore((prevStore) => {
+      const previousSessions = ensureSessionRecords(prevStore[employeeId]);
+      const currentSession = previousSessions.find((session) => session.id === nextSession.id) || null;
+
+      if (
+        currentSession
+        && currentSession.messages === nextSession.messages
+        && currentSession.status === nextSession.status
+        && currentSession.detail === nextSession.detail
+        && currentSession.title === nextSession.title
+        && currentSession.tag === nextSession.tag
+        && currentSession.meta?.visibleContent === nextSession.meta?.visibleContent
+      ) {
+        return prevStore;
+      }
+
+      const nextSessions = [
+        nextSession,
+        ...previousSessions.filter((session) => session.id !== nextSession.id),
+      ];
+      const nextStore: ConversationStoreState = {
+        ...prevStore,
+        [employeeId]: nextSessions,
+      };
+      saveConversationStore(nextStore);
+      return nextStore;
+    });
+  }, []);
+
+  const buildResourceImportMessage = useCallback(
+    (flow: Record<string, any>) => {
+      if (!resourceImportEmployee) {
+        return null;
+      }
+      return createAgentMessage(resourceImportEmployee, {
+        content: "",
+        resourceImportFlow: flow,
+      });
+    },
+    [resourceImportEmployee],
+  );
+
+  const resolveResourceImportFiles = useCallback((flowId: string) => {
+    return resourceImportFilesRef.current.get(flowId) || [];
+  }, []);
+
+  const releaseResourceImportFiles = useCallback((flowId: string) => {
+    resourceImportFilesRef.current.delete(flowId);
+  }, []);
+
+  const updateResourceImportMessage = useCallback((
+    messageId: string,
+    updater: (message: any) => any,
+  ) => {
+    setMessages((currentMessages) =>
+      currentMessages.map((message) => (message.id === messageId ? updater(message) : message)),
+    );
+  }, []);
+
+  const handleResourceImportUploadFiles = useCallback((payload: {
+    sourceMessageId: string;
+    flowId: string;
+    files: File[];
+  }) => {
+    const { sourceMessageId, flowId, files } = payload;
+    if (!resourceImportEmployee || !files.length) {
+      return;
+    }
+
+    resourceImportFilesRef.current.set(flowId, files);
+    updateResourceImportMessage(sourceMessageId, (message) => ({
+      ...message,
+      resourceImportFlow: {
+        ...message.resourceImportFlow,
+        files: files.map((file) => ({
+          name: file.name,
+          size: file.size,
+        })),
+        status: "idle",
+        error: "",
+      },
+    }));
+  }, [resourceImportEmployee, updateResourceImportMessage]);
+
+  const handleResourceImportStartParse = useCallback((payload: {
+    messageId: string;
+    flowId: string;
+  }) => {
+    const files = resourceImportFilesRef.current.get(payload.flowId) || [];
+    if (!files.length) {
+      updateResourceImportMessage(payload.messageId, (message) => ({
+        ...message,
+        resourceImportFlow: {
+          ...message.resourceImportFlow,
+          error: "请先选择至少一个文件再开始解析",
+        },
+      }));
+      return;
+    }
+
+    const parseMessage = buildResourceImportMessage({
+      flowId: payload.flowId,
+      stage: "parsing",
+      status: "running",
+      files: files.map((file) => ({
+        name: file.name,
+        size: file.size,
+      })),
+    });
+
+    if (!parseMessage) {
+      return;
+    }
+
+    setMessages((currentMessages) => [...currentMessages, parseMessage]);
+  }, [buildResourceImportMessage, updateResourceImportMessage]);
+
+  const handleResourceImportParseResolved = useCallback((payload: {
+    messageId: string;
+    flowId: string;
+    preview: any;
+  }) => {
+    if (!resourceImportEmployee) {
+      return;
+    }
+
+    updateResourceImportMessage(payload.messageId, (message) => ({
+      ...message,
+      resourceImportFlow: {
+        ...message.resourceImportFlow,
+        status: "completed",
+        preview: payload.preview,
+        error: "",
+      },
+    }));
+
+    const structureMessage = buildResourceImportMessage({
+      flowId: payload.flowId,
+      stage: "structure",
+      preview: payload.preview,
+      resourceGroups: payload.preview.resourceGroups,
+      relations: payload.preview.relations,
+      locked: false,
+    });
+
+    if (!structureMessage) {
+      return;
+    }
+
+    setMessages((currentMessages) => [...currentMessages, structureMessage]);
+  }, [buildResourceImportMessage, resourceImportEmployee, updateResourceImportMessage]);
+
+  const handleResourceImportConfirmStructure = useCallback((payload: {
+    messageId: string;
+    flowId: string;
+    preview: any;
+    resourceGroups: any[];
+    relations: any[];
+  }) => {
+    updateResourceImportMessage(payload.messageId, (message) => ({
+      ...message,
+      resourceImportFlow: {
+        ...message.resourceImportFlow,
+        preview: payload.preview,
+        resourceGroups: payload.resourceGroups,
+        relations: payload.relations,
+        locked: true,
+      },
+    }));
+
+    const confirmMessage = buildResourceImportMessage({
+      flowId: payload.flowId,
+      stage: "confirm",
+      preview: payload.preview,
+      resourceGroups: payload.resourceGroups,
+      relations: payload.relations,
+      locked: false,
+    });
+
+    if (!confirmMessage) {
+      return;
+    }
+
+    setMessages((currentMessages) => [...currentMessages, confirmMessage]);
+  }, [buildResourceImportMessage, updateResourceImportMessage]);
+
+  const handleResourceImportParseFailed = useCallback((payload: {
+    messageId: string;
+    flowId: string;
+    error: string;
+  }) => {
+    releaseResourceImportFiles(payload.flowId);
+    updateResourceImportMessage(payload.messageId, (message) => ({
+      ...message,
+      resourceImportFlow: {
+        ...message.resourceImportFlow,
+        status: "error",
+        error: payload.error,
+      },
+    }));
+  }, [releaseResourceImportFiles, updateResourceImportMessage]);
+
+  const handleResourceImportReturnToUpload = useCallback((payload: {
+    flowId: string;
+    sourceMessageId?: string;
+  }) => {
+    releaseResourceImportFiles(payload.flowId);
+    const introMessage = buildResourceImportMessage({
+      flowId: createResourceImportFlowId(),
+      stage: "intro",
+    });
+
+    if (!introMessage) {
+      return;
+    }
+
+    setMessages((currentMessages) => [...currentMessages, introMessage]);
+  }, [buildResourceImportMessage, releaseResourceImportFiles]);
+
+  const handleResourceImportBuildTopology = useCallback((payload: {
+    messageId: string;
+    flowId: string;
+    preview: any;
+    resourceGroups: any[];
+    relations: any[];
+  }) => {
+    const topologyMessage = buildResourceImportMessage({
+      flowId: payload.flowId,
+      stage: "topology",
+      preview: payload.preview,
+      resourceGroups: payload.resourceGroups,
+      relations: payload.relations,
+      locked: false,
+      readonly: false,
+    });
+
+    if (!topologyMessage) {
+      return;
+    }
+
+    setMessages((currentMessages) => [
+      ...currentMessages.map((message) =>
+        message.id === payload.messageId
+          ? {
+              ...message,
+              resourceImportFlow: {
+                ...message.resourceImportFlow,
+                resourceGroups: payload.resourceGroups,
+                relations: payload.relations,
+                locked: true,
+              },
+            }
+          : message,
+      ),
+      topologyMessage,
+    ]);
+  }, [buildResourceImportMessage]);
+
+  const handleResourceImportBackToConfirm = useCallback((payload: {
+    messageId: string;
+    flowId: string;
+  }) => {
+    let confirmMessageId = "";
+
+    setMessages((currentMessages) =>
+      currentMessages
+        .filter((message) => {
+          const flow = message.resourceImportFlow;
+          if (!flow || flow.flowId !== payload.flowId) {
+            return true;
+          }
+          if (message.id === payload.messageId) {
+            return false;
+          }
+          if (flow.stage === "importing" || flow.stage === "result") {
+            return false;
+          }
+          return true;
+        })
+        .map((message) => {
+          const flow = message.resourceImportFlow;
+          if (flow?.flowId === payload.flowId && flow.stage === "confirm") {
+            confirmMessageId = message.id;
+            return {
+              ...message,
+              resourceImportFlow: {
+                ...flow,
+                locked: false,
+              },
+            };
+          }
+          return message;
+        }),
+    );
+
+    window.requestAnimationFrame(() => {
+      if (confirmMessageId) {
+        document
+          .getElementById(`message-${confirmMessageId}`)
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  }, []);
+
+  const handleResourceImportSubmitImport = useCallback(async (payload: {
+    messageId: string;
+    flowId: string;
+    preview: any;
+    resourceGroups: any[];
+    relations: any[];
+  }) => {
+    const importingMessage = buildResourceImportMessage({
+      flowId: payload.flowId,
+      stage: "importing",
+      status: "running",
+      preview: payload.preview,
+      resourceGroups: payload.resourceGroups,
+      relations: payload.relations,
+    });
+
+    if (!importingMessage) {
+      return;
+    }
+
+    setMessages((currentMessages) => [
+      ...currentMessages.map((message) =>
+        message.id === payload.messageId
+          ? {
+              ...message,
+              resourceImportFlow: {
+                ...message.resourceImportFlow,
+                relations: payload.relations,
+                locked: true,
+              },
+            }
+          : message,
+      ),
+      importingMessage,
+    ]);
+
+    try {
+      const result = await submitResourceImport({
+        preview: payload.preview,
+        resourceGroups: payload.resourceGroups,
+        relations: payload.relations,
+      }, remoteAgentId || undefined);
+
+      updateResourceImportMessage(importingMessage.id, (message) => ({
+        ...message,
+        resourceImportFlow: {
+          ...message.resourceImportFlow,
+          status: "completed",
+          result,
+          error: "",
+        },
+      }));
+
+      const resultMessage = buildResourceImportMessage({
+        flowId: payload.flowId,
+        stage: "result",
+        preview: payload.preview,
+        resourceGroups: payload.resourceGroups,
+        relations: payload.relations,
+        result,
+      });
+
+      if (resultMessage) {
+        setMessages((currentMessages) => [...currentMessages, resultMessage]);
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "资源导入失败";
+      updateResourceImportMessage(importingMessage.id, (message) => ({
+        ...message,
+        resourceImportFlow: {
+          ...message.resourceImportFlow,
+          status: "error",
+          error: detail,
+        },
+      }));
+      updateResourceImportMessage(payload.messageId, (message) => ({
+        ...message,
+        resourceImportFlow: {
+          ...message.resourceImportFlow,
+          locked: false,
+        },
+      }));
+    }
+  }, [buildResourceImportMessage, updateResourceImportMessage]);
+
+  const handleResourceImportContinue = useCallback((_payload: { flowId: string }) => {
+    const introMessage = buildResourceImportMessage({
+      flowId: createResourceImportFlowId(),
+      stage: "intro",
+    });
+
+    if (!introMessage) {
+      return;
+    }
+
+    setMessages((currentMessages) => [...currentMessages, introMessage]);
+  }, [buildResourceImportMessage]);
+
+  const findResourceImportFlowById = useCallback((flowId: string) => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const flow = messages[index]?.resourceImportFlow;
+      if (flow?.flowId === flowId) {
+        return flow;
+      }
+    }
+    return null;
+  }, [messages]);
+
+  const handleResourceImportScrollToStage = useCallback((payload: {
+    flowId: string;
+    stage: string;
+  }) => {
+    const targetMessage = messages
+      .slice()
+      .reverse()
+      .find((message) => {
+        const flow = message.resourceImportFlow;
+        return flow?.flowId === payload.flowId && flow.stage === payload.stage;
+      });
+
+    if (!targetMessage) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(`message-${targetMessage.id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [messages]);
+
+  const openResourceImport = useCallback((visibleContent = RESOURCE_IMPORT_COMMAND) => {
+    if (!resourceImportEmployee) {
+      return;
+    }
+
+    if (selectedEmployee?.id === RESOURCE_IMPORT_OWNER_ID) {
+      const flowId = createResourceImportFlowId();
+      const nextMessages = [
+        ...ensureObjectArray(messages),
+        createUserMessage(visibleContent),
+        createAgentMessage(resourceImportEmployee, {
+          content: "",
+          resourceImportFlow: {
+            flowId,
+            stage: "intro",
+          },
+        }),
+      ];
+      const nextSession = buildResourceImportSessionRecord(
+        resourceImportEmployee,
+        nextMessages,
+        {
+          visibleContent,
+        },
+      );
+      setActivePortalResourceImportSessionId(nextSession.id);
+      setCurrentChatId("");
+      setMessages(nextMessages);
+      upsertPortalSession(resourceImportEmployee.id, nextSession);
+      return;
+    }
+
+    navigateToEmployeePage(resourceImportEmployee, {
+      entry: null,
+      view: "chat",
+      panel: null,
+      state: {
+        pendingResourceImport: {
+          token: `pending-resource-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          targetEmployeeId: resourceImportEmployee.id,
+          visibleContent,
+        },
+      } satisfies PortalLocationState,
+    });
+  }, [
+    messages,
+    navigateToEmployeePage,
+    resourceImportEmployee,
+    selectedEmployee?.id,
+    setCurrentChatId,
+    upsertPortalSession,
+  ]);
+
   const switchMcpEmployee = useCallback((employeeId: string | null) => {
     navigate(buildPortalSectionPath("mcp", { employeeId }));
   }, [navigate]);
@@ -1452,6 +2066,226 @@ export default function DigitalEmployeePage({
     });
   }, [employeesWithRuntimeStatus, navigateToEmployeePage]);
 
+  const handleClearOpsAlerts = useCallback(() => {
+    if (alertToastTimerRef.current) {
+      window.clearTimeout(alertToastTimerRef.current);
+      alertToastTimerRef.current = null;
+    }
+    knownAlertIdsRef.current = [];
+    setOpsAlerts([]);
+    setAlertToast(null);
+    setAlertPopupOpen(false);
+  }, []);
+
+  const handlePortalAlertAction = useCallback((alert: PortalOpsAlert) => {
+    if (alertToastTimerRef.current) {
+      window.clearTimeout(alertToastTimerRef.current);
+      alertToastTimerRef.current = null;
+    }
+    setAlertPopupOpen(false);
+    setAlertToast((current) =>
+      current?.alert.id === alert.id ? null : current,
+    );
+    setOpsAlerts((currentAlerts) => currentAlerts.filter((item) => item.id !== alert.id));
+
+    const employee =
+      employeesWithRuntimeStatus.find((item) => item.id === alert.employeeId) ||
+      getEmployeeById(alert.employeeId);
+    if (!employee) {
+      return;
+    }
+
+    if (alert.dispatchContent) {
+      navigateToEmployeePage(employee, {
+        entry: alert.routeEntry ?? null,
+        view: "chat",
+        panel: null,
+        state: {
+          pendingPortalDispatch: {
+            token: `alert-dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            targetEmployeeId: employee.id,
+            content: alert.dispatchContent,
+            visibleContent: alert.visibleContent || alert.dispatchContent,
+          },
+        } satisfies PortalLocationState,
+      });
+      return;
+    }
+
+    navigateToEmployeePage(employee, {
+      entry: alert.routeEntry ?? null,
+      view: "chat",
+      panel: null,
+    });
+  }, [employeesWithRuntimeStatus, navigateToEmployeePage]);
+
+  const handleToggleAlertPopup = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+
+    const trigger = event.currentTarget;
+    const isSameTrigger = activeAlertTriggerRef.current === trigger;
+    const popupWidth = Math.min(400, window.innerWidth - 32);
+    const rect = trigger.getBoundingClientRect();
+    const left = Math.min(
+      Math.max(16, rect.right - popupWidth),
+      window.innerWidth - popupWidth - 16,
+    );
+
+    activeAlertTriggerRef.current = trigger;
+    setAlertPopupPosition({
+      top: Math.min(rect.bottom + 8, window.innerHeight - 24),
+      left,
+    });
+    setAlertPopupOpen((current) => (isSameTrigger ? !current : true));
+  }, []);
+
+  function renderAlertBell() {
+    const alertCount = sortedOpsAlerts.length;
+    const toastAlert = alertToast?.visible ? alertToast.alert : null;
+    const popup =
+      alertPopupOpen && alertPopupPosition && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={alertPopupRef}
+              className={pageTheme === "dark" ? "portal-alert-popup theme-dark" : "portal-alert-popup"}
+              style={{
+                top: `${alertPopupPosition.top}px`,
+                left: `${alertPopupPosition.left}px`,
+              }}
+            >
+              <div className="alert-popup-header">
+                <div className="alert-popup-title">
+                  {alertBellIcon}
+                  <span>消息提醒</span>
+                  {alertCount ? (
+                    <span className="alert-count">
+                      {alertCount > 99 ? "99+" : alertCount}
+                    </span>
+                  ) : null}
+                </div>
+                {alertCount ? (
+                  <button
+                    type="button"
+                    className="alert-popup-clear"
+                    onClick={handleClearOpsAlerts}
+                  >
+                    清空
+                  </button>
+                ) : null}
+              </div>
+              <div className="alert-popup-body">
+                {alertCount ? (
+                  sortedOpsAlerts.map((alert) => {
+                    const employee =
+                      employeesWithRuntimeStatus.find((item) => item.id === alert.employeeId) ||
+                      getEmployeeById(alert.employeeId);
+                    const levelColor = PORTAL_ALERT_LEVEL_COLORS[alert.level];
+
+                    return (
+                      <button
+                        key={alert.id}
+                        type="button"
+                        className="alert-popup-item"
+                        onClick={() => handlePortalAlertAction(alert)}
+                      >
+                        <div
+                          className="alert-popup-item-icon"
+                          style={{ background: `${levelColor}14` }}
+                        >
+                          {employee ? (
+                            <DigitalEmployeeAvatar
+                              employee={employee}
+                              className="portal-alert-popup-avatar"
+                            />
+                          ) : (
+                            <span style={{ color: levelColor, fontWeight: 700 }}>!</span>
+                          )}
+                        </div>
+                        <div className="alert-popup-item-body">
+                          <div className="alert-popup-item-msg">{alert.message}</div>
+                          <div className="alert-popup-item-meta">
+                            {employee ? (
+                              <span
+                                className="alert-popup-item-emp"
+                                style={{ color: levelColor }}
+                              >
+                                {employee.name}
+                              </span>
+                            ) : null}
+                            <span
+                              className="alert-popup-item-level"
+                              style={{ color: levelColor }}
+                            >
+                              {PORTAL_ALERT_LEVEL_LABELS[alert.level]}
+                            </span>
+                            <span className="alert-popup-item-time">{alert.timeLabel}</span>
+                          </div>
+                        </div>
+                        <span className="alert-popup-item-go" aria-hidden="true">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="m9 18 6-6-6-6" />
+                          </svg>
+                        </span>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="alert-popup-empty">当前没有新的提醒</div>
+                )}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null;
+
+    return (
+      <div className="alert-bell-wrap">
+        {toastAlert ? (
+          <button
+            type="button"
+            className="danmaku-toast"
+            onClick={() => handlePortalAlertAction(toastAlert)}
+          >
+            <span className="danmaku-dot" />
+            <span className="danmaku-toast-message">{toastAlert.message}</span>
+            {(() => {
+              const employee =
+                employeesWithRuntimeStatus.find((item) => item.id === toastAlert.employeeId) ||
+                getEmployeeById(toastAlert.employeeId);
+              return employee ? (
+                <span className="danmaku-emp">{employee.name}</span>
+              ) : null;
+            })()}
+          </button>
+        ) : null}
+        <button
+          ref={activeAlertTriggerRef}
+          type="button"
+          className={alertCount ? "alert-bell has-alerts" : "alert-bell"}
+          aria-label={alertCount ? `消息提醒，当前 ${alertCount} 条未处理` : "消息提醒"}
+          aria-expanded={alertPopupOpen}
+          onClick={handleToggleAlertPopup}
+        >
+          {alertBellIcon}
+          <span className="bell-badge">
+            {alertCount > 99 ? "99+" : alertCount}
+          </span>
+        </button>
+        {popup}
+      </div>
+    );
+  }
+
   const toggleChatSidebarSection = useCallback((section: ChatSidebarSectionKey) => {
     setChatSidebarCollapsedSections((prev) => ({
       ...prev,
@@ -1460,9 +2294,24 @@ export default function DigitalEmployeePage({
   }, []);
 
   useEffect(() => {
+    if (
+      activeAdvancedPanel === "resource-import" &&
+      selectedEmployee?.id !== RESOURCE_IMPORT_OWNER_ID &&
+      resourceImportEmployee
+    ) {
+      navigateToEmployeePage(resourceImportEmployee, {
+        entry: null,
+        view: "chat",
+        panel: "resource-import",
+        replace: true,
+      });
+      return;
+    }
+
     if (!currentEmployeeBase) {
       return;
     }
+
 
     if (employeeId && !selectedEmployee) {
       navigate("/", { replace: true });
@@ -1484,6 +2333,8 @@ export default function DigitalEmployeePage({
     currentView,
     employeeId,
     navigate,
+    navigateToEmployeePage,
+    resourceImportEmployee,
     routeSearchParams,
     routeSection,
     selectedEmployee,
@@ -1514,6 +2365,7 @@ export default function DigitalEmployeePage({
     }
 
     if (!isRemoteEmployee) {
+      setActivePortalResourceImportSessionId("");
       resetRemoteState();
       const initialMessages = isPortalHome ? [] : [createWelcomeMessage(currentEmployeeBase)];
       const nextSession = isPortalHome
@@ -1540,6 +2392,7 @@ export default function DigitalEmployeePage({
       return;
     }
 
+    setActivePortalResourceImportSessionId("");
     resetRemoteState({
       initialMessages: isPortalHome ? [] : [createWelcomeMessage(currentEmployeeBase)],
     });
@@ -1550,6 +2403,7 @@ export default function DigitalEmployeePage({
     isRemoteEmployee,
     resetAlarmWorkbench,
     resetRemoteState,
+    setActivePortalResourceImportSessionId,
     setCurrentSessionId,
   ]);
 
@@ -1670,13 +2524,10 @@ export default function DigitalEmployeePage({
   );
   const sidebarEmployees = useMemo(() => {
     const priorityIds = new Set<string>(sidebarEmployeePriority);
-    const prioritizedEmployees = sidebarEmployeePriority
-      .map((employeeId) =>
-        employeesWithRuntimeStatus.find((employee) => employee.id === employeeId),
-      )
-      .filter(
-        (employee): employee is (typeof digitalEmployees)[number] => Boolean(employee),
-      );
+    const prioritizedEmployees = sidebarEmployeePriority.flatMap((employeeId) => {
+      const employee = employeesWithRuntimeStatus.find((item) => item.id === employeeId);
+      return employee ? [employee] : [];
+    });
 
     return [
       ...prioritizedEmployees,
@@ -1956,7 +2807,17 @@ export default function DigitalEmployeePage({
     return dashboardEmployeeSnapshots;
   }, [dashboardEmployeeSnapshots, kanbanFilter]);
 
-  const safeMessages = ensureObjectArray(messages);
+  const safeMessages = useMemo(
+    () => ensureObjectArray(messages),
+    [messages],
+  );
+  const portalResourceImportSessions = useMemo(
+    () =>
+      ensureSessionRecords(conversationStore[currentEmployee?.id || ""]).filter((session) =>
+        isPortalResourceImportSession(session),
+      ),
+    [conversationStore, currentEmployee?.id],
+  );
   const safeExecutionList = ensureObjectArray<ExecutionRecord>(executionList);
   const safeCapabilities = ensureStringArray(currentEmployee?.capabilities);
   const safeQuickCommands = ensureStringArray(currentEmployee?.quickCommands);
@@ -1968,6 +2829,7 @@ export default function DigitalEmployeePage({
   const isSkillPoolMode = activeAdvancedPanel === "skill-pool";
   const isInspirationMode = activeAdvancedPanel === "inspiration";
   const isCliMode = activeAdvancedPanel === "cli";
+  const isResourceImportMode = activeAdvancedPanel === "resource-import";
   const effectiveMcpEmployee = isMcpMode ? (selectedEmployee || currentSidebarEmployee) : selectedEmployee;
   const effectiveMcpAgentId = effectiveMcpEmployee
     ? (REMOTE_AGENT_IDS[effectiveMcpEmployee.id] || "default")
@@ -1994,9 +2856,39 @@ export default function DigitalEmployeePage({
 
   const sessionList = (
     isRemoteEmployee
-      ? remoteSessions
+      ? mergeSessionRecords(remoteSessions, portalResourceImportSessions)
       : ensureSessionRecords(conversationStore[currentEmployee?.id || ""])
   ) as SessionRecord[];
+
+  useEffect(() => {
+    if (
+      !activePortalResourceImportSessionId
+      || !resourceImportEmployee
+      || selectedEmployee?.id !== RESOURCE_IMPORT_OWNER_ID
+    ) {
+      return;
+    }
+
+    const previousSession = ensureSessionRecords(conversationStore[resourceImportEmployee.id]).find(
+      (session) => session.id === activePortalResourceImportSessionId,
+    ) || null;
+    const nextSession = buildResourceImportSessionRecord(
+      resourceImportEmployee,
+      safeMessages,
+      {
+        sessionId: activePortalResourceImportSessionId,
+        previous: previousSession,
+      },
+    );
+    upsertPortalSession(resourceImportEmployee.id, nextSession);
+  }, [
+    activePortalResourceImportSessionId,
+    conversationStore,
+    resourceImportEmployee,
+    safeMessages,
+    selectedEmployee?.id,
+    upsertPortalSession,
+  ]);
 
   useEffect(() => {
     if (historyVisible) {
@@ -2081,67 +2973,6 @@ export default function DigitalEmployeePage({
       } satisfies PortalLocationState,
     });
   }, [navigate]);
-
-  const handlePortalAlertAction = useCallback((alert: PortalOpsAlert) => {
-    if (alertToastTimerRef.current) {
-      window.clearTimeout(alertToastTimerRef.current);
-      alertToastTimerRef.current = null;
-    }
-    setAlertPopupOpen(false);
-    setAlertToast((current) => (current?.alert.id === alert.id ? null : current));
-    setOpsAlerts((currentAlerts) => currentAlerts.filter((item) => item.id !== alert.id));
-
-    const employee = getEmployeeById(alert.employeeId);
-    if (!employee) {
-      return;
-    }
-
-    if (alert.routeEntry === ALARM_WORKORDER_ENTRY) {
-      navigateToEmployeePage(employee, {
-        entry: ALARM_WORKORDER_ENTRY,
-        view: "chat",
-        panel: null,
-      });
-      return;
-    }
-
-    queueMentionDispatch(
-      employee,
-      alert.dispatchContent || alert.message,
-      alert.visibleContent || alert.message,
-    );
-  }, [navigateToEmployeePage, queueMentionDispatch]);
-
-  const handleClearPortalAlerts = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-    if (alertToastTimerRef.current) {
-      window.clearTimeout(alertToastTimerRef.current);
-      alertToastTimerRef.current = null;
-    }
-    setAlertToast(null);
-    setOpsAlerts([]);
-    setAlertPopupOpen(false);
-  }, []);
-
-  const handleToggleAlertPopup = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-
-    const trigger = event.currentTarget;
-    const isSameTrigger = activeAlertTriggerRef.current === trigger;
-    const popupWidth = Math.min(400, window.innerWidth - 32);
-    const rect = trigger.getBoundingClientRect();
-    const left = Math.min(
-      Math.max(16, rect.right - popupWidth),
-      window.innerWidth - popupWidth - 16,
-    );
-
-    activeAlertTriggerRef.current = trigger;
-    setAlertPopupPosition({
-      top: Math.min(rect.bottom + 8, window.innerHeight - 24),
-      left,
-    });
-    setAlertPopupOpen((value) => (isSameTrigger ? !value : true));
-  }, []);
 
   const runLocalEmployeeFlow = useCallback((
     employee: any,
@@ -2241,6 +3072,9 @@ export default function DigitalEmployeePage({
     }
 
     if (isRemoteEmployee && targetEmployee.id === currentEmployee.id) {
+      if (!isResourceImportIntent(visibleContent)) {
+        setActivePortalResourceImportSessionId("");
+      }
       return handleRemoteSendMessage(content, {
         visibleContent,
       });
@@ -2253,7 +3087,25 @@ export default function DigitalEmployeePage({
     handleRemoteSendMessage,
     isRemoteEmployee,
     runLocalEmployeeFlow,
+    setActivePortalResourceImportSessionId,
   ]);
+
+  const handleResourceImportOpenSystemTopology = useCallback(
+    async (payload: { flowId: string }) => {
+      const flow = findResourceImportFlowById(payload.flowId);
+      const applicationName = resolveResourceImportApplicationName(flow);
+      const visibleContent = applicationName
+        ? `查看${applicationName}完整拓扑`
+        : "查看导入结果完整拓扑";
+      const systemContent = applicationName
+        ? `请直接使用现有 CMDB 拓扑能力，查询应用 ${applicationName} 的完整关系拓扑，只返回该应用相关的节点与关系，并用 echarts 树状图展示。不要查询全系统，也不要扩展到无关应用。`
+        : "请直接使用现有 CMDB 拓扑能力查询应用关系拓扑，并用 echarts 树状图展示。如果系统中存在多个应用且我没有明确指定应用名，请先列出候选应用并要求我明确选择，不要默认任选一个应用。";
+      void dispatchActiveMessage(systemContent, {
+        visibleContent,
+      });
+    },
+    [dispatchActiveMessage, findResourceImportFlowById],
+  );
 
   useEffect(() => {
     const pendingDispatch = locationState?.pendingPortalDispatch;
@@ -2288,6 +3140,39 @@ export default function DigitalEmployeePage({
     location.search,
     locationState,
     navigate,
+  ]);
+
+  useEffect(() => {
+    const pendingResourceImport = locationState?.pendingResourceImport;
+    if (!pendingResourceImport || !currentEmployee) {
+      return;
+    }
+
+    if (pendingResourceImport.targetEmployeeId !== currentEmployee.id) {
+      return;
+    }
+
+    if (handledPendingResourceImportRef.current === pendingResourceImport.token) {
+      return;
+    }
+
+    handledPendingResourceImportRef.current = pendingResourceImport.token;
+
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: {},
+    });
+
+    window.setTimeout(() => {
+      openResourceImport(pendingResourceImport.visibleContent);
+    }, 0);
+  }, [
+    currentEmployee,
+    location.pathname,
+    location.search,
+    locationState,
+    navigate,
+    openResourceImport,
   ]);
 
   useEffect(() => {
@@ -2375,12 +3260,12 @@ export default function DigitalEmployeePage({
 
   const getEmployeeStatusLabel = useCallback((employee: any) => {
     if (employee.urgent) {
-      return "紧急任务";
+      return "紧急";
     }
     if (employee.status === "running") {
       return "运行中";
     }
-    return "待机";
+    return "已停止";
   }, []);
 
   const renderSidebarEmployeeCard = useCallback((
@@ -2547,6 +3432,14 @@ export default function DigitalEmployeePage({
 
     const mentionResult = extractMentionTarget(rawContent);
     if (mentionResult.employee) {
+      if (
+        mentionResult.employee.id === RESOURCE_IMPORT_OWNER_ID
+        && isResourceImportIntent(mentionResult.cleanContent)
+      ) {
+        openResourceImport(mentionResult.visibleContent);
+        return;
+      }
+
       const shouldUseAgentCollaboration = Boolean(
         selectedEmployee
         && isRemoteEmployee
@@ -2593,6 +3486,11 @@ export default function DigitalEmployeePage({
       return;
     }
 
+    if (isResourceImportIntent(rawContent)) {
+      openResourceImport(rawContent);
+      return;
+    }
+
     await dispatchActiveMessage(rawContent);
   };
 
@@ -2602,12 +3500,26 @@ export default function DigitalEmployeePage({
     }
 
     if (!isRemoteEmployee) {
+      setActivePortalResourceImportSessionId(
+        isPortalResourceImportSession(session) ? session.id : "",
+      );
       setCurrentSessionId(session.id);
       setMessages(session.messages || []);
       setHistoryVisible(false);
       return;
     }
 
+    if (isPortalResourceImportSession(session)) {
+      stopActiveStream(false, { silent: true });
+      setActivePortalResourceImportSessionId(session.id);
+      setCurrentChatId("");
+      setCurrentSessionId("");
+      setMessages(ensureObjectArray(session.messages));
+      setHistoryVisible(false);
+      return;
+    }
+
+    setActivePortalResourceImportSessionId("");
     await handleSelectRemoteHistory(session);
   };
 
@@ -2623,7 +3535,7 @@ export default function DigitalEmployeePage({
 
     const openKey = `${openSession.employeeId}:${openSession.sessionId}`;
     const availableSessions = isRemoteEmployee
-      ? remoteSessions
+      ? mergeSessionRecords(remoteSessions, portalResourceImportSessions)
       : ensureSessionRecords(conversationStore[currentEmployee.id]);
     const targetSession = availableSessions.find((session) => session.id === openSession.sessionId);
 
@@ -2650,6 +3562,7 @@ export default function DigitalEmployeePage({
     location.search,
     locationState,
     navigate,
+    portalResourceImportSessions,
     refreshRemoteSessions,
     remoteSessions,
   ]);
@@ -2661,6 +3574,7 @@ export default function DigitalEmployeePage({
 
     setInputMessage("");
     setExecutionVisible(false);
+    setActivePortalResourceImportSessionId("");
 
     if (isAlarmWorkbenchMode) {
       resetAlarmWorkbench();
@@ -2697,6 +3611,7 @@ export default function DigitalEmployeePage({
     loadAlarmWorkorders,
     resetAlarmWorkbench,
     resetRemoteState,
+    setActivePortalResourceImportSessionId,
     setHistoryVisible,
   ]);
 
@@ -2732,7 +3647,7 @@ export default function DigitalEmployeePage({
     setHistoryActionError("");
 
     try {
-      if (isRemoteEmployee) {
+      if (isRemoteEmployee && !isPortalResourceImportSession(session)) {
         await updateChat(remoteAgentId || undefined, session.id, { name: nextTitle });
         await refreshRemoteSessions(false);
       } else {
@@ -2784,6 +3699,41 @@ export default function DigitalEmployeePage({
     setHistoryActionError("");
 
     try {
+      if (isPortalResourceImportSession(session)) {
+        const previousSessions = ensureSessionRecords(conversationStore[currentEmployee.id]);
+        const nextSessions = previousSessions.filter((item) => item.id !== session.id);
+        const nextStore: ConversationStoreState = {
+          ...conversationStore,
+          [currentEmployee.id]: nextSessions,
+        };
+        saveConversationStore(nextStore);
+        setConversationStore(nextStore);
+
+        if (activePortalResourceImportSessionId === session.id) {
+          setActivePortalResourceImportSessionId("");
+          if (isRemoteEmployee) {
+            resetRemoteState({
+              initialMessages: [createWelcomeMessage(currentEmployee)],
+            });
+          } else if (session.id === currentSessionId) {
+            const nextActiveSession = nextSessions[0];
+            if (nextActiveSession) {
+              setCurrentSessionId(nextActiveSession.id);
+              setMessages(nextActiveSession.messages || []);
+            } else {
+              setCurrentSessionId("");
+              setMessages([createWelcomeMessage(currentEmployee)]);
+            }
+          }
+        }
+
+        if (historyEditingId === session.id) {
+          setHistoryEditingId("");
+          setHistoryDraftTitle("");
+        }
+        return;
+      }
+
       if (isRemoteEmployee) {
         const deletingCurrentSession = session.id === currentChatId;
         if (deletingCurrentSession) {
@@ -2830,6 +3780,7 @@ export default function DigitalEmployeePage({
       setHistoryActionSessionId("");
     }
   }, [
+    activePortalResourceImportSessionId,
     conversationStore,
     currentChatId,
     currentEmployee,
@@ -2839,6 +3790,7 @@ export default function DigitalEmployeePage({
     refreshRemoteSessions,
     remoteAgentId,
     resetRemoteState,
+    setActivePortalResourceImportSessionId,
     setHistoryVisible,
     stopActiveStream,
   ]);
@@ -2878,6 +3830,10 @@ export default function DigitalEmployeePage({
           }
         : undefined,
     });
+  };
+
+  const handleOpenDashboardLatestSession = (employeeId: string, session?: SessionRecord | null) => {
+    handleOpenTaskEmployeeChat(employeeId, session);
   };
 
   const handleOpenDashboardEmployeeHistory = async (employeeId: string) => {
@@ -2934,132 +3890,10 @@ export default function DigitalEmployeePage({
     handleOpenTaskEmployeeChat(employeeId, session);
   };
 
-  const renderAlertBell = () => (
-    <div className="alert-bell-wrap">
-      {alertToast?.visible ? (
-        <button
-          type="button"
-          className="danmaku-toast"
-          onClick={() => handlePortalAlertAction(alertToast.alert)}
-        >
-          <span className="danmaku-dot" />
-          <span className="danmaku-toast-message">{alertToast.alert.message}</span>
-          <span className="danmaku-emp">
-            {getEmployeeById(alertToast.alert.employeeId)?.name || alertToast.alert.employeeId}
-          </span>
-        </button>
-      ) : null}
-      <button
-        type="button"
-        className={opsAlerts.length ? "alert-bell has-alerts" : "alert-bell"}
-        onClick={handleToggleAlertPopup}
-        aria-label="查看运维告警"
-        title="运维告警"
-      >
-        {alertBellIcon}
-        {opsAlerts.length ? (
-          <span className="bell-badge">{opsAlerts.length > 99 ? "99+" : opsAlerts.length}</span>
-        ) : null}
-      </button>
-    </div>
-  );
-
-  const alertPopup = alertPopupOpen && alertPopupPosition && typeof document !== "undefined"
-    ? createPortal(
-        <div
-          ref={alertPopupRef}
-          className={pageTheme === "dark" ? "portal-alert-popup theme-dark show" : "portal-alert-popup show"}
-          style={{
-            top: alertPopupPosition.top,
-            left: alertPopupPosition.left,
-          }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div className="alert-popup-header">
-            <div className="alert-popup-title">
-              {alertBellIcon}
-              <span>运维告警</span>
-              {opsAlerts.length ? <span className="alert-count">{opsAlerts.length}</span> : null}
-            </div>
-            {opsAlerts.length ? (
-              <button type="button" className="alert-popup-clear" onClick={handleClearPortalAlerts}>
-                全部清除
-              </button>
-            ) : null}
-          </div>
-          <div className="alert-popup-body">
-            {sortedOpsAlerts.length ? (
-              sortedOpsAlerts.map((alert) => {
-                const employee = getEmployeeById(alert.employeeId);
-                const employeeColor = getDashboardEmployeeColor(alert.employeeId);
-
-                return (
-                  <button
-                    key={alert.id}
-                    type="button"
-                    className="alert-popup-item"
-                    onClick={() => handlePortalAlertAction(alert)}
-                  >
-                    <div
-                      className="alert-popup-item-icon"
-                      style={{
-                        background: `${employeeColor}20`,
-                        color: employeeColor,
-                      }}
-                    >
-                      {employee ? (
-                        <DigitalEmployeeAvatar
-                          employee={employee}
-                          className="portal-alert-popup-avatar"
-                        />
-                      ) : (
-                        alertBellIcon
-                      )}
-                    </div>
-                    <div className="alert-popup-item-body">
-                      <div className="alert-popup-item-msg">{alert.message}</div>
-                      <div className="alert-popup-item-meta">
-                        <span className="alert-popup-item-emp" style={{ color: employeeColor }}>
-                          {employee?.name || alert.employeeId}
-                        </span>
-                        <span
-                          className="alert-popup-item-level"
-                          style={{
-                            color: PORTAL_ALERT_LEVEL_COLORS[alert.level],
-                            background: `${PORTAL_ALERT_LEVEL_COLORS[alert.level]}15`,
-                            borderColor: `${PORTAL_ALERT_LEVEL_COLORS[alert.level]}30`,
-                          }}
-                        >
-                          {PORTAL_ALERT_LEVEL_LABELS[alert.level]}
-                        </span>
-                        <span className="alert-popup-item-time">{alert.timeLabel}</span>
-                      </div>
-                    </div>
-                    <span className="alert-popup-item-go" aria-hidden="true">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
-                    </span>
-                  </button>
-                );
-              })
-            ) : (
-              <div className="alert-popup-empty">暂无待处理告警</div>
-            )}
-          </div>
-        </div>,
-        document.body,
-      )
-    : null;
-
   if (!currentEmployee) {
     return null;
   }
 
-  const currentEmployeeModelLabel = activeModelLabel || "默认模型";
-  const currentEmployeeStatusLabel = getEmployeeStatusLabel(currentEmployee);
-  const currentEmployeeStatsLabel = formatEmployeeStatsLabel(currentEmployeeBase);
-  const currentEmployeeMotto = getEmployeeProfileMotto(currentEmployee.id, currentEmployee.desc);
   const showChatSidebarToggle = Boolean(!isPortalHomeChat && selectedEmployee);
   const chatSidebarToggleButton = showChatSidebarToggle ? (
     <button
@@ -3086,15 +3920,7 @@ export default function DigitalEmployeePage({
       </div>
 
       <div className="app-container">
-        <div className={sidebarCollapsed ? "sidebar sidebar-collapsed" : "sidebar"}>
-          <button
-            type="button"
-            className="sidebar-collapse-btn"
-            onClick={() => setSidebarCollapsed((v) => !v)}
-            title={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
-          >
-            <i className={sidebarCollapsed ? "fas fa-chevron-right" : "fas fa-chevron-left"} />
-          </button>
+        <div className="sidebar">
           <button
             type="button"
             className={isPortalHomeChat ? "logo active" : "logo"}
@@ -3231,7 +4057,7 @@ export default function DigitalEmployeePage({
 
         <div
           className={
-            isModelConfigMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isInspirationMode || isCliMode
+            isModelConfigMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isInspirationMode || isCliMode || isResourceImportMode
               ? "main-content advanced-page-mode"
               : currentView === "chat"
                 ? "main-content"
@@ -3314,6 +4140,8 @@ export default function DigitalEmployeePage({
               activeEmployeeId={selectedEmployee?.id || currentSidebarEmployee?.id || null}
               onOpenEmployeeChat={openEmployeeChat}
             />
+          ) : isResourceImportMode ? (
+            <ResourceImportPanel />
           ) : (
             <>
           {!isPortalHomeChat ? (
@@ -3778,7 +4606,13 @@ export default function DigitalEmployeePage({
                           <button
                             key={`home-${command}`}
                             className="portal-home-quick-action"
-                            onClick={() => void handleSendMessage(command)}
+                            onClick={() => {
+                              if (command === RESOURCE_IMPORT_COMMAND) {
+                                openResourceImport();
+                                return;
+                              }
+                              void handleSendMessage(command);
+                            }}
                             disabled={isCreatingChat || isStreaming}
                           >
                             {command}
@@ -3913,6 +4747,7 @@ export default function DigitalEmployeePage({
                     <div className="chat-messages">
                       {safeMessages.map((message) => (
                         <ChatMessageItem
+                          agentId={remoteAgentId}
                           key={message.id}
                           currentEmployee={currentEmployeeBase}
                           isStreamingMessage={
@@ -3921,6 +4756,20 @@ export default function DigitalEmployeePage({
                           }
                           message={message}
                           onDisposalAction={handleAlarmDisposalOperationRequest}
+                          onResourceImportBackToConfirm={handleResourceImportBackToConfirm}
+                          onResourceImportBuildTopology={handleResourceImportBuildTopology}
+                          onResourceImportConfirmStructure={handleResourceImportConfirmStructure}
+                          onResourceImportContinue={handleResourceImportContinue}
+                          onResourceImportOpenSystemTopology={handleResourceImportOpenSystemTopology}
+                          onResourceImportParseFailed={handleResourceImportParseFailed}
+                          onResourceImportParseResolved={handleResourceImportParseResolved}
+                          onResourceImportReturnToUpload={handleResourceImportReturnToUpload}
+                          onResourceImportStartParse={handleResourceImportStartParse}
+                          onResourceImportScrollToStage={handleResourceImportScrollToStage}
+                          onResourceImportSubmitImport={handleResourceImportSubmitImport}
+                          onResourceImportUploadFiles={handleResourceImportUploadFiles}
+                          releaseResourceImportFiles={releaseResourceImportFiles}
+                          resolveResourceImportFiles={resolveResourceImportFiles}
                           onTicketAction={handleAlarmWorkbenchTicketAction}
                           onTicketRefresh={() => void loadAlarmWorkorders()}
                           ticketActionNotice={ticketActionNotice}
@@ -3943,7 +4792,13 @@ export default function DigitalEmployeePage({
                             <button
                               key={command}
                               className="quick-cmd"
-                              onClick={() => void handleSendMessage(command)}
+                              onClick={() => {
+                                if (command === RESOURCE_IMPORT_COMMAND) {
+                                  openResourceImport();
+                                  return;
+                                }
+                                void handleSendMessage(command);
+                              }}
                               disabled={isCreatingChat || isStreaming}
                             >
                               <i className="fas fa-bolt" />
@@ -4033,245 +4888,6 @@ export default function DigitalEmployeePage({
                       </div>
                     </div>
                   </div>
-
-                  {!isPortalHomeChat && selectedEmployee ? (
-                    <div
-                      className={
-                        chatSidebarCollapsed
-                          ? "chat-sidebar-shell chat-sidebar-shell-collapsed"
-                          : "chat-sidebar-shell"
-                      }
-                    >
-                      <aside
-                        className={chatSidebarCollapsed ? "chat-sidebar chat-sidebar-collapsed" : "chat-sidebar"}
-                      >
-                        {!chatSidebarCollapsed ? (
-                          <>
-                      <section className="chat-side-card">
-                        <button
-                          type="button"
-                          className="chat-side-card-header"
-                          onClick={() => toggleChatSidebarSection("profile")}
-                        >
-                          <h4>员工档案</h4>
-                          <span
-                            className={
-                              chatSidebarCollapsedSections.profile
-                                ? "chat-side-card-toggle collapsed"
-                                : "chat-side-card-toggle"
-                            }
-                            aria-hidden="true"
-                          >
-                            <i className="fas fa-chevron-down" />
-                          </span>
-                        </button>
-                        {!chatSidebarCollapsedSections.profile ? (
-                          <div className="chat-side-card-body">
-                            <div className="chat-side-profile-hero">
-                              <div className="chat-side-profile-avatar-wrap">
-                                <DigitalEmployeeAvatar
-                                  employee={currentEmployee}
-                                  className="chat-side-profile-avatar"
-                                />
-                              </div>
-                              <div className="chat-side-profile-meta">
-                                <strong>{currentEmployee.name}</strong>
-                                <p>"{currentEmployeeMotto}"</p>
-                              </div>
-                            </div>
-                            <div className="chat-side-info-list">
-                              <div className="chat-side-info-row">
-                                <span className="chat-side-info-label">状态</span>
-                                <span className="chat-side-info-value">
-                                  <span
-                                    className={
-                                      currentEmployee.urgent
-                                        ? "chat-side-status-badge urgent"
-                                        : currentEmployee.status === "running"
-                                          ? "chat-side-status-badge running"
-                                          : "chat-side-status-badge stopped"
-                                    }
-                                  >
-                                    {currentEmployeeStatusLabel}
-                                  </span>
-                                </span>
-                              </div>
-                              <div className="chat-side-info-row">
-                                <span className="chat-side-info-label">当前模型</span>
-                                <span className="chat-side-info-value">{currentEmployeeModelLabel}</span>
-                              </div>
-                              <div className="chat-side-info-row">
-                                <span className="chat-side-info-label">统计</span>
-                                <span className="chat-side-info-value">{currentEmployeeStatsLabel}</span>
-                              </div>
-                            </div>
-                            <div className="chat-side-capability-block">
-                              <div className="chat-side-capability-row">
-                                <div className="chat-side-capability-title">核心能力</div>
-                                <div className="chat-side-tag-group">
-                                  {currentEmployee.capabilities.slice(0, 3).map((capability, index) => (
-                                    <span
-                                      key={capability}
-                                      className={
-                                        index % 3 === 1
-                                          ? "chat-side-capability-tag green"
-                                          : index % 3 === 2
-                                            ? "chat-side-capability-tag purple"
-                                            : "chat-side-capability-tag"
-                                      }
-                                    >
-                                      {capability}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
-                      </section>
-
-                      <section className="chat-side-card">
-                        <button
-                          type="button"
-                          className="chat-side-card-header"
-                          onClick={() => toggleChatSidebarSection("activity")}
-                        >
-                          <h4>最近活动</h4>
-                          <span
-                            className={
-                              chatSidebarCollapsedSections.activity
-                                ? "chat-side-card-toggle collapsed"
-                                : "chat-side-card-toggle"
-                            }
-                            aria-hidden="true"
-                          >
-                            <i className="fas fa-chevron-down" />
-                          </span>
-                        </button>
-                        {!chatSidebarCollapsedSections.activity ? (
-                          <div className="chat-side-card-body">
-                            <div className="chat-side-activity-list">
-                              {currentEmployeeActivities.map((activity) => (
-                                <div key={activity.id} className="chat-side-activity-item">
-                                  <span className={`chat-side-activity-dot ${activity.tone}`} />
-                                  <span className="chat-side-activity-time">{activity.time}</span>
-                                  <span className="chat-side-activity-text">{activity.text}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                      </section>
-
-                      <section className="chat-side-card">
-                        <button
-                          type="button"
-                          className="chat-side-card-header"
-                          onClick={() => toggleChatSidebarSection("efficiency")}
-                        >
-                          <h4>工作效能</h4>
-                          <span
-                            className={
-                              chatSidebarCollapsedSections.efficiency
-                                ? "chat-side-card-toggle collapsed"
-                                : "chat-side-card-toggle"
-                            }
-                            aria-hidden="true"
-                          >
-                            <i className="fas fa-chevron-down" />
-                          </span>
-                        </button>
-                        {!chatSidebarCollapsedSections.efficiency ? (
-                          <div className="chat-side-card-body">
-                            <div className="chat-side-stats-list">
-                              <div className="chat-side-stat-row">
-                                <span>今日任务</span>
-                                <strong>{chatSidebarEfficiency.completed}/{chatSidebarEfficiency.total}</strong>
-                              </div>
-                              <div className="chat-side-stat-row">
-                                <span>响应速度</span>
-                                <strong>{chatSidebarEfficiency.response}</strong>
-                              </div>
-                              <div className="chat-side-stat-row">
-                                <span>协作次数</span>
-                                <strong>{chatSidebarEfficiency.collaboration} 次</strong>
-                              </div>
-                            </div>
-                            <div className="chat-side-workload">
-                              <div className="chat-side-workload-title">本周工作量</div>
-                              <div className="chat-side-workload-bars">
-                                {chatSidebarWorkload.map((value, index) => (
-                                  <span
-                                    key={`${currentEmployee.id}-workload-${index}`}
-                                    className="chat-side-workload-bar"
-                                    style={{ height: `${value}%` }}
-                                  />
-                                ))}
-                              </div>
-                              <div className="chat-side-workload-labels">
-                                <span>一</span>
-                                <span>二</span>
-                                <span>三</span>
-                                <span>四</span>
-                                <span>五</span>
-                                <span>六</span>
-                                <span>日</span>
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
-                      </section>
-
-                      <section className="chat-side-card">
-                        <button
-                          type="button"
-                          className="chat-side-card-header"
-                          onClick={() => toggleChatSidebarSection("collaboration")}
-                        >
-                          <h4>协作关系</h4>
-                          <span
-                            className={
-                              chatSidebarCollapsedSections.collaboration
-                                ? "chat-side-card-toggle collapsed"
-                                : "chat-side-card-toggle"
-                            }
-                            aria-hidden="true"
-                          >
-                            <i className="fas fa-chevron-down" />
-                          </span>
-                        </button>
-                        {!chatSidebarCollapsedSections.collaboration ? (
-                          <div className="chat-side-card-body">
-                            <div className="chat-side-collaboration-list">
-                              {chatSidebarCollaborators.map((employee) => (
-                                <button
-                                  key={`chat-sidebar-${employee.id}`}
-                                  type="button"
-                                  className="chat-side-collaboration-item"
-                                  onClick={() => openEmployeeChat(employee.id)}
-                                >
-                                  <DigitalEmployeeAvatar
-                                    employee={employee}
-                                    className="chat-side-collaboration-avatar"
-                                  />
-                                  <span className="chat-side-collaboration-copy">
-                                    <strong>{employee.name}</strong>
-                                    <span>{employee.desc}</span>
-                                  </span>
-                                  <span className="chat-side-collaboration-count">
-                                    协作 {employee.collaborationCount} 次
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                      </section>
-                          </>
-                        ) : null}
-                      </aside>
-                    </div>
-                  ) : null}
                 </>
               )}
             </div>
@@ -4280,8 +4896,6 @@ export default function DigitalEmployeePage({
           )}
         </div>
       </div>
-
-      {alertPopup}
 
       {dashboardHistoryVisible ? (
         <div className="history-modal show" onClick={() => setDashboardHistoryVisible(false)}>
@@ -4368,7 +4982,9 @@ export default function DigitalEmployeePage({
                 <div className="history-timeline">
                   {sessionList.map((session) => {
                     const isActiveSession =
-                      session.id === (isRemoteEmployee ? currentChatId : currentSessionId);
+                      isPortalResourceImportSession(session)
+                        ? session.id === activePortalResourceImportSessionId
+                        : session.id === (isRemoteEmployee ? currentChatId : currentSessionId);
                     const isEditingSession = historyEditingId === session.id;
                     const isBusySession = historyActionSessionId === session.id;
                     const isLockedRemoteSession =

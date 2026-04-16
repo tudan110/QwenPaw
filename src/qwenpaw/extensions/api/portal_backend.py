@@ -1,21 +1,25 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import subprocess
 import sys
 import tempfile
+import threading
 import traceback
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Body, FastAPI, File, HTTPException, Request, UploadFile
 
 from qwenpaw.config.utils import load_config
 from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
     query_alarm_workorders,
 )
+from qwenpaw.app.agent_context import get_agent_for_request
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 app = FastAPI(title="Portal Backend")
@@ -37,7 +41,9 @@ PORTAL_EMPLOYEE_STATUS_NAMES = {
     "order": "工单调度员",
 }
 PORTAL_FAULT_ALERT_LIMIT = 20
-
+RESOURCE_IMPORT_SCRIPT_TIMEOUT_SECONDS = 600
+RESOURCE_IMPORT_PREVIEW_JOBS: dict[str, dict[str, Any]] = {}
+RESOURCE_IMPORT_PREVIEW_JOBS_LOCK = threading.Lock()
 
 def _load_fault_disposal_runtime():
     skill_root = (
@@ -79,6 +85,36 @@ def _fault_disposal_bridge_script() -> Path:
     return _fault_disposal_skill_root() / "scripts" / "chat_skill_bridge.py"
 
 
+def _veops_cmdb_query_skill_root() -> Path:
+    return (
+        Path(__file__).resolve().parents[4]
+        / "deploy-all"
+        / "qwenpaw"
+        / "working"
+        / "workspaces"
+        / "query"
+        / "skills"
+        / "veops-cmdb"
+    )
+
+
+def _veops_cmdb_import_skill_root() -> Path:
+    return (
+        Path(__file__).resolve().parents[4]
+        / "deploy-all"
+        / "qwenpaw"
+        / "working"
+        / "workspaces"
+        / "query"
+        / "skills"
+        / "veops-cmdb-import"
+    )
+
+
+def _resource_import_bridge_script() -> Path:
+    return _veops_cmdb_import_skill_root() / "scripts" / "resource_import_bridge.py"
+
+
 def _compact_ui_message(message: dict) -> dict:
     return {
         "id": message.get("id"),
@@ -88,6 +124,122 @@ def _compact_ui_message(message: dict) -> dict:
         "disposalOperation": message.get("disposalOperation"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _resolve_request_agent_id(request: Request) -> str:
+    target_agent_id = getattr(request.state, "agent_id", None) or request.headers.get("X-Agent-Id")
+    config = load_config()
+
+    if not target_agent_id:
+        target_agent_id = config.agents.active_agent or "default"
+
+    if target_agent_id not in config.agents.profiles:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Agent '{target_agent_id}' not found",
+        )
+
+    agent_ref = config.agents.profiles[target_agent_id]
+    if not getattr(agent_ref, "enabled", True):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Agent '{target_agent_id}' is disabled",
+        )
+
+    return target_agent_id
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _read_preview_progress(progress_file: Path) -> list[dict[str, Any]]:
+    if not progress_file.exists():
+        return []
+    events: list[dict[str, Any]] = []
+    try:
+        for line in progress_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                events.append(payload)
+    except OSError:
+        return []
+    return events
+
+
+def _serialize_preview_job(job_id: str) -> dict[str, Any]:
+    with RESOURCE_IMPORT_PREVIEW_JOBS_LOCK:
+        job = dict(RESOURCE_IMPORT_PREVIEW_JOBS.get(job_id) or {})
+
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Preview job '{job_id}' not found")
+
+    progress_events = _read_preview_progress(Path(job["progressFile"]))
+    last_event = progress_events[-1] if progress_events else {}
+    return {
+        "jobId": job_id,
+        "status": job.get("status") or "queued",
+        "createdAt": job.get("createdAt"),
+        "updatedAt": job.get("updatedAt"),
+        "progressStage": last_event.get("stage"),
+        "progressMessage": last_event.get("message"),
+        "progressPercent": last_event.get("percent"),
+        "progressEvents": progress_events[-120:],
+        "logs": [
+            str(item.get("message"))
+            for item in progress_events[-120:]
+            if item.get("message")
+        ],
+        "preview": job.get("preview"),
+        "error": job.get("error") or "",
+    }
+
+
+def _set_preview_job_state(job_id: str, **updates: Any) -> None:
+    with RESOURCE_IMPORT_PREVIEW_JOBS_LOCK:
+        job = RESOURCE_IMPORT_PREVIEW_JOBS.get(job_id)
+        if not job:
+            return
+        job.update(updates)
+        job["updatedAt"] = _utc_now_iso()
+
+
+def _run_preview_job(job_id: str, *, agent_id: str, payload_files: list[dict[str, Any]], temp_dir: str) -> None:
+    progress_file = Path(temp_dir) / "preview-progress.jsonl"
+    payload = {
+        "agentId": agent_id,
+        "files": payload_files,
+        "progressFile": str(progress_file),
+    }
+    _set_preview_job_state(job_id, status="running")
+    try:
+        preview = _run_resource_import_skill("preview", payload)
+        _set_preview_job_state(job_id, status="completed", preview=preview)
+    except Exception as exc:  # noqa: BLE001
+        try:
+            progress_file.parent.mkdir(parents=True, exist_ok=True)
+            with progress_file.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(
+                        {
+                            "timestamp": _utc_now_iso(),
+                            "stage": "failed",
+                            "message": f"智能解析失败：{exc}",
+                            "percent": 100,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except OSError:
+            pass
+        _set_preview_job_state(job_id, status="failed", error=str(exc))
 
 
 async def _get_workspace_and_session(request: Request):
@@ -370,6 +522,46 @@ def _run_fault_disposal_chat_skill(command: str, payload: dict) -> dict:
     }
 
 
+def _run_resource_import_skill(command: str, payload: dict | None = None) -> dict:
+    script_path = _resource_import_bridge_script()
+    if not script_path.exists():
+        raise FileNotFoundError(f"resource-import skill bridge not found: {script_path}")
+
+    command_args = [sys.executable, str(script_path), command]
+    context_file = None
+    if payload is not None:
+        with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8", delete=False) as handle:
+            json.dump(payload, handle, ensure_ascii=False)
+            context_file = handle.name
+        command_args.extend(["--context-file", context_file])
+
+    try:
+        completed = subprocess.run(
+            command_args,
+            cwd=str(_veops_cmdb_import_skill_root()),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=RESOURCE_IMPORT_SCRIPT_TIMEOUT_SECONDS,
+            check=False,
+        )
+    finally:
+        if context_file:
+            try:
+                Path(context_file).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    stdout_text = (completed.stdout or "").strip()
+    stderr_text = (completed.stderr or "").strip()
+    if completed.returncode != 0:
+        error_text = stderr_text or stdout_text or "resource-import skill bridge failed"
+        raise RuntimeError(error_text)
+    if not stdout_text:
+        raise RuntimeError("resource-import skill bridge returned empty output")
+    return json.loads(stdout_text)
+
+
 def _run_fault_disposal_diagnose(payload: dict) -> dict:
     return _run_fault_disposal_chat_skill("diagnose", payload)
 
@@ -381,6 +573,107 @@ def _run_fault_disposal_execute(payload: dict) -> dict:
 @router.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+@router.get("/resource-import/metadata")
+async def get_resource_import_metadata(request: Request):
+    try:
+        return await asyncio.to_thread(_run_resource_import_skill, "metadata")
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] get_resource_import_metadata failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/resource-import/start")
+async def get_resource_import_start_payload():
+    try:
+        return await asyncio.to_thread(_run_resource_import_skill, "start")
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] get_resource_import_start_payload failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/resource-import/preview")
+async def preview_resource_import_flow(
+    request: Request,
+    files: list[UploadFile] = File(...),
+):
+    try:
+        if not files:
+            raise ValueError("至少需要上传一个文件")
+        agent_id = _resolve_request_agent_id(request)
+        temp_dir = tempfile.mkdtemp(prefix="resource-import-preview-")
+        payload_files = []
+        temp_root = Path(temp_dir)
+        for index, upload in enumerate(files):
+            filename = upload.filename or f"unnamed-{index}"
+            target = temp_root / f"{index}-{Path(filename).name}"
+            target.write_bytes(await upload.read())
+            payload_files.append({"name": filename, "path": str(target)})
+
+        job_id = uuid.uuid4().hex
+        progress_file = temp_root / "preview-progress.jsonl"
+        with RESOURCE_IMPORT_PREVIEW_JOBS_LOCK:
+            RESOURCE_IMPORT_PREVIEW_JOBS[job_id] = {
+                "status": "queued",
+                "createdAt": _utc_now_iso(),
+                "updatedAt": _utc_now_iso(),
+                "agentId": agent_id,
+                "tempDir": temp_dir,
+                "progressFile": str(progress_file),
+                "preview": None,
+                "error": "",
+            }
+
+        asyncio.create_task(
+            asyncio.to_thread(
+                _run_preview_job,
+                job_id,
+                agent_id=agent_id,
+                payload_files=payload_files,
+                temp_dir=temp_dir,
+            )
+        )
+        return _serialize_preview_job(job_id)
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] preview_resource_import_flow failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/resource-import/preview/{job_id}")
+async def get_preview_resource_import_flow(job_id: str):
+    try:
+        return _serialize_preview_job(job_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] get_preview_resource_import_flow failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/resource-import/import")
+async def import_resource_import_flow(
+    payload: dict = Body(default_factory=dict),
+):
+    try:
+        return await asyncio.to_thread(
+            _run_resource_import_skill,
+            "import",
+            {"payload": payload},
+        )
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] import_resource_import_flow failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
 @router.get("/alarm-workorders")

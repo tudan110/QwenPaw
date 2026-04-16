@@ -398,7 +398,7 @@
       },
       "browser_use": {
         "name": "browser_use",
-        "enabled": true,
+        "enabled": false,
         "description": "Browser automation and web interaction",
         "display_to_user": true,
         "async_execution": false,

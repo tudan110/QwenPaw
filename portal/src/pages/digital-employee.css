@@ -4625,6 +4625,23 @@
   border-color: rgba(59, 130, 246, 0.24);
 }
 
+.portal-digital-employee .history-btn.resource-import-entry {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(16, 185, 129, 0.16));
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #1d4ed8;
+  font-weight: 700;
+  font-family:
+    "Inter",
+    "Noto Sans SC",
+    "Apple Color Emoji",
+    "Segoe UI Emoji",
+    "Noto Color Emoji",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.12);
+}
+
 .portal-digital-employee .history-btn.stop-btn {
   background: rgba(239, 68, 68, 0.08);
   color: var(--danger);
@@ -4643,6 +4660,13 @@
 
 .portal-digital-employee .history-btn.new-chat-btn:hover {
   background: rgba(59, 130, 246, 0.18);
+}
+
+.portal-digital-employee .history-btn.resource-import-entry:hover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.24), rgba(16, 185, 129, 0.22));
+  border-color: rgba(59, 130, 246, 0.42);
+  color: #1e40af;
+  transform: translateY(-1px);
 }
 
 .portal-digital-employee .capability-tag.active {
