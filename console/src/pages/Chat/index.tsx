@@ -757,6 +757,11 @@ export default function ChatPage() {
         value: "deny",
         description: t("chat.commands.deny.description"),
       },
+      {
+        command: "/mission",
+        value: "mission",
+        description: t("chat.commands.mission.description"),
+      },
     ];
 
     const handleBeforeSubmit = async () => {
