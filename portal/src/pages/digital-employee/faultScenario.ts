@@ -1,4 +1,9 @@
 import { diagnoseFaultScenario } from "../../api/faultScenario";
+import {
+  getFaultScenarioResult,
+  getFaultScenarioSummary,
+  type FaultScenarioResult,
+} from "../../fault-scenario/shared";
 import { createAgentMessage, createUserMessage } from "./helpers";
 
 const CMDB_KEYWORD_RE = /cmdb/i;
@@ -11,6 +16,7 @@ export const FAULT_SCENARIO_ANALYZING_PLACEHOLDER = "正在关联分析...";
 type FaultScenarioMessage = {
   id: string;
   content?: string;
+  faultScenarioResult?: FaultScenarioResult;
   [key: string]: unknown;
 };
 
@@ -19,15 +25,6 @@ type SetFaultScenarioMessages = (
     | FaultScenarioMessage[]
     | ((prevMessages: FaultScenarioMessage[]) => FaultScenarioMessage[]),
 ) => void;
-
-type FaultScenarioDiagnosisResult = {
-  summary?: string;
-  [key: string]: unknown;
-};
-
-type FaultScenarioDiagnosisResponse = {
-  result?: FaultScenarioDiagnosisResult;
-};
 
 interface MaybeHandleFaultScenarioMessageParams {
   currentEmployee: { id?: string } | null | undefined;
@@ -76,19 +73,20 @@ export async function maybeHandleFaultScenarioMessage({
   ]);
 
   try {
-    const result = await diagnoseFaultScenario({
+    const response = await diagnoseFaultScenario({
       sessionId: sessionId || `fault-scenario-${Date.now()}`,
       employeeId: "fault",
       content,
-    }, { signal }) as FaultScenarioDiagnosisResponse;
+    }, { signal });
+    const result = getFaultScenarioResult(response);
 
     setMessages((prevMessages) =>
       prevMessages.map((item) =>
         item.id === agentMessageId
           ? {
               ...item,
-              content: result?.result?.summary || "已完成关联分析。",
-              faultScenarioResult: result?.result,
+              content: getFaultScenarioSummary(result),
+              faultScenarioResult: result,
             }
           : item,
       ),

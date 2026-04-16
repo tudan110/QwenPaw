@@ -1,9 +1,14 @@
+import type {
+  FaultScenarioDiagnosisRequest,
+  FaultScenarioDiagnosisResponse,
+} from "../fault-scenario/shared";
+
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 
 export async function diagnoseFaultScenario(
-  payload: Record<string, unknown>,
+  payload: FaultScenarioDiagnosisRequest,
   options: { signal?: AbortSignal; timeoutMs?: number } = {},
-) {
+): Promise<FaultScenarioDiagnosisResponse> {
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const timerId = window.setTimeout(() => controller.abort(), timeoutMs);

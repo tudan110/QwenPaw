@@ -5305,26 +5305,26 @@
   backdrop-filter: blur(2px);
 }
 
-body.theme-dark .fault-scenario-log-drawer .ant-drawer-content {
+.fault-scenario-log-drawer.theme-dark .ant-drawer-content {
   background: linear-gradient(180deg, #141b2d 0%, #101725 100%);
 }
 
-body.theme-dark .fault-scenario-log-drawer .ant-drawer-header {
+.fault-scenario-log-drawer.theme-dark .ant-drawer-header {
   border-bottom-color: rgba(59, 130, 246, 0.16);
 }
 
-body.theme-dark .fault-scenario-log-drawer .ant-drawer-title,
-body.theme-dark .fault-scenario-log-drawer .fault-scenario-log-entry strong {
+.fault-scenario-log-drawer.theme-dark .ant-drawer-title,
+.fault-scenario-log-drawer.theme-dark .fault-scenario-log-entry strong {
   color: #bfdbfe;
 }
 
-body.theme-dark .fault-scenario-log-drawer .fault-scenario-log-entry {
+.fault-scenario-log-drawer.theme-dark .fault-scenario-log-entry {
   background: #182235;
   border-color: #223049;
 }
 
-body.theme-dark .fault-scenario-log-drawer .fault-scenario-log-entry p,
-body.theme-dark .fault-scenario-log-drawer .fault-scenario-log-empty {
+.fault-scenario-log-drawer.theme-dark .fault-scenario-log-entry p,
+.fault-scenario-log-drawer.theme-dark .fault-scenario-log-empty {
   color: #94a3b8;
   background: rgba(24, 34, 53, 0.9);
   border-color: #223049;

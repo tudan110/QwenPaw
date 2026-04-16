@@ -198,6 +198,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   isStreamingMessage,
   message,
   onDisposalAction,
+  pageTheme,
   onTicketAction,
   onTicketRefresh,
   ticketActionNotice,
@@ -338,7 +339,9 @@ export const ChatMessageItem = memo(function ChatMessageItem({
           />
         ) : null}
 
-        {faultScenarioResult ? <FaultScenarioResultCard result={faultScenarioResult} /> : null}
+        {faultScenarioResult ? (
+          <FaultScenarioResultCard pageTheme={pageTheme} result={faultScenarioResult} />
+        ) : null}
 
         {message.workflow && !message.workflowDone ? (
           <div className="workflow-container">

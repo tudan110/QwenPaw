@@ -1,37 +1,27 @@
 import { Drawer } from "antd";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
-type FaultScenarioStep = {
-  id?: string;
-  status?: string;
-};
-
-type FaultScenarioLogEntry = {
-  stage?: string;
-  summary?: string;
-};
-
-type FaultScenarioRootCause = {
-  type?: string;
-  object?: string;
-};
-
-type FaultScenarioResult = {
-  summary?: string;
-  rootCause?: FaultScenarioRootCause;
-  steps?: FaultScenarioStep[];
-  logEntries?: FaultScenarioLogEntry[];
-};
+import {
+  getFaultScenarioDrawerClassName,
+  type FaultScenarioResult,
+  type FaultScenarioTheme,
+} from "../../fault-scenario/shared";
 
 function formatLabel(value?: string, fallback = "待补充") {
   return String(value || fallback);
 }
 
-export function FaultScenarioResultCard({ result }: { result: FaultScenarioResult }) {
+export function FaultScenarioResultCard({
+  pageTheme = "light",
+  result,
+}: {
+  pageTheme?: FaultScenarioTheme;
+  result: FaultScenarioResult;
+}) {
   const [open, setOpen] = useState(false);
   const rootCause = result?.rootCause || {};
-  const steps = useMemo(() => result?.steps || [], [result]);
-  const logEntries = useMemo(() => result?.logEntries || [], [result]);
+  const steps = result?.steps || [];
+  const logEntries = result?.logEntries || [];
 
   return (
     <div className="fault-scenario-card">
@@ -96,7 +86,7 @@ export function FaultScenarioResultCard({ result }: { result: FaultScenarioResul
         open={open}
         onClose={() => setOpen(false)}
         width={440}
-        rootClassName="fault-scenario-log-drawer"
+        rootClassName={getFaultScenarioDrawerClassName(pageTheme)}
       >
         <div className="fault-scenario-log-list">
           {logEntries.length ? (

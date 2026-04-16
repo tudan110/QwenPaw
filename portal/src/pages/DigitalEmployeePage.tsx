@@ -3921,6 +3921,7 @@ export default function DigitalEmployeePage({
                           }
                           message={message}
                           onDisposalAction={handleAlarmDisposalOperationRequest}
+                          pageTheme={pageTheme}
                           onTicketAction={handleAlarmWorkbenchTicketAction}
                           onTicketRefresh={() => void loadAlarmWorkorders()}
                           ticketActionNotice={ticketActionNotice}
