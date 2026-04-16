@@ -9,6 +9,7 @@ import {
   getSeverityClassName,
   normalizeMarkdownDisplayContent,
 } from "./helpers";
+import { FaultScenarioResultCard } from "./faultScenarioComponents";
 
 export function AlarmWorkorderBoard({
   workorders,
@@ -237,6 +238,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     Boolean(effectiveDisposalOperation) &&
     effectiveDisposalOperation.status !== "success" &&
     !message.hideDisposalOperation;
+  const faultScenarioResult = message.faultScenarioResult;
 
   return (
     <div className={message.type === "user" ? "message user" : "message agent"}>
@@ -335,6 +337,8 @@ export const ChatMessageItem = memo(function ChatMessageItem({
             onExecute={() => onDisposalAction(message.id, effectiveDisposalOperation)}
           />
         ) : null}
+
+        {faultScenarioResult ? <FaultScenarioResultCard result={faultScenarioResult} /> : null}
 
         {message.workflow && !message.workflowDone ? (
           <div className="workflow-container">
