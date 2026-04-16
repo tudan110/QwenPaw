@@ -1,3 +1,8 @@
+import json
+import subprocess
+import sys
+from pathlib import Path
+
 from .fault_scenario_models import FaultScenarioDetection
 
 
@@ -16,20 +21,47 @@ def detect_fault_scenario(*, employee_id: str, content: str | None) -> FaultScen
     )
 
 
+def parse_fault_scenario_output(stdout_text: str) -> dict:
+    payload = json.loads(stdout_text)
+    payload.setdefault("steps", [])
+    payload.setdefault("logEntries", [])
+    return payload
+
+
+def _fault_skill_root() -> Path:
+    return (
+        Path(__file__).resolve().parents[4]
+        / "deploy-all"
+        / "qwenpaw"
+        / "working"
+        / "workspaces"
+        / "fault"
+        / "skills"
+    )
+
+
 def run_fault_scenario_diagnose(payload: dict) -> dict:
     session_id = str(payload.get("sessionId") or "").strip()
     if not session_id:
         raise ValueError("sessionId is required")
+
+    script_path = (
+        _fault_skill_root()
+        / "scenario-root-cause-analyst"
+        / "scripts"
+        / "analyze_scenario.py"
+    )
+    completed = subprocess.run(
+        [sys.executable, str(script_path)],
+        capture_output=True,
+        check=True,
+        text=True,
+    )
 
     return {
         "session": {
             "sessionId": session_id,
             "scene": "cmdb_add_failed_mysql_deadlock",
         },
-        "result": {
-            "summary": "已定位为数据库死锁导致 CMDB 新增失败",
-            "rootCause": {"type": "数据库异常"},
-            "steps": [],
-            "logEntries": [],
-        },
+        "result": parse_fault_scenario_output(completed.stdout),
     }
