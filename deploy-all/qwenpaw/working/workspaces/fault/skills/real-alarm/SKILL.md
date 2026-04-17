@@ -58,7 +58,7 @@ INOE_API_TOKEN=your_jwt_token_here
 配置文件示例：
 
 ```bash
-#INOE_API_BASE_URL=http://192.168.130.211:30080
+INOE_API_BASE_URL=http://192.168.130.211:30080
 INOE_API_TOKEN=your_jwt_token_here
 ```
 

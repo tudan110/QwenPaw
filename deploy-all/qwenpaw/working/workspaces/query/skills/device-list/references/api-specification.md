@@ -72,7 +72,7 @@ uv run scripts/analyze_devices.py --mode summary --output markdown-echarts-only
 技能目录下的 `.env`：
 
 ```bash
-#INOE_API_BASE_URL=http://192.168.130.211:30080
+INOE_API_BASE_URL=http://192.168.130.211:30080
 INOE_API_TOKEN=your_jwt_token_here
 ```
 
