@@ -16,6 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Body, FastAPI, File, HTTPException, Request, UploadFile
 
 from qwenpaw.config.utils import load_config
+from qwenpaw.extensions.api.fault_scenario_service import run_fault_scenario_diagnose
 from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
     query_alarm_workorders,
 )
@@ -116,14 +117,19 @@ def _resource_import_bridge_script() -> Path:
 
 
 def _compact_ui_message(message: dict) -> dict:
-    return {
-        "id": message.get("id"),
-        "type": message.get("type"),
-        "content": message.get("content", ""),
-        "processBlocks": message.get("processBlocks", []) or [],
-        "disposalOperation": message.get("disposalOperation"),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+    compact_message = dict(message)
+    compact_message["id"] = message.get("id")
+    compact_message["type"] = message.get("type")
+    compact_message["content"] = message.get("content", "")
+    compact_message["processBlocks"] = message.get("processBlocks", []) or []
+    compact_message["disposalOperation"] = message.get("disposalOperation")
+    compact_message["faultScenarioResult"] = _shape_fault_scenario_result(
+        message.get("faultScenarioResult")
+    )
+    compact_message["timestamp"] = (
+        message.get("timestamp") or datetime.now(timezone.utc).isoformat()
+    )
+    return compact_message
 
 
 def _resolve_request_agent_id(request: Request) -> str:
@@ -427,6 +433,42 @@ async def _save_portal_fault_history(
         messages,
         user_id=user_id,
     )
+
+
+def _shape_fault_scenario_result(result: Any) -> dict | None:
+    if result is None:
+        return None
+
+    payload = result if isinstance(result, dict) else {}
+    shaped = dict(payload)
+    shaped["summary"] = str(payload.get("summary") or "诊断已完成")
+    shaped["rootCause"] = (
+        payload.get("rootCause") if isinstance(payload.get("rootCause"), dict) else {}
+    )
+    shaped["steps"] = payload.get("steps") if isinstance(payload.get("steps"), list) else []
+    shaped["logEntries"] = (
+        payload.get("logEntries") if isinstance(payload.get("logEntries"), list) else []
+    )
+    shaped["actions"] = (
+        payload.get("actions") if isinstance(payload.get("actions"), list) else []
+    )
+    return shaped
+
+
+def _shape_fault_scenario_response(result: dict[str, Any]) -> dict[str, Any]:
+    shaped = dict(result)
+    shaped["result"] = _shape_fault_scenario_result(result.get("result")) or {
+        "summary": "诊断已完成",
+        "rootCause": {},
+        "steps": [],
+        "logEntries": [],
+        "actions": [],
+    }
+    return shaped
+
+
+def _normalize_portal_fault_history_messages(messages: list[dict]) -> list[dict]:
+    return [_compact_ui_message(message) for message in messages if isinstance(message, dict)]
 
 
 def _build_fault_context(payload: dict, *, source: str = "portal-chat"):
@@ -836,6 +878,55 @@ async def fault_disposal_execute(
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
+@router.post("/fault-scenarios/diagnose")
+async def portal_fault_scenario_diagnose(
+    request: Request,
+    payload: dict = Body(default_factory=dict),
+):
+    try:
+        session_id = str(payload.get("sessionId") or "").strip()
+        if not session_id:
+            raise HTTPException(status_code=422, detail="sessionId is required")
+
+        result = _shape_fault_scenario_response(run_fault_scenario_diagnose(payload))
+        if hasattr(request.app.state, "multi_agent_manager"):
+            history = await _load_portal_fault_history(request, session_id=session_id)
+            history.append(
+                _compact_ui_message(
+                    {
+                        "id": f"user-{datetime.now(timezone.utc).timestamp()}",
+                        "type": "user",
+                        "content": payload.get("content", ""),
+                    }
+                )
+            )
+            history.append(
+                _compact_ui_message(
+                    {
+                        "id": f"agent-{datetime.now(timezone.utc).timestamp()}",
+                        "type": "agent",
+                        "content": result["result"]["summary"],
+                        "faultScenarioResult": result["result"],
+                    }
+                )
+            )
+            await _save_portal_fault_history(
+                request,
+                session_id=session_id,
+                messages=history,
+            )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] portal_fault_scenario_diagnose failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
 @router.get("/fault-disposal/history/{session_id}")
 async def fault_disposal_history(
     request: Request,
@@ -843,7 +934,10 @@ async def fault_disposal_history(
 ):
     try:
         history = await _load_portal_fault_history(request, session_id=session_id)
-        return {"messages": history, "status": "idle"}
+        return {
+            "messages": _normalize_portal_fault_history_messages(history),
+            "status": "idle",
+        }
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] fault_disposal_history failed: {error_detail}")

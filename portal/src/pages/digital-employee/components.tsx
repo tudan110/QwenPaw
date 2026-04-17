@@ -10,6 +10,7 @@ import {
   normalizeMarkdownDisplayContent,
 } from "./helpers";
 import { ResourceImportConversationCard } from "./resourceImportConversationCard";
+import { FaultScenarioResultCard } from "./faultScenarioComponents";
 
 export function AlarmWorkorderBoard({
   workorders,
@@ -213,6 +214,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   onResourceImportUploadFiles,
   releaseResourceImportFiles,
   resolveResourceImportFiles,
+  pageTheme,
   onTicketAction,
   onTicketRefresh,
   ticketActionNotice,
@@ -254,6 +256,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     Boolean(effectiveDisposalOperation) &&
     effectiveDisposalOperation.status !== "success" &&
     !message.hideDisposalOperation;
+  const faultScenarioResult = message.faultScenarioResult;
 
   return (
     <div
@@ -375,6 +378,10 @@ export const ChatMessageItem = memo(function ChatMessageItem({
             action={effectiveDisposalOperation}
             onExecute={() => onDisposalAction(message.id, effectiveDisposalOperation)}
           />
+        ) : null}
+
+        {faultScenarioResult ? (
+          <FaultScenarioResultCard pageTheme={pageTheme} result={faultScenarioResult} />
         ) : null}
 
         {message.workflow && !message.workflowDone ? (

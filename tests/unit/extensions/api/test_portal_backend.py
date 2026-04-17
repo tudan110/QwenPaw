@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
+from fastapi.testclient import TestClient
 
 from qwenpaw.app.runner.models import ChatSpec
 from qwenpaw.extensions.api import portal_backend
@@ -145,3 +146,235 @@ def test_build_portal_employee_status_payload_prefers_recent_session_for_idle() 
     assert payload["urgent"] is False
     assert payload["workStatus"] == "待机"
     assert payload["currentJob"] == "最近会话：Oracle 死锁方案"
+
+
+def test_fault_scenario_diagnose_route_returns_structured_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+
+    monkeypatch.setattr(
+        portal_backend,
+        "run_fault_scenario_diagnose",
+        lambda payload: {
+            "session": {
+                "sessionId": payload["sessionId"],
+                "scene": "cmdb_add_failed_mysql_deadlock",
+            },
+            "result": {
+                "summary": "已定位为数据库死锁导致 CMDB 新增失败",
+                "rootCause": {"type": "数据库异常"},
+                "steps": [{"id": "database-analysis", "status": "success"}],
+                "logEntries": [{"stage": "database-analysis", "summary": "锁等待命中"}],
+            },
+        },
+    )
+
+    response = client.post(
+        "/api/portal/fault-scenarios/diagnose",
+        json={
+            "sessionId": "fault-scenario-1",
+            "employeeId": "fault",
+            "content": "CMDB 添加失败，怀疑 mysql 死锁",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["result"]["rootCause"]["type"] == "数据库异常"
+
+
+def test_fault_scenario_diagnose_route_rejects_missing_session_id() -> None:
+    client = TestClient(portal_backend.app)
+
+    response = client.post(
+        "/api/portal/fault-scenarios/diagnose",
+        json={
+            "employeeId": "fault",
+            "content": "CMDB 添加失败，怀疑 mysql 死锁",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "sessionId is required"
+
+
+def test_fault_scenario_diagnose_route_rejects_non_matching_payload() -> None:
+    client = TestClient(portal_backend.app)
+
+    response = client.post(
+        "/api/portal/fault-scenarios/diagnose",
+        json={
+            "sessionId": "fault-scenario-1",
+            "employeeId": "fault",
+            "content": "帮我看一下 Redis 命中率",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "unsupported fault scenario" in response.json()["detail"]
+
+
+def test_fault_scenario_diagnose_route_persists_history_with_unique_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    history_store: dict[str, list[dict]] = {"fault-scenario-1": []}
+
+    monkeypatch.setattr(portal_backend.app.state, "multi_agent_manager", object(), raising=False)
+    monkeypatch.setattr(
+        portal_backend,
+        "run_fault_scenario_diagnose",
+        lambda payload: {
+            "session": {
+                "sessionId": payload["sessionId"],
+                "scene": "cmdb_add_failed_mysql_deadlock",
+            },
+            "result": {
+                "summary": "已定位为数据库死锁导致 CMDB 新增失败",
+                "rootCause": {"type": "数据库异常"},
+                "steps": [{"id": "database-analysis", "status": "success"}],
+                "logEntries": [{"stage": "database-analysis", "summary": "锁等待命中"}],
+            },
+        },
+    )
+
+    async def fake_load_history(_request, *, session_id: str, user_id: str = "default") -> list[dict]:
+        return list(history_store.get(session_id, []))
+
+    async def fake_save_history(
+        _request,
+        *,
+        session_id: str,
+        messages: list[dict],
+        user_id: str = "default",
+    ) -> None:
+        history_store[session_id] = list(messages)
+
+    monkeypatch.setattr(portal_backend, "_load_portal_fault_history", fake_load_history)
+    monkeypatch.setattr(portal_backend, "_save_portal_fault_history", fake_save_history)
+
+    payload = {
+        "sessionId": "fault-scenario-1",
+        "employeeId": "fault",
+        "content": "CMDB 添加失败，怀疑 mysql 死锁",
+    }
+
+    first_response = client.post("/api/portal/fault-scenarios/diagnose", json=payload)
+    second_response = client.post("/api/portal/fault-scenarios/diagnose", json=payload)
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert len(history_store["fault-scenario-1"]) == 4
+
+    message_ids = [message["id"] for message in history_store["fault-scenario-1"]]
+    assert len(message_ids) == len(set(message_ids))
+    assert history_store["fault-scenario-1"][-1]["faultScenarioResult"]["rootCause"]["type"] == "数据库异常"
+
+
+def test_fault_scenario_diagnose_route_shapes_partial_result_for_history_replay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    history_store: dict[str, list[dict]] = {"fault-scenario-1": []}
+
+    monkeypatch.setattr(portal_backend.app.state, "multi_agent_manager", object(), raising=False)
+    monkeypatch.setattr(
+        portal_backend,
+        "run_fault_scenario_diagnose",
+        lambda payload: {
+            "session": {
+                "sessionId": payload["sessionId"],
+                "scene": "cmdb_add_failed_mysql_deadlock",
+            },
+            "result": {
+                "summary": "部分完成",
+            },
+        },
+    )
+
+    async def fake_load_history(_request, *, session_id: str, user_id: str = "default") -> list[dict]:
+        return list(history_store.get(session_id, []))
+
+    async def fake_save_history(
+        _request,
+        *,
+        session_id: str,
+        messages: list[dict],
+        user_id: str = "default",
+    ) -> None:
+        history_store[session_id] = list(messages)
+
+    monkeypatch.setattr(portal_backend, "_load_portal_fault_history", fake_load_history)
+    monkeypatch.setattr(portal_backend, "_save_portal_fault_history", fake_save_history)
+
+    response = client.post(
+        "/api/portal/fault-scenarios/diagnose",
+        json={
+            "sessionId": "fault-scenario-1",
+            "employeeId": "fault",
+            "content": "CMDB 添加失败，怀疑 mysql 死锁",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["result"]["steps"] == []
+    assert response.json()["result"]["logEntries"] == []
+    assert history_store["fault-scenario-1"][-1]["faultScenarioResult"]["steps"] == []
+    assert history_store["fault-scenario-1"][-1]["faultScenarioResult"]["logEntries"] == []
+
+
+def test_fault_disposal_history_normalizes_fault_scenario_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+
+    async def fake_load_history(_request, *, session_id: str, user_id: str = "default") -> list[dict]:
+        return [
+            {
+                "id": "agent-1",
+                "type": "agent",
+                "content": "部分完成",
+                "faultScenarioResult": {
+                    "summary": "部分完成",
+                },
+            }
+        ]
+
+    monkeypatch.setattr(portal_backend, "_load_portal_fault_history", fake_load_history)
+
+    response = client.get("/api/portal/fault-disposal/history/fault-scenario-1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["messages"][0]["faultScenarioResult"]["steps"] == []
+    assert payload["messages"][0]["faultScenarioResult"]["logEntries"] == []
+
+
+def test_fault_disposal_history_preserves_unknown_message_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+
+    async def fake_load_history(_request, *, session_id: str, user_id: str = "default") -> list[dict]:
+        return [
+            {
+                "id": "agent-1",
+                "type": "agent",
+                "content": "部分完成",
+                "customField": {"source": "persisted"},
+                "extraFlag": True,
+                "faultScenarioResult": {
+                    "summary": "部分完成",
+                },
+            }
+        ]
+
+    monkeypatch.setattr(portal_backend, "_load_portal_fault_history", fake_load_history)
+
+    response = client.get("/api/portal/fault-disposal/history/fault-scenario-1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["messages"][0]["customField"] == {"source": "persisted"}
+    assert payload["messages"][0]["extraFlag"] is True
+    assert payload["messages"][0]["faultScenarioResult"]["steps"] == []

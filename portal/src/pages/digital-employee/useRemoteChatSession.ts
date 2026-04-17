@@ -27,9 +27,27 @@ import {
   normalizeRemoteHistoryMessages,
   normalizeRemoteSessions,
 } from "./helpers";
+import {
+  FAULT_SCENARIO_ANALYZING_PLACEHOLDER,
+  maybeHandleFaultScenarioMessage,
+} from "./faultScenario";
 
 const COPAW_USER_ID = "default";
 const COPAW_CHANNEL = "console";
+
+type FaultDisposalHistoryMessage = {
+  id?: string;
+  type?: string;
+  content?: string;
+  processBlocks?: unknown[];
+  disposalOperation?: unknown;
+  [key: string]: unknown;
+};
+
+type FaultDisposalHistory = {
+  status?: string;
+  messages?: FaultDisposalHistoryMessage[];
+};
 
 function normalizeRemoteChatErrorMessage(error: any) {
   const rawMessage = String(error?.message || "").trim();
@@ -248,12 +266,13 @@ export function useRemoteChatSession({
     const activeMessageId = activeAssistantMessageIdRef.current;
     setMessages((prevMessages) =>
       prevMessages.map((message) =>
-        message.id === activeMessageId && !message.content
-          ? {
-              ...message,
-              content: fallbackText,
-            }
-          : message,
+        message.id === activeMessageId
+          && (!message.content || message.content === FAULT_SCENARIO_ANALYZING_PLACEHOLDER)
+        ? {
+            ...message,
+            content: fallbackText,
+          }
+        : message,
       ),
     );
   }, [setMessages]);
@@ -345,11 +364,13 @@ export function useRemoteChatSession({
 
       if (isPortalFaultWorkbench) {
         try {
-          const portalHistory = await getFaultDisposalHistory(session.sessionId || "");
+          const portalHistory = await getFaultDisposalHistory(
+            session.sessionId || "",
+          ) as FaultDisposalHistory;
           const portalMessages = portalHistory.messages || [];
           if (portalMessages.length) {
             history = portalHistory;
-            nextMessages = portalMessages.map((message: any) =>
+            nextMessages = portalMessages.map((message) =>
               message?.type === "agent"
                 ? createAgentMessage(nextEmployee, {
                     ...message,
@@ -467,8 +488,6 @@ export function useRemoteChatSession({
     streamAssistantMapRef.current = new Map();
     activeAssistantMessageIdRef.current = null;
 
-    setMessages((prevMessages) => [...prevMessages, userMessage]);
-
     const controller = new AbortController();
     streamAbortRef.current = controller;
     setIsStreaming(true);
@@ -477,6 +496,25 @@ export function useRemoteChatSession({
     let streamSucceeded = false;
 
     try {
+      const scenarioResult = await maybeHandleFaultScenarioMessage({
+        currentEmployee: nextEmployee,
+        content,
+        visibleContent: normalizedVisibleContent,
+        sessionId: sessionId || currentSessionIdRef.current,
+        signal: controller.signal,
+        setActiveAssistantMessageId: (messageId: string | null) => {
+          activeAssistantMessageIdRef.current = messageId;
+        },
+        setMessages,
+      });
+      if (scenarioResult.handled) {
+        setIsStreaming(false);
+        setCurrentChatStatus("idle");
+        return scenarioResult.succeeded;
+      }
+
+      setMessages((prevMessages) => [...prevMessages, userMessage]);
+
       let ensuredChat;
       if (!forceNewChat && currentChatIdRef.current && currentSessionIdRef.current) {
         ensuredChat = {

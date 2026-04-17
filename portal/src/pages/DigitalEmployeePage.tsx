@@ -3260,12 +3260,12 @@ export default function DigitalEmployeePage({
 
   const getEmployeeStatusLabel = useCallback((employee: any) => {
     if (employee.urgent) {
-      return "紧急";
+      return "紧急任务";
     }
     if (employee.status === "running") {
       return "运行中";
     }
-    return "已停止";
+    return "待机";
   }, []);
 
   const renderSidebarEmployeeCard = useCallback((
@@ -3890,10 +3890,132 @@ export default function DigitalEmployeePage({
     handleOpenTaskEmployeeChat(employeeId, session);
   };
 
+  const renderAlertBell = () => (
+    <div className="alert-bell-wrap">
+      {alertToast?.visible ? (
+        <button
+          type="button"
+          className="danmaku-toast"
+          onClick={() => handlePortalAlertAction(alertToast.alert)}
+        >
+          <span className="danmaku-dot" />
+          <span className="danmaku-toast-message">{alertToast.alert.message}</span>
+          <span className="danmaku-emp">
+            {getEmployeeById(alertToast.alert.employeeId)?.name || alertToast.alert.employeeId}
+          </span>
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className={opsAlerts.length ? "alert-bell has-alerts" : "alert-bell"}
+        onClick={handleToggleAlertPopup}
+        aria-label="查看运维告警"
+        title="运维告警"
+      >
+        {alertBellIcon}
+        {opsAlerts.length ? (
+          <span className="bell-badge">{opsAlerts.length > 99 ? "99+" : opsAlerts.length}</span>
+        ) : null}
+      </button>
+    </div>
+  );
+
+  const alertPopup = alertPopupOpen && alertPopupPosition && typeof document !== "undefined"
+    ? createPortal(
+        <div
+          ref={alertPopupRef}
+          className={pageTheme === "dark" ? "portal-alert-popup theme-dark show" : "portal-alert-popup show"}
+          style={{
+            top: alertPopupPosition.top,
+            left: alertPopupPosition.left,
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="alert-popup-header">
+            <div className="alert-popup-title">
+              {alertBellIcon}
+              <span>运维告警</span>
+              {opsAlerts.length ? <span className="alert-count">{opsAlerts.length}</span> : null}
+            </div>
+            {opsAlerts.length ? (
+              <button type="button" className="alert-popup-clear" onClick={handleClearPortalAlerts}>
+                全部清除
+              </button>
+            ) : null}
+          </div>
+          <div className="alert-popup-body">
+            {sortedOpsAlerts.length ? (
+              sortedOpsAlerts.map((alert) => {
+                const employee = getEmployeeById(alert.employeeId);
+                const employeeColor = getDashboardEmployeeColor(alert.employeeId);
+
+                return (
+                  <button
+                    key={alert.id}
+                    type="button"
+                    className="alert-popup-item"
+                    onClick={() => handlePortalAlertAction(alert)}
+                  >
+                    <div
+                      className="alert-popup-item-icon"
+                      style={{
+                        background: `${employeeColor}20`,
+                        color: employeeColor,
+                      }}
+                    >
+                      {employee ? (
+                        <DigitalEmployeeAvatar
+                          employee={employee}
+                          className="portal-alert-popup-avatar"
+                        />
+                      ) : (
+                        alertBellIcon
+                      )}
+                    </div>
+                    <div className="alert-popup-item-body">
+                      <div className="alert-popup-item-msg">{alert.message}</div>
+                      <div className="alert-popup-item-meta">
+                        <span className="alert-popup-item-emp" style={{ color: employeeColor }}>
+                          {employee?.name || alert.employeeId}
+                        </span>
+                        <span
+                          className="alert-popup-item-level"
+                          style={{
+                            color: PORTAL_ALERT_LEVEL_COLORS[alert.level],
+                            background: `${PORTAL_ALERT_LEVEL_COLORS[alert.level]}15`,
+                            borderColor: `${PORTAL_ALERT_LEVEL_COLORS[alert.level]}30`,
+                          }}
+                        >
+                          {PORTAL_ALERT_LEVEL_LABELS[alert.level]}
+                        </span>
+                        <span className="alert-popup-item-time">{alert.timeLabel}</span>
+                      </div>
+                    </div>
+                    <span className="alert-popup-item-go" aria-hidden="true">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="alert-popup-empty">暂无待处理告警</div>
+            )}
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
+
   if (!currentEmployee) {
     return null;
   }
 
+  const currentEmployeeModelLabel = activeModelLabel || "默认模型";
+  const currentEmployeeStatusLabel = getEmployeeStatusLabel(currentEmployee);
+  const currentEmployeeStatsLabel = formatEmployeeStatsLabel(currentEmployeeBase);
+  const currentEmployeeMotto = getEmployeeProfileMotto(currentEmployee.id, currentEmployee.desc);
   const showChatSidebarToggle = Boolean(!isPortalHomeChat && selectedEmployee);
   const chatSidebarToggleButton = showChatSidebarToggle ? (
     <button
@@ -4770,6 +4892,7 @@ export default function DigitalEmployeePage({
                           onResourceImportUploadFiles={handleResourceImportUploadFiles}
                           releaseResourceImportFiles={releaseResourceImportFiles}
                           resolveResourceImportFiles={resolveResourceImportFiles}
+                          pageTheme={pageTheme}
                           onTicketAction={handleAlarmWorkbenchTicketAction}
                           onTicketRefresh={() => void loadAlarmWorkorders()}
                           ticketActionNotice={ticketActionNotice}
@@ -4888,6 +5011,245 @@ export default function DigitalEmployeePage({
                       </div>
                     </div>
                   </div>
+
+                  {!isPortalHomeChat && selectedEmployee ? (
+                    <div
+                      className={
+                        chatSidebarCollapsed
+                          ? "chat-sidebar-shell chat-sidebar-shell-collapsed"
+                          : "chat-sidebar-shell"
+                      }
+                    >
+                      <aside
+                        className={chatSidebarCollapsed ? "chat-sidebar chat-sidebar-collapsed" : "chat-sidebar"}
+                      >
+                        {!chatSidebarCollapsed ? (
+                          <>
+                      <section className="chat-side-card">
+                        <button
+                          type="button"
+                          className="chat-side-card-header"
+                          onClick={() => toggleChatSidebarSection("profile")}
+                        >
+                          <h4>员工档案</h4>
+                          <span
+                            className={
+                              chatSidebarCollapsedSections.profile
+                                ? "chat-side-card-toggle collapsed"
+                                : "chat-side-card-toggle"
+                            }
+                            aria-hidden="true"
+                          >
+                            <i className="fas fa-chevron-down" />
+                          </span>
+                        </button>
+                        {!chatSidebarCollapsedSections.profile ? (
+                          <div className="chat-side-card-body">
+                            <div className="chat-side-profile-hero">
+                              <div className="chat-side-profile-avatar-wrap">
+                                <DigitalEmployeeAvatar
+                                  employee={currentEmployee}
+                                  className="chat-side-profile-avatar"
+                                />
+                              </div>
+                              <div className="chat-side-profile-meta">
+                                <strong>{currentEmployee.name}</strong>
+                                <p>"{currentEmployeeMotto}"</p>
+                              </div>
+                            </div>
+                            <div className="chat-side-info-list">
+                              <div className="chat-side-info-row">
+                                <span className="chat-side-info-label">状态</span>
+                                <span className="chat-side-info-value">
+                                  <span
+                                    className={
+                                      currentEmployee.urgent
+                                        ? "chat-side-status-badge urgent"
+                                        : currentEmployee.status === "running"
+                                          ? "chat-side-status-badge running"
+                                          : "chat-side-status-badge stopped"
+                                    }
+                                  >
+                                    {currentEmployeeStatusLabel}
+                                  </span>
+                                </span>
+                              </div>
+                              <div className="chat-side-info-row">
+                                <span className="chat-side-info-label">当前模型</span>
+                                <span className="chat-side-info-value">{currentEmployeeModelLabel}</span>
+                              </div>
+                              <div className="chat-side-info-row">
+                                <span className="chat-side-info-label">统计</span>
+                                <span className="chat-side-info-value">{currentEmployeeStatsLabel}</span>
+                              </div>
+                            </div>
+                            <div className="chat-side-capability-block">
+                              <div className="chat-side-capability-row">
+                                <div className="chat-side-capability-title">核心能力</div>
+                                <div className="chat-side-tag-group">
+                                  {currentEmployee.capabilities.slice(0, 3).map((capability, index) => (
+                                    <span
+                                      key={capability}
+                                      className={
+                                        index % 3 === 1
+                                          ? "chat-side-capability-tag green"
+                                          : index % 3 === 2
+                                            ? "chat-side-capability-tag purple"
+                                            : "chat-side-capability-tag"
+                                      }
+                                    >
+                                      {capability}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </section>
+
+                      <section className="chat-side-card">
+                        <button
+                          type="button"
+                          className="chat-side-card-header"
+                          onClick={() => toggleChatSidebarSection("activity")}
+                        >
+                          <h4>最近活动</h4>
+                          <span
+                            className={
+                              chatSidebarCollapsedSections.activity
+                                ? "chat-side-card-toggle collapsed"
+                                : "chat-side-card-toggle"
+                            }
+                            aria-hidden="true"
+                          >
+                            <i className="fas fa-chevron-down" />
+                          </span>
+                        </button>
+                        {!chatSidebarCollapsedSections.activity ? (
+                          <div className="chat-side-card-body">
+                            <div className="chat-side-activity-list">
+                              {currentEmployeeActivities.map((activity) => (
+                                <div key={activity.id} className="chat-side-activity-item">
+                                  <span className={`chat-side-activity-dot ${activity.tone}`} />
+                                  <span className="chat-side-activity-time">{activity.time}</span>
+                                  <span className="chat-side-activity-text">{activity.text}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </section>
+
+                      <section className="chat-side-card">
+                        <button
+                          type="button"
+                          className="chat-side-card-header"
+                          onClick={() => toggleChatSidebarSection("efficiency")}
+                        >
+                          <h4>工作效能</h4>
+                          <span
+                            className={
+                              chatSidebarCollapsedSections.efficiency
+                                ? "chat-side-card-toggle collapsed"
+                                : "chat-side-card-toggle"
+                            }
+                            aria-hidden="true"
+                          >
+                            <i className="fas fa-chevron-down" />
+                          </span>
+                        </button>
+                        {!chatSidebarCollapsedSections.efficiency ? (
+                          <div className="chat-side-card-body">
+                            <div className="chat-side-stats-list">
+                              <div className="chat-side-stat-row">
+                                <span>今日任务</span>
+                                <strong>{chatSidebarEfficiency.completed}/{chatSidebarEfficiency.total}</strong>
+                              </div>
+                              <div className="chat-side-stat-row">
+                                <span>响应速度</span>
+                                <strong>{chatSidebarEfficiency.response}</strong>
+                              </div>
+                              <div className="chat-side-stat-row">
+                                <span>协作次数</span>
+                                <strong>{chatSidebarEfficiency.collaboration} 次</strong>
+                              </div>
+                            </div>
+                            <div className="chat-side-workload">
+                              <div className="chat-side-workload-title">本周工作量</div>
+                              <div className="chat-side-workload-bars">
+                                {chatSidebarWorkload.map((value, index) => (
+                                  <span
+                                    key={`${currentEmployee.id}-workload-${index}`}
+                                    className="chat-side-workload-bar"
+                                    style={{ height: `${value}%` }}
+                                  />
+                                ))}
+                              </div>
+                              <div className="chat-side-workload-labels">
+                                <span>一</span>
+                                <span>二</span>
+                                <span>三</span>
+                                <span>四</span>
+                                <span>五</span>
+                                <span>六</span>
+                                <span>日</span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </section>
+
+                      <section className="chat-side-card">
+                        <button
+                          type="button"
+                          className="chat-side-card-header"
+                          onClick={() => toggleChatSidebarSection("collaboration")}
+                        >
+                          <h4>协作关系</h4>
+                          <span
+                            className={
+                              chatSidebarCollapsedSections.collaboration
+                                ? "chat-side-card-toggle collapsed"
+                                : "chat-side-card-toggle"
+                            }
+                            aria-hidden="true"
+                          >
+                            <i className="fas fa-chevron-down" />
+                          </span>
+                        </button>
+                        {!chatSidebarCollapsedSections.collaboration ? (
+                          <div className="chat-side-card-body">
+                            <div className="chat-side-collaboration-list">
+                              {chatSidebarCollaborators.map((employee) => (
+                                <button
+                                  key={`chat-sidebar-${employee.id}`}
+                                  type="button"
+                                  className="chat-side-collaboration-item"
+                                  onClick={() => openEmployeeChat(employee.id)}
+                                >
+                                  <DigitalEmployeeAvatar
+                                    employee={employee}
+                                    className="chat-side-collaboration-avatar"
+                                  />
+                                  <span className="chat-side-collaboration-copy">
+                                    <strong>{employee.name}</strong>
+                                    <span>{employee.desc}</span>
+                                  </span>
+                                  <span className="chat-side-collaboration-count">
+                                    协作 {employee.collaborationCount} 次
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </section>
+                          </>
+                        ) : null}
+                      </aside>
+                    </div>
+                  ) : null}
                 </>
               )}
             </div>
@@ -4896,6 +5258,8 @@ export default function DigitalEmployeePage({
           )}
         </div>
       </div>
+
+      {alertPopup}
 
       {dashboardHistoryVisible ? (
         <div className="history-modal show" onClick={() => setDashboardHistoryVisible(false)}>
