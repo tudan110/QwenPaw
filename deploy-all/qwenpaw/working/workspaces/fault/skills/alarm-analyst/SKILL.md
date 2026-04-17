@@ -157,7 +157,7 @@ Portal 落地时，需要体现以下链路：
 当前建议配置：
 
 ```bash
-ALARM_ANALYST_METRIC_BASE_URL=http://192.168.102.172:2023
+INOE_API_BASE_URL=http://192.168.102.172:2023
 ALARM_ANALYST_METRIC_TIMEOUT_SECONDS=10
 ALARM_ANALYST_METRIC_PAGE_SIZE=20
 ```
@@ -174,12 +174,12 @@ ALARM_ANALYST_METRIC_PAGE_SIZE=20
 
 - **Method**: `POST`
 - **Path**: `/resource/threshold/getMetricDefinitions`
-- **Base URL**: 来自 `.env` 中的 `ALARM_ANALYST_METRIC_BASE_URL`
+- **Base URL**: 来自 `.env` 中的 `INOE_API_BASE_URL`
 
 MySQL 示例请求：
 
 ```bash
-curl --location "${ALARM_ANALYST_METRIC_BASE_URL}/resource/threshold/getMetricDefinitions" \
+curl --location "${INOE_API_BASE_URL}/resource/threshold/getMetricDefinitions" \
   --header 'Content-Type: application/json' \
   --data '{
     "metricType":"mysql",
