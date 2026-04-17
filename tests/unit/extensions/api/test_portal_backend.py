@@ -219,6 +219,31 @@ def test_real_alarms_route_returns_backend_payload(monkeypatch) -> None:
     assert response.json()["items"][0]["employeeId"] == "fault"
 
 
+def test_real_alarms_route_keeps_alarm_workorders_route_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+
+    monkeypatch.setattr(
+        portal_backend,
+        "query_alarm_workorders",
+        lambda limit: {"total": 2, "items": [{"id": "wo-1"}], "source": "mock"},
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "query_portal_real_alarms",
+        lambda limit: {"total": 1, "items": [{"id": "alarm-1"}], "source": "mock"},
+    )
+
+    workorders_response = client.get("/api/portal/alarm-workorders?limit=5")
+    real_alarms_response = client.get("/api/portal/real-alarms?limit=5")
+
+    assert workorders_response.status_code == 200
+    assert real_alarms_response.status_code == 200
+    assert workorders_response.json()["total"] == 2
+    assert real_alarms_response.json()["total"] == 1
+
+
 def test_fault_scenario_diagnose_route_rejects_missing_session_id() -> None:
     client = TestClient(portal_backend.app)
 
