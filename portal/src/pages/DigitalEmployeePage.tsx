@@ -65,6 +65,11 @@ import {
   type PortalRouteSection,
   type PortalView,
 } from "./digital-employee/helpers";
+import { listPortalRealAlarms } from "../api/portalRealAlarms";
+import {
+  normalizePortalBellAlerts,
+  PORTAL_REAL_ALARM_POLL_INTERVAL_MS,
+} from "./digital-employee/realAlarms";
 import { useAlarmWorkbench } from "./digital-employee/useAlarmWorkbench";
 import { usePortalModels } from "./digital-employee/usePortalModels";
 import { useRemoteChatSession } from "./digital-employee/useRemoteChatSession";
@@ -1361,7 +1366,17 @@ export default function DigitalEmployeePage({
   const [historyActionError, setHistoryActionError] = useState("");
   const [alertPopupPosition, setAlertPopupPosition] = useState<{ top: number; left: number } | null>(null);
   const alertToastTimerRef = useRef<number | null>(null);
+  const alertPollTimerRef = useRef<number | null>(null);
   const knownAlertIdsRef = useRef<string[]>([]);
+
+  const loadOpsAlerts = useCallback(async () => {
+    try {
+      const response = await listPortalRealAlarms({ limit: 10 });
+      setOpsAlerts(normalizePortalBellAlerts(response));
+    } catch (error) {
+      console.error("Failed to load portal real alarms", error);
+    }
+  }, []);
 
   const {
     currentSessionId,
@@ -2726,6 +2741,20 @@ export default function DigitalEmployeePage({
     },
     [],
   );
+
+  useEffect(() => {
+    void loadOpsAlerts();
+    alertPollTimerRef.current = window.setInterval(() => {
+      void loadOpsAlerts();
+    }, PORTAL_REAL_ALARM_POLL_INTERVAL_MS);
+
+    return () => {
+      if (alertPollTimerRef.current) {
+        window.clearInterval(alertPollTimerRef.current);
+        alertPollTimerRef.current = null;
+      }
+    };
+  }, [loadOpsAlerts]);
 
   useEffect(() => {
     const nextAlertIds = opsAlerts.map((alert) => alert.id);

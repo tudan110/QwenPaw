@@ -183,6 +183,81 @@ def test_fault_scenario_diagnose_route_returns_structured_result(
     assert response.json()["result"]["rootCause"]["type"] == "数据库异常"
 
 
+def test_real_alarms_route_returns_backend_payload(monkeypatch) -> None:
+    client = TestClient(portal_backend.app)
+    received: dict[str, int] = {}
+
+    monkeypatch.setattr(
+        portal_backend,
+        "query_portal_real_alarms",
+        lambda limit: received.setdefault("limit", limit) and {
+            "total": 1,
+            "items": [
+                {
+                    "id": "mock-deadlock-1",
+                    "title": "数据库锁异常",
+                    "level": "critical",
+                    "status": "active",
+                    "eventTime": "2026-04-15 19:20:00",
+                    "timeLabel": "2026-04-15 19:20:00",
+                    "deviceName": "MySQL",
+                    "manageIp": "10.43.150.186",
+                    "employeeId": "fault",
+                    "dispatchContent": "mysql/死锁 + cmdb/新增/插入",
+                    "visibleContent": "数据库锁异常（MySQL 10.43.150.186）",
+                }
+            ],
+            "source": "mock",
+        },
+    )
+
+    response = client.get("/api/portal/real-alarms?limit=8")
+
+    assert response.status_code == 200
+    assert received["limit"] == 8
+    assert response.json()["source"] == "mock"
+    assert response.json()["items"][0]["employeeId"] == "fault"
+
+
+def test_real_alarms_route_returns_500_when_backend_query_fails(monkeypatch) -> None:
+    client = TestClient(portal_backend.app)
+
+    def _raise(limit: int) -> dict:
+        raise RuntimeError("unexpected backend failure")
+
+    monkeypatch.setattr(portal_backend, "query_portal_real_alarms", _raise)
+
+    response = client.get("/api/portal/real-alarms?limit=8")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "RuntimeError: unexpected backend failure"
+
+
+def test_real_alarms_route_keeps_alarm_workorders_route_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+
+    monkeypatch.setattr(
+        portal_backend,
+        "query_alarm_workorders",
+        lambda limit: {"total": 2, "items": [{"id": "wo-1"}], "source": "mock"},
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "query_portal_real_alarms",
+        lambda limit: {"total": 1, "items": [{"id": "alarm-1"}], "source": "mock"},
+    )
+
+    workorders_response = client.get("/api/portal/alarm-workorders?limit=5")
+    real_alarms_response = client.get("/api/portal/real-alarms?limit=5")
+
+    assert workorders_response.status_code == 200
+    assert real_alarms_response.status_code == 200
+    assert workorders_response.json()["total"] == 2
+    assert real_alarms_response.json()["total"] == 1
+
+
 def test_fault_scenario_diagnose_route_rejects_missing_session_id() -> None:
     client = TestClient(portal_backend.app)
 
