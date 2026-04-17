@@ -4,6 +4,7 @@ import { EChartsBlock } from "../../components/EChartsBlock";
 import { PortalVisualizationBlock } from "../../components/PortalVisualizationBlock";
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
 import {
+  extractVisualBlocks,
   extractRenderableContentSegments,
   extractPortalActionPayload,
   getSeverityClassName,

@@ -189,15 +189,27 @@ const ATTRIBUTE_FIELD_ORDER = [
   "description",
 ] as const;
 const DEFAULT_PARSE_LOGS = [
-  "✓ 文件读取成功",
-  "✓ 识别到资源清单结构",
-  "→ 开始智能字段映射...",
-  "✓ 自动映射标准字段",
-  "→ 执行数据清洗和标准化...",
-  "✓ 生成清洗报告",
-  "→ 推断资源拓扑关系...",
-  "✓ 生成待确认拓扑草案",
+  "→ 文件已上传，等待后台开始解析...",
+  "→ 正在读取文件内容与 sheet 结构...",
+  "→ 正在并行执行字段语义映射...",
+  "→ 正在执行数据清洗与标准化...",
+  "→ 正在推断资源关系与拓扑...",
+  "→ 正在生成待确认预览结果...",
 ] as const;
+const ROOT_RELATION_TYPES = new Set(["project", "product", "Department"]);
+const RESOURCE_DEPLOY_TYPES = new Set(["PhysicalMachine", "vserver", "docker", "kubernetes"]);
+const SOFTWARE_RESOURCE_TYPES = new Set([
+  "database",
+  "mysql",
+  "PostgreSQL",
+  "redis",
+  "Kafka",
+  "elasticsearch",
+  "nginx",
+  "apache",
+  "docker",
+  "kubernetes",
+]);
 
 function extractErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -258,6 +270,39 @@ function getDisplayStatus(record: ResourceImportRecord) {
 
 function getAttributeLabel(key: string) {
   return ATTRIBUTE_FIELD_LABELS[key] || key;
+}
+
+function parseRowPreviewKey(previewKey: string) {
+  const raw = String(previewKey || "").trim();
+  const match = raw.match(/^row::(.+?)::(.+?)::(\d+)$/);
+  if (!match) {
+    return null;
+  }
+  return {
+    fileName: match[1],
+    sheetName: match[2],
+    rowIndex: match[3],
+  };
+}
+
+function getResultItemTitle(
+  item: { previewKey?: string },
+  recordMap: Map<string, ResourceImportRecord>,
+) {
+  const previewKey = String(item.previewKey || "").trim();
+  const record = recordMap.get(previewKey);
+  const source = record?.sourceRows?.[0];
+  if (source?.filename && source?.sheet && source?.rowIndex !== undefined) {
+    const name = String(record?.name || "").trim();
+    return name
+      ? `${source.filename} / ${source.sheet} / 第 ${source.rowIndex} 行 · ${name}`
+      : `${source.filename} / ${source.sheet} / 第 ${source.rowIndex} 行`;
+  }
+  const parsed = parseRowPreviewKey(previewKey);
+  if (parsed) {
+    return `${parsed.fileName} / ${parsed.sheetName} / 第 ${parsed.rowIndex} 行`;
+  }
+  return String(record?.name || previewKey || "未命名记录").trim();
 }
 
 function getCiTypeMeta(
@@ -324,6 +369,350 @@ function getStructureStatusLabel(status: ResourceImportStructureItem["status"]) 
   }
 }
 
+function getStructureConfidenceLabel(confidence?: ResourceImportStructureItem["semanticConfidence"]) {
+  switch (confidence) {
+    case "high":
+      return "高";
+    case "medium":
+      return "中";
+    default:
+      return "低";
+  }
+}
+
+function getBlockingAnalysisIssues(preview: ResourceImportPreview | null | undefined) {
+  return (preview?.analysisIssues || []).filter((item) => item.severity === "blocking");
+}
+
+function getBlockingAnalysisMessage(preview: ResourceImportPreview | null | undefined) {
+  const blockingIssues = getBlockingAnalysisIssues(preview);
+  if (!blockingIssues.length) {
+    return "";
+  }
+  return "本次解析存在关键失败，当前结果可能不完整，已禁止继续导入。请重新解析后再试。";
+}
+
+function getTopologyPalette(ciType: string, generated: boolean) {
+  if (generated) {
+    return {
+      fill: "#fff7ed",
+      border: "#fb923c",
+      shadow: "rgba(249, 115, 22, 0.18)",
+      badge: "#ffedd5",
+      text: "#9a3412",
+      line: "#fdba74",
+    };
+  }
+  const normalized = String(ciType || "").toLowerCase();
+  if (["project", "product", "department"].includes(normalized)) {
+    return {
+      fill: "#ecfeff",
+      border: "#14b8a6",
+      shadow: "rgba(20, 184, 166, 0.18)",
+      badge: "#ccfbf1",
+      text: "#0f766e",
+      line: "#5eead4",
+    };
+  }
+  if (["physicalmachine", "vserver"].includes(normalized)) {
+    return {
+      fill: "#eff6ff",
+      border: "#3b82f6",
+      shadow: "rgba(59, 130, 246, 0.18)",
+      badge: "#dbeafe",
+      text: "#1d4ed8",
+      line: "#93c5fd",
+    };
+  }
+  if (["database", "mysql", "postgresql"].includes(normalized)) {
+    return {
+      fill: "#fff7ed",
+      border: "#f97316",
+      shadow: "rgba(249, 115, 22, 0.16)",
+      badge: "#fed7aa",
+      text: "#c2410c",
+      line: "#fdba74",
+    };
+  }
+  if (["redis", "kafka", "elasticsearch", "nginx", "apache", "docker", "kubernetes"].includes(normalized)) {
+    return {
+      fill: "#faf5ff",
+      border: "#8b5cf6",
+      shadow: "rgba(139, 92, 246, 0.16)",
+      badge: "#ede9fe",
+      text: "#6d28d9",
+      line: "#c4b5fd",
+    };
+  }
+  if (normalized === "networkdevice") {
+    return {
+      fill: "#ecfdf5",
+      border: "#22c55e",
+      shadow: "rgba(34, 197, 94, 0.16)",
+      badge: "#dcfce7",
+      text: "#15803d",
+      line: "#86efac",
+    };
+  }
+  return {
+    fill: "#f8fafc",
+    border: "#94a3b8",
+    shadow: "rgba(148, 163, 184, 0.16)",
+    badge: "#e2e8f0",
+    text: "#475569",
+    line: "#cbd5e1",
+  };
+}
+
+function truncateTopologyText(value: string, maxLength = 22) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength - 1)}…`;
+}
+
+function getMappingStatusLabel(status?: string) {
+  switch (status) {
+    case "needs_confirmation":
+      return "待确认";
+    case "mapped":
+      return "已应用";
+    default:
+      return "未应用";
+  }
+}
+
+function formatAutoFilledHint(hints?: string[]) {
+  if (!hints?.length) {
+    return "";
+  }
+  return `已自动补全：${hints.join("、")}`;
+}
+
+function buildAggregatedAmbiguousMappings(
+  items: NonNullable<ResourceImportPreview["mappingSummary"]>,
+) {
+  const grouped = new Map<string, {
+    sourceField: string;
+    message: string;
+    candidates: Array<{ targetField: string; confidence: string; source?: string }>;
+    scopes: Array<{ fileName: string; sheetName: string }>;
+  }>();
+
+  items.forEach((item) => {
+    if (!(item.status === "needs_confirmation" || item.needsConfirmation)) {
+      return;
+    }
+    const candidates = (item.candidates || [])
+      .filter((candidate) => candidate?.targetField)
+      .map((candidate) => ({
+        targetField: String(candidate.targetField || ""),
+        confidence: String(candidate.confidence || ""),
+        source: candidate.source,
+      }))
+      .sort((left, right) =>
+        left.targetField.localeCompare(right.targetField, "zh-CN")
+        || left.confidence.localeCompare(right.confidence, "zh-CN"),
+      );
+    const candidateKey = candidates.map((candidate) => `${candidate.targetField}:${candidate.confidence}`).join("|");
+    const key = `${item.sourceField}::${candidateKey}`;
+    const scope = {
+      fileName: String(item.fileName || ""),
+      sheetName: String(item.sheetName || "当前文件"),
+    };
+    const current = grouped.get(key);
+    if (current) {
+      if (!current.scopes.some((entry) => entry.fileName === scope.fileName && entry.sheetName === scope.sheetName)) {
+        current.scopes.push(scope);
+      }
+      return;
+    }
+    grouped.set(key, {
+      sourceField: String(item.sourceField || ""),
+      message: String(item.message || ""),
+      candidates,
+      scopes: [scope],
+    });
+  });
+
+  return Array.from(grouped.values())
+    .map((item) => ({
+      ...item,
+      scopes: item.scopes.sort((left, right) =>
+        left.fileName.localeCompare(right.fileName, "zh-CN")
+        || left.sheetName.localeCompare(right.sheetName, "zh-CN"),
+      ),
+    }))
+    .sort((left, right) =>
+      left.sourceField.localeCompare(right.sourceField, "zh-CN")
+      || right.scopes.length - left.scopes.length,
+    );
+}
+
+function buildTopologyTreeData(
+  resourceGroups: ResourceImportGroup[],
+  relations: ResourceImportRelation[],
+  options?: {
+    collapsedDepth?: number;
+  },
+) {
+  const selectedRecords = resourceGroups
+    .flatMap((group) => group.records)
+    .filter((record) => record.selected);
+  const selectedRelations = relations.filter((relation) => relation.selected);
+  const recordMap = new Map(selectedRecords.map((record) => [record.previewKey, record]));
+  const collapsedDepth = options?.collapsedDepth ?? Number.POSITIVE_INFINITY;
+  const relationPriority: Record<string, number> = {
+    contain: 0,
+    deploy: 1,
+    install: 2,
+    connect: 3,
+  };
+
+  const parentChoiceMap = new Map<string, ResourceImportRelation>();
+  selectedRelations.forEach((relation) => {
+    if (!recordMap.has(relation.sourceKey) || !recordMap.has(relation.targetKey)) {
+      return;
+    }
+    const current = parentChoiceMap.get(relation.targetKey);
+    const nextPriority = relationPriority[relation.relationType] ?? 99;
+    const currentPriority = current ? (relationPriority[current.relationType] ?? 99) : Number.POSITIVE_INFINITY;
+    if (!current || nextPriority < currentPriority) {
+      parentChoiceMap.set(relation.targetKey, relation);
+    }
+  });
+
+  const childMap = new Map<string, string[]>();
+  parentChoiceMap.forEach((relation, targetKey) => {
+    const sourceKey = relation.sourceKey;
+    const current = childMap.get(sourceKey) || [];
+    current.push(targetKey);
+    childMap.set(sourceKey, current);
+  });
+
+  const buildNode = (previewKey: string, relationTypeFromParent = "", depth = 0): any => {
+    const record = recordMap.get(previewKey);
+    if (!record) {
+      return null;
+    }
+    const palette = getTopologyPalette(record.ciType, Boolean(record.generated));
+    const children = (childMap.get(previewKey) || [])
+      .map((childKey) => buildNode(childKey, parentChoiceMap.get(childKey)?.relationType || "", depth + 1))
+      .filter(Boolean);
+    children.sort((left, right) => {
+      const leftBranch = left.children?.length ? 1 : 0;
+      const rightBranch = right.children?.length ? 1 : 0;
+      if (leftBranch !== rightBranch) {
+        return rightBranch - leftBranch;
+      }
+      const leftDescendants = Number(left.descendantCount || 0);
+      const rightDescendants = Number(right.descendantCount || 0);
+      if (leftDescendants !== rightDescendants) {
+        return rightDescendants - leftDescendants;
+      }
+      return String(left.name || "").localeCompare(String(right.name || ""), "zh-CN");
+    });
+    const descendantCount = children.reduce(
+      (total, child) => total + 1 + Number(child.descendantCount || 0),
+      0,
+    );
+    const shouldCollapse = children.length > 0 && depth >= collapsedDepth;
+    return {
+      id: previewKey,
+      name: record.name || previewKey,
+      value: record.ciType,
+      typeLabel: record.ciType || "未分类",
+      relationTypeFromParent,
+      descendantCount,
+      collapsed: shouldCollapse,
+      symbolSize: children.length ? 10 : 7,
+      itemStyle: {
+        color: palette.border,
+        borderColor: palette.border,
+        borderWidth: 1,
+        shadowBlur: 0,
+        shadowOffsetY: 0,
+        shadowColor: "transparent",
+        opacity: 0.96,
+      },
+      label: {
+        position: "right",
+        distance: 10,
+        formatter: () => (
+          `{name|${truncateTopologyText(record.name || previewKey)}}`
+          + ` {meta|${truncateTopologyText(record.ciType || "未分类", 14)}}`
+          + (descendantCount ? ` {count|+${descendantCount}}` : "")
+        ),
+        rich: {
+          name: {
+            color: "#0f172a",
+            fontSize: 12,
+            fontWeight: 600,
+            lineHeight: 16,
+          },
+          meta: {
+            color: palette.text,
+            fontSize: 11,
+            lineHeight: 16,
+          },
+          count: {
+            color: "#64748b",
+            fontSize: 11,
+            fontWeight: 600,
+            lineHeight: 16,
+          },
+        },
+      },
+      lineStyle: {
+        color: palette.line,
+        width: 1.2,
+      },
+      children,
+    };
+  };
+
+  const rootKeys = selectedRecords
+    .map((record) => record.previewKey)
+    .filter((previewKey) => !parentChoiceMap.has(previewKey));
+  const rootChildren = rootKeys
+    .map((previewKey) => buildNode(previewKey))
+    .filter(Boolean);
+
+  return {
+    rootChildren,
+    chartData: {
+      name: "本次导入拓扑",
+      value: `${selectedRecords.length} 个资源`,
+      descendantCount: selectedRecords.length,
+      symbolSize: 6,
+      itemStyle: {
+        color: "#38bdf8",
+        borderColor: "#38bdf8",
+        borderWidth: 0,
+      },
+      label: {
+        position: "right",
+        distance: 12,
+        formatter: () => `{name|本次导入拓扑} {meta|${selectedRecords.length}个资源}`,
+        rich: {
+          name: {
+            color: "#0f172a",
+            fontSize: 13,
+            fontWeight: 700,
+            lineHeight: 18,
+          },
+          meta: {
+            color: "#0369a1",
+            fontSize: 11,
+            lineHeight: 18,
+          },
+        },
+      },
+      children: rootChildren,
+    },
+  };
+}
+
 function getStructureSelectValue(
   currentValue: string,
   options: Array<{ name: string; existing: boolean }>,
@@ -379,9 +768,20 @@ function getStructureModelOptions(
     });
   }
 
-  return Array.from(optionMap.values()).sort((left, right) =>
-    left.name.localeCompare(right.name, "zh-CN"),
-  );
+  const preferredNames = [
+    String(item.suggestedModelName || "").trim(),
+    String(item.selectedModelName || "").trim(),
+    String(item.resourceCiType || "").trim(),
+  ].filter(Boolean);
+
+  return Array.from(optionMap.values()).sort((left, right) => {
+    const leftIndex = preferredNames.findIndex((name) => name === left.name);
+    const rightIndex = preferredNames.findIndex((name) => name === right.name);
+    if (leftIndex !== rightIndex) {
+      return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
+    }
+    return left.name.localeCompare(right.name, "zh-CN");
+  });
 }
 
 function getStructureGroupOptions(
@@ -568,17 +968,363 @@ function getSuggestedUniqueKey(
   return getStructureUniqueKeyOptions(preview, item, metadata, draft)[0]?.name || "";
 }
 
+function normalizeFieldToken(value: string) {
+  return String(value || "").trim().toLowerCase().replace(/[\s_\-/:]+/g, "");
+}
+
+function isNameLikeUniqueKey(uniqueKey: string) {
+  const normalized = normalizeFieldToken(uniqueKey);
+  const raw = String(uniqueKey || "").trim().toLowerCase();
+  return (
+    normalized.endsWith("name")
+    || normalized.includes("instance")
+    || normalized.includes("hostname")
+    || ["名称", "名字", "主机名", "设备名", "实例名", "实例名称", "组件实例名", "数据库实例名"].some((token) => raw.includes(token))
+  );
+}
+
+function isIpLikeUniqueKey(uniqueKey: string) {
+  return normalizeFieldToken(uniqueKey).includes("ip");
+}
+
+function isCodeLikeUniqueKey(uniqueKey: string) {
+  const normalized = normalizeFieldToken(uniqueKey);
+  const raw = String(uniqueKey || "").trim().toLowerCase();
+  return ["code", "no", "id", "key", "pk", "unique", "identifier", "主键", "唯一", "标识"]
+    .some((token) => normalized.includes(token) || raw.includes(token));
+}
+
+function getUniqueKeyCandidateFieldOrder(uniqueKey: string, uniqueKeyLabel = "") {
+  const merged = `${uniqueKey} ${uniqueKeyLabel}`.trim();
+  const normalized = normalizeFieldToken(merged);
+  if (isCodeLikeUniqueKey(merged)) {
+    if (normalized.includes("asset") || normalized.includes("property") || normalized.includes("dev")) {
+      return ["asset_code", "property_no", "dev_no", "id", "pk"];
+    }
+    return ["asset_code", "property_no", "dev_no", "id", "pk"];
+  }
+  if (isIpLikeUniqueKey(merged)) {
+    if (normalized.includes("manage")) {
+      return ["manage_ip", "private_ip", "host_ip", "ip"];
+    }
+    if (normalized.includes("private")) {
+      return ["private_ip", "manage_ip", "host_ip", "ip"];
+    }
+    return ["manage_ip", "private_ip", "host_ip", "ip"];
+  }
+  if (isNameLikeUniqueKey(merged)) {
+    if (normalized.includes("middleware")) {
+      return ["middleware_name", "name", "db_instance", "serverName", "dev_name", "hostname", "vserver_name"];
+    }
+    if (normalized.includes("db")) {
+      return ["db_instance", "name", "middleware_name", "serverName", "hostname"];
+    }
+    if (normalized.includes("server") || normalized.includes("host")) {
+      return ["serverName", "hostname", "dev_name", "name", "vserver_name"];
+    }
+    if (normalized.includes("dev")) {
+      return ["dev_name", "name", "serverName", "hostname"];
+    }
+    return ["name", "middleware_name", "db_instance", "serverName", "dev_name", "hostname", "vserver_name"];
+  }
+  return [];
+}
+
+function getUniqueKeySemanticKind(uniqueKey: string, uniqueKeyLabel?: string) {
+  const merged = `${uniqueKey} ${uniqueKeyLabel || ""}`.trim();
+  if (isCodeLikeUniqueKey(merged)) {
+    return "code";
+  }
+  if (isIpLikeUniqueKey(merged)) {
+    return "ip";
+  }
+  if (isNameLikeUniqueKey(merged)) {
+    return "name";
+  }
+  return "unknown";
+}
+
+function getUniqueKeyLabel(
+  preview: ResourceImportPreview | null | undefined,
+  ciType: string,
+) {
+  const typeMeta = getCiTypeMeta(preview, ciType);
+  const uniqueKey = String(typeMeta?.unique_key || "").trim();
+  if (!uniqueKey) {
+    return "";
+  }
+  const definition = (typeMeta?.attributeDefinitions || []).find((item) => item.name === uniqueKey);
+  return definition?.alias || getAttributeLabel(uniqueKey);
+}
+
+function getUniqueKeyDisplay(
+  preview: ResourceImportPreview | null | undefined,
+  ciType: string,
+) {
+  const typeMeta = getCiTypeMeta(preview, ciType);
+  const uniqueKey = String(typeMeta?.unique_key || "").trim();
+  if (!uniqueKey) {
+    return "";
+  }
+  const label = getUniqueKeyLabel(preview, ciType);
+  return label && label !== uniqueKey ? `${label} (${uniqueKey})` : uniqueKey;
+}
+
+function isSystemGeneratedUniqueKey(
+  preview: ResourceImportPreview | null | undefined,
+  ciType: string,
+) {
+  const typeMeta = getCiTypeMeta(preview, ciType);
+  if (!typeMeta) {
+    return false;
+  }
+  if (typeMeta.system_generated_unique_key) {
+    return true;
+  }
+
+  const uniqueKey = String(typeMeta.unique_key || "").trim();
+  const normalized = normalizeFieldToken(uniqueKey);
+  if (!normalized) {
+    return false;
+  }
+  if (["pid", "rowid", "ciid"].includes(normalized)) {
+    return true;
+  }
+
+  const definition = (typeMeta.attributeDefinitions || []).find((item) => item.name === uniqueKey);
+  const alias = String(definition?.alias || "").trim();
+  const valueType = String(definition?.value_type || "").trim().toLowerCase();
+  return normalized === "id" && ["主键", "系统主键"].includes(alias) && ["int", "integer", "bigint", "smallint", "long", "number"].includes(valueType);
+}
+
+function getRecordFieldValue(record: ResourceImportRecord, field: string) {
+  if (field === "name") {
+    return String(record.name || record.attributes.name || record.analysisAttributes?.name || "").trim();
+  }
+  return String(record.attributes?.[field] || record.analysisAttributes?.[field] || "").trim();
+}
+
+function getUniqueKeyCandidatePriority(uniqueKey: string, uniqueKeyLabel: string, field: string) {
+  const normalizedField = normalizeFieldToken(field);
+  const semanticKind = getUniqueKeySemanticKind(uniqueKey, uniqueKeyLabel);
+  const orderedFields = getUniqueKeyCandidateFieldOrder(uniqueKey, uniqueKeyLabel).map((item) => normalizeFieldToken(item));
+
+  if (field === uniqueKey) {
+    return -1;
+  }
+  if (["code", "ip", "name"].includes(semanticKind)) {
+    const index = orderedFields.indexOf(normalizedField);
+    return index === -1 ? 20 : index;
+  }
+  return 20;
+}
+
+function getUniqueKeyCandidateCompatibility(uniqueKey: string, uniqueKeyLabel: string, field: string) {
+  const normalizedField = normalizeFieldToken(field);
+  const semanticKind = getUniqueKeySemanticKind(uniqueKey, uniqueKeyLabel);
+  const orderedFields = getUniqueKeyCandidateFieldOrder(uniqueKey, uniqueKeyLabel).map((item) => normalizeFieldToken(item));
+  const orderedIndex = orderedFields.indexOf(normalizedField);
+  if (field === uniqueKey) {
+    return 5;
+  }
+  if (semanticKind === "code") {
+    if (orderedIndex !== -1) {
+      return orderedIndex === 0 ? 4 : 3;
+    }
+    if (normalizedField === "id") {
+      return 2;
+    }
+    return 0;
+  }
+  if (semanticKind === "ip") {
+    if (orderedIndex !== -1) {
+      return orderedIndex === 0 ? 4 : 3;
+    }
+    return 0;
+  }
+  if (semanticKind === "name") {
+    if (orderedIndex !== -1) {
+      return orderedIndex <= 1 ? 4 : 3;
+    }
+    if (["assetcode", "propertyno", "devno", "pk"].includes(normalizedField)) {
+      return 1;
+    }
+    return 0;
+  }
+  return normalizedField === normalizeFieldToken(uniqueKey) ? 3 : 0;
+}
+
+function getUniqueKeyResolutionPlans(
+  preview: ResourceImportPreview | null | undefined,
+  groups: ResourceImportGroup[],
+) {
+  return groups
+    .map((group) => {
+      const typeMeta = getCiTypeMeta(preview, group.ciType);
+      const uniqueKey = String(typeMeta?.unique_key || "").trim();
+      const uniqueKeyLabel = getUniqueKeyLabel(preview, group.ciType);
+      if (!uniqueKey || isSystemGeneratedUniqueKey(preview, group.ciType)) {
+        return null;
+      }
+      const selectedRecords = group.records.filter((record) => record.selected);
+      const missingRecords = selectedRecords.filter((record) => isEmptyValue(getRecordFieldValue(record, uniqueKey)));
+      if (!missingRecords.length) {
+        return null;
+      }
+
+      const candidateMap = new Map<string, {
+        field: string;
+        label: string;
+        count: number;
+        examples: string[];
+        priority: number;
+        compatibility: number;
+        values: Set<string>;
+      }>();
+
+      missingRecords.forEach((record) => {
+        const fields = new Set<string>([
+          "name",
+          ...Object.keys(record.attributes || {}),
+          ...Object.keys(record.analysisAttributes || {}),
+        ]);
+        fields.forEach((field) => {
+          if (!field || field === uniqueKey || field === "ci_type" || field.startsWith("_")) {
+            return;
+          }
+          const value = getRecordFieldValue(record, field);
+          if (!value) {
+            return;
+          }
+          const current = candidateMap.get(field);
+          if (current) {
+            current.count += 1;
+            current.values.add(value);
+            if (current.examples.length < 2 && !current.examples.includes(value)) {
+              current.examples.push(value);
+            }
+            return;
+          }
+          candidateMap.set(field, {
+            field,
+            label: getAttributeLabel(field),
+            count: 1,
+            examples: [value],
+            priority: getUniqueKeyCandidatePriority(uniqueKey, uniqueKeyLabel, field),
+            compatibility: getUniqueKeyCandidateCompatibility(uniqueKey, uniqueKeyLabel, field),
+            values: new Set([value]),
+          });
+        });
+      });
+
+      const candidates = Array.from(candidateMap.values())
+        .sort((left, right) =>
+          right.compatibility - left.compatibility
+          || left.priority - right.priority
+          || right.values.size - left.values.size
+          || right.count - left.count
+          || left.label.localeCompare(right.label, "zh-CN")
+        )
+        .map((item) => ({
+          field: item.field,
+          label: item.label,
+          count: item.count,
+          coverage: Math.round((item.count / missingRecords.length) * 100),
+          distinctCount: item.values.size,
+          distinctCoverage: Math.round((item.values.size / missingRecords.length) * 100),
+          duplicateCount: Math.max(0, item.count - item.values.size),
+          compatibility: item.compatibility,
+          priority: item.priority,
+          recommended: item.compatibility >= 3,
+          examples: item.examples,
+        }));
+
+      const compatibleCandidates = candidates.filter((item) => item.compatibility > 0);
+      const finalCandidates = compatibleCandidates.length ? compatibleCandidates : candidates;
+
+      return {
+        ciType: group.ciType,
+        label: group.label,
+        uniqueKey,
+        uniqueKeyLabel,
+        uniqueKeyDisplay: getUniqueKeyDisplay(preview, group.ciType),
+        missingCount: missingRecords.length,
+        totalCount: selectedRecords.length,
+        candidates: finalCandidates,
+      };
+    })
+    .filter(Boolean);
+}
+
+function getSystemGeneratedUniqueKeyPlans(
+  preview: ResourceImportPreview | null | undefined,
+  groups: ResourceImportGroup[],
+) {
+  return groups
+    .map((group) => {
+      const typeMeta = getCiTypeMeta(preview, group.ciType);
+      const uniqueKey = String(typeMeta?.unique_key || "").trim();
+      if (!uniqueKey || !isSystemGeneratedUniqueKey(preview, group.ciType)) {
+        return null;
+      }
+      const selectedRecords = group.records.filter((record) => record.selected);
+      const missingRecords = selectedRecords.filter((record) => isEmptyValue(getRecordFieldValue(record, uniqueKey)));
+      if (!missingRecords.length) {
+        return null;
+      }
+      return {
+        ciType: group.ciType,
+        label: group.label,
+        uniqueKey,
+        uniqueKeyDisplay: getUniqueKeyDisplay(preview, group.ciType) || uniqueKey,
+        missingCount: missingRecords.length,
+        totalCount: selectedRecords.length,
+      };
+    })
+    .filter(Boolean);
+}
+
+function shouldAutoApplyUniqueKeyPlan(plan: {
+  candidates: Array<{ field: string; coverage: number; distinctCoverage: number; recommended: boolean; compatibility: number; priority: number }>;
+}) {
+  const [first, second] = plan.candidates;
+  if (!first || !first.field) {
+    return false;
+  }
+  if (!first.recommended) {
+    return false;
+  }
+  if (first.coverage < 100) {
+    return false;
+  }
+  if (first.distinctCoverage < 100) {
+    return false;
+  }
+  if (!second) {
+    return true;
+  }
+  if (!second.recommended || second.distinctCoverage < 100) {
+    return true;
+  }
+  if (first.compatibility > second.compatibility) {
+    return true;
+  }
+  return first.priority + 2 <= second.priority;
+}
+
 function applyStructureSelectionsToPreview(
   preview: ResourceImportPreview | null | undefined,
   items: ResourceImportStructureItem[],
 ): {
   preview: ResourceImportPreview | null;
   resourceGroups: ResourceImportGroup[];
+  relations: ResourceImportRelation[];
 } {
   if (!preview) {
     return {
       preview: null,
       resourceGroups: [],
+      relations: [],
     };
   }
 
@@ -600,16 +1346,72 @@ function applyStructureSelectionsToPreview(
       })),
     };
   });
+  const recordMap = new Map<string, ResourceImportRecord>();
+  resourceGroups.forEach((group) => {
+    group.records.forEach((record) => {
+      recordMap.set(record.previewKey, record);
+    });
+  });
+
+  const inferRelationTypeForModels = (sourceType: string, targetType: string) => {
+    const targetMeta = preview.ciTypeMetadata?.[targetType];
+    const matchingParent = (targetMeta?.parentTypes || []).find((item) => item.name === sourceType);
+    if (matchingParent) {
+      return String(matchingParent.relationType || "contain").trim() || "contain";
+    }
+    if (ROOT_RELATION_TYPES.has(sourceType)) {
+      return "contain";
+    }
+    if (SOFTWARE_RESOURCE_TYPES.has(targetType) && RESOURCE_DEPLOY_TYPES.has(sourceType)) {
+      return "deploy";
+    }
+    return "connect";
+  };
+
+  const relations = (preview.relations || []).map((relation) => {
+    const sourceRecord = recordMap.get(relation.sourceKey);
+    const targetRecord = recordMap.get(relation.targetKey);
+    const sourceType = String(sourceRecord?.ciType || relation.sourceType || "").trim();
+    const targetType = String(targetRecord?.ciType || relation.targetType || "").trim();
+    const nextRelationType = sourceType && targetType
+      ? inferRelationTypeForModels(sourceType, targetType)
+      : relation.relationType;
+    return {
+      ...relation,
+      relationType: nextRelationType,
+      sourceType,
+      targetType,
+      sourceName: String(sourceRecord?.name || relation.sourceName || "").trim(),
+      targetName: String(targetRecord?.name || relation.targetName || "").trim(),
+    };
+  });
 
   return {
     preview: {
       ...preview,
       resourceGroups,
+      relations,
       structureAnalysis: {
         items,
       },
     },
     resourceGroups,
+    relations,
+  };
+}
+
+function syncPreviewWithCurrentData(
+  preview: ResourceImportPreview | null | undefined,
+  resourceGroups: ResourceImportGroup[],
+  relations: ResourceImportRelation[],
+): ResourceImportPreview | null {
+  if (!preview) {
+    return null;
+  }
+  return {
+    ...preview,
+    resourceGroups,
+    relations,
   };
 }
 
@@ -926,7 +1728,7 @@ function IntroStage({
       },
       {
         title: "💡 支持的关键字：",
-        paragraphs: [
+        items: [
           "“导入资源清单” / “批量导入” / “资源纳管”",
           "直接拖拽Excel文件到对话框",
         ],
@@ -1030,9 +1832,6 @@ function IntroStage({
             {(block.paragraphs || []).map((paragraph) => (
               <p key={paragraph}>{paragraph}</p>
             ))}
-            {block.title.includes("关键词") ? (
-              <p>支持格式：{supportedFormats.join("、") || "Excel、CSV、Word、图片"}</p>
-            ) : null}
           </div>
         ))}
 
@@ -1359,6 +2158,8 @@ function StructureStage({
     : false;
   const editingGroupSelectValue = getStructureSelectValue(modelDraft.groupName, editingGroupOptions);
   const editingModelSelectValue = getStructureSelectValue(modelDraft.name, editingModelOptions);
+  const blockingAnalysisIssues = getBlockingAnalysisIssues(flow.preview);
+  const blockingAnalysisMessage = getBlockingAnalysisMessage(flow.preview);
 
   const validationError = items.find((item) => {
     const existingGroupSelected = isExistingStructureGroup(
@@ -1382,7 +2183,7 @@ function StructureStage({
     return !(item.selectedGroupName && item.selectedModelName);
   })
     ? "请先完成当前资源的分组/模型确认。"
-    : "";
+    : blockingAnalysisMessage;
 
   return (
     <div className="resource-import-conversation-card">
@@ -1398,6 +2199,16 @@ function StructureStage({
           </div>
 
           {error ? <div className="resource-import-inline-error">{error}</div> : null}
+          {blockingAnalysisIssues.length ? (
+            <div className="resource-import-inline-error">
+              <strong>本次解析结果不完整，已禁止继续导入。</strong>
+              <ul className="resource-import-issue-list">
+                {blockingAnalysisIssues.map((issue, index) => (
+                  <li key={`${issue.fileName || issue.sheetName || "issue"}-${index}`}>{issue.message}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div className="resource-import-structure-list">
             {items.map((item) => {
@@ -1417,6 +2228,18 @@ function StructureStage({
               const requiresModelDraft = !existingModelSelected;
               const groupSelectValue = getStructureSelectValue(item.selectedGroupName || "", groupOptions);
               const modelSelectValue = getStructureSelectValue(item.selectedModelName || "", modelOptions);
+              const originalTypeText = String(
+                item.originalTypeText
+                || item.rawTypeHints?.[0]
+                || item.resourceCiType
+                || item.resourceLabel
+                || "",
+              ).trim();
+              const selectedModelOption = modelOptions.find((option) => option.name === item.selectedModelName);
+              const selectedModelDisplayName = selectedModelOption?.alias
+                ? `${selectedModelOption.alias} (${selectedModelOption.name})`
+                : String(item.selectedModelName || "").trim();
+              const selectedGroupDisplayName = String(item.selectedGroupName || "").trim();
 
               return (
                 <div key={item.key} className="resource-import-structure-card">
@@ -1431,6 +2254,17 @@ function StructureStage({
                   </div>
 
                   {item.reason ? <p className="resource-import-structure-reason">{item.reason}</p> : null}
+
+                  <div className="resource-import-structure-mapping">
+                    <div><span>原文类型</span>{originalTypeText || "未提供"}</div>
+                    <div>
+                      <span>当前映射</span>
+                      {selectedGroupDisplayName || selectedModelDisplayName
+                        ? `${selectedGroupDisplayName || "未定分组"} / ${selectedModelDisplayName || "未定模型"}`
+                        : "待确认"}
+                    </div>
+                    <div><span>匹配置信度</span>{getStructureConfidenceLabel(item.semanticConfidence)}</div>
+                  </div>
 
                   {item.rawTypeHints?.length ? (
                     <div className="resource-import-structure-hints">
@@ -1644,7 +2478,7 @@ function StructureStage({
                 flowId: flow.flowId,
                 preview: next.preview,
                 resourceGroups: next.resourceGroups,
-                relations: flow.preview?.relations || flow.relations || [],
+                relations: next.relations,
               });
             }}
           >
@@ -1861,6 +2695,24 @@ function ConfirmStage({
   const [relations, setRelations] = useState<ResourceImportRelation[]>(flow.relations || []);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorFocusPreviewKey, setEditorFocusPreviewKey] = useState<string | null>(null);
+  const [mappingAcknowledged, setMappingAcknowledged] = useState(false);
+  const [uniqueKeySelections, setUniqueKeySelections] = useState<Record<string, string>>({});
+  const [autoResolvedUniqueKeys, setAutoResolvedUniqueKeys] = useState<Array<{
+    ciType: string;
+    label: string;
+    uniqueKey: string;
+    uniqueKeyLabel: string;
+    uniqueKeyDisplay: string;
+    sourceField: string;
+    sourceLabel: string;
+  }>>([]);
+  const [batchEditorScrollWidth, setBatchEditorScrollWidth] = useState(0);
+  const [batchEditorViewportWidth, setBatchEditorViewportWidth] = useState(0);
+  const batchEditorWrapRef = useRef<HTMLDivElement | null>(null);
+  const batchEditorTopScrollbarRef = useRef<HTMLDivElement | null>(null);
+  const autoAppliedUniqueKeyPlansRef = useRef<Set<string>>(new Set());
+  const blockingAnalysisIssues = getBlockingAnalysisIssues(flow.preview);
+  const blockingAnalysisMessage = getBlockingAnalysisMessage(flow.preview);
 
   useEffect(() => {
     setResourceGroups(flow.resourceGroups || []);
@@ -1885,6 +2737,14 @@ function ConfirmStage({
     () => countSelectedRecords(resourceGroups),
     [resourceGroups],
   );
+  const ambiguousMappings = useMemo(
+    () => (flow.preview?.mappingSummary || []).filter((item) => item.status === "needs_confirmation" || item.needsConfirmation),
+    [flow.preview],
+  );
+  const aggregatedAmbiguousMappings = useMemo(
+    () => buildAggregatedAmbiguousMappings(flow.preview?.mappingSummary || []),
+    [flow.preview],
+  );
   const ciTypeOptions = useMemo(
     () => Array.from(new Set(resourceGroups.map((group) => group.ciType).filter(Boolean))),
     [resourceGroups],
@@ -1906,6 +2766,21 @@ function ConfirmStage({
     });
     return new Map(entries);
   }, [batchEditorColumns, flow.preview, resourceGroups]);
+  const uniqueKeyPlans = useMemo(
+    () => getUniqueKeyResolutionPlans(flow.preview || null, resourceGroups),
+    [flow.preview, resourceGroups],
+  );
+  const systemGeneratedUniqueKeyPlans = useMemo(
+    () => getSystemGeneratedUniqueKeyPlans(flow.preview || null, resourceGroups),
+    [flow.preview, resourceGroups],
+  );
+  const unresolvedUniqueKeyCount = useMemo(
+    () => uniqueKeyPlans.reduce((total, item) => total + item.missingCount, 0),
+    [uniqueKeyPlans],
+  );
+  const unresolvedUniqueKeyMessage = unresolvedUniqueKeyCount
+    ? "请先补全模型唯一标识后再继续，避免最后导入时报错。"
+    : "";
 
   useEffect(() => {
     if (!editorOpen || !editorFocusPreviewKey) {
@@ -1929,11 +2804,179 @@ function ConfirmStage({
     setEditorFocusPreviewKey(null);
   };
 
+  useEffect(() => {
+    setMappingAcknowledged(ambiguousMappings.length === 0);
+  }, [ambiguousMappings.length, messageId]);
+
+  useEffect(() => {
+    autoAppliedUniqueKeyPlansRef.current = new Set();
+    setAutoResolvedUniqueKeys([]);
+  }, [messageId]);
+
+  useEffect(() => {
+    setUniqueKeySelections((current) => {
+      const next: Record<string, string> = {};
+      uniqueKeyPlans.forEach((item) => {
+        const key = `${item.ciType}::${item.uniqueKey}`;
+        const currentValue = current[key];
+        const recommendedField = item.candidates.find((candidate) => candidate.recommended)?.field || "";
+        next[key] = item.candidates.some((candidate) => candidate.field === currentValue)
+          ? currentValue
+          : recommendedField;
+      });
+      return next;
+    });
+  }, [uniqueKeyPlans, messageId]);
+
+  useEffect(() => {
+    if (!editorOpen) {
+      return;
+    }
+    const wrap = batchEditorWrapRef.current;
+    const topScrollbar = batchEditorTopScrollbarRef.current;
+    if (!wrap || !topScrollbar) {
+      return;
+    }
+
+    const syncDimensions = () => {
+      setBatchEditorScrollWidth(wrap.scrollWidth);
+      setBatchEditorViewportWidth(wrap.clientWidth);
+      topScrollbar.scrollLeft = wrap.scrollLeft;
+    };
+    const syncFromWrap = () => {
+      if (topScrollbar.scrollLeft !== wrap.scrollLeft) {
+        topScrollbar.scrollLeft = wrap.scrollLeft;
+      }
+    };
+    const syncFromTop = () => {
+      if (wrap.scrollLeft !== topScrollbar.scrollLeft) {
+        wrap.scrollLeft = topScrollbar.scrollLeft;
+      }
+    };
+
+    syncDimensions();
+    wrap.addEventListener("scroll", syncFromWrap);
+    topScrollbar.addEventListener("scroll", syncFromTop);
+    window.addEventListener("resize", syncDimensions);
+    const resizeObserver = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => syncDimensions())
+      : null;
+    resizeObserver?.observe(wrap);
+    const table = wrap.querySelector("table");
+    if (table) {
+      resizeObserver?.observe(table);
+    }
+    const rafId = window.requestAnimationFrame(syncDimensions);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      wrap.removeEventListener("scroll", syncFromWrap);
+      topScrollbar.removeEventListener("scroll", syncFromTop);
+      window.removeEventListener("resize", syncDimensions);
+      resizeObserver?.disconnect();
+    };
+  }, [batchEditorColumns.length, editorOpen, resourceGroups]);
+
+  const applyUniqueKeySelection = (ciType: string, uniqueKey: string, sourceField: string) => {
+    const uniqueKeyLabel = getUniqueKeyLabel(flow.preview || null, ciType) || getAttributeLabel(uniqueKey);
+    const sourceLabel = getAttributeLabel(sourceField);
+    setResourceGroups((current) =>
+      current.map((group) => {
+        if (group.ciType !== ciType) {
+          return group;
+        }
+        return {
+          ...group,
+          records: group.records.map((record) => {
+            if (!record.selected) {
+              return record;
+            }
+            const sourceValue = getRecordFieldValue(record, sourceField);
+            if (!sourceValue) {
+              return record;
+            }
+            const remainingIssues = (record.issues || []).filter(
+              (issue) => !String(issue.message || "").includes("唯一标识"),
+            );
+            const nextAttributes = {
+              ...record.attributes,
+              [uniqueKey]: sourceValue,
+            };
+            return {
+              ...record,
+              name: uniqueKey === "name" ? sourceValue : record.name,
+              attributes: nextAttributes,
+              issues: remainingIssues,
+              attentionFields: remainingIssues
+                .map((issue) => normalizeIssueFieldName(issue.field))
+                .filter(Boolean),
+              autoFilledHints: Array.from(new Set([
+                ...(record.autoFilledHints || []),
+                `${uniqueKeyLabel}已按${sourceLabel}批量补全`,
+              ])),
+            };
+          }),
+        };
+      }),
+    );
+  };
+
+  useEffect(() => {
+    const plansToApply = uniqueKeyPlans.filter((item) => shouldAutoApplyUniqueKeyPlan(item));
+    if (!plansToApply.length) {
+      return;
+    }
+    const pendingPlans = plansToApply.filter((item) => {
+      const key = `${item.ciType}::${item.uniqueKey}`;
+      return !autoAppliedUniqueKeyPlansRef.current.has(key);
+    });
+    if (!pendingPlans.length) {
+      return;
+    }
+
+    pendingPlans.forEach((item) => {
+      const sourceField = item.candidates[0]?.field;
+      if (!sourceField) {
+        return;
+      }
+      autoAppliedUniqueKeyPlansRef.current.add(`${item.ciType}::${item.uniqueKey}`);
+      applyUniqueKeySelection(item.ciType, item.uniqueKey, sourceField);
+      setAutoResolvedUniqueKeys((current) => {
+        const key = `${item.ciType}::${item.uniqueKey}`;
+        if (current.some((entry) => `${entry.ciType}::${entry.uniqueKey}` === key)) {
+          return current;
+        }
+        return [
+          ...current,
+          {
+            ciType: item.ciType,
+            label: item.label,
+            uniqueKey: item.uniqueKey,
+            uniqueKeyLabel: item.uniqueKeyLabel || item.uniqueKey,
+            uniqueKeyDisplay: item.uniqueKeyDisplay || item.uniqueKeyLabel || item.uniqueKey,
+            sourceField,
+            sourceLabel: item.candidates[0]?.label || getAttributeLabel(sourceField),
+          },
+        ];
+      });
+    });
+  }, [uniqueKeyPlans]);
+
   return (
     <div className="resource-import-conversation-card">
       <FlowSteps stage="confirm" />
 
       {flow.error ? <div className="resource-import-inline-error">{flow.error}</div> : null}
+      {blockingAnalysisIssues.length ? (
+        <div className="resource-import-inline-error">
+          <strong>{blockingAnalysisMessage}</strong>
+          <ul className="resource-import-issue-list">
+            {blockingAnalysisIssues.map((issue, index) => (
+              <li key={`${issue.fileName || issue.sheetName || "issue"}-${index}`}>{issue.message}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="resource-import-stage">
         <div className="resource-import-stat-grid">
@@ -1957,15 +3000,193 @@ function ConfirmStage({
 
         <section className="resource-import-section">
           <div className="resource-import-section-title">🔗 智能字段映射</div>
+          {ambiguousMappings.length ? (
+            <div className="resource-import-mapping-alert">
+              <div className="resource-import-inline-error">
+                以下字段同时命中了多个语义候选，系统已暂停自动写入这些列。请核对后继续；如确需保留其值，请在“统一编辑全部数据”中手动补到正确字段。
+              </div>
+              <div className="resource-import-ambiguous-list">
+                {aggregatedAmbiguousMappings.map((item, index) => (
+                  <div
+                    key={`${item.sourceField}-${item.candidates.map((candidate) => candidate.targetField).join("-")}-${index}`}
+                    className="resource-import-ambiguous-item"
+                  >
+                    <div className="resource-import-ambiguous-header">
+                      <strong>{item.sourceField}</strong>
+                      <span>{item.scopes.length} 个位置</span>
+                    </div>
+                    <p>{item.message || "该字段存在多语义候选，需人工确认。"}</p>
+                    <div className="resource-import-ambiguous-scopes">
+                      {item.scopes.map((scope) => (
+                        <span key={`${scope.fileName}-${scope.sheetName}`}>
+                          {scope.fileName ? `${scope.fileName} / ${scope.sheetName}` : scope.sheetName}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="resource-import-ambiguous-candidates">
+                      {(item.candidates || []).map((candidate) => (
+                        <span key={`${item.sourceField}-${candidate.targetField}`}>
+                          {candidate.targetField} · {candidate.confidence}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="resource-import-action-row">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => openBatchEditor()}
+                >
+                  先去统一编辑
+                </button>
+                <label className="resource-import-structure-check">
+                  <input
+                    type="checkbox"
+                    checked={mappingAcknowledged}
+                    onChange={(event) => setMappingAcknowledged(event.target.checked)}
+                  />
+                  <span>我已确认这些歧义列不会被自动写入，相关值已手动补录或决定忽略</span>
+                </label>
+              </div>
+            </div>
+          ) : null}
           <div className="resource-import-mapping-grid">
             {(flow.preview?.mappingSummary || []).slice(0, 8).map((item) => (
-              <div key={`${item.sourceField}-${item.targetField}`} className="resource-import-mapping-item">
-                <span>{item.sourceField}</span>
-                <strong>{item.targetField}</strong>
+              <div
+                key={`${item.fileName || "file"}-${item.sheetName || "sheet"}-${item.sourceField}-${item.targetField || item.suggestedTargetField || "unknown"}`}
+                className={`resource-import-mapping-item ${item.status || "mapped"}`.trim()}
+              >
+                <span>{item.fileName ? `${item.sheetName || "Sheet1"} / ${item.sourceField}` : item.sourceField}</span>
+                <strong>{item.status === "needs_confirmation" ? (item.suggestedTargetField || "待确认") : item.targetField}</strong>
+                <small>
+                  {getMappingStatusLabel(item.status)}
+                  {item.resolvedBy ? ` · ${item.resolvedBy}` : ""}
+                  {item.confidence ? ` · ${item.confidence}` : ""}
+                </small>
               </div>
             ))}
           </div>
         </section>
+
+        {uniqueKeyPlans.length || systemGeneratedUniqueKeyPlans.length ? (
+          <section className="resource-import-section">
+            <div className="resource-import-section-title">🔑 模型唯一标识处理</div>
+            <div className="resource-import-inline-notice">
+              CMDB 按模型定义唯一标识字段。业务主键会在这里按模型一次性补全；如果当前模型使用系统自增主键，会直接说明，无需你从源文件里选择来源列。
+            </div>
+            {autoResolvedUniqueKeys.length ? (
+              <div className="resource-import-inline-notice">
+                已自动识别并补全：
+                {autoResolvedUniqueKeys.map((item) => (
+                  ` ${item.label} 使用 ${item.sourceLabel}(${item.sourceField}) -> ${item.uniqueKeyDisplay}`
+                )).join("；")}
+              </div>
+            ) : null}
+            {unresolvedUniqueKeyMessage ? (
+              <div className="resource-import-inline-error">{unresolvedUniqueKeyMessage}</div>
+            ) : null}
+            <div className="resource-import-unique-key-list">
+              {systemGeneratedUniqueKeyPlans.map((item) => (
+                <div key={`${item.ciType}::${item.uniqueKey}::system`} className="resource-import-unique-key-card">
+                  <div className="resource-import-unique-key-header">
+                    <div>
+                      <strong>{item.label}</strong>
+                      <small>
+                        当前模型唯一标识：{item.uniqueKeyDisplay}
+                        {" · "}待补全 {item.missingCount}/{item.totalCount} 条
+                      </small>
+                    </div>
+                  </div>
+                  <div className="resource-import-inline-notice">
+                    该字段属于 CMDB 系统自增主键，本次导入不会从 Excel 补它；新建资源时会由 CMDB 自动生成。
+                  </div>
+                </div>
+              ))}
+              {uniqueKeyPlans.map((item) => {
+                const selectionKey = `${item.ciType}::${item.uniqueKey}`;
+                const selectedSourceField = uniqueKeySelections[selectionKey] || "";
+                return (
+                  <div key={selectionKey} className="resource-import-unique-key-card">
+                    <div className="resource-import-unique-key-header">
+                      <div>
+                        <strong>{item.label}</strong>
+                        <small>
+                          当前模型唯一标识：{item.uniqueKeyDisplay || item.uniqueKeyLabel || item.uniqueKey}
+                          {" · "}待补全 {item.missingCount}/{item.totalCount} 条
+                        </small>
+                      </div>
+                    </div>
+                    {item.candidates.length === 1 && item.candidates[0]?.recommended ? (
+                      <div className="resource-import-inline-notice">
+                        已自动识别最合理来源：{item.candidates[0].label} ({item.candidates[0].field})，
+                        将用于补全 {item.uniqueKeyDisplay || item.uniqueKeyLabel || item.uniqueKey}。
+                      </div>
+                    ) : null}
+                    <div className="resource-import-unique-key-row">
+                      {item.candidates.length === 1 && item.candidates[0]?.recommended ? (
+                        <div className="resource-import-unique-key-auto">
+                          <strong>{item.candidates[0].label} ({item.candidates[0].field})</strong>
+                          <span>{`覆盖 ${item.candidates[0].coverage}% · 唯一 ${item.candidates[0].distinctCoverage}%`}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <select
+                            value={selectedSourceField}
+                            onChange={(event) =>
+                              setUniqueKeySelections((current) => ({
+                                ...current,
+                                [selectionKey]: event.target.value,
+                              }))}
+                          >
+                            <option value="">请选择来源列</option>
+                            {item.candidates.map((candidate) => (
+                              <option key={`${selectionKey}-${candidate.field}`} value={candidate.field}>
+                                {candidate.recommended ? "推荐 · " : ""}
+                                {candidate.label} ({candidate.field})
+                                {` · 覆盖 ${candidate.coverage}% · 唯一 ${candidate.distinctCoverage}%`}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={!selectedSourceField}
+                            onClick={() => applyUniqueKeySelection(item.ciType, item.uniqueKey, selectedSourceField)}
+                          >
+                            一键补全本模型
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    {item.candidates.length ? (
+                      <div className="resource-import-unique-key-hints">
+                        {item.candidates.slice(0, 3).map((candidate) => (
+                          <span
+                            key={`${selectionKey}-${candidate.field}-hint`}
+                            className={candidate.recommended ? "recommended" : ""}
+                          >
+                            {candidate.recommended ? "推荐 · " : ""}
+                            {candidate.label}
+                            {` · 覆盖 ${candidate.coverage}% · 唯一 ${candidate.distinctCoverage}%`}
+                            {candidate.duplicateCount > 0 ? ` · 重复 ${candidate.duplicateCount} 条` : ""}
+                            {candidate.examples[0] ? ` · 例如 ${candidate.examples[0]}` : ""}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="resource-import-inline-error">
+                        当前模型唯一标识是 {item.uniqueKeyDisplay || item.uniqueKeyLabel || item.uniqueKey}。
+                        系统未找到足够高置信的来源列，请手动选择最接近的来源。
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
 
         <section className="resource-import-section cleaning">
           <div className="resource-import-section-title">✅ 数据清洗与标准化报告</div>
@@ -2068,6 +3289,11 @@ function ConfirmStage({
                                 {recordIssues[0]?.message || "字段待确认，请点编辑补齐"}
                               </small>
                             ) : null}
+                            {record.autoFilledHints?.length ? (
+                              <small className="resource-import-inline-autofill">
+                                {formatAutoFilledHint(record.autoFilledHints)}
+                              </small>
+                            ) : null}
                           </div>
                         </td>
                         <td>{getRecordAddress(record)}</td>
@@ -2124,18 +3350,27 @@ function ConfirmStage({
           <button
             type="button"
             className="primary"
-            disabled={flow.locked}
-            onClick={() =>
+            disabled={flow.locked || Boolean(blockingAnalysisMessage) || Boolean(unresolvedUniqueKeyMessage) || (ambiguousMappings.length > 0 && !mappingAcknowledged)}
+            onClick={() => {
+              const nextPreview = syncPreviewWithCurrentData(flow.preview || null, resourceGroups, relations);
               onBuildTopology({
                 messageId,
                 flowId: flow.flowId,
-                preview: flow.preview || null,
+                preview: nextPreview,
                 resourceGroups,
                 relations,
-              })
-            }
+              });
+            }}
           >
-            {flow.locked ? "已生成关系卡片" : "确认数据，建立关系 →"}
+            {flow.locked
+              ? "已生成关系卡片"
+              : blockingAnalysisMessage
+                ? "当前解析不完整，禁止继续"
+                : unresolvedUniqueKeyMessage
+                  ? "请先补全唯一标识"
+                : ambiguousMappings.length > 0 && !mappingAcknowledged
+                  ? "请先确认歧义字段映射"
+                  : "确认数据，建立关系 →"}
           </button>
         </div>
       </div>
@@ -2154,7 +3389,24 @@ function ConfirmStage({
             </div>
 
             <div className="resource-import-batch-editor">
-              <div className="resource-import-batch-editor-wrap">
+              {batchEditorScrollWidth > batchEditorViewportWidth ? (
+                <div className="resource-import-batch-editor-scroll-tip">
+                  左右字段较多，可直接拖动下方横向滚动条查看右侧列。
+                </div>
+              ) : null}
+              {batchEditorScrollWidth > batchEditorViewportWidth ? (
+                <div
+                  ref={batchEditorTopScrollbarRef}
+                  className="resource-import-batch-editor-top-scroll"
+                  aria-hidden="true"
+                >
+                  <div
+                    className="resource-import-batch-editor-top-scroll-inner"
+                    style={{ width: `${batchEditorScrollWidth}px` }}
+                  />
+                </div>
+              ) : null}
+              <div ref={batchEditorWrapRef} className="resource-import-batch-editor-wrap">
                 <table className="resource-import-batch-editor-table">
                   <thead>
                     <tr>
@@ -2310,7 +3562,7 @@ function ConfirmStage({
 
             <div className="resource-import-modal-footer">
               <div className="resource-import-inline-notice">
-                红色单元格表示当前字段仍需确认，关闭后主列表会继续保留红色提示。
+                红色单元格表示当前字段仍需确认。顶部滚动条可直接横向查看表头；若缺少主键，请优先在上方“模型唯一标识补全”里一次性处理。
               </div>
               <button type="button" className="primary" onClick={closeBatchEditor}>
                 完成编辑
@@ -2335,6 +3587,9 @@ function TopologyStage({
   onSubmitImport: ResourceImportConversationCardProps["onSubmitImport"];
 }) {
   const [relations, setRelations] = useState<ResourceImportRelation[]>(flow.relations || []);
+  const blockingAnalysisIssues = getBlockingAnalysisIssues(flow.preview);
+  const blockingAnalysisMessage = getBlockingAnalysisMessage(flow.preview);
+  const [topologyFullscreen, setTopologyFullscreen] = useState(false);
 
   useEffect(() => {
     setRelations(flow.relations || []);
@@ -2348,102 +3603,185 @@ function TopologyStage({
     () => relations.filter((relation) => relation.selected).length,
     [relations],
   );
+  const skippedRelationHints = useMemo(
+    () => (flow.preview?.logs || []).filter((item) =>
+      String(item || "").includes("关系")
+      && (String(item || "").includes("跳过") || String(item || "").includes("未配置") || String(item || "").includes("不支持")),
+    ).slice(-4),
+    [flow.preview?.logs],
+  );
 
   const topologyInsights = useMemo(() => {
     const selectedRelations = relations.filter((relation) => relation.selected);
     if (!selectedRelations.length) {
-      return ["已根据网段、命名和部署信息推断关系。"];
+      return [
+        {
+          key: "topology-insight-default",
+          text: "已根据网段、命名和部署信息推断关系。",
+        },
+      ];
     }
-    return selectedRelations.slice(0, 4).map((relation) => {
+    return selectedRelations.slice(0, 4).map((relation, index) => {
       const confidenceLabel =
         relation.confidence === "high"
           ? "高"
           : relation.confidence === "medium"
             ? "中"
             : "低";
-      return `${relation.reason || `${relation.sourceKey} → ${relation.targetKey}`}（${confidenceLabel}置信度）`;
+      return {
+        key: `${relation.sourceKey}-${relation.targetKey}-${relation.relationType}-${index}`,
+        text: `${relation.reason || `${relation.sourceKey} → ${relation.targetKey}`}（${confidenceLabel}置信度）`,
+      };
     });
   }, [relations]);
 
   const chartOption = useMemo(() => {
-    const nodes = (flow.resourceGroups || [])
-      .flatMap((group) => group.records)
-      .filter((record) => record.selected)
-      .map((record) => ({
-        id: record.previewKey,
-        name: record.name,
-        category: record.category,
-        symbolSize: record.generated ? 34 : 42,
-        value: record.ciType,
-      }));
-
-    const links = relations
-      .filter((relation) => relation.selected)
-      .map((relation) => ({
-        source: relation.sourceKey,
-        target: relation.targetKey,
-        value: relation.relationType,
-        label: {
-          show: true,
-          formatter: relation.relationType,
-          fontSize: 10,
-        },
-        lineStyle: {
-          opacity:
-            relation.confidence === "high"
-              ? 0.92
-              : relation.confidence === "medium"
-                ? 0.72
-                : 0.52,
-          width: relation.confidence === "high" ? 2 : 1,
-          curveness: 0.18,
-        },
-      }));
+    const { chartData, rootChildren } = buildTopologyTreeData(flow.resourceGroups || [], relations, {
+      collapsedDepth: 1,
+    });
 
     return {
       backgroundColor: "transparent",
       tooltip: {
         trigger: "item",
-      },
-      legend: [
-        {
-          bottom: 0,
-          textStyle: { color: "#64748b" },
-          data: ["resource", "business", "dcim", "ipam"],
+        formatter: (params: any) => {
+          const relationText = params?.data?.relationTypeFromParent
+            ? `<br/>关系: ${params.data.relationTypeFromParent}`
+            : "";
+          const descendantText = params?.data?.descendantCount
+            ? `<br/>下游资源: ${params.data.descendantCount}`
+            : "";
+          return `${params.data.name}<br/>${params.data.value || ""}${relationText}${descendantText}`;
         },
-      ],
+      },
       series: [
         {
-          type: "graph",
-          layout: "force",
+          type: "tree",
           roam: true,
-          force: {
-            repulsion: 220,
-            edgeLength: 110,
-          },
-          categories: [
-            { name: "resource" },
-            { name: "business" },
-            { name: "dcim" },
-            { name: "ipam" },
-          ],
+          data: [chartData],
+          top: "6%",
+          left: "4%",
+          bottom: "6%",
+          right: "28%",
+          orient: "LR",
+          symbol: "circle",
+          symbolSize: 9,
+          edgeShape: "polyline",
+          edgeForkPosition: "50%",
+          initialTreeDepth: 2,
+          expandAndCollapse: true,
+          animationDuration: 500,
+          animationDurationUpdate: 750,
           label: {
             show: true,
-            color: "#334155",
-            fontSize: 11,
+            position: "right",
+            verticalAlign: "middle",
+            align: "left",
+            offset: [0, 0],
           },
           lineStyle: {
-            color: "#94a3b8",
+            color: "#cbd5e1",
+            width: 1.2,
+            curveness: 0.12,
           },
-          itemStyle: {
-            borderColor: "rgba(255,255,255,0.9)",
-            borderWidth: 1.2,
+          leaves: {
+            label: {
+              position: "right",
+              align: "left",
+            },
           },
-          color: ["#5aa7ff", "#7c3aed", "#f59e0b", "#14b8a6"],
-          data: nodes,
-          links,
+          emphasis: {
+            focus: "descendant",
+          },
         },
       ],
+      graphic: !rootChildren.length ? [
+        {
+          type: "text",
+          left: "center",
+          top: "middle",
+          style: {
+            text: "暂无可展示的拓扑树",
+            fill: "#64748b",
+            fontSize: 14,
+          },
+        },
+      ] : [],
+    };
+  }, [flow.resourceGroups, relations]);
+
+  const fullscreenChartOption = useMemo(() => {
+    const { chartData, rootChildren } = buildTopologyTreeData(flow.resourceGroups || [], relations, {
+      collapsedDepth: 2,
+    });
+
+    return {
+      backgroundColor: "transparent",
+      tooltip: {
+        trigger: "item",
+        formatter: (params: any) => {
+          const relationText = params?.data?.relationTypeFromParent
+            ? `<br/>关系: ${params.data.relationTypeFromParent}`
+            : "";
+          const descendantText = params?.data?.descendantCount
+            ? `<br/>下游资源: ${params.data.descendantCount}`
+            : "";
+          return `${params.data.name}<br/>${params.data.value || ""}${relationText}${descendantText}`;
+        },
+      },
+      series: [
+        {
+          type: "tree",
+          roam: true,
+          data: [chartData],
+          top: "6%",
+          left: "4%",
+          bottom: "6%",
+          right: "28%",
+          orient: "LR",
+          symbol: "circle",
+          symbolSize: 9,
+          edgeShape: "polyline",
+          edgeForkPosition: "50%",
+          initialTreeDepth: 3,
+          expandAndCollapse: true,
+          animationDuration: 500,
+          animationDurationUpdate: 750,
+          label: {
+            show: true,
+            position: "right",
+            verticalAlign: "middle",
+            align: "left",
+            offset: [0, 0],
+          },
+          lineStyle: {
+            color: "#cbd5e1",
+            width: 1.2,
+            curveness: 0.12,
+          },
+          leaves: {
+            label: {
+              position: "right",
+              align: "left",
+            },
+          },
+          emphasis: {
+            focus: "descendant",
+          },
+        },
+      ],
+      graphic: !rootChildren.length ? [
+        {
+          type: "text",
+          left: "center",
+          top: "middle",
+          style: {
+            text: "暂无可展示的拓扑树",
+            fill: "#64748b",
+            fontSize: 14,
+          },
+        },
+      ] : [],
     };
   }, [flow.resourceGroups, relations]);
 
@@ -2452,6 +3790,16 @@ function TopologyStage({
       <FlowSteps stage="topology" />
 
       <div className="resource-import-stage">
+        {blockingAnalysisIssues.length ? (
+          <div className="resource-import-inline-error">
+            <strong>{blockingAnalysisMessage}</strong>
+            <ul className="resource-import-issue-list">
+              {blockingAnalysisIssues.map((issue, index) => (
+                <li key={`${issue.fileName || issue.sheetName || "issue"}-${index}`}>{issue.message}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <section className="resource-import-section topology">
           <div className="resource-import-section-title">🧠 智能拓扑推断</div>
           <div className="resource-import-topology-summary">
@@ -2461,7 +3809,7 @@ function TopologyStage({
           </div>
           <ul className="resource-import-insight-list">
             {topologyInsights.map((item) => (
-              <li key={item}>{item}</li>
+              <li key={item.key}>{item.text}</li>
             ))}
           </ul>
         </section>
@@ -2471,13 +3819,29 @@ function TopologyStage({
             <div className="resource-import-section-title">🔗 资源拓扑关系</div>
             <span className="resource-import-section-subtitle">{selectedRelationCount} 条关系</span>
           </div>
+          <div className="resource-import-action-row">
+            <span className="resource-import-section-subtitle">默认仅展开主干，点击节点可继续展开分支</span>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setTopologyFullscreen(true)}
+            >
+              全屏查看树状拓扑
+            </button>
+          </div>
           <div className="resource-import-topology-chart">
-            <ReactECharts option={chartOption} style={{ height: 320 }} notMerge lazyUpdate />
+            <ReactECharts option={chartOption} style={{ height: "100%", width: "100%" }} notMerge lazyUpdate />
           </div>
         </section>
 
         <section className="resource-import-section">
           <div className="resource-import-section-title">推断的关系列表</div>
+          {!relations.length ? (
+            <div className="resource-import-inline-notice">
+              当前没有生成可展示的关系。
+              {skippedRelationHints.length ? ` 可能原因：${skippedRelationHints.join("；")}` : " 可能是本次数据缺少足够的关联线索，或相关模型关系在 CMDB 中尚未配置。"}
+            </div>
+          ) : null}
           <div className="resource-import-relation-list">
             {relations.map((relation) => (
               <label
@@ -2542,22 +3906,42 @@ function TopologyStage({
             <button
               type="button"
               className="primary"
-              disabled={flow.locked}
-              onClick={() =>
+              disabled={flow.locked || Boolean(blockingAnalysisMessage)}
+              onClick={() => {
+                const nextPreview = syncPreviewWithCurrentData(flow.preview || null, flow.resourceGroups || [], relations);
                 onSubmitImport({
                   messageId,
                   flowId: flow.flowId,
-                  preview: flow.preview || null,
+                  preview: nextPreview,
                   resourceGroups: flow.resourceGroups || [],
                   relations,
-                })
-              }
+                });
+              }}
             >
-              {flow.locked ? "导入任务已启动" : "确认导入CMDB"}
+              {flow.locked ? "导入任务已启动" : blockingAnalysisMessage ? "当前解析不完整，禁止导入" : "确认导入CMDB"}
             </button>
           ) : null}
         </div>
       </div>
+
+      {topologyFullscreen ? (
+        <div className="resource-import-modal-backdrop" onClick={() => setTopologyFullscreen(false)}>
+          <div className="resource-import-modal wide resource-import-topology-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="resource-import-modal-header">
+              <div>
+                <h3>树状资源拓扑</h3>
+                <p>可拖拽、缩放查看完整层级关系。</p>
+              </div>
+              <button type="button" className="secondary" onClick={() => setTopologyFullscreen(false)}>
+                关闭
+              </button>
+            </div>
+            <div className="resource-import-topology-chart fullscreen">
+              <ReactECharts option={fullscreenChartOption} style={{ height: "100%", width: "100%" }} notMerge lazyUpdate />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -2601,6 +3985,14 @@ function ResultStage({
   const structureResults = flow.result?.structureResults || [];
   const resourceResults = flow.result?.resourceResults || [];
   const relationResults = flow.result?.relationResults || [];
+  const recordMap = useMemo(
+    () => new Map(
+      (flow.resourceGroups || [])
+        .flatMap((group) => group.records || [])
+        .map((record) => [String(record.previewKey || ""), record] as const),
+    ),
+    [flow.resourceGroups],
+  );
 
   return (
     <div className="resource-import-conversation-card">
@@ -2686,7 +4078,7 @@ function ResultStage({
               {resourceResults.map((item) => (
                 <div key={item.previewKey} className={`resource-import-result-item ${item.status}`.trim()}>
                   <div>
-                    <strong>{item.previewKey}</strong>
+                    <strong>{getResultItemTitle(item, recordMap)}</strong>
                     <p>{item.message}</p>
                   </div>
                   <div className="resource-import-result-meta">
@@ -2737,7 +4129,7 @@ function ResultStage({
             className="primary"
             onClick={() => onOpenSystemTopology({ flowId: flow.flowId })}
           >
-            查看完整拓扑
+            查看本次导入拓扑
           </button>
         </div>
       </div>

@@ -9,6 +9,9 @@ import type {
 const DEFAULT_PORTAL_API_BASE_URL = "/portal-api";
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_FALLBACK_AGENT_ID = "default";
+const RESOURCE_IMPORT_UPLOAD_TIMEOUT_MS: number | null = null;
+const RESOURCE_IMPORT_POLL_TIMEOUT_MS = 60000;
+const RESOURCE_IMPORT_POLL_RETRY_LIMIT = 6;
 
 const PORTAL_API_BASE_URL = (
   import.meta.env.VITE_PORTAL_API_BASE_URL || DEFAULT_PORTAL_API_BASE_URL
@@ -27,7 +30,7 @@ function isMissingAgentResponse(status: number, errorText?: string) {
 async function requestPortalApi<T = unknown>(
   path: string,
   init: RequestInit = {},
-  timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  timeoutMs: number | null = DEFAULT_REQUEST_TIMEOUT_MS,
   agentId?: string,
 ): Promise<T> {
   const agentCandidates = getAgentCandidates(agentId);
@@ -36,7 +39,9 @@ async function requestPortalApi<T = unknown>(
 
   for (const candidateAgentId of agentCandidates) {
     const controller = new AbortController();
-    const timerId = window.setTimeout(() => controller.abort(), timeoutMs);
+    const timerId = timeoutMs && timeoutMs > 0
+      ? window.setTimeout(() => controller.abort(), timeoutMs)
+      : null;
 
     try {
       const response = await fetch(`${PORTAL_API_BASE_URL}${path}`, {
@@ -63,7 +68,9 @@ async function requestPortalApi<T = unknown>(
       }
       throw error;
     } finally {
-      window.clearTimeout(timerId);
+      if (timerId !== null) {
+        window.clearTimeout(timerId);
+      }
     }
   }
 
@@ -87,7 +94,7 @@ export function startResourceImportPreview(files: File[], agentId?: string) {
       method: "POST",
       body: formData,
     },
-    30000,
+    RESOURCE_IMPORT_UPLOAD_TIMEOUT_MS,
     agentId,
   );
 }
@@ -96,7 +103,7 @@ export function getResourceImportPreviewJob(jobId: string, agentId?: string) {
   return requestPortalApi<ResourceImportPreviewJob>(
     `/resource-import/preview/${encodeURIComponent(jobId)}`,
     {},
-    30000,
+    RESOURCE_IMPORT_POLL_TIMEOUT_MS,
     agentId,
   );
 }
@@ -117,6 +124,7 @@ export async function previewResourceImport(
   options?.onProgress?.(initialJob);
 
   let currentJob = initialJob;
+  let consecutivePollFailures = 0;
   while (Date.now() - startedAt <= maxWaitMs) {
     if (currentJob.status === "completed" && currentJob.preview) {
       return currentJob.preview;
@@ -125,8 +133,16 @@ export async function previewResourceImport(
       throw new Error(currentJob.error || "资源解析失败");
     }
     await new Promise((resolve) => window.setTimeout(resolve, pollIntervalMs));
-    currentJob = await getResourceImportPreviewJob(initialJob.jobId, agentId);
-    options?.onProgress?.(currentJob);
+    try {
+      currentJob = await getResourceImportPreviewJob(initialJob.jobId, agentId);
+      consecutivePollFailures = 0;
+      options?.onProgress?.(currentJob);
+    } catch (error: any) {
+      consecutivePollFailures += 1;
+      if (consecutivePollFailures >= RESOURCE_IMPORT_POLL_RETRY_LIMIT) {
+        throw error;
+      }
+    }
   }
 
   throw new Error("资源解析超时，请稍后重试");

@@ -5,7 +5,7 @@ import {
   getFaultScenarioDrawerClassName,
   getFaultScenarioResult,
   getFaultScenarioSummary,
-} from './shared.ts';
+} from './shared';
 
 test('adds dark theme class for fault scenario drawer portals', () => {
   assert.equal(getFaultScenarioDrawerClassName('dark'), 'fault-scenario-log-drawer theme-dark');

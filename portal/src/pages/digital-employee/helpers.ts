@@ -35,6 +35,13 @@ function looksLikeEChartsConfig(raw: string) {
     return false;
   }
 
+  const hasEChartsSignal =
+    /(^|[,{]\s*)(series|xAxis|yAxis|tooltip|legend|dataset|graphic|grid|title|radar|visualMap)\s*:/.test(text)
+    || /(^|[,{]\s*)["'](series|xAxis|yAxis|tooltip|legend|dataset|graphic|grid|title|radar|visualMap)["']\s*:/.test(text);
+  if (!hasEChartsSignal) {
+    return false;
+  }
+
   try {
     const parsed = JSON.parse(text) as Record<string, unknown>;
     return Boolean(
@@ -43,11 +50,14 @@ function looksLikeEChartsConfig(raw: string) {
       && (
         Array.isArray(parsed.series)
         || Array.isArray((parsed as { xAxis?: { data?: unknown[] } }).xAxis?.data)
+        || Array.isArray((parsed as { yAxis?: unknown[] }).yAxis)
+        || "title" in parsed
+        || "tooltip" in parsed
         || "__mockStream" in parsed
       ),
     );
   } catch {
-    return false;
+    return hasEChartsSignal;
   }
 }
 
@@ -1008,14 +1018,14 @@ export function normalizeMarkdownDisplayContent(
       .replace(/```echarts\s*[\s\S]*?```/gi, "")
       .replace(/```portal-visualization\s*[\s\S]*?```/gi, "")
       .replace(/```portal-action[\s\S]*$/i, "")
-      .replace(/```json\s*([\s\S]*?)```/gi, (fullMatch, raw) =>
+      .replace(/```(?:json|js|javascript|ts|typescript)\s*([\s\S]*?)```/gi, (fullMatch, raw) =>
         looksLikeEChartsConfig(raw) ? "" : fullMatch,
       )
       .replace(/```echarts[\s\S]*$/i, "\n\n> 图表加载中，正在生成可视化配置...\n\n")
       .replace(/```portal-visualization[\s\S]*$/i, "\n\n> 图表加载中，正在生成可视化配置...\n\n");
   } else {
     normalized = normalized.replace(/```(?:echarts|portal-visualization)\s*[\s\S]*?```/gi, "");
-    normalized = normalized.replace(/```json\s*([\s\S]*?)```/gi, (fullMatch, raw) => {
+    normalized = normalized.replace(/```(?:json|js|javascript|ts|typescript)\s*([\s\S]*?)```/gi, (fullMatch, raw) => {
       return looksLikeEChartsConfig(raw) ? "" : fullMatch;
     });
   }
@@ -1259,7 +1269,13 @@ export function extractVisualBlocks(content: string): VisualBlock[] {
     if (!raw) {
       continue;
     }
-    if (type === "echarts" || (type === "json" && looksLikeEChartsConfig(raw))) {
+    if (
+      type === "echarts"
+      || (
+        ["json", "js", "javascript", "ts", "typescript"].includes(type)
+        && looksLikeEChartsConfig(raw)
+      )
+    ) {
       blocks.push({
         type: "echarts",
         raw,

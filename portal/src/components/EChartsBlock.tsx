@@ -401,6 +401,52 @@ function parseEChartsConfig(chart: string) {
     echartsRenderCache.set(trimmedChart, config);
     return config;
   } catch (e) {
+    try {
+      if (
+        trimmedChart.startsWith("{")
+        && trimmedChart.endsWith("}")
+        && !/\b(?:window|document|globalThis|self|top|parent|frames|fetch|XMLHttpRequest|WebSocket|Worker|SharedWorker|import|export|eval|Function|constructor|prototype|__proto__|localStorage|sessionStorage|navigator|location|history|alert|confirm|prompt|setTimeout|setInterval|requestAnimationFrame|new)\b/.test(trimmedChart)
+      ) {
+        const factory = new Function(`
+          "use strict";
+          const window = undefined;
+          const document = undefined;
+          const globalThis = undefined;
+          const self = undefined;
+          const top = undefined;
+          const parent = undefined;
+          const frames = undefined;
+          const fetch = undefined;
+          const XMLHttpRequest = undefined;
+          const WebSocket = undefined;
+          const Worker = undefined;
+          const SharedWorker = undefined;
+          const importScripts = undefined;
+          const localStorage = undefined;
+          const sessionStorage = undefined;
+          const navigator = undefined;
+          const location = undefined;
+          const history = undefined;
+          const alert = undefined;
+          const confirm = undefined;
+          const prompt = undefined;
+          const eval = undefined;
+          const Function = undefined;
+          const setTimeout = undefined;
+          const setInterval = undefined;
+          const requestAnimationFrame = undefined;
+          return (${trimmedChart});
+        `);
+        const config = factory();
+        if (config && typeof config === "object") {
+          echartsRenderCache.set(trimmedChart, config);
+          return config;
+        }
+      }
+    } catch (objectLiteralError) {
+      console.error("Failed to parse ECharts object literal:", objectLiteralError);
+    }
+
     const functionLiterals = replaceFunctionLiterals(trimmedChart);
     if (!functionLiterals) {
       console.error("Failed to parse ECharts config:", e);

@@ -5,6 +5,7 @@ import csv
 import html
 import io
 import json
+import logging
 import os
 import re
 import zipfile
@@ -21,6 +22,8 @@ import httpx
 import pandas as pd
 from dotenv import dotenv_values
 
+LOGGER = logging.getLogger(__name__)
+
 DEFAULT_SUPPORTED_FORMATS = [
     ".csv",
     ".tsv",
@@ -36,6 +39,21 @@ DEFAULT_SUPPORTED_FORMATS = [
 ]
 
 DEFAULT_RELATION_TYPES = ["contain", "deploy", "install", "connect"]
+
+OS_LIKE_PLATFORM_TOKENS = {
+    "linux",
+    "windows",
+    "unix",
+    "ubuntu",
+    "debian",
+    "centos",
+    "redhat",
+    "rhel",
+    "suse",
+    "aix",
+    "macos",
+    "osx",
+}
 
 DEFAULT_MODEL_TEMPLATES = [
     {"name": "Department", "alias": "部门", "unique_key": "name"},
@@ -111,10 +129,26 @@ DEFAULT_GROUP_HINTS = {
 }
 
 FIELD_ALIASES = {
-    "asset_code": ["asset_code", "资产编号", "资源编号", "设备编号", "设备编码", "实例编号", "sn编号", "p_id", "pid"],
+    "asset_code": [
+        "asset_code",
+        "资产编号",
+        "资源编号",
+        "设备编号",
+        "设备编码",
+        "实例编号",
+        "资源主键",
+        "主键",
+        "唯一标识",
+        "唯一键",
+        "sn编号",
+        "p_id",
+        "pid",
+    ],
     "name": [
         "name",
         "名称",
+        "应用名称",
+        "业务应用名称",
         "设备名称",
         "资源名称",
         "实例名",
@@ -133,14 +167,15 @@ FIELD_ALIASES = {
         "host name",
         "server name",
     ],
-    "ci_type": ["ci_type", "type", "资源类型", "设备类型", "实例类型", "设备大类", "组件类别", "模型", "类型", "_type"],
+    "ci_type": ["ci_type", "type", "资源类型", "资源分类", "设备类型", "实例类型", "设备大类", "组件类别", "模型", "类型", "_type"],
     "private_ip": [
         "private_ip",
         "ip",
         "ip地址",
-        "管理ip",
-        "管理地址",
-        "管理ip地址",
+        "内网地址",
+        "组件地址",
+        "数据库地址",
+        "实例地址",
         "内网ip",
         "ip address",
         "address",
@@ -156,8 +191,18 @@ FIELD_ALIASES = {
     "server_room": ["server_room", "机房分区", "机房区域", "server room"],
     "rack": ["rack", "机柜", "机柜位置"],
     "subnet": ["subnet", "网段", "子网", "cidr"],
-    "host_name": ["host_name", "宿主机", "部署主机", "主机", "所属主机", "宿主机/集群"],
-    "deploy_target": ["deploy_target", "部署目标", "运行节点", "部署节点", "AssociatedVM", "AssociatedPhyMachine"],
+    "host_name": ["host_name", "宿主机", "部署主机", "主机", "所属主机", "宿主机/集群", "承载物理机"],
+    "deploy_target": [
+        "deploy_target",
+        "部署目标",
+        "运行节点",
+        "部署节点",
+        "部署虚机",
+        "宿主机地址",
+        "承载物理机",
+        "AssociatedVM",
+        "AssociatedPhyMachine",
+    ],
     "upstream_resource": ["upstream_resource", "上联核心", "上级设备", "上联设备"],
     "os_version": ["os_version", "操作系统", "操作系统版本", "os", "系统版本"],
     "vendor": ["vendor", "厂商", "品牌", "厂商品牌"],
@@ -207,7 +252,7 @@ RELATION_TYPE_ALIASES = {
 CI_TYPE_ALIASES = {
     "Department": ["department", "部门", "bu", "业务单元"],
     "product": ["product", "产品", "产品线"],
-    "project": ["project", "应用", "项目", "业务系统", "system"],
+    "project": ["project", "应用", "项目", "业务系统", "应用系统", "系统应用", "业务应用", "application", "app", "system"],
     "PhysicalMachine": ["physicalmachine", "物理机", "服务器", "server", "裸机"],
     "vserver": ["vserver", "虚拟机", "vm", "虚机"],
     "networkdevice": ["networkdevice", "交换机", "路由器", "防火墙", "网络设备", "switch", "router", "firewall"],
@@ -278,6 +323,146 @@ SOFTWARE_RESOURCE_TYPES = {
     "docker",
     "kubernetes",
 }
+
+SEMANTIC_MODEL_RULES = [
+    {
+        "name": "PhysicalMachine",
+        "keywords": ["physical", "baremetal", "物理机", "裸机", "实体机", "服务器", "宿主机"],
+        "field_keywords": ["rack", "cabinet", "u_count", "u_start", "vendor", "model", "property_no"],
+        "preferred_models": ["PhysicalMachine"],
+        "specific": False,
+    },
+    {
+        "name": "vserver",
+        "keywords": ["virtual", "vm", "vserver", "虚拟机", "虚机", "云主机", "云服务器", "ecs"],
+        "field_keywords": ["host_ip", "host_name", "ssh_port"],
+        "preferred_models": ["vserver"],
+        "specific": False,
+    },
+    {
+        "name": "networkdevice",
+        "keywords": [
+            "network",
+            "switch",
+            "router",
+            "firewall",
+            "loadbalance",
+            "网络设备",
+            "交换机",
+            "路由器",
+            "防火墙",
+            "负载均衡",
+        ],
+        "field_keywords": [
+            "dev_no",
+            "dev_name",
+            "dev_model",
+            "dev_class",
+            "dev_sn",
+            "manage_ip",
+            "proto_snmp",
+            "snmp_port",
+        ],
+        "preferred_models": ["networkdevice"],
+        "specific": False,
+    },
+    {
+        "name": "database",
+        "keywords": [
+            "database",
+            "数据库",
+            "db实例",
+            "dbinstance",
+            "datasource",
+            "sql",
+            "时序",
+            "timeseries",
+            "metrics",
+            "victoria",
+            "victoriametrics",
+            "tsdb",
+        ],
+        "field_keywords": ["db_instance", "db_port", "db_ip", "db_name", "db_type"],
+        "preferred_models": ["database"],
+        "specific": False,
+    },
+    {
+        "name": "mysql",
+        "keywords": ["mysql", "mariadb"],
+        "port_values": ["3306"],
+        "preferred_models": ["mysql"],
+        "specific": True,
+    },
+    {
+        "name": "PostgreSQL",
+        "keywords": ["postgres", "postgresql", "pgsql", "pg实例", "pg数据库", "postgres实例", "postgres库", "pg"],
+        "port_values": ["5432"],
+        "preferred_models": ["PostgreSQL"],
+        "specific": True,
+    },
+    {
+        "name": "redis",
+        "keywords": ["redis", "cache", "缓存", "缓存服务", "keyvalue", "key-value", "kv"],
+        "field_keywords": ["middleware_name", "middleware_port", "cache_port", "redis_port"],
+        "port_values": ["6379"],
+        "preferred_models": ["redis"],
+        "specific": True,
+    },
+    {
+        "name": "Kafka",
+        "keywords": ["kafka", "mq", "messagequeue", "消息", "消息队列", "topic", "stream", "broker"],
+        "field_keywords": ["middleware_name", "middleware_port", "topic", "broker"],
+        "port_values": ["9092"],
+        "preferred_models": ["Kafka"],
+        "specific": True,
+    },
+    {
+        "name": "elasticsearch",
+        "keywords": ["elasticsearch", "opensearch", "solr", "search", "搜索", "检索", "搜索引擎", "索引"],
+        "field_keywords": ["middleware_name", "middleware_port", "index", "search_cluster"],
+        "port_values": ["9200", "9300"],
+        "preferred_models": ["elasticsearch"],
+        "specific": True,
+    },
+    {
+        "name": "nginx",
+        "keywords": ["nginx", "gateway", "proxy", "ingress", "网关", "反向代理"],
+        "field_keywords": ["middleware_name", "middleware_port", "upstream_resource"],
+        "port_values": ["80", "443"],
+        "preferred_models": ["nginx"],
+        "specific": True,
+    },
+    {
+        "name": "apache",
+        "keywords": ["apache", "httpd", "webserver", "web服务", "http服务"],
+        "field_keywords": ["middleware_name", "middleware_port"],
+        "port_values": ["80", "443"],
+        "preferred_models": ["apache"],
+        "specific": True,
+    },
+    {
+        "name": "docker",
+        "keywords": ["docker", "container", "容器", "容器实例", "containerinstance", "镜像", "image"],
+        "field_keywords": ["container_id", "image", "container_name", "container_image"],
+        "preferred_models": ["docker"],
+        "specific": True,
+    },
+    {
+        "name": "kubernetes",
+        "keywords": ["kubernetes", "k8s", "cluster", "namespace", "pod", "集群", "容器平台"],
+        "field_keywords": ["namespace", "pod", "cluster", "node", "service_name"],
+        "preferred_models": ["kubernetes"],
+        "specific": True,
+    },
+]
+
+SEMANTIC_REFINEMENT_MODELS = {
+    "unknown",
+    "database",
+    "networkdevice",
+    "PhysicalMachine",
+    "vserver",
+}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 PRIMARY_RESOURCE_FIELDS = {
     "asset_code",
@@ -303,10 +488,26 @@ RESOURCE_VALUE_FIELDS = PRIMARY_RESOURCE_FIELDS | {
 EXCLUDED_SHEET_KEYWORDS = ("测试", "说明", "readme", "示例", "样例")
 RELATION_SHEET_KEYWORDS = ("relation", "relations", "关系", "拓扑", "链路", "依赖", "mapping")
 RESOURCE_IMPORT_LLM_STEP_TIMEOUT_SECONDS = float(
-    os.environ.get("RESOURCE_IMPORT_LLM_STEP_TIMEOUT", "180"),
+    os.environ.get("RESOURCE_IMPORT_LLM_STEP_TIMEOUT", "45"),
 )
 RESOURCE_IMPORT_LLM_STEP_TIMEOUT_MAX_SECONDS = float(
-    os.environ.get("RESOURCE_IMPORT_LLM_STEP_TIMEOUT_MAX", "600"),
+    os.environ.get("RESOURCE_IMPORT_LLM_STEP_TIMEOUT_MAX", "120"),
+)
+RESOURCE_IMPORT_LLM_RETRY_COUNT = max(
+    1,
+    int(os.environ.get("RESOURCE_IMPORT_LLM_RETRY_COUNT", "4")),
+)
+RESOURCE_IMPORT_LLM_RETRY_BACKOFF_SECONDS = max(
+    0.0,
+    float(os.environ.get("RESOURCE_IMPORT_LLM_RETRY_BACKOFF_SECONDS", "1.5")),
+)
+RESOURCE_IMPORT_LLM_SHEET_PARALLELISM = max(
+    1,
+    int(os.environ.get("RESOURCE_IMPORT_LLM_SHEET_PARALLELISM", "2")),
+)
+RESOURCE_IMPORT_LLM_BLOCKING_RECOVERY_RETRY_COUNT = max(
+    1,
+    int(os.environ.get("RESOURCE_IMPORT_LLM_BLOCKING_RECOVERY_RETRY_COUNT", "3")),
 )
 RESOURCE_IMPORT_PRECHECK_LIMIT = int(
     os.environ.get("RESOURCE_IMPORT_PRECHECK_LIMIT", "12"),
@@ -330,12 +531,22 @@ class SheetMappingPlan:
     default_ci_type: str
     mappings: dict[str, tuple[str, str]]
     reason: str = ""
+    mapping_details: dict[str, dict[str, Any]] | None = None
 
 
 @dataclass
 class ResourceImportRuntime:
     client: Any | None
     source: str
+
+
+@dataclass
+class SemanticModelPlan:
+    best_model: str
+    confidence: str
+    reason: str = ""
+    candidates: list[dict[str, Any]] | None = None
+    source: str = "heuristic"
 
 
 def _emit_progress(
@@ -367,14 +578,133 @@ def _should_retry_llm_mapping(exc: Exception) -> bool:
             "too_many_requests",
             "rate limit",
             "429",
+            "503",
+            "504",
             "connection",
             "connect",
             "temporarily unavailable",
             "service unavailable",
             "network",
             "reset by peer",
+            "gateway timeout",
+            "timeout",
+            "timed out",
         )
     )
+
+
+def _llm_retry_sleep_seconds(attempt_index: int) -> float:
+    if attempt_index <= 0:
+        return 0.0
+    base_delay = RESOURCE_IMPORT_LLM_RETRY_BACKOFF_SECONDS
+    return min(base_delay * (2 ** (attempt_index - 1)), 12.0)
+
+
+def _llm_retry_sleep_seconds_for_error(exc: Exception | None, attempt_index: int) -> float:
+    if attempt_index <= 0:
+        return 0.0
+    text = _clean_text(exc).lower()
+    if any(token in text for token in ("too_many_requests", "rate limit", "429", "700010", "并发已达上限")):
+        base_delay = max(RESOURCE_IMPORT_LLM_RETRY_BACKOFF_SECONDS, 3.0)
+        return min(base_delay * (2 ** (attempt_index - 1)), 24.0)
+    if any(token in text for token in ("timeout", "timed out", "gateway timeout", "504")):
+        base_delay = max(RESOURCE_IMPORT_LLM_RETRY_BACKOFF_SECONDS, 2.0)
+        return min(base_delay * (2 ** (attempt_index - 1)), 18.0)
+    return _llm_retry_sleep_seconds(attempt_index)
+
+
+def _build_analysis_issue(
+    *,
+    kind: str,
+    severity: str,
+    message: str,
+    file_name: str = "",
+    sheet_name: str = "",
+) -> dict[str, str]:
+    return {
+        "kind": kind,
+        "severity": severity,
+        "message": message,
+        "fileName": file_name,
+        "sheetName": sheet_name,
+    }
+
+
+def _mapping_mode_to_analysis_issue(
+    *,
+    file_name: str,
+    sheet_name: str,
+    mapping_mode: str,
+    sheet_kind: str,
+) -> dict[str, str] | None:
+    if sheet_kind != "asset":
+        return None
+    normalized_mode = _clean_text(mapping_mode)
+    if normalized_mode.startswith("规则映射（LLM不可用"):
+        return _build_analysis_issue(
+            kind="sheet_mapping",
+            severity="blocking",
+            file_name=file_name,
+            sheet_name=sheet_name,
+            message=(
+                f"{file_name} / {sheet_name} 在字段语义映射阶段因 LLM 不可用降级为规则映射，"
+                "当前结果可能遗漏部分资源类型或字段，请重新解析后再导入。"
+            ),
+        )
+    if normalized_mode.startswith("规则映射（LLM超时"):
+        return _build_analysis_issue(
+            kind="sheet_mapping",
+            severity="blocking",
+            file_name=file_name,
+            sheet_name=sheet_name,
+            message=(
+                f"{file_name} / {sheet_name} 在字段语义映射阶段因 LLM 超时降级为规则映射，"
+                "当前结果可能不完整，请重新解析后再导入。"
+            ),
+        )
+    return None
+
+
+def _is_retryable_blocking_mapping_mode(mapping_mode: str, sheet_kind: str) -> bool:
+    if _clean_text(sheet_kind) != "asset":
+        return False
+    normalized_mode = _clean_text(mapping_mode)
+    return (
+        normalized_mode.startswith("规则映射（LLM不可用")
+        or normalized_mode.startswith("规则映射（LLM超时")
+    )
+
+
+def _validate_preview_analysis_for_import(preview: dict[str, Any]) -> None:
+    analysis_status = _clean_text(preview.get("analysisStatus"))
+    analysis_issues = preview.get("analysisIssues") or []
+    if analysis_status != "blocking":
+        return
+    blocking_messages = [
+        _clean_text(item.get("message"))
+        for item in analysis_issues
+        if isinstance(item, dict) and _clean_text(item.get("severity")) == "blocking" and _clean_text(item.get("message"))
+    ]
+    detail = "；".join(blocking_messages[:3])
+    if not detail:
+        detail = "本次解析存在关键分析失败，当前不允许导入。"
+    raise RuntimeError(f"本次资源解析结果不完整，已禁止导入：{detail}")
+
+
+def _validate_preview_analysis_for_preview(preview: dict[str, Any]) -> None:
+    analysis_status = _clean_text(preview.get("analysisStatus"))
+    if analysis_status != "blocking":
+        return
+    analysis_issues = preview.get("analysisIssues") or []
+    blocking_messages = [
+        _clean_text(item.get("message"))
+        for item in analysis_issues
+        if isinstance(item, dict) and _clean_text(item.get("severity")) == "blocking" and _clean_text(item.get("message"))
+    ]
+    detail = "；".join(blocking_messages[:3])
+    if not detail:
+        detail = "本次智能解析存在关键失败，未生成可继续使用的预览结果。"
+    raise RuntimeError(f"本次智能解析存在关键失败，已终止后续步骤：{detail}")
 
 
 def _repo_root() -> Path:
@@ -403,6 +733,69 @@ def _normalize_header(header: str) -> str:
     text = _clean_text(header).lower()
     text = text.replace("（", "(").replace("）", ")")
     return re.sub(r"[\s_\-()/\\:：]+", "", text)
+
+
+def _looks_like_os_or_runtime_value(value: Any) -> bool:
+    normalized = _normalize_token(_clean_text(value))
+    if not normalized:
+        return False
+    return normalized in OS_LIKE_PLATFORM_TOKENS
+
+
+def _semantic_field_candidates(header: str) -> list[dict[str, str]]:
+    raw = _clean_text(header)
+    lowered = raw.lower()
+    normalized = _normalize_header(header)
+    candidates: dict[str, dict[str, str]] = {}
+
+    def register(target: str, confidence: str, *, source: str = "semantic_rule") -> None:
+        if not target or target == "unknown":
+            return
+        current = candidates.get(target)
+        payload = {
+            "targetField": target,
+            "confidence": confidence,
+            "source": source,
+        }
+        if current is None or _confidence_rank(confidence) > _confidence_rank(str(current.get("confidence", ""))):
+            candidates[target] = payload
+
+    if any(token in raw for token in ("资源主键", "业务主键", "实例主键", "设备主键", "主键", "唯一标识", "唯一键", "资源编码", "资源编号")):
+        register("asset_code", "high")
+    elif any(token in raw for token in ("资产标识", "资产编号", "资产编码")):
+        register("asset_code", "medium")
+
+    if any(token in raw for token in ("组件实例名", "数据库实例名", "服务实例名", "应用实例名", "实例名称", "实例名", "应用名称", "设备名称", "主机名称", "主机名", "节点名称", "节点名")):
+        register("name", "high")
+    elif (
+        any(token in raw for token in ("名称", "名字"))
+        and any(token in raw for token in ("组件", "数据库", "服务", "应用", "设备", "实例", "主机", "节点"))
+    ):
+        register("name", "high")
+    elif normalized.endswith("name"):
+        register("name", "medium")
+
+    if any(token in raw for token in ("管理地址", "管理IP", "管理ip", "设备管理IP", "设备管理ip", "管理地址IP", "管理地址ip")):
+        register("manage_ip", "high")
+
+    if any(token in raw for token in ("内网地址", "内网IP", "内网ip", "组件地址", "数据库地址", "实例地址", "服务地址")):
+        register("private_ip", "high")
+    elif (
+        ("地址" in raw or "ip" in lowered)
+        and any(token in raw for token in ("组件", "数据库", "实例", "服务", "内网"))
+    ):
+        register("private_ip", "medium")
+
+    if any(token in raw for token in ("服务端口", "组件端口", "数据库端口", "实例端口", "访问端口")):
+        register("service_port", "high")
+
+    if any(token in raw for token in ("版本信息", "版本号", "软件版本", "数据库版本", "系统版本")):
+        register("version", "high")
+
+    return sorted(
+        candidates.values(),
+        key=lambda item: (-_confidence_rank(str(item.get("confidence", ""))), str(item.get("targetField", ""))),
+    )
 
 
 def _parse_env() -> dict[str, str]:
@@ -868,6 +1261,29 @@ class ResourceImportLLMClient:
             reason=_clean_text(result.get("reason")),
         )
 
+    async def infer_resource_model(
+        self,
+        *,
+        prompt: dict[str, Any],
+    ) -> Any:
+        return await self._request_json(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是 CMDB 模型归属助手。"
+                        "你的任务是把一组资源归到最合适的已有 CMDB 模型。"
+                        "只能从给定候选中选择，不能新增模型，也不能输出候选外的名字。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(prompt, ensure_ascii=False),
+                },
+            ],
+        )
+
     async def extract_rows_from_image(self, *, filename: str, content: bytes) -> list[dict[str, Any]]:
         encoded = base64.b64encode(content).decode("ascii")
         suffix = Path(filename).suffix.lower().lstrip(".") or "png"
@@ -1037,6 +1453,26 @@ class AnthropicResourceImportLLMClient:
             reason=_clean_text(result.get("reason")),
         )
 
+    async def infer_resource_model(
+        self,
+        *,
+        prompt: dict[str, Any],
+    ) -> Any:
+        return await self._request_json(
+            model=self.model,
+            content=[
+                {
+                    "type": "text",
+                    "text": (
+                        "你是 CMDB 模型归属助手。"
+                        "只能从给定候选模型中选择，不能新增模型，不能输出候选外的名字。"
+                        "请直接输出 JSON。"
+                    ),
+                },
+                {"type": "text", "text": json.dumps(prompt, ensure_ascii=False)},
+            ],
+        )
+
     async def extract_rows_from_image(self, *, filename: str, content: bytes) -> list[dict[str, Any]]:
         encoded = base64.b64encode(content).decode("ascii")
         suffix = Path(filename).suffix.lower()
@@ -1165,6 +1601,25 @@ class GeminiResourceImportLLMClient:
             default_ci_type=_clean_text(result.get("default_ci_type")),
             mappings=mappings,
             reason=_clean_text(result.get("reason")),
+        )
+
+    async def infer_resource_model(
+        self,
+        *,
+        prompt: dict[str, Any],
+    ) -> Any:
+        return await self._request_json(
+            model=self.model,
+            parts=[
+                self._genai_types.Part(
+                    text=(
+                        "你是 CMDB 模型归属助手。"
+                        "只能从给定候选模型中选择，不能新增模型，不能输出候选外的名字。"
+                        "请直接输出 JSON。"
+                    ),
+                ),
+                self._genai_types.Part(text=json.dumps(prompt, ensure_ascii=False)),
+            ],
         )
 
     async def extract_rows_from_image(self, *, filename: str, content: bytes) -> list[dict[str, Any]]:
@@ -1315,6 +1770,10 @@ def _match_field(header: str) -> tuple[str, str]:
         for alias in aliases:
             if normalized == _normalize_header(alias):
                 return target, "high"
+    semantic_candidates = _semantic_field_candidates(header)
+    if semantic_candidates:
+        first = semantic_candidates[0]
+        return str(first.get("targetField") or "unknown"), str(first.get("confidence") or "low")
     for target, aliases in FIELD_ALIASES.items():
         for alias in aliases:
             alias_token = _normalize_header(alias)
@@ -1335,6 +1794,164 @@ def _match_relation_field(header: str) -> tuple[str, str]:
             if alias_token and len(alias_token) >= 3 and (alias_token in normalized or normalized in alias_token):
                 return target, "medium"
     return "unknown", "low"
+
+
+def _confidence_rank(value: str) -> int:
+    return {
+        "low": 0,
+        "medium": 1,
+        "high": 2,
+    }.get(_clean_text(value).lower(), 0)
+
+
+def _collect_field_candidates(header: str) -> list[dict[str, str]]:
+    normalized = _normalize_header(header)
+    candidates: dict[str, dict[str, str]] = {}
+
+    def register(target: str, confidence: str, source: str) -> None:
+        if not target or target == "unknown":
+            return
+        current = candidates.get(target)
+        payload = {
+            "targetField": target,
+            "confidence": confidence,
+            "source": source,
+        }
+        if current is None or _confidence_rank(confidence) > _confidence_rank(current.get("confidence", "")):
+            candidates[target] = payload
+
+    for target, aliases in FIELD_ALIASES.items():
+        for alias in aliases:
+            if normalized == _normalize_header(alias):
+                register(target, "high", "rule")
+
+    for candidate in _semantic_field_candidates(header):
+        register(
+            str(candidate.get("targetField") or ""),
+            str(candidate.get("confidence") or "low"),
+            str(candidate.get("source") or "semantic_rule"),
+        )
+
+    if not candidates:
+        for target, aliases in FIELD_ALIASES.items():
+            for alias in aliases:
+                alias_token = _normalize_header(alias)
+                if alias_token and len(alias_token) >= 5 and (alias_token in normalized or normalized in alias_token):
+                    register(target, "medium", "rule")
+
+    return sorted(
+        candidates.values(),
+        key=lambda item: (-_confidence_rank(item.get("confidence", "")), item.get("targetField", "")),
+    )
+
+
+def _merge_sheet_header_mapping(
+    *,
+    header: str,
+    heuristic_mapping: tuple[str, str],
+    llm_mapping: tuple[str, str],
+) -> tuple[str, str]:
+    heuristic_target, heuristic_confidence = heuristic_mapping
+    llm_target, llm_confidence = llm_mapping
+    if heuristic_target != "unknown" and heuristic_confidence == "high":
+        return heuristic_mapping
+    if llm_target == "unknown":
+        return heuristic_mapping
+    if heuristic_target != "unknown" and heuristic_target == llm_target:
+        confidence_rank = {"low": 0, "medium": 1, "high": 2}
+        return heuristic_mapping if confidence_rank.get(heuristic_confidence, 0) >= confidence_rank.get(llm_confidence, 0) else llm_mapping
+    if heuristic_target != "unknown" and heuristic_confidence == "medium" and llm_confidence == "low":
+        return heuristic_mapping
+    return llm_mapping
+
+
+def _build_sheet_mapping_detail(
+    *,
+    header: str,
+    heuristic_mapping: tuple[str, str],
+    llm_mapping: tuple[str, str],
+) -> dict[str, Any]:
+    heuristic_target, heuristic_confidence = heuristic_mapping
+    llm_target, llm_confidence = llm_mapping
+    merged_target, merged_confidence = _merge_sheet_header_mapping(
+        header=header,
+        heuristic_mapping=heuristic_mapping,
+        llm_mapping=llm_mapping,
+    )
+    candidates = _collect_field_candidates(header)
+    candidate_map: dict[str, dict[str, Any]] = {
+        item["targetField"]: dict(item)
+        for item in candidates
+        if _clean_text(item.get("targetField"))
+    }
+    if llm_target not in {"", "unknown"}:
+        current = candidate_map.get(llm_target)
+        llm_payload = {
+            "targetField": llm_target,
+            "confidence": llm_confidence or "low",
+            "source": "llm",
+        }
+        if current is None or _confidence_rank(llm_payload["confidence"]) > _confidence_rank(str(current.get("confidence", ""))):
+            candidate_map[llm_target] = llm_payload
+
+    ordered_candidates = sorted(
+        candidate_map.values(),
+        key=lambda item: (-_confidence_rank(str(item.get("confidence", ""))), str(item.get("targetField", ""))),
+    )
+    strong_rule_targets = {
+        str(item.get("targetField", ""))
+        for item in ordered_candidates
+        if item.get("source") == "rule" and _confidence_rank(str(item.get("confidence", ""))) >= 1
+    }
+    llm_is_strong = llm_target not in {"", "unknown"} and _confidence_rank(llm_confidence) >= 1
+    needs_confirmation = False
+    if len(strong_rule_targets) >= 2:
+        needs_confirmation = True
+    elif (
+        heuristic_target not in {"", "unknown"}
+        and llm_target not in {"", "unknown", heuristic_target}
+        and _confidence_rank(heuristic_confidence) >= 1
+        and llm_is_strong
+    ):
+        needs_confirmation = True
+
+    low_confidence_unmapped = (
+        not needs_confirmation
+        and merged_target not in {"", "unknown"}
+        and _confidence_rank(merged_confidence) <= 0
+    )
+    applied_target = "" if (needs_confirmation or low_confidence_unmapped) else merged_target
+    status = (
+        "needs_confirmation"
+        if needs_confirmation
+        else "unmapped"
+        if low_confidence_unmapped or applied_target in {"", "unknown"}
+        else "mapped"
+    )
+    message = ""
+    if needs_confirmation:
+        candidate_text = " / ".join(
+            item.get("targetField", "")
+            for item in ordered_candidates
+            if _clean_text(item.get("targetField"))
+        )
+        message = f"字段 {header} 同时匹配多个语义候选：{candidate_text}，需人工确认后再决定是否写入"
+    elif low_confidence_unmapped:
+        message = f"字段 {header} 当前只有低置信候选 {merged_target}，不会自动写入，请人工确认"
+    elif applied_target not in {"", "unknown"} and llm_target == applied_target and heuristic_target in {"", "unknown"}:
+        message = f"字段 {header} 当前由 LLM 提供候选语义 {applied_target}"
+
+    return {
+        "sourceField": header,
+        "targetField": applied_target or "unknown",
+        "suggestedTargetField": merged_target or "unknown",
+        "confidence": merged_confidence or "low",
+        "status": status,
+        "resolvedBy": "rule" if (applied_target == heuristic_target and heuristic_target not in {"", "unknown"}) else "llm" if applied_target not in {"", "unknown"} else "",
+        "candidates": ordered_candidates,
+        "needsConfirmation": needs_confirmation,
+        "message": message,
+    }
 
 
 def _sheet_name_hint(sheet_name: str, alias_index: dict[str, str]) -> str:
@@ -1370,8 +1987,623 @@ def _sample_sheet_rows(rows: list[dict[str, Any]], limit: int = 5) -> list[dict[
     return sampled
 
 
+def _should_skip_llm_for_sheet(
+    *,
+    heuristic_plan: SheetMappingPlan,
+    headers: list[str],
+) -> bool:
+    if heuristic_plan.sheet_kind in {"relation", "note"}:
+        return True
+    if heuristic_plan.sheet_kind != "asset":
+        return False
+    if not headers:
+        return True
+
+    details = heuristic_plan.mapping_details or {}
+    mapped_count = 0
+    high_count = 0
+    value_field_hits = 0
+    for header in headers:
+        detail = details.get(header) or {}
+        target_field = _clean_text(detail.get("targetField"))
+        confidence = _clean_text(detail.get("confidence"))
+        status = _clean_text(detail.get("status"))
+        if status == "mapped" and target_field not in {"", "unknown"}:
+            mapped_count += 1
+        if confidence == "high" and status == "mapped" and target_field not in {"", "unknown"}:
+            high_count += 1
+        if target_field in RESOURCE_VALUE_FIELDS:
+            value_field_hits += 1
+
+    if mapped_count != len(headers):
+        return False
+    if high_count != len(headers):
+        return False
+    if value_field_hits <= 0:
+        return False
+    return True
+
+
+def _semantic_keyword_in_text(keyword: str, raw_text: str, normalized_text: str) -> bool:
+    normalized_keyword = _normalize_token(keyword)
+    if not normalized_keyword:
+        return False
+    if normalized_keyword.isascii() and len(normalized_keyword) <= 2:
+        return bool(re.search(rf"(?<![a-z0-9]){re.escape(normalized_keyword)}(?![a-z0-9])", raw_text.lower()))
+    return normalized_keyword in normalized_text
+
+
+def _sample_structure_records(records: list[dict[str, Any]], limit: int = 3) -> list[dict[str, Any]]:
+    if not records:
+        return []
+    if len(records) <= limit:
+        candidate_records = records
+    else:
+        middle_index = max(0, len(records) // 2)
+        candidate_records = [records[0], records[middle_index], records[-1]]
+
+    preferred_order = {
+        "name": 0,
+        "ci_type": 1,
+        "private_ip": 2,
+        "service_port": 3,
+        "host_name": 4,
+        "deploy_target": 5,
+        "description": 6,
+    }
+    sampled: list[dict[str, Any]] = []
+    seen_rows: set[str] = set()
+    for record in candidate_records:
+        analysis_attributes = record.get("analysisAttributes") or {}
+        cleaned_items = [
+            (key, _clean_text(value))
+            for key, value in analysis_attributes.items()
+            if key and not str(key).startswith("_") and _clean_text(value)
+        ]
+        cleaned_items.sort(key=lambda item: (preferred_order.get(item[0], 50), item[0]))
+        payload = dict(cleaned_items[:12])
+        fingerprint = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        if not payload or fingerprint in seen_rows:
+            continue
+        seen_rows.add(fingerprint)
+        sampled.append(payload)
+    return sampled
+
+
+def _build_ci_type_catalog(metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    ci_type_groups = [
+        _normalize_group_snapshot(item)
+        for item in (metadata.get("ciTypeGroups") or [])
+        if isinstance(item, dict)
+    ]
+    if not ci_type_groups:
+        ci_type_groups = _build_default_ci_type_groups(metadata.get("ciTypes") or DEFAULT_MODEL_TEMPLATES)
+
+    groups_by_model: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for group in ci_type_groups:
+        for ci_type in group.get("ciTypes") or []:
+            name = _clean_text(ci_type.get("name"))
+            if not name:
+                continue
+            groups_by_model[name].append(group)
+
+    catalog: list[dict[str, Any]] = []
+    for item in (metadata.get("ciTypes") or DEFAULT_MODEL_TEMPLATES):
+        if not isinstance(item, dict):
+            continue
+        name = _clean_text(item.get("name"))
+        if not name:
+            continue
+        group_names = [
+            _clean_text(group.get("name"))
+            for group in groups_by_model.get(name, [])
+            if _clean_text(group.get("name"))
+        ]
+        fallback_group = DEFAULT_GROUP_HINTS.get(name, "")
+        if fallback_group and fallback_group not in group_names:
+            group_names.append(fallback_group)
+        parent_types = [
+            {
+                "name": _clean_text(parent.get("name")),
+                "alias": _clean_text(parent.get("alias")) or _clean_text(parent.get("name")),
+            }
+            for parent in (item.get("parentTypes") or [])
+            if isinstance(parent, dict) and _clean_text(parent.get("name"))
+        ]
+        catalog.append(
+            {
+                "id": item.get("id"),
+                "name": name,
+                "alias": _clean_text(item.get("alias")) or name,
+                "groupNames": group_names,
+                "groupName": group_names[0] if group_names else "",
+                "attributes": [str(attr) for attr in (item.get("attributes") or []) if _clean_text(attr)],
+                "parentTypes": parent_types,
+            }
+        )
+    return catalog
+
+
+def _collect_structure_context(group: dict[str, Any]) -> dict[str, Any]:
+    records = group.get("records") or []
+    raw_type_hints = _collect_raw_type_hints(records)
+    sampled_records = _sample_structure_records(records)
+    source_fields: list[str] = []
+    field_names: list[str] = []
+    sample_values: list[str] = []
+    ports: list[str] = []
+
+    for record in records[: min(len(records), 5)]:
+        analysis_attributes = record.get("analysisAttributes") or {}
+        for key, value in analysis_attributes.items():
+            cleaned_key = _clean_text(key)
+            cleaned_value = _clean_text(value)
+            if cleaned_key and not cleaned_key.startswith("_") and cleaned_key not in field_names:
+                field_names.append(cleaned_key)
+            if cleaned_value and len(sample_values) < 20 and cleaned_value not in sample_values:
+                sample_values.append(cleaned_value)
+            if cleaned_key == "service_port" and cleaned_value and cleaned_value not in ports:
+                ports.append(cleaned_value)
+        for item in (record.get("mapping") or []):
+            source_field = _clean_text(item.get("sourceField"))
+            if source_field and source_field not in source_fields:
+                source_fields.append(source_field)
+
+    texts = [
+        _clean_text(group.get("ciType")),
+        _clean_text(group.get("label")),
+        *raw_type_hints,
+    ]
+    return {
+        "resourceCiType": _clean_text(group.get("ciType")),
+        "resourceLabel": _clean_text(group.get("label")),
+        "rawTypeHints": raw_type_hints,
+        "primaryTexts": [item for item in texts if item],
+        "texts": [item for item in texts if item],
+        "fieldNames": field_names,
+        "sourceFields": source_fields,
+        "sampleValues": sample_values,
+        "ports": ports,
+        "sampleRecords": sampled_records,
+    }
+
+
+def _candidate_rule_names(candidate: dict[str, Any]) -> set[str]:
+    candidate_name = _clean_text(candidate.get("name"))
+    candidate_alias = _clean_text(candidate.get("alias"))
+    texts = [
+        candidate_name,
+        candidate_alias,
+        *[str(item) for item in (candidate.get("groupNames") or []) if _clean_text(item)],
+        *[str(item) for item in (candidate.get("attributes") or []) if _clean_text(item)],
+        *[
+            _clean_text(parent.get("name")) or _clean_text(parent.get("alias"))
+            for parent in (candidate.get("parentTypes") or [])
+            if isinstance(parent, dict)
+        ],
+    ]
+    normalized_texts = [(_clean_text(text).lower(), _normalize_token(text)) for text in texts if _clean_text(text)]
+    field_names = {_normalize_header(str(item)) for item in (candidate.get("attributes") or []) if _clean_text(item)}
+    matched: set[str] = set()
+    for rule in SEMANTIC_MODEL_RULES:
+        if candidate_name in set(rule.get("preferred_models") or []):
+            matched.add(str(rule["name"]))
+            continue
+        keyword_hit = any(
+            _semantic_keyword_in_text(keyword, raw_text, normalized_text)
+            for keyword in (rule.get("keywords") or [])
+            for raw_text, normalized_text in normalized_texts
+        )
+        field_hit = any(
+            _normalize_header(keyword) in field_names
+            for keyword in (rule.get("field_keywords") or [])
+        )
+        if keyword_hit or field_hit:
+            matched.add(str(rule["name"]))
+    return matched
+
+
+def _match_semantic_rule(rule: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    primary_text_hits: list[str] = []
+    sample_value_hits: list[str] = []
+    field_hits: list[str] = []
+    port_hits: list[str] = []
+    normalized_primary_texts = [
+        (_clean_text(text).lower(), _normalize_token(text))
+        for text in (context.get("primaryTexts") or [])
+        if _clean_text(text)
+    ]
+    normalized_sample_value_texts = [
+        (_clean_text(text).lower(), _normalize_token(text))
+        for text in (context.get("sampleValues") or [])
+        if _clean_text(text)
+    ]
+    normalized_fields = {
+        _normalize_header(str(field))
+        for field in [*context.get("fieldNames", []), *context.get("sourceFields", [])]
+        if _clean_text(field)
+    }
+    for keyword in (rule.get("keywords") or []):
+        if any(
+            _semantic_keyword_in_text(keyword, raw_text, normalized_text)
+            for raw_text, normalized_text in normalized_primary_texts
+        ):
+            primary_text_hits.append(str(keyword))
+            continue
+        if any(
+            _semantic_keyword_in_text(keyword, raw_text, normalized_text)
+            for raw_text, normalized_text in normalized_sample_value_texts
+        ):
+            sample_value_hits.append(str(keyword))
+    for keyword in (rule.get("field_keywords") or []):
+        if _normalize_header(keyword) in normalized_fields:
+            field_hits.append(str(keyword))
+    for port in (rule.get("port_values") or []):
+        if str(port) in {str(item) for item in context.get("ports", []) if _clean_text(item)}:
+            port_hits.append(str(port))
+
+    score = 0
+    if primary_text_hits:
+        score += 32 + min(16, (len(set(primary_text_hits)) - 1) * 4)
+    if sample_value_hits:
+        score += 8 + min(6, (len(set(sample_value_hits)) - 1) * 3)
+    if field_hits:
+        score += 10 + min(8, (len(set(field_hits)) - 1) * 4)
+    if port_hits:
+        score += 18
+    max_score = 72 if rule.get("specific") else 56
+    score = min(score, max_score)
+
+    reasons: list[str] = []
+    if primary_text_hits:
+        reasons.append(f"原文类型命中 {', '.join(sorted(set(primary_text_hits))[:3])}")
+    if sample_value_hits:
+        reasons.append(f"样例值命中 {', '.join(sorted(set(sample_value_hits))[:3])}")
+    if field_hits:
+        reasons.append(f"字段特征命中 {', '.join(sorted(set(field_hits))[:3])}")
+    if port_hits:
+        reasons.append(f"端口特征命中 {', '.join(sorted(set(port_hits))[:2])}")
+    return {
+        "score": score,
+        "reason": "；".join(reasons),
+    }
+
+
+def _semantic_lexical_score(candidate: dict[str, Any], texts: list[str]) -> tuple[int, str]:
+    candidate_names = [
+        _clean_text(candidate.get("name")),
+        _clean_text(candidate.get("alias")),
+    ]
+    best_score = 0
+    best_reason = ""
+    for text in texts:
+        cleaned_text = _clean_text(text)
+        normalized_text = _normalize_token(cleaned_text)
+        lowered_text = cleaned_text.lower()
+        for candidate_name in candidate_names:
+            normalized_candidate = _normalize_token(candidate_name)
+            if not normalized_candidate:
+                continue
+            if normalized_candidate == normalized_text:
+                return 95, f"原始类型与模型 {candidate_name} 完全一致"
+            if len(normalized_candidate) >= 4 and (
+                normalized_candidate in normalized_text or normalized_text in normalized_candidate
+            ):
+                best_score = max(best_score, 24)
+                best_reason = f"资源提示与模型 {candidate_name} 文本接近"
+            elif len(normalized_candidate) >= 4 and candidate_name.lower() in lowered_text:
+                best_score = max(best_score, 18)
+                best_reason = f"资源提示包含模型 {candidate_name}"
+    return best_score, best_reason
+
+
+def _semantic_confidence(best_score: int, second_score: int) -> str:
+    if best_score >= 88 or (best_score >= 72 and best_score - second_score >= 12):
+        return "high"
+    if best_score >= 50:
+        return "medium"
+    return "low"
+
+
+def _has_clear_low_confidence_leader(plan: SemanticModelPlan) -> bool:
+    candidates = list(plan.candidates or [])
+    if not candidates:
+        return False
+    best_score = int(candidates[0].get("score") or 0)
+    second_score = int(candidates[1].get("score") or 0) if len(candidates) > 1 else 0
+    if best_score >= 36 and best_score - second_score >= 8:
+        return True
+    if best_score >= 42:
+        return True
+    return False
+
+
+def _heuristic_semantic_model_candidates(
+    group: dict[str, Any],
+    metadata: dict[str, Any],
+) -> list[dict[str, Any]]:
+    context = _collect_structure_context(group)
+    catalog = _build_ci_type_catalog(metadata)
+    rule_results = {
+        str(rule["name"]): _match_semantic_rule(rule, context)
+        for rule in SEMANTIC_MODEL_RULES
+    }
+    raw_type_hints = context.get("rawTypeHints") or []
+    generic_server_hint = _is_generic_server_hint(raw_type_hints)
+    middleware_or_data_family_score = max(
+        int((rule_results.get(rule_name) or {}).get("score") or 0)
+        for rule_name in ("database", "mysql", "PostgreSQL", "redis", "Kafka", "elasticsearch", "nginx", "apache")
+    )
+    ranked_candidates: list[dict[str, Any]] = []
+
+    for candidate in catalog:
+        candidate_name = _clean_text(candidate.get("name"))
+        lexical_score, lexical_reason = _semantic_lexical_score(candidate, context.get("texts", []))
+        score = lexical_score
+        reasons = [lexical_reason] if lexical_reason else []
+        matched_rules = _candidate_rule_names(candidate)
+        matched_specific_rules = {
+            rule_name
+            for rule_name in matched_rules
+            if next((rule for rule in SEMANTIC_MODEL_RULES if rule["name"] == rule_name and rule.get("specific")), None)
+        }
+        for rule_name in matched_rules:
+            result = rule_results.get(rule_name) or {}
+            rule_score = int(result.get("score") or 0)
+            if not rule_score:
+                continue
+            score += rule_score
+            if result.get("reason"):
+                reasons.append(str(result["reason"]))
+
+        if candidate_name == "database" and any(
+            int((rule_results.get(rule_name) or {}).get("score") or 0) >= 40
+            for rule_name in ("mysql", "PostgreSQL")
+        ):
+            score -= 10
+        if candidate_name in {"mysql", "PostgreSQL"} and not any(
+            int((rule_results.get(rule_name) or {}).get("score") or 0) >= 30 for rule_name in matched_specific_rules
+        ) and int((rule_results.get("database") or {}).get("score") or 0) >= 30:
+            score -= 8
+        if candidate_name == "kubernetes" and int((rule_results.get("docker") or {}).get("score") or 0) >= 28:
+            score -= 10
+        if candidate_name == "docker" and int((rule_results.get("kubernetes") or {}).get("score") or 0) >= 28:
+            score -= 10
+        if candidate_name in {"docker", "kubernetes"} and middleware_or_data_family_score >= 28:
+            score -= 22
+            reasons.append("同时存在更强的中间件/数据库语义")
+        if generic_server_hint and candidate_name in {"PhysicalMachine", "vserver"}:
+            score += 18
+            reasons.append("原始类型只表达通用服务器语义")
+
+        if score <= 0:
+            continue
+
+        ranked_candidates.append(
+            {
+                "id": candidate.get("id"),
+                "name": candidate_name,
+                "alias": _clean_text(candidate.get("alias")) or candidate_name,
+                "groupName": _clean_text(candidate.get("groupName")),
+                "groupNames": candidate.get("groupNames") or [],
+                "existing": True,
+                "score": score,
+                "reason": "；".join(dict.fromkeys([item for item in reasons if item])),
+            }
+        )
+
+    ranked_candidates.sort(
+        key=lambda item: (
+            -int(item.get("score") or 0),
+            _clean_text(item.get("name")) not in SEMANTIC_REFINEMENT_MODELS,
+            _clean_text(item.get("name")),
+        )
+    )
+    if not ranked_candidates:
+        return []
+
+    best_score = int(ranked_candidates[0].get("score") or 0)
+    second_score = int(ranked_candidates[1].get("score") or 0) if len(ranked_candidates) > 1 else 0
+    for index, item in enumerate(ranked_candidates):
+        current_score = int(item.get("score") or 0)
+        base_confidence = _semantic_confidence(current_score, second_score if index == 0 else best_score)
+        if index > 0 and current_score + 8 < best_score:
+            base_confidence = "low"
+        item["confidence"] = base_confidence
+    return ranked_candidates[:6]
+
+
+def _build_heuristic_semantic_plan(
+    group: dict[str, Any],
+    metadata: dict[str, Any],
+) -> SemanticModelPlan:
+    candidates = _heuristic_semantic_model_candidates(group, metadata)
+    if not candidates:
+        return SemanticModelPlan(
+            best_model="",
+            confidence="low",
+            reason="未根据现有语义线索匹配到稳定的系统模型。",
+            candidates=[],
+            source="heuristic",
+        )
+    best_candidate = candidates[0]
+    return SemanticModelPlan(
+        best_model=_clean_text(best_candidate.get("name")),
+        confidence=_clean_text(best_candidate.get("confidence")) or "low",
+        reason=_clean_text(best_candidate.get("reason")) or "启发式语义推断",
+        candidates=candidates,
+        source="heuristic",
+    )
+
+
+def _build_semantic_model_prompt(
+    *,
+    group: dict[str, Any],
+    metadata: dict[str, Any],
+    heuristic_candidates: list[dict[str, Any]],
+) -> dict[str, Any]:
+    context = _collect_structure_context(group)
+    ci_type_meta = {
+        _clean_text(item.get("name")): item
+        for item in (metadata.get("ciTypes") or [])
+        if isinstance(item, dict) and _clean_text(item.get("name"))
+    }
+    candidate_models = []
+    for candidate in heuristic_candidates[:6]:
+        model_meta = ci_type_meta.get(_clean_text(candidate.get("name"))) or {}
+        candidate_models.append(
+            {
+                "name": _clean_text(candidate.get("name")),
+                "alias": _clean_text(candidate.get("alias")),
+                "group_name": _clean_text(candidate.get("groupName")),
+                "attributes": [str(item) for item in (model_meta.get("attributes") or []) if _clean_text(item)],
+                "parent_types": [
+                    _clean_text(item.get("alias")) or _clean_text(item.get("name"))
+                    for item in (model_meta.get("parentTypes") or [])
+                    if isinstance(item, dict) and (_clean_text(item.get("alias")) or _clean_text(item.get("name")))
+                ],
+                "heuristic_score": int(candidate.get("score") or 0),
+                "heuristic_reason": _clean_text(candidate.get("reason")),
+            }
+        )
+    return {
+        "resource_label": context.get("resourceLabel"),
+        "normalized_ci_type": context.get("resourceCiType"),
+        "raw_type_hints": context.get("rawTypeHints"),
+        "observed_fields": list(dict.fromkeys([*context.get("fieldNames", []), *context.get("sourceFields", [])]))[:20],
+        "sample_records": context.get("sampleRecords"),
+        "candidate_models": candidate_models,
+        "rules": [
+            "只能从 candidate_models 中选择，不允许创建新模型。",
+            "优先复用现有模型；如果线索只支持数据库/容器/服务器等通用语义，不要强行指定到过细模型。",
+            "结合原始类型提示、字段名、端口、样例值、候选模型分组/属性/父模型一起判断。",
+            "返回 1-3 个候选，按最可能顺序排序。",
+            "如果没有合适候选，best_model 留空，confidence 返回 low。",
+        ],
+        "output_schema": {
+            "best_model": "string",
+            "confidence": "high|medium|low",
+            "reason": "string",
+            "candidates": [
+                {
+                    "model": "string",
+                    "confidence": "high|medium|low",
+                    "reason": "string",
+                }
+            ],
+        },
+    }
+
+
+def _parse_semantic_model_plan(
+    result: Any,
+    *,
+    heuristic_candidates: list[dict[str, Any]],
+) -> SemanticModelPlan:
+    candidate_index = {
+        _clean_text(item.get("name")): item
+        for item in heuristic_candidates
+        if _clean_text(item.get("name"))
+    }
+    ranked_candidates: list[dict[str, Any]] = []
+    for raw_candidate in result.get("candidates", []) or []:
+        model_name = _clean_text(raw_candidate.get("model"))
+        if not model_name or model_name not in candidate_index:
+            continue
+        base_candidate = dict(candidate_index[model_name])
+        base_candidate["confidence"] = _clean_text(raw_candidate.get("confidence")) or _clean_text(base_candidate.get("confidence")) or "low"
+        if _clean_text(raw_candidate.get("reason")):
+            base_candidate["reason"] = _clean_text(raw_candidate.get("reason"))
+        ranked_candidates.append(base_candidate)
+    for candidate in heuristic_candidates:
+        candidate_name = _clean_text(candidate.get("name"))
+        if candidate_name and all(_clean_text(item.get("name")) != candidate_name for item in ranked_candidates):
+            ranked_candidates.append(dict(candidate))
+
+    best_model = _clean_text(result.get("best_model"))
+    if best_model not in candidate_index:
+        best_model = _clean_text(ranked_candidates[0].get("name")) if ranked_candidates else ""
+    confidence = _clean_text(result.get("confidence")) or (
+        _clean_text(candidate_index.get(best_model, {}).get("confidence")) if best_model else "low"
+    )
+    reason = _clean_text(result.get("reason")) or (
+        _clean_text(candidate_index.get(best_model, {}).get("reason")) if best_model else "LLM 未返回明确原因"
+    )
+    return SemanticModelPlan(
+        best_model=best_model,
+        confidence=confidence or "low",
+        reason=reason,
+        candidates=ranked_candidates[:6],
+        source="llm",
+    )
+
+
+def _should_run_semantic_inference(resource_ci_type: str, exact_groups: list[dict[str, Any]], raw_type_hints: list[str]) -> bool:
+    if resource_ci_type == "unknown":
+        return True
+    if not exact_groups:
+        return True
+    if resource_ci_type in SEMANTIC_REFINEMENT_MODELS:
+        return True
+    return _is_generic_server_hint(raw_type_hints)
+
+
+async def _infer_semantic_model_plan(
+    *,
+    group: dict[str, Any],
+    metadata: dict[str, Any],
+    llm_client: Any | None,
+) -> SemanticModelPlan:
+    heuristic_plan = _build_heuristic_semantic_plan(group, metadata)
+    heuristic_candidates = heuristic_plan.candidates or []
+    if not llm_client or not heuristic_candidates or heuristic_plan.confidence == "high":
+        return heuristic_plan
+
+    prompt = _build_semantic_model_prompt(
+        group=group,
+        metadata=metadata,
+        heuristic_candidates=heuristic_candidates,
+    )
+    try:
+        record_count = int(group.get("count") or len(group.get("records") or []))
+        timeout_seconds = min(
+            max(45.0, RESOURCE_IMPORT_LLM_STEP_TIMEOUT_SECONDS / 3.0 + record_count * 2.0),
+            max(60.0, RESOURCE_IMPORT_LLM_STEP_TIMEOUT_MAX_SECONDS / 2.0),
+        )
+        last_exception: Exception | None = None
+        for attempt in range(RESOURCE_IMPORT_LLM_RETRY_COUNT):
+            try:
+                result = await asyncio.wait_for(
+                    llm_client.infer_resource_model(
+                        prompt=prompt,
+                    ),
+                    timeout=timeout_seconds,
+                )
+                if isinstance(result, SemanticModelPlan):
+                    return result
+                return _parse_semantic_model_plan(result, heuristic_candidates=heuristic_candidates)
+            except asyncio.TimeoutError as exc:
+                last_exception = exc
+                if attempt >= RESOURCE_IMPORT_LLM_RETRY_COUNT - 1:
+                    raise
+                sleep_seconds = _llm_retry_sleep_seconds_for_error(exc, attempt + 1)
+                if sleep_seconds > 0:
+                    await asyncio.sleep(sleep_seconds)
+            except Exception as exc:
+                last_exception = exc
+                if attempt >= RESOURCE_IMPORT_LLM_RETRY_COUNT - 1 or not _should_retry_llm_mapping(exc):
+                    raise
+                sleep_seconds = _llm_retry_sleep_seconds_for_error(exc, attempt + 1)
+                if sleep_seconds > 0:
+                    await asyncio.sleep(sleep_seconds)
+        if last_exception is not None:
+            raise last_exception
+    except Exception:
+        return heuristic_plan
+
+
 def _sheet_llm_timeout_seconds(*, row_count: int, header_count: int) -> float:
-    base_timeout = max(RESOURCE_IMPORT_LLM_STEP_TIMEOUT_SECONDS, 60.0)
+    base_timeout = max(RESOURCE_IMPORT_LLM_STEP_TIMEOUT_SECONDS, 30.0)
     scaled_timeout = base_timeout + max(0.0, header_count - 12) * 6.0 + max(0.0, row_count - 20) * 0.6
     return min(max(base_timeout, scaled_timeout), RESOURCE_IMPORT_LLM_STEP_TIMEOUT_MAX_SECONDS)
 
@@ -1439,6 +2671,7 @@ async def _resolve_sheet_mapping_plan(
     alias_index: dict[str, str],
     model_templates: list[dict[str, Any]],
     llm_client: Any | None,
+    retry_count_override: int | None = None,
 ) -> tuple[SheetMappingPlan, str]:
     headers = sorted({key for row in rows for key in row.keys() if key != "_sheet"})
     sheet_timeout_seconds = _sheet_llm_timeout_seconds(
@@ -1447,7 +2680,7 @@ async def _resolve_sheet_mapping_plan(
     )
     retry_timeout_seconds = min(
         RESOURCE_IMPORT_LLM_STEP_TIMEOUT_MAX_SECONDS,
-        max(sheet_timeout_seconds + 120.0, sheet_timeout_seconds * 1.75),
+        max(sheet_timeout_seconds + 15.0, sheet_timeout_seconds * 1.25),
     )
     default_ci_type = _sheet_name_hint(sheet_name, alias_index)
     heuristic_sheet_kind = (
@@ -1466,15 +2699,30 @@ async def _resolve_sheet_mapping_plan(
         default_ci_type=default_ci_type,
         mappings=heuristic_mappings,
         reason="规则映射",
+        mapping_details={
+            header: _build_sheet_mapping_detail(
+                header=header,
+                heuristic_mapping=heuristic_mappings.get(header, ("unknown", "low")),
+                llm_mapping=("unknown", "low"),
+            )
+            for header in headers
+        },
     )
 
     if not llm_client or heuristic_sheet_kind in {"relation", "note"}:
         return heuristic_plan, "规则映射"
 
+    if _should_skip_llm_for_sheet(
+        heuristic_plan=heuristic_plan,
+        headers=headers,
+    ):
+        return heuristic_plan, "规则映射（高置信直出）"
+
     try:
         llm_plan = None
         last_exception: Exception | None = None
-        for attempt in range(2):
+        retry_count = max(1, int(retry_count_override or RESOURCE_IMPORT_LLM_RETRY_COUNT))
+        for attempt in range(retry_count):
             try:
                 current_timeout_seconds = sheet_timeout_seconds if attempt == 0 else retry_timeout_seconds
                 llm_plan = await asyncio.wait_for(
@@ -1491,28 +2739,37 @@ async def _resolve_sheet_mapping_plan(
                 last_exception = asyncio.TimeoutError(
                     f"单个sheet映射超过 {current_timeout_seconds:.0f}s"
                 )
-                if attempt >= 1:
+                if attempt >= retry_count - 1:
                     raise
+                sleep_seconds = _llm_retry_sleep_seconds_for_error(last_exception, attempt + 1)
+                if sleep_seconds > 0:
+                    await asyncio.sleep(sleep_seconds)
                 continue
             except Exception as exc:  # noqa: BLE001
                 last_exception = exc
-                if attempt >= 1 or not _should_retry_llm_mapping(exc):
+                if attempt >= retry_count - 1 or not _should_retry_llm_mapping(exc):
                     raise
-                await asyncio.sleep(1.0 + attempt)
+                sleep_seconds = _llm_retry_sleep_seconds_for_error(exc, attempt + 1)
+                if sleep_seconds > 0:
+                    await asyncio.sleep(sleep_seconds)
         if llm_plan is None and last_exception is not None:
             raise last_exception
         merged_mappings: dict[str, tuple[str, str]] = {}
+        mapping_details: dict[str, dict[str, Any]] = {}
         for header in headers:
-            llm_target, llm_confidence = llm_plan.mappings.get(header, ("unknown", "low"))
-            if llm_target != "unknown":
-                merged_mappings[header] = (llm_target, llm_confidence)
-            else:
-                merged_mappings[header] = heuristic_mappings.get(header, ("unknown", "low"))
+            detail = _build_sheet_mapping_detail(
+                header=header,
+                heuristic_mapping=heuristic_mappings.get(header, ("unknown", "low")),
+                llm_mapping=llm_plan.mappings.get(header, ("unknown", "low")),
+            )
+            mapping_details[header] = detail
+            merged_mappings[header] = (str(detail.get("targetField") or "unknown"), str(detail.get("confidence") or "low"))
         return SheetMappingPlan(
             sheet_kind=llm_plan.sheet_kind or heuristic_plan.sheet_kind,
             default_ci_type=llm_plan.default_ci_type or heuristic_plan.default_ci_type,
             mappings=merged_mappings,
             reason=llm_plan.reason or "LLM 映射",
+            mapping_details=mapping_details,
         ), "LLM辅助映射"
     except asyncio.TimeoutError:
         return heuristic_plan, (
@@ -1739,15 +2996,18 @@ async def parse_uploaded_file(
         percent=8,
     )
     if suffix in {".csv", ".tsv"}:
-        rows = _read_csv_rows(filename, content)
+        rows = await asyncio.to_thread(_read_csv_rows, filename, content)
     elif suffix in {".xlsx", ".xls"}:
-        rows = _read_excel_rows(filename, content)
+        rows = await asyncio.to_thread(_read_excel_rows, filename, content)
     elif suffix == ".json":
-        rows = _read_json_rows(content)
+        rows = await asyncio.to_thread(_read_json_rows, content)
     elif suffix in {".txt", ".md"}:
-        rows = _parse_text_blocks(content.decode("utf-8", errors="ignore"))
+        rows = await asyncio.to_thread(
+            _parse_text_blocks,
+            content.decode("utf-8", errors="ignore"),
+        )
     elif suffix == ".docx":
-        rows = _read_docx_rows(content)
+        rows = await asyncio.to_thread(_read_docx_rows, content)
     elif suffix in IMAGE_SUFFIXES:
         rows, image_warnings = await _read_image_rows(filename, content, llm_client=llm_client)
         warnings.extend(image_warnings)
@@ -1830,8 +3090,9 @@ def _append_relation(
     }
 
 
-def _build_preview_key(parsed_file: ParsedFile, sheet_name: str, row_index: int) -> str:
-    return f"row::{parsed_file.filename}::{sheet_name or 'Sheet1'}::{row_index}"
+def _build_preview_key(parsed_file: ParsedFile | str, sheet_name: str, row_index: int) -> str:
+    filename = parsed_file if isinstance(parsed_file, str) else parsed_file.filename
+    return f"row::{filename}::{sheet_name or 'Sheet1'}::{row_index}"
 
 
 def _row_has_resource_signal(fields: dict[str, Any]) -> bool:
@@ -2093,7 +3354,11 @@ def _prepare_import_structure(
             continue
         resource_label = _clean_text(raw_item.get("resourceLabel")) or _clean_text(raw_item.get("resourceCiType")) or "待确认资源"
         group_name = _clean_text(raw_item.get("selectedGroupName")) or _clean_text(raw_item.get("suggestedGroupName"))
-        model_name = _clean_text(raw_item.get("selectedModelName")) or _clean_text(raw_item.get("resourceCiType"))
+        raw_model_name = _clean_text(raw_item.get("selectedModelName")) or _clean_text(raw_item.get("resourceCiType"))
+        model_name = _resolve_payload_ci_type(
+            raw_model_name,
+            type_templates=type_map,
+        ) or raw_model_name
         model_draft = raw_item.get("modelDraft") or {}
         model_alias = _clean_text(model_draft.get("alias")) or model_name
         unique_key_name = _clean_text(model_draft.get("uniqueKey"))
@@ -2237,7 +3502,13 @@ def _format_choice_options(attribute_definition: dict[str, Any] | None, *, limit
 
 def _is_name_like_unique_key(unique_key: str) -> bool:
     normalized = _normalize_token(unique_key)
-    return normalized.endswith("name") or "instance" in normalized or "hostname" in normalized
+    raw = _clean_text(unique_key).lower()
+    return (
+        normalized.endswith("name")
+        or "instance" in normalized
+        or "hostname" in normalized
+        or any(token in raw for token in ("名称", "名字", "主机名", "设备名"))
+    )
 
 
 def _is_ip_like_unique_key(unique_key: str) -> bool:
@@ -2246,8 +3517,36 @@ def _is_ip_like_unique_key(unique_key: str) -> bool:
 
 
 def _is_code_like_unique_key(unique_key: str) -> bool:
+    raw = _clean_text(unique_key).lower()
     normalized = _normalize_token(unique_key)
-    return any(token in normalized for token in ("code", "no", "id"))
+    return any(
+        token in normalized or token in raw
+        for token in ("code", "no", "id", "key", "pk", "unique", "identifier", "主键", "唯一", "标识")
+    )
+
+
+def _is_system_generated_unique_key(type_template: dict[str, Any] | None) -> bool:
+    unique_key = _clean_text((type_template or {}).get("unique_key"))
+    if not unique_key:
+        return False
+
+    normalized = _normalize_token(unique_key)
+    if normalized in {"pid", "rowid", "ciid"}:
+        return True
+
+    definition = _find_attribute_definition(type_template, unique_key)
+    alias = _clean_text((definition or {}).get("alias")).lower()
+    value_type = _clean_text((definition or {}).get("value_type")).lower()
+    numeric_types = {"int", "integer", "bigint", "smallint", "long", "number"}
+    if normalized in {"id", "_id"} and alias in {"主键", "系统主键"} and value_type in numeric_types:
+        return True
+    return False
+
+
+def _get_import_required_unique_key(type_template: dict[str, Any] | None) -> str:
+    if _is_system_generated_unique_key(type_template):
+        return ""
+    return _clean_text((type_template or {}).get("unique_key"))
 
 
 SPECIAL_ATTRIBUTE_NAME_CANDIDATES = {
@@ -2255,6 +3554,8 @@ SPECIAL_ATTRIBUTE_NAME_CANDIDATES = {
     "name": ["name", "serverName", "dev_name", "db_instance", "middleware_name", "project_name", "product_name", "vserver_name"],
     "private_ip": ["private_ip", "privateIp", "manage_ip", "host_ip", "ip", "db_ip", "middleware_ip"],
     "status": ["status"],
+    "platform": ["platform", "project", "project_name", "app_name"],
+    "project": ["project", "platform", "project_name", "app_name"],
     "model": ["model", "device_spec", "dev_model"],
     "version": ["version", "db_version", "dev_software_version"],
     "service_port": ["service_port", "db_port", "middleware_port", "snmp_port"],
@@ -2273,6 +3574,7 @@ def _resolve_cmdb_attribute_name(type_template: dict[str, Any] | None, canonical
     if not definitions:
         return canonical_field
 
+    system_generated_unique_key = _clean_text((type_template or {}).get("unique_key")) if _is_system_generated_unique_key(type_template) else ""
     attribute_names = {_clean_text(item.get("name")) for item in definitions}
     ordered_candidates: list[str] = [canonical_field]
     ordered_candidates.extend(item for item in FIELD_ALIASES.get(canonical_field, []) if _clean_text(item))
@@ -2280,7 +3582,7 @@ def _resolve_cmdb_attribute_name(type_template: dict[str, Any] | None, canonical
     candidate_tokens = {_normalize_token(canonical_field)}
     candidate_tokens.update(_normalize_token(item) for item in FIELD_ALIASES.get(canonical_field, []))
     candidate_tokens.update(_normalize_token(item) for item in SPECIAL_ATTRIBUTE_NAME_CANDIDATES.get(canonical_field, []))
-    unique_key = _clean_text((type_template or {}).get("unique_key"))
+    unique_key = _get_import_required_unique_key(type_template)
     if unique_key:
         if canonical_field == "name" and _is_name_like_unique_key(unique_key) and unique_key in attribute_names:
             return unique_key
@@ -2302,6 +3604,8 @@ def _resolve_cmdb_attribute_name(type_template: dict[str, Any] | None, canonical
             attr_alias = str(item.get("alias") or "")
             if not normalized_candidate:
                 continue
+            if system_generated_unique_key and _clean_text(attr_name) == system_generated_unique_key:
+                continue
             if (
                 _normalize_token(attr_name) == normalized_candidate
                 or _normalize_token(attr_alias) == normalized_candidate
@@ -2311,9 +3615,156 @@ def _resolve_cmdb_attribute_name(type_template: dict[str, Any] | None, canonical
     for item in definitions:
         attr_name = str(item.get("name") or "")
         attr_alias = str(item.get("alias") or "")
+        if system_generated_unique_key and _clean_text(attr_name) == system_generated_unique_key:
+            continue
         if _normalize_token(attr_name) in candidate_tokens or _normalize_token(attr_alias) in candidate_tokens:
             return attr_name
     return canonical_field
+
+
+def _resolve_import_target_key(
+    *,
+    type_template: dict[str, Any] | None,
+    canonical_field: str,
+) -> str:
+    target_key = _resolve_cmdb_attribute_name(type_template, canonical_field)
+    if canonical_field != "project":
+        return target_key
+    type_name = _clean_text((type_template or {}).get("name"))
+    if type_name == "project":
+        return target_key
+    platform_key = _resolve_cmdb_attribute_name(type_template, "platform")
+    if platform_key and _find_attribute_definition(type_template, platform_key):
+        return platform_key
+    return target_key
+
+
+def _first_non_empty_value(*values: Any) -> str:
+    for value in values:
+        cleaned = _clean_text(value)
+        if cleaned:
+            return cleaned
+    return ""
+
+
+def _autofill_deterministic_cmdb_attributes(
+    *,
+    canonical_attributes: dict[str, Any],
+    type_template: dict[str, Any] | None,
+    cmdb_attributes: dict[str, Any],
+) -> dict[str, Any]:
+    if not type_template:
+        return cmdb_attributes
+
+    next_attributes = dict(cmdb_attributes)
+    manage_ip_key = _resolve_cmdb_attribute_name(type_template, "manage_ip")
+    private_ip_key = _resolve_cmdb_attribute_name(type_template, "private_ip")
+
+    if manage_ip_key and not _clean_text(next_attributes.get(manage_ip_key)):
+        manage_ip_value = _first_non_empty_value(
+            next_attributes.get(private_ip_key),
+            canonical_attributes.get("manage_ip"),
+            canonical_attributes.get("private_ip"),
+            canonical_attributes.get("host_ip"),
+        )
+        if manage_ip_value:
+            next_attributes[manage_ip_key] = manage_ip_value
+
+    if private_ip_key and not _clean_text(next_attributes.get(private_ip_key)):
+        private_ip_value = _first_non_empty_value(
+            next_attributes.get(manage_ip_key),
+            canonical_attributes.get("private_ip"),
+            canonical_attributes.get("manage_ip"),
+            canonical_attributes.get("host_ip"),
+        )
+        if private_ip_value:
+            next_attributes[private_ip_key] = private_ip_value
+
+    unique_key = _get_import_required_unique_key(type_template)
+    if unique_key and not _clean_text(next_attributes.get(unique_key)):
+        if _is_code_like_unique_key(unique_key):
+            unique_value = _first_non_empty_value(
+                next_attributes.get(_resolve_import_target_key(type_template=type_template, canonical_field="asset_code")),
+                canonical_attributes.get("asset_code"),
+                canonical_attributes.get("property_no"),
+                canonical_attributes.get("dev_no"),
+                canonical_attributes.get("p_id"),
+            )
+        elif _is_ip_like_unique_key(unique_key):
+            unique_value = _first_non_empty_value(
+                next_attributes.get(private_ip_key),
+                next_attributes.get(manage_ip_key),
+                canonical_attributes.get("private_ip"),
+                canonical_attributes.get("manage_ip"),
+                canonical_attributes.get("host_ip"),
+            )
+        else:
+            unique_value = _first_non_empty_value(
+                next_attributes.get(_resolve_import_target_key(type_template=type_template, canonical_field="name")),
+                canonical_attributes.get("name"),
+                canonical_attributes.get("dev_name"),
+                canonical_attributes.get("serverName"),
+                canonical_attributes.get("hostname"),
+                canonical_attributes.get("db_instance"),
+                canonical_attributes.get("middleware_name"),
+                canonical_attributes.get("asset_code"),
+                canonical_attributes.get("private_ip"),
+                canonical_attributes.get("manage_ip"),
+            )
+        if unique_value:
+            next_attributes[unique_key] = unique_value
+
+    return next_attributes
+
+
+def _collect_deterministic_autofill_hints(
+    *,
+    canonical_attributes: dict[str, Any],
+    type_template: dict[str, Any] | None,
+    cmdb_attributes: dict[str, Any],
+) -> list[str]:
+    if not type_template:
+        return []
+
+    hints: list[str] = []
+    manage_ip_key = _resolve_cmdb_attribute_name(type_template, "manage_ip")
+    private_ip_key = _resolve_cmdb_attribute_name(type_template, "private_ip")
+    if (
+        manage_ip_key
+        and _clean_text(cmdb_attributes.get(manage_ip_key))
+        and not _clean_text(canonical_attributes.get("manage_ip"))
+        and _clean_text(canonical_attributes.get("private_ip"))
+    ):
+        hints.append(f"{_resolve_attribute_label(type_template, manage_ip_key)}已补全")
+
+    unique_key = _get_import_required_unique_key(type_template)
+    if unique_key and _clean_text(cmdb_attributes.get(unique_key)):
+        if _is_code_like_unique_key(unique_key) and (
+            not _clean_text(canonical_attributes.get(unique_key))
+            and _first_non_empty_value(
+                canonical_attributes.get("asset_code"),
+                canonical_attributes.get("property_no"),
+                canonical_attributes.get("dev_no"),
+                canonical_attributes.get("p_id"),
+            )
+        ):
+            hints.append(f"{_resolve_attribute_label(type_template, unique_key)}已补全")
+        elif _is_ip_like_unique_key(unique_key) and (
+            not _clean_text(canonical_attributes.get(unique_key))
+            and _first_non_empty_value(
+                canonical_attributes.get("private_ip"),
+                canonical_attributes.get("manage_ip"),
+                canonical_attributes.get("host_ip"),
+            )
+        ):
+            hints.append(f"{_resolve_attribute_label(type_template, unique_key)}已补全")
+        elif _is_name_like_unique_key(unique_key) and (
+            not _clean_text(canonical_attributes.get(unique_key))
+            and _clean_text(canonical_attributes.get("name"))
+        ):
+            hints.append(f"{_resolve_attribute_label(type_template, unique_key)}已补全")
+
+    return list(dict.fromkeys(hints))
 
 
 def _normalize_choice_attribute_value(
@@ -2410,8 +3861,16 @@ def _collect_pending_choice_values(
                 for record in records_by_type.get(ref_type_name, []):
                     record_attributes = record.get("attributes") or {}
                     value = _clean_text(record_attributes.get(ref_attr_name))
-                    if not value and ref_attr_name == _resolve_cmdb_attribute_name(ref_template, "name"):
-                        value = _clean_text(record.get("name"))
+                    if not value:
+                        resolved_name_key = _resolve_import_target_key(type_template=ref_template, canonical_field="name")
+                        resolved_platform_key = _resolve_import_target_key(type_template=ref_template, canonical_field="platform")
+                        resolved_project_key = _resolve_import_target_key(type_template=ref_template, canonical_field="project")
+                        if ref_attr_name == resolved_name_key:
+                            value = _clean_text(record_attributes.get("name")) or _clean_text(record.get("name"))
+                        elif ref_attr_name == resolved_platform_key:
+                            value = _clean_text(record_attributes.get("platform")) or _clean_text(record_attributes.get("project"))
+                        elif ref_attr_name == resolved_project_key:
+                            value = _clean_text(record_attributes.get("project")) or _clean_text(record_attributes.get("platform"))
                     if not value:
                         continue
                     if value in seen_values:
@@ -2432,6 +3891,75 @@ def _choice_extras_for_attribute(
     if not pending_choice_values or not ci_type or not attribute_name:
         return []
     return list(pending_choice_values.get((ci_type, attribute_name), []))
+
+
+def _get_single_pending_choice_value(
+    *,
+    ci_type: str,
+    attribute_name: str,
+    pending_choice_values: dict[tuple[str, str], list[dict[str, str]]] | None,
+) -> str:
+    extras = _choice_extras_for_attribute(
+        ci_type=ci_type,
+        attribute_name=attribute_name,
+        pending_choice_values=pending_choice_values,
+    )
+    values = [
+        _clean_text(item.get("value"))
+        for item in extras
+        if isinstance(item, dict) and _clean_text(item.get("value"))
+    ]
+    unique_values = list(dict.fromkeys(values))
+    if len(unique_values) == 1:
+        return unique_values[0]
+    return ""
+
+
+def _runtime_choice_extras_for_attribute(
+    *,
+    ci_type: str,
+    attribute_name: str,
+    type_template: dict[str, Any] | None,
+    source_attributes: dict[str, Any],
+    pending_choice_values: dict[tuple[str, str], list[dict[str, str]]] | None,
+) -> list[dict[str, str]]:
+    extras = _choice_extras_for_attribute(
+        ci_type=ci_type,
+        attribute_name=attribute_name,
+        pending_choice_values=pending_choice_values,
+    )
+    seen_values = {
+        _clean_text(item.get("value"))
+        for item in extras
+        if isinstance(item, dict) and _clean_text(item.get("value"))
+    }
+    platform_key = _resolve_import_target_key(type_template=type_template, canonical_field="platform")
+    project_key = _resolve_import_target_key(type_template=type_template, canonical_field="project")
+    candidate_values: list[str] = []
+    if attribute_name == platform_key:
+        candidate_values.extend(
+            [
+                _clean_text(source_attributes.get("platform")),
+                _clean_text(source_attributes.get("project")),
+                _clean_text(source_attributes.get(platform_key)),
+                _clean_text(source_attributes.get(project_key)),
+            ]
+        )
+    elif attribute_name == project_key:
+        candidate_values.extend(
+            [
+                _clean_text(source_attributes.get("project")),
+                _clean_text(source_attributes.get("platform")),
+                _clean_text(source_attributes.get(project_key)),
+                _clean_text(source_attributes.get(platform_key)),
+            ]
+        )
+    for value in candidate_values:
+        if not value or value in seen_values:
+            continue
+        seen_values.add(value)
+        extras.append({"value": value, "label": value})
+    return extras
 
 
 def _split_deferred_self_referential_choice_attributes(
@@ -2483,13 +4011,33 @@ def _build_cmdb_attributes(
     type_template: dict[str, Any] | None,
     pending_choice_values: dict[tuple[str, str], list[dict[str, str]]] | None = None,
 ) -> dict[str, Any]:
+    normalized_canonical_attributes = dict(canonical_attributes)
+    type_name = _clean_text((type_template or {}).get("name"))
+    project_value = _clean_text(normalized_canonical_attributes.get("project"))
+    platform_value = _clean_text(normalized_canonical_attributes.get("platform"))
+    if type_name != "project" and project_value and platform_value and project_value != platform_value:
+        normalized_canonical_attributes.pop("platform", None)
+    elif type_name != "project" and platform_value and _looks_like_os_or_runtime_value(platform_value):
+        LOGGER.warning(
+            "resource-import dropping suspicious platform value before CMDB write: ci_type=%s platform=%s project=%s attrs=%s",
+            ci_type,
+            platform_value,
+            project_value,
+            {
+                key: _clean_text(value)
+                for key, value in normalized_canonical_attributes.items()
+                if _clean_text(value)
+            },
+        )
+        normalized_canonical_attributes.pop("platform", None)
+
     attributes: dict[str, Any] = {}
-    for key, value in canonical_attributes.items():
+    for key, value in normalized_canonical_attributes.items():
         cleaned_value = _clean_text(value)
-        if not cleaned_value:
+        if not cleaned_value or key == "ci_type" or str(key).startswith("_"):
             continue
-        target_key = _resolve_cmdb_attribute_name(type_template, key)
-        if not target_key:
+        target_key = _resolve_import_target_key(type_template=type_template, canonical_field=key)
+        if not target_key or target_key == "ci_type":
             continue
         attribute_definition = _find_attribute_definition(type_template, target_key)
         if attribute_definition and attribute_definition.get("is_list"):
@@ -2499,6 +4047,13 @@ def _build_cmdb_attributes(
             extra_choices = _choice_extras_for_attribute(
                 ci_type=ci_type,
                 attribute_name=target_key,
+                pending_choice_values=pending_choice_values,
+            )
+            extra_choices = _runtime_choice_extras_for_attribute(
+                ci_type=ci_type,
+                attribute_name=target_key,
+                type_template=type_template,
+                source_attributes=normalized_canonical_attributes,
                 pending_choice_values=pending_choice_values,
             )
             for item in raw_items:
@@ -2520,9 +4075,11 @@ def _build_cmdb_attributes(
         normalized_value, unresolved_choice = _normalize_choice_attribute_value(
             attribute_definition=attribute_definition,
             value=cleaned_value,
-            extra_choices=_choice_extras_for_attribute(
+            extra_choices=_runtime_choice_extras_for_attribute(
                 ci_type=ci_type,
                 attribute_name=target_key,
+                type_template=type_template,
+                source_attributes=normalized_canonical_attributes,
                 pending_choice_values=pending_choice_values,
             ),
         )
@@ -2530,7 +4087,35 @@ def _build_cmdb_attributes(
             continue
         attributes[target_key] = normalized_value
 
-    unique_key = _clean_text((type_template or {}).get("unique_key"))
+    platform_key = _resolve_import_target_key(type_template=type_template, canonical_field="platform")
+    platform_definition = _find_attribute_definition(type_template, platform_key)
+    if (
+        type_name != "project"
+        and platform_key
+        and platform_definition
+        and not _clean_text(attributes.get(platform_key))
+    ):
+        single_platform_value = _get_single_pending_choice_value(
+            ci_type=ci_type,
+            attribute_name=platform_key,
+            pending_choice_values=pending_choice_values,
+        )
+        if single_platform_value:
+            normalized_value, unresolved_choice = _normalize_choice_attribute_value(
+                attribute_definition=platform_definition,
+                value=single_platform_value,
+                extra_choices=_runtime_choice_extras_for_attribute(
+                    ci_type=ci_type,
+                    attribute_name=platform_key,
+                    type_template=type_template,
+                    source_attributes=normalized_canonical_attributes,
+                    pending_choice_values=pending_choice_values,
+                ),
+            )
+            if not unresolved_choice and normalized_value:
+                attributes[platform_key] = normalized_value
+
+    unique_key = _get_import_required_unique_key(type_template)
     if unique_key and not _clean_text(attributes.get(unique_key)):
         fallback_field = ""
         if _is_name_like_unique_key(unique_key):
@@ -2539,11 +4124,53 @@ def _build_cmdb_attributes(
             fallback_field = "private_ip"
         elif _is_code_like_unique_key(unique_key):
             fallback_field = "asset_code"
-        fallback_value = _clean_text(canonical_attributes.get(fallback_field)) if fallback_field else ""
+        fallback_value = _clean_text(normalized_canonical_attributes.get(fallback_field)) if fallback_field else ""
         if fallback_value:
             attributes[unique_key] = fallback_value
 
-    return attributes
+    return _autofill_deterministic_cmdb_attributes(
+        canonical_attributes=normalized_canonical_attributes,
+        type_template=type_template,
+        cmdb_attributes=attributes,
+    )
+
+
+def _build_import_record_debug_context(
+    *,
+    record: dict[str, Any],
+    ci_type: str,
+    import_action: str,
+    source_attributes: dict[str, Any],
+    cmdb_attributes: dict[str, Any],
+    type_template: dict[str, Any] | None,
+    existing_ci: dict[str, Any] | None = None,
+    deferred_attributes: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "previewKey": _clean_text(record.get("previewKey")),
+        "name": _clean_text(record.get("name")),
+        "rawCiType": _clean_text(record.get("ciType")),
+        "resolvedCiType": ci_type,
+        "importAction": import_action,
+        "sourceRows": record.get("sourceRows") or [],
+        "uniqueKey": _get_import_required_unique_key(type_template),
+        "existingCi": existing_ci or {},
+        "sourceAttributes": {
+            key: value
+            for key, value in source_attributes.items()
+            if value not in (None, "", [])
+        },
+        "cmdbAttributes": {
+            key: value
+            for key, value in cmdb_attributes.items()
+            if value not in (None, "", [])
+        },
+        "deferredAttributes": {
+            key: value
+            for key, value in (deferred_attributes or {}).items()
+            if value not in (None, "", [])
+        },
+    }
 
 
 def _build_preview_attributes(
@@ -2555,7 +4182,7 @@ def _build_preview_attributes(
         cleaned_value = _clean_text(value)
         if not cleaned_value or key == "ci_type" or str(key).startswith("_"):
             continue
-        target_key = _resolve_cmdb_attribute_name(type_template, key)
+        target_key = _resolve_import_target_key(type_template=type_template, canonical_field=key)
         attr_definition = _find_attribute_definition(type_template, target_key)
         if attr_definition:
             preview_attributes.setdefault(target_key, cleaned_value)
@@ -2571,7 +4198,7 @@ def _resolve_record_display_name(
     candidate_fields = [
         "name",
         "dev_name",
-        _clean_text((type_template or {}).get("unique_key")),
+        _get_import_required_unique_key(type_template),
         "asset_code",
         "dev_no",
         "private_ip",
@@ -2595,7 +4222,7 @@ def _build_record_issues(
 ) -> list[dict[str, str]]:
     issues: list[dict[str, str]] = []
     def to_target_field(field_name: str) -> str:
-        resolved = _resolve_cmdb_attribute_name(type_template, field_name)
+        resolved = _resolve_import_target_key(type_template=type_template, canonical_field=field_name)
         return resolved or field_name
 
     confirmation_labels = _collect_confirmation_issues(ci_type, attributes)
@@ -2616,7 +4243,7 @@ def _build_record_issues(
             }
         )
 
-    unique_key = _clean_text((type_template or {}).get("unique_key"))
+    unique_key = _get_import_required_unique_key(type_template)
     cmdb_attributes = _build_cmdb_attributes(
         ci_type=ci_type,
         canonical_attributes=attributes,
@@ -2642,6 +4269,21 @@ def _build_record_issues(
         target_field = _clean_text(item.get("targetField"))
         confidence = _clean_text(item.get("confidence"))
         source_field = _clean_text(item.get("sourceField"))
+        status = _clean_text(item.get("status"))
+        if status == "needs_confirmation":
+            candidate_text = " / ".join(
+                _clean_text(candidate.get("targetField"))
+                for candidate in (item.get("candidates") or [])
+                if _clean_text(candidate.get("targetField"))
+            )
+            issues.append(
+                {
+                    "field": "mapping",
+                    "level": "warning",
+                    "message": f"{source_field} 存在多语义候选（{candidate_text or '待确认'}），请人工确认后再导入",
+                }
+            )
+            continue
         if target_field in {"", "unknown"} or confidence in {"", "high"} or target_field in seen_mapping_fields:
             continue
         seen_mapping_fields.add(target_field)
@@ -2659,14 +4301,16 @@ def _build_record_issues(
         cleaned_value = _clean_text(raw_value)
         if not cleaned_value:
             continue
-        target_key = _resolve_cmdb_attribute_name(type_template, canonical_field)
+        target_key = _resolve_import_target_key(type_template=type_template, canonical_field=canonical_field)
         attr_definition = _find_attribute_definition(type_template, target_key)
         normalized_value, unresolved_choice = _normalize_choice_attribute_value(
             attribute_definition=attr_definition,
             value=cleaned_value,
-            extra_choices=_choice_extras_for_attribute(
+            extra_choices=_runtime_choice_extras_for_attribute(
                 ci_type=ci_type,
                 attribute_name=target_key,
+                type_template=type_template,
+                source_attributes=attributes,
                 pending_choice_values=pending_choice_values,
             ),
         )
@@ -2710,6 +4354,8 @@ def _validate_required_cmdb_attributes(
         attr_name = _clean_text(item.get("name"))
         if not attr_name or not item.get("required"):
             continue
+        if _is_system_generated_unique_key(type_template) and attr_name == _clean_text((type_template or {}).get("unique_key")):
+            continue
 
         value = cmdb_attributes.get(attr_name)
         if isinstance(value, list):
@@ -2720,6 +4366,8 @@ def _validate_required_cmdb_attributes(
             continue
 
         raw_value = source_attributes.get(attr_name)
+        if raw_value in (None, "") and attr_name == "platform":
+            raw_value = source_attributes.get("project")
         raw_values: list[str] = []
         if isinstance(raw_value, list):
             raw_values = [_clean_text(entry) for entry in raw_value if _clean_text(entry)]
@@ -2736,9 +4384,11 @@ def _validate_required_cmdb_attributes(
                 {
                     **item,
                     "choices": (item.get("choices") or [])
-                    + _choice_extras_for_attribute(
+                    + _runtime_choice_extras_for_attribute(
                         ci_type=ci_type,
                         attribute_name=attr_name,
+                        type_template=type_template,
+                        source_attributes=source_attributes,
                         pending_choice_values=pending_choice_values,
                     ),
                 }
@@ -2793,9 +4443,145 @@ def _selected_record_map(resource_groups: list[dict[str, Any]]) -> dict[str, dic
     return selected
 
 
+def _choice_reference_value_for_record(
+    *,
+    record: dict[str, Any],
+    attr_name: str,
+    type_template: dict[str, Any] | None,
+) -> str:
+    attributes = _merged_resource_attributes(record)
+    direct_value = _clean_text(attributes.get(attr_name))
+    if direct_value:
+        return direct_value
+
+    platform_key = _resolve_import_target_key(type_template=type_template, canonical_field="platform")
+    project_key = _resolve_import_target_key(type_template=type_template, canonical_field="project")
+    if attr_name == platform_key:
+        return _first_non_empty_value(
+            attributes.get("platform"),
+            attributes.get("project"),
+            attributes.get(platform_key),
+            attributes.get(project_key),
+        )
+    if attr_name == project_key:
+        return _first_non_empty_value(
+            attributes.get("project"),
+            attributes.get("platform"),
+            attributes.get(project_key),
+            attributes.get(platform_key),
+        )
+    return ""
+
+
+def _reference_value_for_target_record(
+    *,
+    record: dict[str, Any],
+    ref_attr_name: str,
+    ref_template: dict[str, Any] | None,
+) -> str:
+    attributes = _merged_resource_attributes(record)
+    value = _clean_text(attributes.get(ref_attr_name))
+    if value:
+        return value
+
+    resolved_name_key = _resolve_import_target_key(type_template=ref_template, canonical_field="name")
+    resolved_platform_key = _resolve_import_target_key(type_template=ref_template, canonical_field="platform")
+    resolved_project_key = _resolve_import_target_key(type_template=ref_template, canonical_field="project")
+    if ref_attr_name == resolved_name_key:
+        return _first_non_empty_value(attributes.get("name"), record.get("name"))
+    if ref_attr_name == resolved_platform_key:
+        return _first_non_empty_value(attributes.get("platform"), attributes.get("project"))
+    if ref_attr_name == resolved_project_key:
+        return _first_non_empty_value(attributes.get("project"), attributes.get("platform"))
+    return ""
+
+
+def _add_choice_reference_dependencies(
+    *,
+    selected: dict[str, dict[str, Any]],
+    type_templates: dict[str, dict[str, Any]],
+    adjacency: dict[str, set[str]],
+    indegree: dict[str, int],
+) -> None:
+    if not selected or not type_templates:
+        return
+
+    type_name_by_id: dict[int, str] = {}
+    records_by_type: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for name, template in type_templates.items():
+        try:
+            type_name_by_id[int(template.get("id"))] = name
+        except Exception:
+            continue
+    for record in selected.values():
+        ci_type = _clean_text(record.get("ciType"))
+        if ci_type:
+            records_by_type[ci_type].append(record)
+
+    for preview_key, record in selected.items():
+        ci_type = _clean_text(record.get("ciType"))
+        type_template = type_templates.get(ci_type)
+        if not ci_type or not type_template:
+            continue
+        for item in _attribute_definitions(type_template):
+            attr_name = _clean_text(item.get("name"))
+            ref_attr_id = item.get("choice_reference_attr_id")
+            ref_type_ids = item.get("choice_reference_type_ids") or []
+            if not attr_name or not ref_attr_id or not ref_type_ids:
+                continue
+
+            reference_value = _choice_reference_value_for_record(
+                record=record,
+                attr_name=attr_name,
+                type_template=type_template,
+            )
+
+            matched_targets: list[str] = []
+            for ref_type_id in ref_type_ids:
+                try:
+                    ref_type_name = type_name_by_id.get(int(ref_type_id))
+                except Exception:
+                    ref_type_name = None
+                if not ref_type_name:
+                    continue
+                ref_template = type_templates.get(ref_type_name)
+                ref_attr_name = _attribute_name_by_id(ref_template, ref_attr_id)
+                if not ref_attr_name:
+                    continue
+                candidates = records_by_type.get(ref_type_name, [])
+                if not candidates:
+                    continue
+                if reference_value:
+                    for candidate in candidates:
+                        candidate_key = str(candidate.get("previewKey") or "").strip()
+                        if not candidate_key or candidate_key == preview_key:
+                            continue
+                        target_value = _reference_value_for_target_record(
+                            record=candidate,
+                            ref_attr_name=ref_attr_name,
+                            ref_template=ref_template,
+                        )
+                        if target_value and _normalize_token(target_value) == _normalize_token(reference_value):
+                            matched_targets.append(candidate_key)
+                elif len(candidates) == 1:
+                    candidate_key = str(candidates[0].get("previewKey") or "").strip()
+                    if candidate_key and candidate_key != preview_key:
+                        matched_targets.append(candidate_key)
+
+            for target_key in list(dict.fromkeys(matched_targets)):
+                targets = adjacency.setdefault(target_key, set())
+                if preview_key in targets:
+                    continue
+                targets.add(preview_key)
+                indegree[preview_key] = indegree.get(preview_key, 0) + 1
+                indegree.setdefault(target_key, 0)
+
+
 def _ordered_selected_records(
     resource_groups: list[dict[str, Any]],
     relations: list[dict[str, Any]],
+    *,
+    type_templates: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     ordered_records: list[dict[str, Any]] = []
     selected = _selected_record_map(resource_groups)
@@ -2825,6 +4611,13 @@ def _ordered_selected_records(
         indegree[target_key] = indegree.get(target_key, 0) + 1
         indegree.setdefault(source_key, 0)
 
+    _add_choice_reference_dependencies(
+        selected=selected,
+        type_templates=type_templates or {},
+        adjacency=adjacency,
+        indegree=indegree,
+    )
+
     ready = sorted((key for key, degree in indegree.items() if degree == 0), key=lambda item: original_order.get(item, 10**9))
     ordered_keys: list[str] = []
     while ready:
@@ -2844,11 +4637,120 @@ def _ordered_selected_records(
     return [selected[key] for key in ordered_keys]
 
 
+def _build_structure_selected_model_map(preview: dict[str, Any] | None) -> dict[str, str]:
+    structure_analysis = (preview or {}).get("structureAnalysis") or {}
+    items = structure_analysis.get("items") or []
+    if not isinstance(items, list):
+        return {}
+
+    resolved: dict[str, str] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        selected_model_name = _clean_text(item.get("selectedModelName")) or _clean_text(item.get("suggestedModelName"))
+        if not selected_model_name:
+            continue
+        for raw_key in (
+            item.get("resourceCiType"),
+            item.get("resourceLabel"),
+            item.get("key"),
+        ):
+            normalized_key = _clean_text(raw_key)
+            if normalized_key and normalized_key not in resolved:
+                resolved[normalized_key] = selected_model_name
+    return resolved
+
+
+def _pick_existing_structure_model_name(
+    *,
+    current_model_name: str,
+    resource_ci_type: str,
+    raw_type_hints: list[str],
+    semantic_plan: SemanticModelPlan,
+    model_options: list[dict[str, Any]],
+    type_templates: dict[str, dict[str, Any]],
+) -> str:
+    existing_names = [
+        _clean_text(item.get("name"))
+        for item in model_options
+        if isinstance(item, dict) and item.get("existing", True) and _clean_text(item.get("name"))
+    ]
+    if not existing_names:
+        return current_model_name
+
+    existing_name_set = set(existing_names)
+    preferred_names = [
+        _clean_text(semantic_plan.best_model),
+        _clean_text(current_model_name),
+        _clean_text(resource_ci_type),
+    ]
+    for raw_hint in raw_type_hints:
+        preferred_names.append(
+            _resolve_payload_ci_type(
+                raw_hint,
+                type_templates=type_templates,
+            )
+        )
+
+    for name in preferred_names:
+        normalized_name = _clean_text(name)
+        if normalized_name in existing_name_set:
+            return normalized_name
+
+    if len(existing_names) == 1:
+        return existing_names[0]
+    return current_model_name
+
+
+def _resolve_payload_ci_type(
+    raw_ci_type: Any,
+    *,
+    type_templates: dict[str, dict[str, Any]],
+    structure_selected_model_map: dict[str, str] | None = None,
+) -> str:
+    ci_type = _clean_text(raw_ci_type)
+    if not ci_type:
+        return ""
+    if ci_type in type_templates:
+        return ci_type
+    mapped_ci_type = _clean_text((structure_selected_model_map or {}).get(ci_type))
+    if mapped_ci_type in type_templates:
+        return mapped_ci_type
+    alias_index = _build_type_alias_index(list(type_templates.values()))
+    normalized_ci_type = _normalize_ci_type(ci_type, alias_index)
+    if normalized_ci_type in type_templates:
+        return normalized_ci_type
+
+    normalized_text = _normalize_token(ci_type)
+    semantic_candidates: list[tuple[int, str]] = []
+    for rule in SEMANTIC_MODEL_RULES:
+        preferred_models = [
+            _clean_text(model_name)
+            for model_name in (rule.get("preferred_models") or [])
+            if _clean_text(model_name) in type_templates
+        ]
+        if not preferred_models:
+            continue
+        matched_score = 0
+        for keyword in (rule.get("keywords") or []):
+            normalized_keyword = _normalize_token(str(keyword))
+            if normalized_keyword and normalized_keyword in normalized_text:
+                matched_score = max(matched_score, len(normalized_keyword))
+        if matched_score <= 0:
+            continue
+        semantic_candidates.append((matched_score, preferred_models[0]))
+    if semantic_candidates:
+        semantic_candidates.sort(key=lambda item: (-item[0], item[1]))
+        return semantic_candidates[0][1]
+    return ci_type
+
+
 def _preflight_import_resources(
     client: VeopsCmdbClient,
     *,
     type_templates: dict[str, dict[str, Any]],
     ordered_records: list[dict[str, Any]],
+    structure_selected_model_map: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     pending_choice_values = _collect_pending_choice_values(
@@ -2857,7 +4759,11 @@ def _preflight_import_resources(
     )
     for record in ordered_records:
         import_action = _clean_text(record.get("importAction")) or "create"
-        ci_type = str(record.get("ciType") or "").strip()
+        ci_type = _resolve_payload_ci_type(
+            record.get("ciType"),
+            type_templates=type_templates,
+            structure_selected_model_map=structure_selected_model_map,
+        )
         preview_key = record.get("previewKey")
         if not ci_type or ci_type == "unknown":
             results.append({"previewKey": preview_key, "status": "failed", "message": "资源类型未确认，无法导入"})
@@ -2868,7 +4774,11 @@ def _preflight_import_resources(
             results.append({"previewKey": preview_key, "status": "failed", "message": f"目标模型 {ci_type} 不存在或尚未创建完成，当前不能导入"})
             continue
 
-        attributes = {key: value for key, value in (record.get("attributes") or {}).items() if _clean_text(value)}
+        attributes = {
+            key: value
+            for key, value in _merged_resource_attributes(record).items()
+            if _clean_text(value)
+        }
         display_name = _clean_text(record.get("name")) or _resolve_record_display_name(attributes, type_template)
         if display_name and not _resolve_record_display_name(attributes, type_template):
             fallback_field = _resolve_cmdb_attribute_name(type_template, "name")
@@ -2881,7 +4791,7 @@ def _preflight_import_resources(
             type_template=type_template,
             pending_choice_values=pending_choice_values,
         )
-        unique_key = _clean_text(type_template.get("unique_key"))
+        unique_key = _get_import_required_unique_key(type_template)
         if not display_name and not _clean_text(cmdb_attributes.get(unique_key)):
             results.append({"previewKey": preview_key, "status": "failed", "message": "缺少资源名称或模型唯一标识，无法导入"})
             continue
@@ -3028,7 +4938,7 @@ def _build_resource_relation_lookup(
         if not preview_key or not ci_type:
             continue
         type_template = type_templates.get(ci_type) or {}
-        unique_key = _clean_text(type_template.get("unique_key"))
+        unique_key = _get_import_required_unique_key(type_template)
         candidate_fields: dict[str, Any] = {}
 
         if _clean_text(item.get("name")):
@@ -3609,9 +5519,11 @@ async def preview_resource_import(
         if not runtime_source:
             runtime_source = managed_runtime.source
     field_stats: dict[tuple[str, str], int] = defaultdict(int)
+    mapping_summary_entries: list[dict[str, Any]] = []
     cleaning_changes: Counter[str] = Counter()
     warnings: list[str] = []
     logs: list[str] = []
+    analysis_issues: list[dict[str, str]] = []
     raw_resources: list[dict[str, Any]] = []
     explicit_relation_rows: list[dict[str, Any]] = []
     skipped_rows = 0
@@ -3663,6 +5575,7 @@ async def preview_resource_import(
                 percent=10,
             )
 
+        sheet_work_items: list[dict[str, Any]] = []
         for parsed_file in parsed_files:
             warnings.extend(parsed_file.warnings)
             logs.extend(parsed_file.logs)
@@ -3672,19 +5585,31 @@ async def preview_resource_import(
                 rows_by_sheet[_clean_text(row.get("_sheet")) or "Sheet1"].append((row_index, row))
 
             for sheet_name, sheet_rows in rows_by_sheet.items():
-                processed_sheet_count += 1
-                llm_target = "将调用 LLM 做字段语义映射"
-                if not managed_llm_client:
-                    llm_target = "当前未连接 LLM，将使用规则映射兜底"
-                _emit_progress(
-                    progress_callback,
-                    stage="sheet_mapping",
-                    message=(
-                        f"正在解析 {parsed_file.filename} / {sheet_name} "
-                        f"({processed_sheet_count}/{max(total_sheet_count, 1)})，{llm_target}"
-                    ),
-                    percent=12 + int((processed_sheet_count - 1) / max(total_sheet_count, 1) * 60),
+                sheet_work_items.append(
+                    {
+                        "filename": parsed_file.filename,
+                        "sheetName": sheet_name,
+                        "sheetRows": sheet_rows,
+                    }
                 )
+
+        async def _resolve_sheet_work_item(index: int, item: dict[str, Any], semaphore: asyncio.Semaphore) -> dict[str, Any]:
+            filename = str(item.get("filename") or "")
+            sheet_name = str(item.get("sheetName") or "")
+            sheet_rows = item.get("sheetRows") or []
+            llm_target = "将调用 LLM 做字段语义映射"
+            if not managed_llm_client:
+                llm_target = "当前未连接 LLM，将使用规则映射兜底"
+            _emit_progress(
+                progress_callback,
+                stage="sheet_mapping",
+                message=(
+                    f"正在解析 {filename} / {sheet_name} "
+                    f"({index + 1}/{max(total_sheet_count, 1)})，{llm_target}"
+                ),
+                percent=12 + int(index / max(total_sheet_count, 1) * 60),
+            )
+            async with semaphore:
                 plan, mapping_mode = await _resolve_sheet_mapping_plan(
                     sheet_name=sheet_name,
                     rows=[row for _, row in sheet_rows],
@@ -3692,197 +5617,325 @@ async def preview_resource_import(
                     model_templates=model_templates,
                     llm_client=managed_llm_client,
                 )
-                logs.append(f"{parsed_file.filename} / {sheet_name}: {mapping_mode}")
+            return {
+                **item,
+                "index": index,
+                "plan": plan,
+                "mappingMode": mapping_mode,
+            }
+
+        if sheet_work_items:
+            mapping_semaphore = asyncio.Semaphore(RESOURCE_IMPORT_LLM_SHEET_PARALLELISM)
+            resolved_sheet_results = await asyncio.gather(
+                *[
+                    _resolve_sheet_work_item(index, item, mapping_semaphore)
+                    for index, item in enumerate(sheet_work_items)
+                ]
+            )
+        else:
+            resolved_sheet_results = []
+
+        if managed_llm_client and resolved_sheet_results:
+            retryable_failed_sheets = [
+                item
+                for item in resolved_sheet_results
+                if _is_retryable_blocking_mapping_mode(
+                    str(item.get("mappingMode") or ""),
+                    _clean_text((item.get("plan") or {}).sheet_kind if item.get("plan") else ""),
+                )
+            ]
+            for retry_index, failed_sheet in enumerate(
+                sorted(retryable_failed_sheets, key=lambda item: int(item.get("index") or 0)),
+                start=1,
+            ):
+                parsed_filename = str(failed_sheet.get("filename") or "")
+                sheet_name = str(failed_sheet.get("sheetName") or "")
+                sheet_rows = failed_sheet.get("sheetRows") or []
                 _emit_progress(
                     progress_callback,
-                    stage="sheet_mapping",
-                    message=f"{parsed_file.filename} / {sheet_name}: {mapping_mode}",
-                    percent=12 + int(processed_sheet_count / max(total_sheet_count, 1) * 60),
+                    stage="sheet_mapping_recovery",
+                    message=(
+                        f"关键 sheet 首轮解析失败，正在串行重试 {parsed_filename} / {sheet_name} "
+                        f"({retry_index}/{len(retryable_failed_sheets)})"
+                    ),
+                    percent=56,
                 )
+                retry_plan, retry_mapping_mode = await _resolve_sheet_mapping_plan(
+                    sheet_name=sheet_name,
+                    rows=[row for _, row in sheet_rows],
+                    alias_index=alias_index,
+                    model_templates=model_templates,
+                    llm_client=managed_llm_client,
+                    retry_count_override=RESOURCE_IMPORT_LLM_RETRY_COUNT + RESOURCE_IMPORT_LLM_BLOCKING_RECOVERY_RETRY_COUNT,
+                )
+                failed_sheet["plan"] = retry_plan
+                failed_sheet["mappingMode"] = retry_mapping_mode
 
-                if plan.sheet_kind == "note":
-                    skipped_rows += len(sheet_rows)
-                    logs.append(f"{parsed_file.filename} / {sheet_name}: 识别为说明页，已跳过 {len(sheet_rows)} 行")
+        for resolved_sheet in sorted(resolved_sheet_results, key=lambda item: int(item.get("index") or 0)):
+            parsed_filename = str(resolved_sheet.get("filename") or "")
+            sheet_name = str(resolved_sheet.get("sheetName") or "")
+            sheet_rows = resolved_sheet.get("sheetRows") or []
+            plan = resolved_sheet.get("plan")
+            mapping_mode = str(resolved_sheet.get("mappingMode") or "规则映射")
+            processed_sheet_count += 1
+            logs.append(f"{parsed_filename} / {sheet_name}: {mapping_mode}")
+            analysis_issue = _mapping_mode_to_analysis_issue(
+                file_name=parsed_filename,
+                sheet_name=sheet_name,
+                mapping_mode=mapping_mode,
+                sheet_kind=plan.sheet_kind,
+            )
+            if analysis_issue:
+                analysis_issues.append(analysis_issue)
+                warnings.append(str(analysis_issue.get("message") or ""))
+            for detail in (plan.mapping_details or {}).values():
+                non_empty_count = sum(
+                    1 for _, row in sheet_rows
+                    if _clean_text(row.get(_clean_text(detail.get("sourceField"))))
+                )
+                mapping_summary_entries.append(
+                    {
+                        "fileName": parsed_filename,
+                        "sheetName": sheet_name,
+                        "sourceField": _clean_text(detail.get("sourceField")),
+                        "targetField": _clean_text(detail.get("targetField")),
+                        "suggestedTargetField": _clean_text(detail.get("suggestedTargetField")),
+                        "count": non_empty_count or len(sheet_rows),
+                        "confidence": _clean_text(detail.get("confidence")) or "low",
+                        "status": _clean_text(detail.get("status")) or "unmapped",
+                        "resolvedBy": _clean_text(detail.get("resolvedBy")),
+                        "candidates": detail.get("candidates") or [],
+                        "message": _clean_text(detail.get("message")),
+                        "needsConfirmation": bool(detail.get("needsConfirmation")),
+                    }
+                )
+                if not detail.get("needsConfirmation"):
                     continue
+                message = _clean_text(detail.get("message")) or "字段语义存在歧义，需人工确认"
+                analysis_issues.append(
+                    _build_analysis_issue(
+                        kind="ambiguous_mapping",
+                        severity="warning",
+                        message=message,
+                        file_name=parsed_filename,
+                        sheet_name=sheet_name,
+                    )
+                )
+                warnings.append(message)
+            _emit_progress(
+                progress_callback,
+                stage="sheet_mapping",
+                message=f"{parsed_filename} / {sheet_name}: {mapping_mode}",
+                percent=12 + int(processed_sheet_count / max(total_sheet_count, 1) * 60),
+            )
 
-                if plan.sheet_kind == "relation":
-                    relation_row_count = 0
-                    for row_index, row in sheet_rows:
-                        standardized_relation: dict[str, Any] = {}
-                        for raw_key, raw_value in row.items():
-                            if raw_key == "_sheet":
-                                continue
-                            mapped_field, _confidence = plan.mappings.get(raw_key, _match_relation_field(raw_key))
-                            if mapped_field != "unknown" and mapped_field in RELATION_FIELD_ALIASES and not standardized_relation.get(mapped_field):
-                                standardized_relation[mapped_field] = _clean_text(raw_value)
+            if plan.sheet_kind == "note":
+                skipped_rows += len(sheet_rows)
+                logs.append(f"{parsed_filename} / {sheet_name}: 识别为说明页，已跳过 {len(sheet_rows)} 行")
+                continue
 
-                        if not _row_has_relation_signal(standardized_relation):
-                            skipped_rows += 1
-                            continue
-
-                        explicit_relation_rows.append(
-                            {
-                                **standardized_relation,
-                                "relation_type": _normalize_relation_type(standardized_relation.get("relation_type")),
-                                "filename": parsed_file.filename,
-                                "sheet": sheet_name,
-                                "rowIndex": row_index,
-                            }
-                        )
-                        relation_row_count += 1
-                    logs.append(f"{parsed_file.filename} / {sheet_name}: 识别为关系表，提取 {relation_row_count} 条关系候选")
-                    continue
-
+            if plan.sheet_kind == "relation":
+                relation_row_count = 0
                 for row_index, row in sheet_rows:
-                    standardized: dict[str, Any] = {}
-                    mapping_preview: list[dict[str, Any]] = []
+                    standardized_relation: dict[str, Any] = {}
                     for raw_key, raw_value in row.items():
                         if raw_key == "_sheet":
                             continue
-                        mapped_field, confidence = plan.mappings.get(raw_key, _match_field(raw_key))
-                        if mapped_field != "unknown":
-                            field_stats[(raw_key, mapped_field)] += 1
-                        mapping_preview.append(
-                            {
-                                "sourceField": raw_key,
-                                "targetField": mapped_field,
-                                "confidence": confidence,
-                            }
-                        )
-                        if mapped_field != "unknown" and not standardized.get(mapped_field):
-                            standardized[mapped_field] = _clean_text(raw_value)
-                        if mapped_field == "ci_type" and not standardized.get("_raw_ci_type_value"):
-                            standardized["_raw_ci_type_value"] = _clean_text(raw_value)
+                        mapped_field, _confidence = plan.mappings.get(raw_key, _match_relation_field(raw_key))
+                        if mapped_field != "unknown" and mapped_field in RELATION_FIELD_ALIASES and not standardized_relation.get(mapped_field):
+                            standardized_relation[mapped_field] = _clean_text(raw_value)
 
-                    if not _row_has_resource_signal(standardized):
+                    if not _row_has_relation_signal(standardized_relation):
                         skipped_rows += 1
                         continue
 
-                    normalized_ip, ip_changed = _normalize_ip(standardized.get("private_ip", ""))
-                    if ip_changed:
-                        cleaning_changes["IP地址标准化"] += 1
-                    if normalized_ip:
-                        standardized["private_ip"] = normalized_ip
-
-                    normalized_status = _normalize_status(standardized.get("status", ""))
-                    if normalized_status and normalized_status != _clean_text(standardized.get("status", "")):
-                        cleaning_changes["状态标准化"] += 1
-                    standardized["status"] = normalized_status
-
-                    normalized_port, port_changed, port_ambiguous = _normalize_service_port(standardized.get("service_port", ""))
-                    if port_changed:
-                        cleaning_changes["端口标准化"] += 1
-                    if normalized_port:
-                        standardized["service_port"] = normalized_port
-                    elif port_ambiguous:
-                        standardized["service_port"] = ""
-                        warnings.append(
-                            f"{parsed_file.filename} / {sheet_name} 第 {row_index} 行端口值存在多个候选，已标记为待确认。"
-                        )
-
-                    raw_type = _clean_text(standardized.get("ci_type"))
-                    normalized_type = _normalize_ci_type(raw_type, alias_index)
-                    if normalized_type and normalized_type != raw_type:
-                        cleaning_changes["类型标准化"] += 1
-                    if not normalized_type and plan.default_ci_type:
-                        normalized_type = plan.default_ci_type
-                    standardized["ci_type"] = normalized_type
-                    if normalized_type == "networkdevice" and not _clean_text(standardized.get("dev_class")):
-                        raw_ci_type_value = _clean_text(standardized.get("_raw_ci_type_value"))
-                        if raw_ci_type_value and raw_ci_type_value.lower() != "networkdevice":
-                            standardized["dev_class"] = raw_ci_type_value
-
-                    if not standardized["ci_type"]:
-                        warnings.append(f"{parsed_file.filename} / {sheet_name} 第 {row_index} 行未识别到资源类型，请在确认步骤手动选择。")
-
-                    type_template = type_template_map.get(standardized["ci_type"] or "")
-                    preview_attributes = _build_preview_attributes(standardized, type_template)
-                    display_name = _resolve_record_display_name(preview_attributes, type_template)
-                    if not display_name:
-                        warnings.append(f"{parsed_file.filename} / {sheet_name} 第 {row_index} 行缺少资源名称/唯一标识，请在确认步骤手动补齐。")
-
-                    cmdb_attributes = _build_cmdb_attributes(
-                        ci_type=standardized["ci_type"] or "unknown",
-                        canonical_attributes=preview_attributes,
-                        type_template=type_template,
-                    )
-                    existing_ci = None
-                    if existing_client and remaining_existing_prechecks > 0:
-                        existing_ci = _find_existing_ci(
-                            existing_client,
-                            standardized["ci_type"] or "unknown",
-                            cmdb_attributes,
-                            fallback_name=display_name,
-                            unique_key=_clean_text((type_template or {}).get("unique_key")),
-                        )
-                        remaining_existing_prechecks -= 1
-                    elif existing_client and not precheck_limit_hit:
-                        precheck_limit_hit = True
-                        logs.append(
-                            "预览资源较多，已跳过剩余存量校验；提交导入时会再次精确检查是否已存在。"
-                        )
-                        _emit_progress(
-                            progress_callback,
-                            stage="cmdb_precheck",
-                            message="资源量较大，剩余存量校验已延后到正式导入阶段执行。",
-                            percent=74,
-                        )
-                    if existing_ci:
-                        existing_detected_count += 1
-
-                    record_issues = _build_record_issues(
-                        ci_type=standardized["ci_type"] or "unknown",
-                        attributes=standardized,
-                        mapping_preview=mapping_preview,
-                        existing_ci=existing_ci,
-                        type_template=type_template,
-                    )
-
-                    preview_key = _build_preview_key(parsed_file, sheet_name, row_index)
-                    attributes = {
-                        key: _clean_text(value)
-                        for key, value in preview_attributes.items()
-                        if key
-                    }
-
-                    raw_resources.append(
+                    explicit_relation_rows.append(
                         {
-                            "previewKey": preview_key,
-                            "name": display_name,
-                            "ciType": standardized["ci_type"] or "unknown",
-                            "status": standardized.get("status", ""),
-                            "attributes": attributes,
-                            "analysisAttributes": standardized,
-                            "mapping": mapping_preview,
-                            "sourceRows": [
-                                {
-                                    "filename": parsed_file.filename,
-                                    "sheet": sheet_name,
-                                    "rowIndex": row_index,
-                                }
-                            ],
-                            "selected": True,
-                            "generated": False,
-                            "category": "resource",
-                            "importAction": "update" if existing_ci else "create",
-                            "existingCi": existing_ci,
-                            "issues": record_issues,
-                            "attentionFields": [
-                                _clean_text(item.get("field"))
-                                for item in record_issues
-                                if _clean_text(item.get("field"))
-                            ],
+                            **standardized_relation,
+                            "relation_type": _normalize_relation_type(standardized_relation.get("relation_type")),
+                            "filename": parsed_filename,
+                            "sheet": sheet_name,
+                            "rowIndex": row_index,
                         }
                     )
+                    relation_row_count += 1
+                logs.append(f"{parsed_filename} / {sheet_name}: 识别为关系表，提取 {relation_row_count} 条关系候选")
+                continue
 
-                    confirmation_issues = _collect_confirmation_issues(
-                        standardized["ci_type"] or "unknown",
-                        standardized,
+            for row_index, row in sheet_rows:
+                standardized: dict[str, Any] = {}
+                mapping_preview: list[dict[str, Any]] = []
+                for raw_key, raw_value in row.items():
+                    if raw_key == "_sheet":
+                        continue
+                    detail = (plan.mapping_details or {}).get(raw_key) or {}
+                    mapped_field, confidence = plan.mappings.get(raw_key, _match_field(raw_key))
+                    target_field_for_stats = _clean_text(detail.get("suggestedTargetField")) or mapped_field
+                    if target_field_for_stats != "unknown":
+                        field_stats[(f"{parsed_filename} / {sheet_name} / {raw_key}", target_field_for_stats)] += 1
+                    mapping_preview.append(
+                        {
+                            "sourceField": raw_key,
+                            "targetField": _clean_text(detail.get("suggestedTargetField")) or mapped_field,
+                            "confidence": confidence,
+                            "status": _clean_text(detail.get("status")) or "mapped",
+                            "resolvedBy": _clean_text(detail.get("resolvedBy")),
+                            "candidates": detail.get("candidates") or [],
+                            "message": _clean_text(detail.get("message")),
+                            "needsConfirmation": bool(detail.get("needsConfirmation")),
+                        }
                     )
-                    if confirmation_issues:
-                        warnings.append(
-                            f"{parsed_file.filename} / {sheet_name} 第 {row_index} 行仍需人工确认：{', '.join(confirmation_issues)}。"
-                        )
+                    effective_target_field = "" if detail.get("needsConfirmation") else mapped_field
+                    if effective_target_field != "unknown" and effective_target_field and not standardized.get(effective_target_field):
+                        standardized[effective_target_field] = _clean_text(raw_value)
+                    elif detail.get("needsConfirmation") and _clean_text(raw_value):
+                        standardized.setdefault("_ambiguous_fields", "")
+                        ambiguous_field_name = _clean_text(raw_key)
+                        current_ambiguous = [
+                            item for item in standardized["_ambiguous_fields"].split(" / ")
+                            if _clean_text(item)
+                        ]
+                        if ambiguous_field_name and ambiguous_field_name not in current_ambiguous:
+                            current_ambiguous.append(ambiguous_field_name)
+                        standardized["_ambiguous_fields"] = " / ".join(current_ambiguous)
+                    if effective_target_field == "ci_type" and not standardized.get("_raw_ci_type_value"):
+                        standardized["_raw_ci_type_value"] = _clean_text(raw_value)
+
+                if not _row_has_resource_signal(standardized):
+                    skipped_rows += 1
+                    continue
+
+                normalized_ip, ip_changed = _normalize_ip(standardized.get("private_ip", ""))
+                if ip_changed:
+                    cleaning_changes["IP地址标准化"] += 1
+                if normalized_ip:
+                    standardized["private_ip"] = normalized_ip
+
+                normalized_status = _normalize_status(standardized.get("status", ""))
+                if normalized_status and normalized_status != _clean_text(standardized.get("status", "")):
+                    cleaning_changes["状态标准化"] += 1
+                standardized["status"] = normalized_status
+
+                normalized_port, port_changed, port_ambiguous = _normalize_service_port(standardized.get("service_port", ""))
+                if port_changed:
+                    cleaning_changes["端口标准化"] += 1
+                if normalized_port:
+                    standardized["service_port"] = normalized_port
+                elif port_ambiguous:
+                    standardized["service_port"] = ""
+                    warnings.append(
+                        f"{parsed_filename} / {sheet_name} 第 {row_index} 行端口值存在多个候选，已标记为待确认。"
+                    )
+
+                raw_type = _clean_text(standardized.get("ci_type"))
+                normalized_type = _normalize_ci_type(raw_type, alias_index)
+                if normalized_type and normalized_type != raw_type:
+                    cleaning_changes["类型标准化"] += 1
+                if not normalized_type and plan.default_ci_type:
+                    normalized_type = plan.default_ci_type
+                standardized["ci_type"] = normalized_type
+                if normalized_type == "networkdevice" and not _clean_text(standardized.get("dev_class")):
+                    raw_ci_type_value = _clean_text(standardized.get("_raw_ci_type_value"))
+                    if raw_ci_type_value and raw_ci_type_value.lower() != "networkdevice":
+                        standardized["dev_class"] = raw_ci_type_value
+
+                if not standardized["ci_type"]:
+                    warnings.append(f"{parsed_filename} / {sheet_name} 第 {row_index} 行未识别到资源类型，请在确认步骤手动选择。")
+
+                type_template = type_template_map.get(standardized["ci_type"] or "")
+                preview_attributes = _build_preview_attributes(standardized, type_template)
+                display_name = _resolve_record_display_name(preview_attributes, type_template)
+                if not display_name:
+                    warnings.append(f"{parsed_filename} / {sheet_name} 第 {row_index} 行缺少资源名称/唯一标识，请在确认步骤手动补齐。")
+
+                cmdb_attributes = _build_cmdb_attributes(
+                    ci_type=standardized["ci_type"] or "unknown",
+                    canonical_attributes=preview_attributes,
+                    type_template=type_template,
+                )
+                autofill_hints = _collect_deterministic_autofill_hints(
+                    canonical_attributes=preview_attributes,
+                    type_template=type_template,
+                    cmdb_attributes=cmdb_attributes,
+                )
+                existing_ci = None
+                if existing_client and remaining_existing_prechecks > 0:
+                    existing_ci = _find_existing_ci(
+                        existing_client,
+                        standardized["ci_type"] or "unknown",
+                        cmdb_attributes,
+                        fallback_name=display_name,
+                        unique_key=_get_import_required_unique_key(type_template),
+                    )
+                    remaining_existing_prechecks -= 1
+                elif existing_client and not precheck_limit_hit:
+                    precheck_limit_hit = True
+                    logs.append(
+                        "预览资源较多，已跳过剩余存量校验；提交导入时会再次精确检查是否已存在。"
+                    )
+                    _emit_progress(
+                        progress_callback,
+                        stage="cmdb_precheck",
+                        message="资源量较大，剩余存量校验已延后到正式导入阶段执行。",
+                        percent=74,
+                    )
+                if existing_ci:
+                    existing_detected_count += 1
+
+                record_issues = _build_record_issues(
+                    ci_type=standardized["ci_type"] or "unknown",
+                    attributes=standardized,
+                    mapping_preview=mapping_preview,
+                    existing_ci=existing_ci,
+                    type_template=type_template,
+                )
+
+                preview_key = _build_preview_key(parsed_filename, sheet_name, row_index)
+                attributes = {
+                    key: _clean_text(value)
+                    for key, value in preview_attributes.items()
+                    if key
+                }
+
+                raw_resources.append(
+                    {
+                        "previewKey": preview_key,
+                        "name": display_name,
+                        "ciType": standardized["ci_type"] or "unknown",
+                        "status": standardized.get("status", ""),
+                        "attributes": attributes,
+                        "analysisAttributes": standardized,
+                        "mapping": mapping_preview,
+                        "autoFilledHints": autofill_hints,
+                        "sourceRows": [
+                            {
+                                "filename": parsed_filename,
+                                "sheet": sheet_name,
+                                "rowIndex": row_index,
+                            }
+                        ],
+                        "selected": True,
+                        "generated": False,
+                        "category": "resource",
+                        "importAction": "update" if existing_ci else "create",
+                        "existingCi": existing_ci,
+                        "issues": record_issues,
+                        "attentionFields": [
+                            _clean_text(item.get("field"))
+                            for item in record_issues
+                            if _clean_text(item.get("field"))
+                        ],
+                    }
+                )
+
+                confirmation_issues = _collect_confirmation_issues(
+                    standardized["ci_type"] or "unknown",
+                    standardized,
+                )
+                if confirmation_issues:
+                    warnings.append(
+                        f"{parsed_filename} / {sheet_name} 第 {row_index} 行仍需人工确认：{', '.join(confirmation_issues)}。"
+                    )
 
         relations: dict[tuple[str, str, str], dict[str, Any]] = {}
         _emit_progress(
@@ -3959,7 +6012,11 @@ async def preview_resource_import(
             }
             for ci_type, items in sorted(grouped_resources.items(), key=lambda item: (-len(item[1]), item[0]))
         ]
-        structure_analysis = _build_structure_analysis(resource_groups, metadata)
+        structure_analysis = await _build_structure_analysis(
+            resource_groups,
+            metadata,
+            llm_client=managed_llm_client,
+        )
 
         unknown_count = sum(1 for item in raw_resources if item["ciType"] == "unknown")
         attention_record_count = sum(
@@ -3967,12 +6024,22 @@ async def preview_resource_import(
         )
         quality_penalty = unknown_count * 7 + len(warnings) * 2
         quality_score = max(48, min(100, 96 - quality_penalty))
-        mapping_summary = [
+        blocking_analysis_count = sum(
+            1 for item in analysis_issues if _clean_text(item.get("severity")) == "blocking"
+        )
+        analysis_status = "blocking" if blocking_analysis_count else "ok"
+        mapping_summary = mapping_summary_entries or [
             {
                 "sourceField": source_field,
                 "targetField": target_field,
+                "suggestedTargetField": target_field,
                 "count": count,
                 "confidence": "high" if target_field != "unknown" else "low",
+                "status": "mapped" if target_field != "unknown" else "unmapped",
+                "resolvedBy": "rule",
+                "candidates": [],
+                "message": "",
+                "needsConfirmation": False,
             }
             for (source_field, target_field), count in sorted(field_stats.items(), key=lambda item: (-item[1], item[0][0]))
         ]
@@ -4002,6 +6069,8 @@ async def preview_resource_import(
                 "qualityScore": quality_score,
                 "autoCleaned": sum(cleaning_changes.values()),
                 "needsConfirmation": max(attention_record_count, unknown_count) + len(warnings),
+                "analysisIssueCount": len(analysis_issues),
+                "blockingIssueCount": blocking_analysis_count,
             },
             "mappingSummary": mapping_summary,
             "cleaningSummary": cleaning_summary,
@@ -4022,6 +6091,8 @@ async def preview_resource_import(
                 if item.get("name")
             },
             "structureAnalysis": structure_analysis,
+            "analysisStatus": analysis_status,
+            "analysisIssues": analysis_issues,
             "logs": logs,
             "warnings": warnings,
         }
@@ -4107,14 +6178,20 @@ def _collect_raw_type_hints(records: list[dict[str, Any]]) -> list[str]:
 def _is_generic_server_hint(raw_hints: list[str]) -> bool:
     for hint in raw_hints:
         lowered = _clean_text(hint).lower()
+        if any(token in lowered for token in ("vserver", "虚拟机", "虚机", "vm")):
+            continue
+        if any(token in lowered for token in ("physicalmachine", "物理机", "裸机", "baremetal")):
+            continue
         if any(token in lowered for token in ("server", "服务器", "主机")):
             return True
     return False
 
 
-def _build_structure_analysis(
+async def _build_structure_analysis(
     resource_groups: list[dict[str, Any]],
     metadata: dict[str, Any],
+    *,
+    llm_client: Any | None = None,
 ) -> dict[str, Any]:
     ci_type_groups = [
         _normalize_group_snapshot(item)
@@ -4129,13 +6206,64 @@ def _build_structure_analysis(
         for item in (metadata.get("ciTypes") or [])
         if isinstance(item, dict) and _clean_text(item.get("name"))
     }
+    ci_type_catalog = _build_ci_type_catalog(metadata)
+    catalog_by_name = {
+        _clean_text(item.get("name")): item
+        for item in ci_type_catalog
+        if _clean_text(item.get("name"))
+    }
 
-    items: list[dict[str, Any]] = []
-    for group in resource_groups:
+    default_semantic_plan = SemanticModelPlan(
+        best_model="",
+        confidence="low",
+        reason="",
+        candidates=[],
+        source="heuristic",
+    )
+    group_contexts: list[dict[str, Any]] = []
+    semantic_plan_by_index: dict[int, SemanticModelPlan] = {}
+    semantic_semaphore = asyncio.Semaphore(RESOURCE_IMPORT_LLM_SHEET_PARALLELISM)
+
+    async def _resolve_group_semantic_plan(
+        index: int,
+        group: dict[str, Any],
+    ) -> tuple[int, SemanticModelPlan]:
+        async with semantic_semaphore:
+            return index, await _infer_semantic_model_plan(
+                group=group,
+                metadata=metadata,
+                llm_client=llm_client,
+            )
+
+    semantic_tasks: list[Any] = []
+    for index, group in enumerate(resource_groups):
         resource_ci_type = _clean_text(group.get("ciType"))
         records = group.get("records") or []
         raw_type_hints = _collect_raw_type_hints(records)
         exact_groups = _find_groups_for_model(ci_type_groups, resource_ci_type)
+        group_contexts.append(
+            {
+                "group": group,
+                "resource_ci_type": resource_ci_type,
+                "records": records,
+                "raw_type_hints": raw_type_hints,
+                "exact_groups": exact_groups,
+            }
+        )
+        if _should_run_semantic_inference(resource_ci_type or "unknown", exact_groups, raw_type_hints):
+            semantic_tasks.append(_resolve_group_semantic_plan(index, group))
+
+    if semantic_tasks:
+        semantic_results = await asyncio.gather(*semantic_tasks)
+        semantic_plan_by_index.update(dict(semantic_results))
+
+    items: list[dict[str, Any]] = []
+    for index, context in enumerate(group_contexts):
+        group = context["group"]
+        resource_ci_type = context["resource_ci_type"]
+        records = context["records"]
+        raw_type_hints = context["raw_type_hints"]
+        exact_groups = context["exact_groups"]
         suggested_group_name = DEFAULT_GROUP_HINTS.get(resource_ci_type, "")
         status = "matched"
         reason = ""
@@ -4144,60 +6272,120 @@ def _build_structure_analysis(
         create_group_approved = False
         create_model_approved = False
         needs_confirmation = False
-        group_options = [
-            {
+        group_option_map = {
+            _clean_text(item.get("name")): {
                 "id": item.get("id"),
                 "name": _clean_text(item.get("name")),
                 "existing": True,
             }
             for item in exact_groups
             if _clean_text(item.get("name"))
-        ]
-        model_options: list[dict[str, Any]] = []
+        }
+        model_option_map: dict[str, dict[str, Any]] = {}
 
-        if resource_ci_type == "unknown":
+        def add_model_option(model_name: str, *, group_name: str = "") -> None:
+            normalized_name = _clean_text(model_name)
+            if not normalized_name:
+                return
+            catalog_item = catalog_by_name.get(normalized_name)
+            if catalog_item:
+                resolved_group_name = group_name or _clean_text(catalog_item.get("groupName"))
+                model_option_map[normalized_name] = {
+                    "id": catalog_item.get("id"),
+                    "name": normalized_name,
+                    "alias": _clean_text(catalog_item.get("alias")) or normalized_name,
+                    "groupName": resolved_group_name,
+                    "existing": True,
+                }
+                if resolved_group_name and resolved_group_name not in group_option_map:
+                    group_option_map[resolved_group_name] = {
+                        "id": None,
+                        "name": resolved_group_name,
+                        "existing": True,
+                    }
+                return
+            model_meta = ci_type_meta.get(normalized_name) or {}
+            resolved_group_name = group_name or DEFAULT_GROUP_HINTS.get(normalized_name, "")
+            model_option_map[normalized_name] = {
+                "id": model_meta.get("id"),
+                "name": normalized_name,
+                "alias": _clean_text(model_meta.get("alias")) or normalized_name,
+                "groupName": resolved_group_name,
+                "existing": True,
+            }
+
+        for exact_group in exact_groups:
+            exact_group_name = _clean_text(exact_group.get("name"))
+            for model in (exact_group.get("ciTypes") or []):
+                add_model_option(_clean_text(model.get("name")), group_name=exact_group_name)
+
+        semantic_plan = semantic_plan_by_index.get(index, default_semantic_plan)
+        for candidate in semantic_plan.candidates or []:
+            add_model_option(
+                _clean_text(candidate.get("name")),
+                group_name=_clean_text(candidate.get("groupName")),
+            )
+
+        generic_server_ambiguous = (
+            _is_generic_server_hint(raw_type_hints)
+            and any(_clean_text(group_item.get("name")) for group_item in exact_groups)
+            and any(
+                {"PhysicalMachine", "vserver"}.issubset(
+                    {_clean_text(item.get("name")) for item in (group_item.get("ciTypes") or [])}
+                )
+                for group_item in exact_groups
+            )
+        )
+        semantic_best_model = _clean_text(semantic_plan.best_model)
+        semantic_best_catalog = catalog_by_name.get(semantic_best_model)
+
+        if generic_server_ambiguous:
+            status = "ambiguous_model"
+            needs_confirmation = True
+            selected_group_name = _clean_text(exact_groups[0].get("name")) if exact_groups else _clean_text(
+                (semantic_best_catalog or {}).get("groupName")
+            )
+            selected_model_name = semantic_best_model or (resource_ci_type if resource_ci_type in {"PhysicalMachine", "vserver"} else "")
+            model_option_map = {}
+            add_model_option("PhysicalMachine", group_name=selected_group_name)
+            add_model_option("vserver", group_name=selected_group_name)
+            reason = (
+                "源数据只表达了“服务器/主机”这一类通用语义，"
+                "当前系统同时存在 PhysicalMachine 和 vserver，需要人工确认最终模型。"
+            )
+        elif semantic_best_catalog:
+            selected_group_name = _clean_text(semantic_best_catalog.get("groupName"))
+            selected_model_name = semantic_best_model
+            reason = semantic_plan.reason or f"根据语义线索建议使用现有模型 {selected_model_name}。"
+            if semantic_plan.confidence == "high":
+                status = "matched"
+                needs_confirmation = False
+            elif semantic_plan.confidence == "medium":
+                status = "ambiguous_model"
+                needs_confirmation = True
+            elif _has_clear_low_confidence_leader(semantic_plan):
+                status = "ambiguous_model"
+                needs_confirmation = True
+                reason = (
+                    f"现有模型 {semantic_best_model} 是当前最接近的候选，但整体置信度仍偏低，"
+                    "请人工确认后再继续。"
+                )
+            else:
+                status = "missing_model" if selected_group_name else "missing_group"
+                needs_confirmation = True
+                selected_model_name = resource_ci_type or _clean_text(group.get("label")) or selected_model_name
+                reason = (
+                    f"现有模型 {semantic_best_model} 仅为低置信候选，系统不会直接套用。"
+                    f"{'建议先确认是否新建模型，或手动改选现有模型。' if selected_group_name else '当前也未锁定合适分组，请先确认是否新建分组。'}"
+                )
+        elif resource_ci_type == "unknown":
             status = "unknown"
             reason = "当前资源尚未识别出可用模型，请先确认模型归属。"
             needs_confirmation = True
         elif exact_groups:
             selected_group_name = _clean_text(exact_groups[0].get("name"))
-            for model in (exact_groups[0].get("ciTypes") or []):
-                if _clean_text(model.get("name")) == resource_ci_type:
-                    model_options = [
-                        {
-                            "id": model.get("id"),
-                            "name": _clean_text(model.get("name")),
-                            "alias": _clean_text(model.get("alias")),
-                            "groupName": selected_group_name,
-                            "existing": True,
-                        }
-                    ]
-                    break
+            add_model_option(resource_ci_type, group_name=selected_group_name)
             reason = f"已在现有分组 {selected_group_name} 中找到模型 {resource_ci_type}。"
-            if (
-                resource_ci_type in {"PhysicalMachine", "vserver"}
-                and _is_generic_server_hint(raw_type_hints)
-                and {"PhysicalMachine", "vserver"}.issubset(
-                    {_clean_text(item.get("name")) for item in (exact_groups[0].get("ciTypes") or [])}
-                )
-            ):
-                status = "ambiguous_model"
-                needs_confirmation = True
-                model_options = [
-                    {
-                        "id": model.get("id"),
-                        "name": _clean_text(model.get("name")),
-                        "alias": _clean_text(model.get("alias")),
-                        "groupName": selected_group_name,
-                        "existing": True,
-                    }
-                    for model in (exact_groups[0].get("ciTypes") or [])
-                    if _clean_text(model.get("name")) in {"PhysicalMachine", "vserver"}
-                ]
-                reason = (
-                    "源数据只表达了“服务器/主机”这一类通用语义，"
-                    "当前系统同时存在 PhysicalMachine 和 vserver，需要人工确认最终模型。"
-                )
         else:
             hinted_group = next(
                 (
@@ -4211,13 +6399,11 @@ def _build_structure_analysis(
                 selected_group_name = _clean_text(hinted_group.get("name"))
                 needs_confirmation = True
                 reason = f"建议归入现有分组 {selected_group_name}，但未找到可直接复用的模型 {resource_ci_type}。"
-                group_options = [
-                    {
-                        "id": hinted_group.get("id"),
-                        "name": selected_group_name,
-                        "existing": True,
-                    }
-                ]
+                group_option_map[selected_group_name] = {
+                    "id": hinted_group.get("id"),
+                    "name": selected_group_name,
+                    "existing": True,
+                }
             else:
                 status = "missing_group"
                 selected_group_name = suggested_group_name or _clean_text(group.get("label"))
@@ -4238,6 +6424,30 @@ def _build_structure_analysis(
         if status == "missing_model":
             create_model_approved = False
 
+        group_options = sorted(group_option_map.values(), key=lambda item: item["name"])
+        model_options = sorted(model_option_map.values(), key=lambda item: item["name"])
+        if not model_options and selected_model_name:
+            add_model_option(selected_model_name, group_name=selected_group_name)
+            model_options = sorted(model_option_map.values(), key=lambda item: item["name"])
+
+        resolved_existing_model_name = _pick_existing_structure_model_name(
+            current_model_name=selected_model_name,
+            resource_ci_type=resource_ci_type,
+            raw_type_hints=raw_type_hints,
+            semantic_plan=semantic_plan,
+            model_options=model_options,
+            type_templates=ci_type_meta,
+        )
+        if resolved_existing_model_name and resolved_existing_model_name != selected_model_name:
+            selected_model_name = resolved_existing_model_name
+            if status == "missing_model":
+                status = "ambiguous_model"
+                needs_confirmation = True
+                reason = (
+                    f"原始类型暂未能直接锁定模型，已结合现有模型候选优先推荐 {selected_model_name}，"
+                    "请确认后再导入。"
+                )
+
         items.append(
             {
                 "key": resource_ci_type or _clean_text(group.get("label")) or f"group-{len(items) + 1}",
@@ -4246,7 +6456,15 @@ def _build_structure_analysis(
                 "recordCount": int(group.get("count") or len(records)),
                 "status": status,
                 "reason": reason,
+                "originalTypeText": raw_type_hints[0] if raw_type_hints else resource_ci_type or _clean_text(group.get("label")),
                 "rawTypeHints": raw_type_hints,
+                "semanticConfidence": (
+                    semantic_plan.confidence
+                    if semantic_plan.best_model
+                    else "high"
+                    if status == "matched" and exact_groups
+                    else "low"
+                ),
                 "suggestedGroupName": selected_group_name,
                 "suggestedModelName": selected_model_name,
                 "selectedGroupName": selected_group_name,
@@ -4456,6 +6674,12 @@ def load_resource_import_metadata() -> dict[str, Any]:
                         "attributes": attributes_map.get(str(item.get("name") or ""), ["name"]),
                         "attributeDefinitions": attribute_definitions_map.get(str(item.get("name") or ""), []),
                         "parentTypes": parent_type_map.get(str(item.get("name") or ""), []),
+                        "system_generated_unique_key": _is_system_generated_unique_key(
+                            {
+                                "unique_key": item.get("unique_key"),
+                                "attributeDefinitions": attribute_definitions_map.get(str(item.get("name") or ""), []),
+                            }
+                        ),
                     }
                     for item in ci_types
                 ],
@@ -4507,6 +6731,7 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
     updated_ci_snapshots: list[dict[str, Any]] = []
     created_relation_ids: list[Any] = []
     try:
+        _validate_preview_analysis_for_import(payload.get("preview") or {})
         client.login()
         report["structureResults"] = _prepare_import_structure(client, payload)
         client.get_relation_types()
@@ -4515,8 +6740,13 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
             for item in load_resource_import_metadata().get("ciTypes", [])
             if item.get("name")
         }
+        structure_selected_model_map = _build_structure_selected_model_map(payload.get("preview") or {})
         resource_type_map = {
-            str(record.get("previewKey")): _clean_text(record.get("ciType"))
+            str(record.get("previewKey")): _resolve_payload_ci_type(
+                record.get("ciType"),
+                type_templates=type_templates,
+                structure_selected_model_map=structure_selected_model_map,
+            )
             for group in (payload.get("resourceGroups") or [])
             for record in (group.get("records") or [])
             if record.get("previewKey")
@@ -4535,7 +6765,11 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
         )
         report["structureResults"].extend(relation_structure_results)
         resource_groups = payload.get("resourceGroups") or []
-        ordered_records = _ordered_selected_records(resource_groups, payload.get("relations") or [])
+        ordered_records = _ordered_selected_records(
+            resource_groups,
+            payload.get("relations") or [],
+            type_templates=type_templates,
+        )
         pending_choice_values = _collect_pending_choice_values(
             type_templates=type_templates,
             ordered_records=ordered_records,
@@ -4544,6 +6778,7 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
             client,
             type_templates=type_templates,
             ordered_records=ordered_records,
+            structure_selected_model_map=structure_selected_model_map,
         )
         if preflight_results:
             report["failed"] += len(preflight_results)
@@ -4560,11 +6795,15 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
         for record in ordered_records:
             import_action = _clean_text(record.get("importAction")) or "create"
             existing_ci = record.get("existingCi") or {}
-            ci_type = str(record.get("ciType") or "").strip()
+            ci_type = _resolve_payload_ci_type(
+                record.get("ciType"),
+                type_templates=type_templates,
+                structure_selected_model_map=structure_selected_model_map,
+            )
             type_template = type_templates.get(ci_type, {})
             attributes = {
                 key: value
-                for key, value in (record.get("attributes") or {}).items()
+                for key, value in _merged_resource_attributes(record).items()
                 if _clean_text(value)
             }
             display_name = _clean_text(record.get("name")) or _resolve_record_display_name(attributes, type_template)
@@ -4579,7 +6818,7 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                 type_template=type_template,
                 pending_choice_values=pending_choice_values,
             )
-            unique_key = _clean_text(type_template.get("unique_key"))
+            unique_key = _get_import_required_unique_key(type_template)
             current_existing_ci = _find_existing_ci(
                 client,
                 ci_type,
@@ -4613,11 +6852,30 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                                 "attributes": _snapshot_ci_attributes(snapshot, type_template=type_template),
                             }
                         )
-                ci_id, _response = client.update_ci(
-                    current_existing_ci.get("ciId"),
-                    ci_type,
-                    cmdb_attributes,
+                debug_context = _build_import_record_debug_context(
+                    record=record,
+                    ci_type=ci_type,
+                    import_action=import_action,
+                    source_attributes=attributes,
+                    cmdb_attributes=cmdb_attributes,
+                    type_template=type_template,
+                    existing_ci=current_existing_ci,
                 )
+                try:
+                    ci_id, _response = client.update_ci(
+                        current_existing_ci.get("ciId"),
+                        ci_type,
+                        cmdb_attributes,
+                    )
+                except Exception as exc:
+                    LOGGER.error(
+                        "resource-import update failed: %s | context=%s",
+                        exc,
+                        json.dumps(debug_context, ensure_ascii=False, default=str),
+                    )
+                    raise RuntimeError(
+                        f"{exc} | 调试上下文: {json.dumps(debug_context, ensure_ascii=False, default=str)}"
+                    ) from exc
             else:
                 immediate_attributes, deferred_attributes = _split_deferred_self_referential_choice_attributes(
                     ci_type=ci_type,
@@ -4625,16 +6883,46 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                     source_attributes=attributes,
                     cmdb_attributes=cmdb_attributes,
                 )
-                ci_id, _response = client.create_ci(
-                    ci_type,
-                    immediate_attributes,
-                    exist_policy="reject",
-                    unique_key=unique_key,
+                debug_context = _build_import_record_debug_context(
+                    record=record,
+                    ci_type=ci_type,
+                    import_action=import_action,
+                    source_attributes=attributes,
+                    cmdb_attributes=immediate_attributes,
+                    type_template=type_template,
+                    existing_ci=current_existing_ci,
+                    deferred_attributes=deferred_attributes,
                 )
+                try:
+                    ci_id, _response = client.create_ci(
+                        ci_type,
+                        immediate_attributes,
+                        exist_policy="reject",
+                        unique_key=unique_key,
+                    )
+                except Exception as exc:
+                    LOGGER.error(
+                        "resource-import create failed: %s | context=%s",
+                        exc,
+                        json.dumps(debug_context, ensure_ascii=False, default=str),
+                    )
+                    raise RuntimeError(
+                        f"{exc} | 调试上下文: {json.dumps(debug_context, ensure_ascii=False, default=str)}"
+                    ) from exc
                 if ci_id is not None:
                     created_ci_ids.append(ci_id)
                     if deferred_attributes:
-                        client.update_ci(ci_id, ci_type, deferred_attributes)
+                        try:
+                            client.update_ci(ci_id, ci_type, deferred_attributes)
+                        except Exception as exc:
+                            LOGGER.error(
+                                "resource-import deferred update failed: %s | context=%s",
+                                exc,
+                                json.dumps(debug_context, ensure_ascii=False, default=str),
+                            )
+                            raise RuntimeError(
+                                f"{exc} | 调试上下文: {json.dumps(debug_context, ensure_ascii=False, default=str)}"
+                            ) from exc
             if ci_id is None:
                 raise RuntimeError(f"{record.get('name')} 创建后未能解析 CI ID")
             ci_id_map[str(record.get("previewKey"))] = ci_id

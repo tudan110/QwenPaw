@@ -37,6 +37,45 @@ function cloneJsonSafe<T>(value: T): T | undefined {
   }
 }
 
+function sanitizeResourceImportFlow(flow: unknown): PlainRecord | undefined {
+  if (!isPlainRecord(flow)) {
+    return undefined;
+  }
+  const preview = isPlainRecord(flow.preview) ? flow.preview : null;
+  const result = isPlainRecord(flow.result) ? flow.result : null;
+  return {
+    flowId: typeof flow.flowId === "string" ? flow.flowId : undefined,
+    stage: typeof flow.stage === "string" ? flow.stage : undefined,
+    status: typeof flow.status === "string" ? flow.status : undefined,
+    error: typeof flow.error === "string" ? truncateText(flow.error, 240) : undefined,
+    locked: Boolean(flow.locked),
+    readonly: Boolean(flow.readonly),
+    files: Array.isArray(flow.files) ? cloneJsonSafe(flow.files.slice(0, 6)) : undefined,
+    preview: preview
+      ? {
+          summary: isPlainRecord(preview.summary) ? cloneJsonSafe(preview.summary) : undefined,
+          analysisStatus: typeof preview.analysisStatus === "string" ? preview.analysisStatus : undefined,
+          analysisIssues: Array.isArray(preview.analysisIssues)
+            ? cloneJsonSafe(preview.analysisIssues.slice(0, 6))
+            : undefined,
+          warnings: Array.isArray(preview.warnings)
+            ? preview.warnings.slice(0, 8).map((item) => truncateText(item, 180))
+            : undefined,
+        }
+      : undefined,
+    result: result
+      ? {
+          status: typeof result.status === "string" ? result.status : undefined,
+          created: typeof result.created === "number" ? result.created : undefined,
+          relationsCreated: typeof result.relationsCreated === "number" ? result.relationsCreated : undefined,
+          skipped: typeof result.skipped === "number" ? result.skipped : undefined,
+          failed: typeof result.failed === "number" ? result.failed : undefined,
+          error: typeof result.error === "string" ? truncateText(result.error, 240) : undefined,
+        }
+      : undefined,
+  };
+}
+
 function sanitizeMessage(
   message: unknown,
   maxContentLength: number,
@@ -67,7 +106,7 @@ function sanitizeMessage(
     next.workorders = cloneJsonSafe(message.workorders);
   }
   if (isPlainRecord(message.resourceImportFlow)) {
-    next.resourceImportFlow = cloneJsonSafe(message.resourceImportFlow);
+    next.resourceImportFlow = sanitizeResourceImportFlow(message.resourceImportFlow);
   }
 
   return next;

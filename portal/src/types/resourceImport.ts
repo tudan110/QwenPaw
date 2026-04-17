@@ -18,6 +18,7 @@ export interface ResourceImportCiTypeMetadata {
   name: string;
   alias?: string;
   unique_key?: string;
+  system_generated_unique_key?: boolean;
   attributes?: string[];
   attributeDefinitions?: ResourceImportCiTypeAttributeDefinition[];
   parentTypes?: Array<{
@@ -89,6 +90,7 @@ export interface ResourceImportRecord {
     rowIndex?: number;
   }>;
   analysisAttributes?: Record<string, string>;
+  autoFilledHints?: string[];
 }
 
 export interface ResourceImportGroup {
@@ -121,12 +123,26 @@ export interface ResourceImportPreview {
     qualityScore: number;
     autoCleaned: number;
     needsConfirmation: number;
+    analysisIssueCount?: number;
+    blockingIssueCount?: number;
   };
   mappingSummary: Array<{
+    fileName?: string;
+    sheetName?: string;
     sourceField: string;
     targetField: string;
+    suggestedTargetField?: string;
     count: number;
     confidence: string;
+    status?: "mapped" | "unmapped" | "needs_confirmation";
+    resolvedBy?: string;
+    message?: string;
+    needsConfirmation?: boolean;
+    candidates?: Array<{
+      targetField: string;
+      confidence: string;
+      source?: string;
+    }>;
   }>;
   cleaningSummary: Array<{
     label: string;
@@ -141,7 +157,9 @@ export interface ResourceImportPreview {
       recordCount: number;
       status: "matched" | "ambiguous_model" | "missing_group" | "missing_model" | "unknown";
       reason?: string;
+      originalTypeText?: string;
       rawTypeHints?: string[];
+      semanticConfidence?: "high" | "medium" | "low";
       suggestedGroupName?: string;
       suggestedModelName?: string;
       selectedGroupName?: string;
@@ -169,6 +187,14 @@ export interface ResourceImportPreview {
       };
     }>;
   };
+  analysisStatus?: "ok" | "blocking";
+  analysisIssues?: Array<{
+    kind: string;
+    severity: "warning" | "blocking";
+    message: string;
+    fileName?: string;
+    sheetName?: string;
+  }>;
   resourceGroups: ResourceImportGroup[];
   relations: ResourceImportRelation[];
   logs: string[];

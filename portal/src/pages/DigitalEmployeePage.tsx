@@ -16,6 +16,7 @@ import {
   executionHistory,
   getEmployeeById,
 } from "../data/portalData";
+import type { DigitalEmployee } from "../types/portal";
 import {
   createConversationSession,
   loadConversationStore,
@@ -117,6 +118,7 @@ const RESOURCE_IMPORT_COMMAND = "导入资源清单";
 const PORTAL_RESOURCE_IMPORT_SOURCE = "portal-resource-import";
 const RESOURCE_IMPORT_INTENT_PATTERN =
   /(导入资源清单|资源清单导入|批量导入|资源纳管|导入资源|智能导入|上传台账导入)/;
+const CHAT_SCROLL_BOTTOM_THRESHOLD_PX = 48;
 
 function createResourceImportFlowId() {
   return `resource-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -132,14 +134,69 @@ function isPortalResourceImportSession(session: SessionRecord | null | undefined
 }
 
 function resolveResourceImportApplicationName(flow: any): string {
-  const resourceGroups = Array.isArray(flow?.preview?.resourceGroups) ? flow.preview.resourceGroups : [];
+  const resourceGroups = Array.isArray(flow?.resourceGroups)
+    ? flow.resourceGroups
+    : Array.isArray(flow?.preview?.resourceGroups)
+      ? flow.preview.resourceGroups
+      : [];
+  const resourceResults = Array.isArray(flow?.result?.resourceResults) ? flow.result.resourceResults : [];
+  const successfulPreviewKeys = new Set(
+    resourceResults
+      .filter((item: any) => ["success", "skipped"].includes(String(item?.status || "")))
+      .map((item: any) => String(item?.previewKey || ""))
+      .filter(Boolean),
+  );
   const projectGroup = resourceGroups.find((group: any) => group?.ciType === "project");
-  const firstProjectRecord = Array.isArray(projectGroup?.records) ? projectGroup.records[0] : null;
+  const projectRecords = Array.isArray(projectGroup?.records) ? projectGroup.records : [];
+  const firstProjectRecord = projectRecords.find((record: any) => (
+    !successfulPreviewKeys.size || successfulPreviewKeys.has(String(record?.previewKey || ""))
+  )) || projectRecords[0] || null;
   return String(
     firstProjectRecord?.attributes?.project_name
       || firstProjectRecord?.name
       || "",
   ).trim();
+}
+
+function resolveResourceImportTopologyScope(flow: any) {
+  type ImportedResourceScopeItem = {
+    previewKey: string;
+    ciId: string | number;
+    name: string;
+    ciType: string;
+  };
+  const resourceGroups = Array.isArray(flow?.resourceGroups)
+    ? flow.resourceGroups
+    : Array.isArray(flow?.preview?.resourceGroups)
+      ? flow.preview.resourceGroups
+      : [];
+  const resourceResults = Array.isArray(flow?.result?.resourceResults) ? flow.result.resourceResults : [];
+  const recordMap = new Map<string, any>(
+    resourceGroups
+      .flatMap((group: any) => (Array.isArray(group?.records) ? group.records : []))
+      .map((record: any) => [String(record?.previewKey || ""), record]),
+  );
+  const resources: ImportedResourceScopeItem[] = resourceResults
+    .filter((item: any) => ["success", "skipped"].includes(String(item?.status || "")) && item?.ciId !== undefined)
+    .map((item: any) => {
+      const previewKey = String(item?.previewKey || "");
+      const record = recordMap.get(previewKey) || {};
+      return {
+        previewKey,
+        ciId: item.ciId,
+        name: String(record?.name || previewKey || "").trim(),
+        ciType: String(record?.ciType || "").trim(),
+      };
+    });
+  const uniqueResources: ImportedResourceScopeItem[] = Array.from(
+    new Map(resources.map((item) => [String(item.ciId), item])).values(),
+  );
+  return {
+    applicationName: resolveResourceImportApplicationName(flow),
+    includesProject: uniqueResources.some((item) => item.ciType === "project"),
+    resources: uniqueResources,
+    ciIds: uniqueResources.map((item) => item.ciId),
+  };
 }
 
 function buildResourceImportSessionRecord(
@@ -728,7 +785,7 @@ function getChatSidebarActivities(employeeId: string): ChatSidebarActivityItem[]
   return activities[employeeId] || activities.query;
 }
 
-const PORTAL_HOME_EMPLOYEE = {
+const PORTAL_HOME_EMPLOYEE: DigitalEmployee = {
   id: PORTAL_HOME_ID,
   name: "数字员工协同入口",
   desc: "统一接入对话，可通过 @ 标签切换到具体数字员工",
@@ -751,7 +808,7 @@ const PORTAL_HOME_EMPLOYEE = {
     "帮我判断这个问题应该交给哪个数字员工",
   ],
   welcome: "",
-} as const;
+};
 
 type PendingPortalDispatch = {
   token: string;
@@ -1378,6 +1435,8 @@ export default function DigitalEmployeePage({
   const alertToastTimerRef = useRef<number | null>(null);
   const alertPollTimerRef = useRef<number | null>(null);
   const knownAlertIdsRef = useRef<string[]>([]);
+  const chatMessagesRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollRef = useRef(true);
 
   const loadOpsAlerts = useCallback(async () => {
     try {
@@ -2434,6 +2493,13 @@ export default function DigitalEmployeePage({
   ]);
 
   useEffect(() => {
+    const chatContainer = chatMessagesRef.current;
+    if (!chatContainer) {
+      return;
+    }
+    if (!shouldAutoScrollRef.current) {
+      return;
+    }
     const timerId = window.requestAnimationFrame(() => {
       messagesEndRef.current?.scrollIntoView({
         behavior: isStreaming ? "auto" : "smooth",
@@ -2445,6 +2511,28 @@ export default function DigitalEmployeePage({
       window.cancelAnimationFrame(timerId);
     };
   }, [isStreaming, messages]);
+
+  useEffect(() => {
+    shouldAutoScrollRef.current = true;
+    const timerId = window.requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: "auto",
+        block: "end",
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(timerId);
+    };
+  }, [currentSessionId]);
+
+  const handleChatMessagesScroll = useCallback(() => {
+    const element = chatMessagesRef.current;
+    if (!element) {
+      return;
+    }
+    const distanceToBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    shouldAutoScrollRef.current = distanceToBottom <= CHAT_SCROLL_BOTTOM_THRESHOLD_PX;
+  }, []);
 
   useEffect(() => {
     persistPageTheme(pageTheme);
@@ -3133,13 +3221,20 @@ export default function DigitalEmployeePage({
   const handleResourceImportOpenSystemTopology = useCallback(
     async (payload: { flowId: string }) => {
       const flow = findResourceImportFlowById(payload.flowId);
-      const applicationName = resolveResourceImportApplicationName(flow);
-      const visibleContent = applicationName
-        ? `查看${applicationName}完整拓扑`
-        : "查看导入结果完整拓扑";
-      const systemContent = applicationName
-        ? `请直接协作 query 数字员工，使用其 veops-cmdb skill 查询应用 ${applicationName} 的完整关系拓扑，只返回该应用相关的节点与关系，并直接输出可渲染的 echarts 树状图代码块。不要查询全系统，也不要扩展到无关应用。`
-        : "请直接协作 query 数字员工，使用其 veops-cmdb skill 查询应用关系拓扑，并直接输出可渲染的 echarts 树状图代码块。如果系统中存在多个应用且我没有明确指定应用名，请先列出候选应用并要求我明确选择，不要默认任选一个应用。";
+      const scope = resolveResourceImportTopologyScope(flow);
+      const visibleContent = scope.includesProject && scope.applicationName
+        ? `查看${scope.applicationName}导入拓扑`
+        : "查看本次导入拓扑";
+      const resourceSummary = scope.resources
+        .slice(0, 12)
+        .map((item) => `${item.name || item.previewKey}(${item.ciType || "未分类"}, CI ID: ${item.ciId})`)
+        .join("；");
+      const ciIdText = scope.ciIds.join(", ");
+      const systemContent = scope.includesProject && scope.applicationName
+        ? `请直接使用现有 CMDB 拓扑能力，查询应用 ${scope.applicationName} 的关系拓扑，并优先聚焦本次导入涉及的资源。若支持按 CI ID 过滤，请优先限定这些资源：${ciIdText || "无"}。不要查询全系统，也不要扩展到无关应用。用 echarts 树状图展示。`
+        : scope.ciIds.length
+          ? `请直接使用现有 CMDB 拓扑能力，仅查询本次导入成功或保留的这些资源，不要查询全系统，也不要自动扩展到整个应用。优先按这些 CI ID 过滤：${ciIdText}。资源清单：${resourceSummary}。只返回这些资源之间的节点与关系；如果某个资源没有关联关系，也要作为独立节点展示。用 echarts 树状图展示。`
+          : "请直接使用现有 CMDB 拓扑能力查询本次导入资源的局部拓扑，不要查询全系统，也不要自动扩展到无关应用。若找不到本次导入的范围，请先提示我重新选择导入结果。";
       void dispatchActiveMessage(systemContent, {
         visibleContent,
       });
