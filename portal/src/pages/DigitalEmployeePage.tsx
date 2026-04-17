@@ -1437,6 +1437,25 @@ export default function DigitalEmployeePage({
   const knownAlertIdsRef = useRef<string[]>([]);
   const chatMessagesRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(true);
+  const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const chatContainer = chatMessagesRef.current;
+    if (!chatContainer) {
+      return;
+    }
+
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({
+        behavior,
+        block: "end",
+      });
+      return;
+    }
+
+    chatContainer.scrollTo({
+      top: chatContainer.scrollHeight,
+      behavior,
+    });
+  }, []);
 
   const loadOpsAlerts = useCallback(async () => {
     try {
@@ -2501,29 +2520,57 @@ export default function DigitalEmployeePage({
       return;
     }
     const timerId = window.requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({
-        behavior: isStreaming ? "auto" : "smooth",
-        block: "end",
-      });
+      scrollMessagesToBottom(isStreaming ? "auto" : "smooth");
     });
 
     return () => {
       window.cancelAnimationFrame(timerId);
     };
-  }, [isStreaming, messages]);
+  }, [isStreaming, messages, scrollMessagesToBottom]);
 
   useEffect(() => {
     shouldAutoScrollRef.current = true;
     const timerId = window.requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({
-        behavior: "auto",
-        block: "end",
-      });
+      scrollMessagesToBottom("auto");
     });
     return () => {
       window.cancelAnimationFrame(timerId);
     };
-  }, [currentSessionId]);
+  }, [currentSessionId, scrollMessagesToBottom]);
+
+  useEffect(() => {
+    const chatContainer = chatMessagesRef.current;
+    if (!chatContainer || typeof MutationObserver === "undefined") {
+      return;
+    }
+
+    let rafId = 0;
+    const scheduleScroll = () => {
+      if (!shouldAutoScrollRef.current) {
+        return;
+      }
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+      rafId = window.requestAnimationFrame(() => {
+        scrollMessagesToBottom(isStreaming ? "auto" : "smooth");
+      });
+    };
+
+    const observer = new MutationObserver(scheduleScroll);
+    observer.observe(chatContainer, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+
+    return () => {
+      observer.disconnect();
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
+  }, [currentSessionId, isStreaming, scrollMessagesToBottom]);
 
   const handleChatMessagesScroll = useCallback(() => {
     const element = chatMessagesRef.current;
@@ -4883,7 +4930,11 @@ export default function DigitalEmployeePage({
                     </div>
                     ) : null}
 
-                    <div className="chat-messages">
+                    <div
+                      className="chat-messages"
+                      ref={chatMessagesRef}
+                      onScroll={handleChatMessagesScroll}
+                    >
                       {safeMessages.map((message) => (
                         <ChatMessageItem
                           agentId={remoteAgentId}
