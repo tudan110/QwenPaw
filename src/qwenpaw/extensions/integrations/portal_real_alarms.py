@@ -59,7 +59,7 @@ def _post_real_alarm_list(*, limit: int, begin_time: str, end_time: str) -> dict
 
 
 def _build_dispatch_content(row: dict[str, Any], *, title: str, device_name: str) -> str:
-    subtype = str(row.get("alarmsubtype") or "").strip()
+    subtype = str(row.get("alarmsubtype") or row.get("alarmSubType") or "").strip()
     combined_lower = " ".join(filter(None, (title.lower(), device_name.lower(), subtype.lower())))
 
     if "mysql" in combined_lower and any(

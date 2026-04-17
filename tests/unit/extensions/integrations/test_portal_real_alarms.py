@@ -45,7 +45,7 @@ def test_query_portal_real_alarms_normalizes_live_rows(monkeypatch) -> None:
     assert payload["items"][0]["dispatchContent"] == "mysql/死锁 + cmdb/新增/插入"
 
 
-def test_query_portal_real_alarms_uses_fallback_dispatch_for_unrelated_alarm(monkeypatch) -> None:
+def test_query_portal_real_alarms_uses_fallback_dispatch_for_camel_case_subtype(monkeypatch) -> None:
     monkeypatch.setattr(
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
         lambda *, limit, begin_time, end_time: {
@@ -55,7 +55,7 @@ def test_query_portal_real_alarms_uses_fallback_dispatch_for_unrelated_alarm(mon
                 {
                     "alarmuniqueid": "COMMON__other_alarm_1",
                     "alarmtitle": "CPU利用率过高",
-                    "alarmsubtype": "性能",
+                    "alarmSubType": "性能",
                     "alarmseverity": "2",
                     "alarmstatus": "1",
                     "eventtime": "2026-04-15 19:25:00",
