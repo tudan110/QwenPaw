@@ -20,6 +20,7 @@ from qwenpaw.extensions.api.fault_scenario_service import run_fault_scenario_dia
 from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
     query_alarm_workorders,
 )
+from qwenpaw.extensions.integrations.portal_real_alarms import query_portal_real_alarms
 from qwenpaw.app.agent_context import get_agent_for_request
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
@@ -725,6 +726,17 @@ async def get_alarm_workorders(limit: int = 5):
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] get_alarm_workorders failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/real-alarms")
+async def get_real_alarms(limit: int = 10):
+    try:
+        return query_portal_real_alarms(limit)
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] get_real_alarms failed: {error_detail}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 

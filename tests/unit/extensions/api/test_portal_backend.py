@@ -183,6 +183,42 @@ def test_fault_scenario_diagnose_route_returns_structured_result(
     assert response.json()["result"]["rootCause"]["type"] == "数据库异常"
 
 
+def test_real_alarms_route_returns_backend_payload(monkeypatch) -> None:
+    client = TestClient(portal_backend.app)
+    received: dict[str, int] = {}
+
+    monkeypatch.setattr(
+        portal_backend,
+        "query_portal_real_alarms",
+        lambda limit: received.setdefault("limit", limit) and {
+            "total": 1,
+            "items": [
+                {
+                    "id": "mock-deadlock-1",
+                    "title": "数据库锁异常",
+                    "level": "critical",
+                    "status": "active",
+                    "eventTime": "2026-04-15 19:20:00",
+                    "timeLabel": "2026-04-15 19:20:00",
+                    "deviceName": "MySQL",
+                    "manageIp": "10.43.150.186",
+                    "employeeId": "fault",
+                    "dispatchContent": "mysql/死锁 + cmdb/新增/插入",
+                    "visibleContent": "数据库锁异常（MySQL 10.43.150.186）",
+                }
+            ],
+            "source": "mock",
+        },
+    )
+
+    response = client.get("/api/portal/real-alarms?limit=8")
+
+    assert response.status_code == 200
+    assert received["limit"] == 8
+    assert response.json()["source"] == "mock"
+    assert response.json()["items"][0]["employeeId"] == "fault"
+
+
 def test_fault_scenario_diagnose_route_rejects_missing_session_id() -> None:
     client = TestClient(portal_backend.app)
 
