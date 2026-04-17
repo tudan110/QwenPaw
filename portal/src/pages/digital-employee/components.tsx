@@ -4,7 +4,7 @@ import { EChartsBlock } from "../../components/EChartsBlock";
 import { PortalVisualizationBlock } from "../../components/PortalVisualizationBlock";
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
 import {
-  extractVisualBlocks,
+  extractRenderableContentSegments,
   extractPortalActionPayload,
   getSeverityClassName,
   normalizeMarkdownDisplayContent,
@@ -703,42 +703,71 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   content: string;
   isStreaming?: boolean;
 }) {
-  const visualBlocks = extractVisualBlocks(content);
-  const normalizedContent = stripFrontmatter(normalizeMarkdownDisplayContent(content, {
-    isStreaming,
-  }));
   const isDarkTheme =
     typeof document !== "undefined"
     && document.querySelector(".portal-digital-employee")?.classList.contains("theme-dark");
   const markdownThemeClass = isDarkTheme ? "x-markdown-dark" : "x-markdown-light";
-  const hasText = Boolean(normalizedContent.trim());
-  const visualContainer = visualBlocks.length ? (
-    <div style={{ display: "grid", gap: 16, marginTop: hasText && !isStreaming ? 16 : 0, marginBottom: isStreaming && hasText ? 16 : 0 }}>
-      {visualBlocks.map((block, index) =>
-        block.type === "echarts" ? (
-          <EChartsBlock
-            key={`echarts-${index}`}
-            chart={block.raw}
-          />
-        ) : block.type === "portal-visualization" ? (
-          <PortalVisualizationBlock
-            key={`portal-visualization-${index}`}
-            raw={block.raw}
-          />
-        ) : null,
-      )}
-    </div>
-  ) : null;
+  const normalizedContent = stripFrontmatter(normalizeMarkdownDisplayContent(content, {
+    isStreaming,
+  }));
 
-  return (
-    <>
-      {isStreaming ? visualContainer : null}
+  if (isStreaming) {
+    return (
       <PortalQwenPawMarkdown
         className={`portal-x-markdown ${markdownThemeClass}`}
         content={normalizedContent}
         isStreaming={isStreaming}
       />
-      {!isStreaming ? visualContainer : null}
+    );
+  }
+
+  const renderableSegments = extractRenderableContentSegments(content);
+  const hasVisualSegments = renderableSegments.some((segment) => segment.type !== "markdown");
+
+  if (!hasVisualSegments) {
+    return (
+      <PortalQwenPawMarkdown
+        className={`portal-x-markdown ${markdownThemeClass}`}
+        content={normalizedContent}
+        isStreaming={false}
+      />
+    );
+  }
+
+  return (
+    <>
+      {renderableSegments.map((segment, index) => {
+        if (segment.type === "markdown") {
+          const segmentContent = stripFrontmatter(normalizeMarkdownDisplayContent(segment.content, {
+            isStreaming: false,
+          }));
+          if (!segmentContent.trim()) {
+            return null;
+          }
+
+          return (
+            <PortalQwenPawMarkdown
+              key={`markdown-${index}`}
+              className={`portal-x-markdown ${markdownThemeClass}`}
+              content={segmentContent}
+              isStreaming={false}
+            />
+          );
+        }
+
+        return (
+          <div
+            key={`${segment.type}-${index}`}
+            style={{ display: "grid", gap: 16, margin: "16px 0" }}
+          >
+            {segment.type === "echarts" ? (
+              <EChartsBlock chart={segment.raw} />
+            ) : (
+              <PortalVisualizationBlock raw={segment.raw} />
+            )}
+          </div>
+        );
+      })}
     </>
   );
 });

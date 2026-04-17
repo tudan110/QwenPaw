@@ -547,23 +547,6 @@ export function normalizeRemoteHistoryMessages(
           [block],
         );
       }
-      if (
-        message.type === "plugin_call_output"
-        && block.outputContent
-        && extractVisualBlocks(block.outputContent).length > 0
-      ) {
-        activeAgentMessage.processBlocks = mergeProcessBlocks(
-          activeAgentMessage.processBlocks,
-          [
-            {
-              id: `${message.id || `tool-visual-${normalizedMessages.length}`}-visual`,
-              kind: "response",
-              content: block.outputContent,
-              replaceContent: true,
-            },
-          ],
-        );
-      }
       continue;
     }
 
@@ -1292,6 +1275,91 @@ export function extractVisualBlocks(content: string): VisualBlock[] {
   }
 
   return blocks;
+}
+
+export type RenderableContentSegment =
+  | {
+      type: "markdown";
+      content: string;
+    }
+  | ({
+      type: "echarts" | "portal-visualization";
+    } & VisualBlock);
+
+export function extractRenderableContentSegments(content: string): RenderableContentSegment[] {
+  const normalized = unwrapOuterMarkdownFence(String(content || ""));
+  const segments = splitMarkdownByCodeFence(normalized);
+  const result: RenderableContentSegment[] = [];
+
+  const pushMarkdown = (segmentContent: string) => {
+    if (!segmentContent) {
+      return;
+    }
+
+    const previous = result[result.length - 1];
+    if (previous?.type === "markdown") {
+      previous.content += segmentContent;
+      return;
+    }
+
+    result.push({
+      type: "markdown",
+      content: segmentContent,
+    });
+  };
+
+  segments.forEach((segment) => {
+    if (segment.type === "text") {
+      pushMarkdown(segment.content);
+      return;
+    }
+
+    const visualBlock = extractVisualBlockFromFence(segment.content);
+    if (visualBlock) {
+      result.push(visualBlock);
+      return;
+    }
+
+    pushMarkdown(segment.content);
+  });
+
+  return result;
+}
+
+function extractVisualBlockFromFence(content: string): VisualBlock | null {
+  const normalized = String(content || "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const fenceMatch = normalized.match(
+    /^(`{3,}|~{3,})([\w-]+)?\s*\n([\s\S]*?)\n\1\s*$/i,
+  );
+  if (!fenceMatch) {
+    return null;
+  }
+
+  const type = String(fenceMatch[2] || "").toLowerCase();
+  const raw = String(fenceMatch[3] || "").trim();
+  if (!raw) {
+    return null;
+  }
+
+  if (type === "echarts" || (type === "json" && looksLikeEChartsConfig(raw))) {
+    return {
+      type: "echarts",
+      raw,
+    };
+  }
+
+  if (type === "portal-visualization") {
+    return {
+      type: "portal-visualization",
+      raw,
+    };
+  }
+
+  return null;
 }
 
 function unwrapOuterMarkdownFence(content: string) {

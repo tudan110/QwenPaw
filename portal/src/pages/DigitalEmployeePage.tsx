@@ -1008,6 +1008,15 @@ function buildMentionCollaborationPrompt({
 }) {
   const targetAgentId = resolveEmployeeAgentId(String(targetEmployee?.id || ""));
   const normalizedRequest = String(userRequest || "").trim();
+  const isQueryAgent = targetAgentId === "query";
+  const requestLooksLikeTopology = /拓扑|topology|关系图|树状图|echarts/i.test(normalizedRequest);
+  const extraCollaborationHints =
+    isQueryAgent && requestLooksLikeTopology
+      ? [
+          "本次协作涉及 CMDB 资源关系拓扑时，请优先使用 query 数字员工已启用的 veops-cmdb skill。",
+          "如果拿到了应用或资源拓扑，请直接返回可渲染的 ```echarts 代码块，优先使用 tree 树状图并设置从左到右展开，不要只返回文字摘要。",
+        ]
+      : [];
 
   return [
     `你当前是数字员工「${currentEmployee?.name || currentAgentId}」。`,
@@ -1015,6 +1024,7 @@ function buildMentionCollaborationPrompt({
     "请不要要求用户切换页面，也不要把本次请求交回前端路由处理。",
     "请直接使用你已启用的内置技能 Multi-Agent Collaboration（multi_agent_collaboration），在当前会话中发起智能体协同并整合结果后回复用户。",
     "给目标智能体的协同请求正文请直接概括任务本身，不要重复写 [Agent ... requesting]，也不要以 User explicitly asked... 这类泛化说明开头。",
+    ...extraCollaborationHints,
     `当前智能体（from-agent）：${currentAgentId}`,
     `目标智能体（to-agent）：${targetAgentId}`,
     normalizedRequest
@@ -3128,8 +3138,8 @@ export default function DigitalEmployeePage({
         ? `查看${applicationName}完整拓扑`
         : "查看导入结果完整拓扑";
       const systemContent = applicationName
-        ? `请直接使用现有 CMDB 拓扑能力，查询应用 ${applicationName} 的完整关系拓扑，只返回该应用相关的节点与关系，并用 echarts 树状图展示。不要查询全系统，也不要扩展到无关应用。`
-        : "请直接使用现有 CMDB 拓扑能力查询应用关系拓扑，并用 echarts 树状图展示。如果系统中存在多个应用且我没有明确指定应用名，请先列出候选应用并要求我明确选择，不要默认任选一个应用。";
+        ? `请直接协作 query 数字员工，使用其 veops-cmdb skill 查询应用 ${applicationName} 的完整关系拓扑，只返回该应用相关的节点与关系，并直接输出可渲染的 echarts 树状图代码块。不要查询全系统，也不要扩展到无关应用。`
+        : "请直接协作 query 数字员工，使用其 veops-cmdb skill 查询应用关系拓扑，并直接输出可渲染的 echarts 树状图代码块。如果系统中存在多个应用且我没有明确指定应用名，请先列出候选应用并要求我明确选择，不要默认任选一个应用。";
       void dispatchActiveMessage(systemContent, {
         visibleContent,
       });
