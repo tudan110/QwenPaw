@@ -197,6 +197,72 @@ def test_query_portal_real_alarms_falls_back_to_mock_on_request_failure(monkeypa
     assert payload["items"][0]["id"] == "mock-deadlock-2"
 
 
+def test_query_portal_real_alarms_filters_mock_fallback_to_deadlock_row(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
+        lambda *, limit, begin_time, end_time: {"code": 200, "total": 0, "rows": []},
+    )
+    monkeypatch.setattr(
+        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
+        lambda: [
+            {
+                "alarmuniqueid": "mock-non-deadlock-1",
+                "alarmtitle": "端口down",
+                "alarmseverity": "2",
+                "alarmstatus": "1",
+                "eventtime": "2026-04-15 19:10:00",
+                "devName": "交换机",
+                "manageIp": "10.43.150.100",
+            },
+            {
+                "alarmuniqueid": "mock-deadlock-1",
+                "alarmtitle": "数据库锁异常",
+                "alarmseverity": "1",
+                "alarmstatus": "1",
+                "eventtime": "2026-04-15 19:20:00",
+                "devName": "MySQL",
+                "manageIp": "10.43.150.186",
+            },
+        ],
+    )
+
+    payload = query_portal_real_alarms(limit=10)
+
+    assert payload["source"] == "mock"
+    assert payload["total"] == 1
+    assert [item["id"] for item in payload["items"]] == ["mock-deadlock-1"]
+
+
+def test_query_portal_real_alarms_returns_empty_mock_payload_when_filtered_mock_has_no_deadlock_row(
+    monkeypatch,
+) -> None:
+    def _raise_request_error(*, limit, begin_time, end_time):
+        raise RuntimeError("gateway unavailable")
+
+    monkeypatch.setattr(
+        "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
+        _raise_request_error,
+    )
+    monkeypatch.setattr(
+        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
+        lambda: [
+            {
+                "alarmuniqueid": "mock-non-deadlock-2",
+                "alarmtitle": "CPU利用率过高",
+                "alarmseverity": "2",
+                "alarmstatus": "1",
+                "eventtime": "2026-04-15 19:25:00",
+                "devName": "k8s-node-01",
+                "manageIp": "10.0.0.8",
+            }
+        ],
+    )
+
+    payload = query_portal_real_alarms(limit=10)
+
+    assert payload == {"total": 0, "items": [], "source": "mock"}
+
+
 def test_query_portal_real_alarms_returns_empty_mock_payload_when_mock_file_missing(monkeypatch) -> None:
     monkeypatch.setattr(
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",

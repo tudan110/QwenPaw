@@ -41,6 +41,21 @@ def _load_mock_alarm_rows() -> list[dict[str, Any]]:
     return list(payload.get("rows") or [])
 
 
+PORTAL_REAL_ALARM_MOCK_TITLE = "数据库锁异常"
+
+
+def _filter_portal_mock_alarm_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in rows
+        if str(row.get("alarmtitle") or "").strip() == PORTAL_REAL_ALARM_MOCK_TITLE
+    ]
+
+
+def _load_portal_mock_alarm_rows() -> list[dict[str, Any]]:
+    return _filter_portal_mock_alarm_rows(_load_mock_alarm_rows())
+
+
 def _post_real_alarm_list(*, limit: int, begin_time: str, end_time: str) -> dict[str, Any]:
     body = {
         "pageNum": 1,
@@ -105,11 +120,11 @@ def query_portal_real_alarms(limit: int, now: datetime | None = None) -> dict[st
         rows = list(result.get("rows") or [])
     except Exception:
         source = "mock"
-        rows = _load_mock_alarm_rows()
+        rows = _load_portal_mock_alarm_rows()
     else:
         if not rows:
             source = "mock"
-            rows = _load_mock_alarm_rows()
+            rows = _load_portal_mock_alarm_rows()
 
     items = [_normalize_alarm_row(row) for row in rows[:safe_limit]]
     return {
