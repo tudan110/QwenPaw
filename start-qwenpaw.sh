@@ -23,8 +23,6 @@ WORKING_DIR="$(resolve_working_dir)"
 export QWENPAW_WORKING_DIR="$WORKING_DIR"
 VENV_DIR=".venv"
 PYTHON_BIN="$SCRIPT_DIR/$VENV_DIR/bin/python"
-UV_LOCAL_BIN="$HOME/.local/bin/uv"
-DEPS_STAMP_FILE="$SCRIPT_DIR/$VENV_DIR/.qwenpaw-deps-stamp"
 
 REBUILD_FRONTEND=false
 ARGS=()
@@ -40,65 +38,29 @@ echo "=========================================="
 echo "  QwenPaw 启动脚本"
 echo "=========================================="
 
-# 优先补齐 uv 默认安装目录，避免 PATH 未加载时重复安装
-export PATH="$HOME/.local/bin:$PATH"
-
 # 检查并安装 uv
-if command -v uv &> /dev/null; then
-    UV_BIN="$(command -v uv)"
-    echo "[1/5] uv 已安装"
-elif [ -x "$UV_LOCAL_BIN" ]; then
-    UV_BIN="$UV_LOCAL_BIN"
-    echo "[1/5] uv 已安装"
-else
+if ! command -v uv &> /dev/null; then
     echo "[1/5] 安装 uv..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="$HOME/.local/bin:$PATH"
-    UV_BIN="$UV_LOCAL_BIN"
+else
+    echo "[1/5] uv 已安装"
 fi
 
-UV_VERSION=$("$UV_BIN" --version 2>&1)
+UV_VERSION=$(uv --version 2>&1)
 echo "      $UV_VERSION"
 
 # 创建虚拟环境（如果不存在）
-if [ ! -d "$VENV_DIR" ] || [ ! -x "$PYTHON_BIN" ]; then
+if [ ! -d "$VENV_DIR" ]; then
     echo "[2/5] 创建虚拟环境..."
-    "$UV_BIN" venv "$VENV_DIR"
+    uv venv "$VENV_DIR"
 else
     echo "[2/5] 虚拟环境已存在，跳过创建"
 fi
 
-compute_deps_stamp() {
-    local files=()
-    local file
-    for file in pyproject.toml setup.py uv.lock; do
-        if [ -f "$SCRIPT_DIR/$file" ]; then
-            files+=("$SCRIPT_DIR/$file")
-        fi
-    done
-
-    if [ "${#files[@]}" -eq 0 ]; then
-        printf 'no-deps-files\n'
-        return
-    fi
-
-    shasum "${files[@]}" | shasum | awk '{print $1}'
-}
-
 # 安装依赖（不包含 mlx，仅支持 Apple Silicon arm64）
-CURRENT_DEPS_STAMP="$(compute_deps_stamp)"
-INSTALLED_DEPS_STAMP=""
-if [ -f "$DEPS_STAMP_FILE" ]; then
-    INSTALLED_DEPS_STAMP="$(cat "$DEPS_STAMP_FILE")"
-fi
-
-if [ "$CURRENT_DEPS_STAMP" != "$INSTALLED_DEPS_STAMP" ]; then
-    echo "[3/5] 安装依赖..."
-    UV_HTTP_TIMEOUT=300 "$UV_BIN" pip install --python "$PYTHON_BIN" -e ".[dev]"
-    printf '%s\n' "$CURRENT_DEPS_STAMP" > "$DEPS_STAMP_FILE"
-else
-    echo "[3/5] 依赖未变化，跳过安装"
-fi
+echo "[3/5] 安装依赖..."
+UV_HTTP_TIMEOUT=300 uv pip install --python "$PYTHON_BIN" -e ".[dev]"
 
 # 构建前端（如果需要）
 CONSOLE_DIST="$SCRIPT_DIR/console/dist"
