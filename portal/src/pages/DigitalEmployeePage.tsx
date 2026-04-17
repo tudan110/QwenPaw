@@ -3890,124 +3890,6 @@ export default function DigitalEmployeePage({
     handleOpenTaskEmployeeChat(employeeId, session);
   };
 
-  const renderAlertBell = () => (
-    <div className="alert-bell-wrap">
-      {alertToast?.visible ? (
-        <button
-          type="button"
-          className="danmaku-toast"
-          onClick={() => handlePortalAlertAction(alertToast.alert)}
-        >
-          <span className="danmaku-dot" />
-          <span className="danmaku-toast-message">{alertToast.alert.message}</span>
-          <span className="danmaku-emp">
-            {getEmployeeById(alertToast.alert.employeeId)?.name || alertToast.alert.employeeId}
-          </span>
-        </button>
-      ) : null}
-      <button
-        type="button"
-        className={opsAlerts.length ? "alert-bell has-alerts" : "alert-bell"}
-        onClick={handleToggleAlertPopup}
-        aria-label="查看运维告警"
-        title="运维告警"
-      >
-        {alertBellIcon}
-        {opsAlerts.length ? (
-          <span className="bell-badge">{opsAlerts.length > 99 ? "99+" : opsAlerts.length}</span>
-        ) : null}
-      </button>
-    </div>
-  );
-
-  const alertPopup = alertPopupOpen && alertPopupPosition && typeof document !== "undefined"
-    ? createPortal(
-        <div
-          ref={alertPopupRef}
-          className={pageTheme === "dark" ? "portal-alert-popup theme-dark show" : "portal-alert-popup show"}
-          style={{
-            top: alertPopupPosition.top,
-            left: alertPopupPosition.left,
-          }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div className="alert-popup-header">
-            <div className="alert-popup-title">
-              {alertBellIcon}
-              <span>运维告警</span>
-              {opsAlerts.length ? <span className="alert-count">{opsAlerts.length}</span> : null}
-            </div>
-            {opsAlerts.length ? (
-              <button type="button" className="alert-popup-clear" onClick={handleClearPortalAlerts}>
-                全部清除
-              </button>
-            ) : null}
-          </div>
-          <div className="alert-popup-body">
-            {sortedOpsAlerts.length ? (
-              sortedOpsAlerts.map((alert) => {
-                const employee = getEmployeeById(alert.employeeId);
-                const employeeColor = getDashboardEmployeeColor(alert.employeeId);
-
-                return (
-                  <button
-                    key={alert.id}
-                    type="button"
-                    className="alert-popup-item"
-                    onClick={() => handlePortalAlertAction(alert)}
-                  >
-                    <div
-                      className="alert-popup-item-icon"
-                      style={{
-                        background: `${employeeColor}20`,
-                        color: employeeColor,
-                      }}
-                    >
-                      {employee ? (
-                        <DigitalEmployeeAvatar
-                          employee={employee}
-                          className="portal-alert-popup-avatar"
-                        />
-                      ) : (
-                        alertBellIcon
-                      )}
-                    </div>
-                    <div className="alert-popup-item-body">
-                      <div className="alert-popup-item-msg">{alert.message}</div>
-                      <div className="alert-popup-item-meta">
-                        <span className="alert-popup-item-emp" style={{ color: employeeColor }}>
-                          {employee?.name || alert.employeeId}
-                        </span>
-                        <span
-                          className="alert-popup-item-level"
-                          style={{
-                            color: PORTAL_ALERT_LEVEL_COLORS[alert.level],
-                            background: `${PORTAL_ALERT_LEVEL_COLORS[alert.level]}15`,
-                            borderColor: `${PORTAL_ALERT_LEVEL_COLORS[alert.level]}30`,
-                          }}
-                        >
-                          {PORTAL_ALERT_LEVEL_LABELS[alert.level]}
-                        </span>
-                        <span className="alert-popup-item-time">{alert.timeLabel}</span>
-                      </div>
-                    </div>
-                    <span className="alert-popup-item-go" aria-hidden="true">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
-                    </span>
-                  </button>
-                );
-              })
-            ) : (
-              <div className="alert-popup-empty">暂无待处理告警</div>
-            )}
-          </div>
-        </div>,
-        document.body,
-      )
-    : null;
-
   if (!currentEmployee) {
     return null;
   }
@@ -5258,8 +5140,6 @@ export default function DigitalEmployeePage({
           )}
         </div>
       </div>
-
-      {alertPopup}
 
       {dashboardHistoryVisible ? (
         <div className="history-modal show" onClick={() => setDashboardHistoryVisible(false)}>
