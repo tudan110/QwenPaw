@@ -22,7 +22,6 @@ import {
   createRemoteSessionId,
   createUserMessage,
   extractCopawMessageText,
-  mergeStreamingText,
   mergeProcessBlocks,
   normalizeRemoteHistoryMessages,
   normalizeRemoteSessions,
@@ -194,8 +193,9 @@ export function useRemoteChatSession({
     scheduleStreamFlush();
   };
 
-  const appendAssistantContent = useCallback((
+  const appendAssistantResponseBlock = useCallback((
     messageId: string,
+    responseId: string,
     incomingText: string,
     { replace = false }: { replace?: boolean } = {},
   ) => {
@@ -210,10 +210,14 @@ export function useRemoteChatSession({
           return message;
         }
 
-        const currentText = String(message.content || "");
         return {
           ...message,
-          content: replace ? nextText : mergeStreamingText(currentText, nextText),
+          processBlocks: mergeProcessBlocks(message.processBlocks || [], [
+            {
+              ...buildResponseBlock({ id: responseId }, nextText, { preserveWhitespace: true }),
+              replaceContent: replace,
+            },
+          ]),
         };
       }),
     );
@@ -441,7 +445,7 @@ export function useRemoteChatSession({
       const assistantState = ensureAssistantMessage(event.id, employee);
       const finalText = extractCopawMessageText(event);
       if (event.status === "completed" && finalText) {
-        appendAssistantContent(assistantState.frontendId, finalText, {
+        appendAssistantResponseBlock(assistantState.frontendId, event.id, finalText, {
           replace: true,
         });
       }
@@ -451,7 +455,7 @@ export function useRemoteChatSession({
     if (event.object === "content" && event.type === "text" && event.msg_id) {
       const assistantState = ensureAssistantMessage(event.msg_id, employee);
       if (event.text) {
-        appendAssistantContent(assistantState.frontendId, event.text);
+        appendAssistantResponseBlock(assistantState.frontendId, event.msg_id, event.text);
       }
     }
   };
