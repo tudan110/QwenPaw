@@ -76,6 +76,39 @@ def test_query_portal_real_alarms_uses_fallback_dispatch_for_camel_case_subtype(
     assert payload["items"][0]["dispatchContent"] == "CPU利用率过高 / k8s-node-01 / 性能"
 
 
+def test_query_portal_real_alarms_omits_missing_device_sentinel_from_fallback_dispatch(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
+        lambda *, limit, begin_time, end_time: {
+            "code": 200,
+            "total": 1,
+            "rows": [
+                {
+                    "alarmuniqueid": "COMMON__other_alarm_2",
+                    "alarmtitle": "CPU利用率过高",
+                    "alarmSubType": "性能",
+                    "alarmseverity": "2",
+                    "alarmstatus": "1",
+                    "eventtime": "2026-04-15 19:25:00",
+                    "manageIp": "10.0.0.8",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        "qwenpaw.extensions.integrations.portal_real_alarms._load_mock_alarm_rows",
+        lambda: [],
+    )
+
+    payload = query_portal_real_alarms(limit=10)
+
+    assert payload["source"] == "live"
+    assert payload["items"][0]["deviceName"] == "--"
+    assert payload["items"][0]["dispatchContent"] == "CPU利用率过高 / 性能"
+
+
 def test_query_portal_real_alarms_preserves_deadlock_dispatch_for_english_mysql_alarm(monkeypatch) -> None:
     monkeypatch.setattr(
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",

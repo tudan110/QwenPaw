@@ -219,6 +219,20 @@ def test_real_alarms_route_returns_backend_payload(monkeypatch) -> None:
     assert response.json()["items"][0]["employeeId"] == "fault"
 
 
+def test_real_alarms_route_returns_500_when_backend_query_fails(monkeypatch) -> None:
+    client = TestClient(portal_backend.app)
+
+    def _raise(limit: int) -> dict:
+        raise RuntimeError("unexpected backend failure")
+
+    monkeypatch.setattr(portal_backend, "query_portal_real_alarms", _raise)
+
+    response = client.get("/api/portal/real-alarms?limit=8")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "RuntimeError: unexpected backend failure"
+
+
 def test_real_alarms_route_keeps_alarm_workorders_route_unchanged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -68,7 +68,8 @@ def _build_dispatch_content(row: dict[str, Any], *, title: str, device_name: str
     ):
         return "mysql/死锁 + cmdb/新增/插入"
 
-    return " / ".join(filter(None, (title, device_name, subtype)))
+    fallback_device_name = "" if device_name == "--" else device_name
+    return " / ".join(filter(None, (title, fallback_device_name, subtype)))
 
 
 def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
