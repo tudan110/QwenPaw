@@ -2111,6 +2111,7 @@ export default function DigitalEmployeePage({
     }
 
     if (alert.dispatchContent) {
+      const normalizedVisibleContent = (alert.visibleContent || alert.dispatchContent).trim();
       navigateToEmployeePage(employee, {
         entry: alert.routeEntry ?? null,
         view: "chat",
@@ -2119,8 +2120,8 @@ export default function DigitalEmployeePage({
           pendingPortalDispatch: {
             token: `alert-dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             targetEmployeeId: employee.id,
-            content: alert.dispatchContent,
-            visibleContent: alert.visibleContent || alert.dispatchContent,
+            content: normalizedVisibleContent,
+            visibleContent: normalizedVisibleContent,
           },
         } satisfies PortalLocationState,
       });
