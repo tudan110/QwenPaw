@@ -1,6 +1,12 @@
+import json
 from datetime import datetime, timezone
 
-from qwenpaw.extensions.integrations.portal_real_alarms import query_portal_real_alarms
+import httpx
+
+from qwenpaw.extensions.integrations.portal_real_alarms import (
+    _post_real_alarm_list,
+    query_portal_real_alarms,
+)
 
 
 def test_query_portal_real_alarms_normalizes_live_rows(monkeypatch) -> None:
@@ -123,3 +129,39 @@ def test_query_portal_real_alarms_sends_last_7_days_active_alarm_request(monkeyp
     assert captured["limit"] == 5
     assert captured["begin_time"] == "2026-04-10 01:00:00"
     assert captured["end_time"] == "2026-04-17 01:00:00"
+
+
+def test_post_real_alarm_list_posts_gateway_json_payload(monkeypatch) -> None:
+    captured = {}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["url"] = str(request.url)
+        captured["content_type"] = request.headers["content-type"]
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json={"code": 200, "rows": [], "total": 0})
+
+    transport = httpx.MockTransport(_handler)
+    original_client = httpx.Client
+
+    def _client_factory(*args, **kwargs) -> httpx.Client:
+        kwargs["transport"] = transport
+        return original_client(*args, **kwargs)
+
+    monkeypatch.setattr("qwenpaw.extensions.integrations.portal_real_alarms.httpx.Client", _client_factory)
+
+    payload = _post_real_alarm_list(
+        limit=5,
+        begin_time="2026-04-10 01:00:00",
+        end_time="2026-04-17 01:00:00",
+    )
+
+    assert payload == {"code": 200, "rows": [], "total": 0}
+    assert captured["method"] == "POST"
+    assert captured["url"] == "http://gateway:30080/resource/realalarm/list"
+    assert captured["content_type"].startswith("application/json")
+    assert captured["json"]["alarmstatus"] == "1"
+    assert captured["json"]["params"] == {
+        "beginEventtime": "2026-04-10 01:00:00",
+        "endEventtime": "2026-04-17 01:00:00",
+    }
