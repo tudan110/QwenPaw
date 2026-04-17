@@ -35,6 +35,8 @@ def _format_dt(value: datetime) -> str:
 
 
 def _load_mock_alarm_rows() -> list[dict[str, Any]]:
+    if not MOCK_DATA_PATH.exists():
+        return []
     payload = json.loads(MOCK_DATA_PATH.read_text(encoding="utf-8"))
     return list(payload.get("rows") or [])
 
@@ -56,6 +58,19 @@ def _post_real_alarm_list(*, limit: int, begin_time: str, end_time: str) -> dict
         return response.json()
 
 
+def _build_dispatch_content(row: dict[str, Any], *, title: str, device_name: str) -> str:
+    subtype = str(row.get("alarmsubtype") or "").strip()
+    combined_lower = " ".join(filter(None, (title.lower(), device_name.lower(), subtype.lower())))
+
+    if "mysql" in combined_lower and any(
+        token in combined_lower
+        for token in ("死锁", "数据库锁", "deadlock", "database-lock", "database lock")
+    ):
+        return "mysql/死锁 + cmdb/新增/插入"
+
+    return " / ".join(filter(None, (title, device_name, subtype)))
+
+
 def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
     severity = str(row.get("alarmseverity") or "").strip() or "4"
     device_name = str(row.get("devName") or "").strip() or "--"
@@ -72,7 +87,7 @@ def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
         "deviceName": device_name,
         "manageIp": manage_ip,
         "employeeId": "fault",
-        "dispatchContent": "mysql/死锁 + cmdb/新增/插入",
+        "dispatchContent": _build_dispatch_content(row, title=title, device_name=device_name),
         "visibleContent": f"{title}（{device_name} {manage_ip}）",
     }
 
