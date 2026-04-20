@@ -126,4 +126,6 @@ deploy-all/qwenpaw/data/
 # 临时文件
 tmp/
 
+.codex
+
 ###### Custom ignore files end ######
