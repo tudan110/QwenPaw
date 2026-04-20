@@ -178,6 +178,19 @@ def _build_city_list(cities: List[str]) -> List[Dict[str, Any]]:
     ]
 
 
+def _normalize_ci_id(ci_id: Optional[str]) -> Optional[Any]:
+    """规范化 CI/网元 ID，映射到接口字段 neId。"""
+    if ci_id is None:
+        return None
+
+    normalized = str(ci_id).strip()
+    if not normalized:
+        return None
+    if normalized.isdigit():
+        return int(normalized)
+    return normalized
+
+
 def execute(
     page_num: int = 1,
     page_size: int = 10,
@@ -192,6 +205,7 @@ def execute(
     manage_ip: str = None,
     cities: List[str] = None,
     alarm_title: str = None,
+    ci_id: str = None,
 ) -> Dict[str, Any]:
     """
     执行实时告警查询
@@ -210,6 +224,7 @@ def execute(
         manage_ip: 管理IP
         cities: 城市列表
         alarm_title: 告警标题
+        ci_id: CI/网元 ID，对应接口字段 neId
 
     Returns:
         Dict: 包含查询结果或错误信息的字典
@@ -245,6 +260,7 @@ def execute(
         "alarmclass": None,
         "devName": dev_name if dev_name else None,
         "manageIp": manage_ip if manage_ip else None,
+        "neId": _normalize_ci_id(ci_id),
         "locatenename": None,
         "onuId": None,
         "locatenestatus": None,
@@ -326,6 +342,9 @@ def main():
   # 查询指定城市的告警
   uv run get_alarms.py --cities 南京 秦淮区
 
+  # 查询指定 CI/网元 ID 的告警
+  uv run get_alarms.py --ci_id 18
+
   # 直接指定 token
   uv run get_alarms.py --token "eyJhbGc..." --page_num 1 --page_size 10
 
@@ -392,6 +411,15 @@ def main():
     parser.add_argument("--manage_ip", type=str, required=False, help="管理IP")
 
     parser.add_argument(
+        "--ci_id",
+        "--ne_id",
+        dest="ci_id",
+        type=str,
+        required=False,
+        help="CI/网元 ID，对应接口字段 neId",
+    )
+
+    parser.add_argument(
         "--cities",
         type=str,
         nargs="+",
@@ -426,6 +454,7 @@ def main():
         alarm_status=args.alarm_status,
         dev_name=args.dev_name,
         manage_ip=args.manage_ip,
+        ci_id=args.ci_id,
         cities=args.cities,
         alarm_title=args.alarm_title,
     )

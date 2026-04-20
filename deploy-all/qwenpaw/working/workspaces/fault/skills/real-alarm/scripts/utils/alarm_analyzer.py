@@ -33,6 +33,7 @@ def fetch_all_alarms(
     alarm_severitys: Optional[List[str]] = None,
     alarm_status: Optional[str] = None,
     cities: Optional[List[str]] = None,
+    ci_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """分页获取全部告警。"""
     first_page = execute(
@@ -45,6 +46,7 @@ def fetch_all_alarms(
         alarm_severitys=alarm_severitys,
         alarm_status=alarm_status,
         cities=cities,
+        ci_id=ci_id,
     )
     if first_page.get("code") != 200:
         return first_page
@@ -74,6 +76,7 @@ def fetch_all_alarms(
             alarm_severitys=alarm_severitys,
             alarm_status=alarm_status,
             cities=cities,
+            ci_id=ci_id,
         )
         if page_result.get("code") != 200:
             page_result["partial_rows"] = rows
@@ -106,6 +109,7 @@ def apply_filters(
     manage_ip: str = "",
     speciality: str = "",
     region: str = "",
+    ci_id: str = "",
 ) -> List[Dict[str, Any]]:
     """按条件过滤告警。"""
     normalized_keyword = keyword.strip().lower()
@@ -114,6 +118,7 @@ def apply_filters(
     normalized_manage_ip = manage_ip.strip().lower()
     normalized_speciality = speciality.strip().lower()
     normalized_region = region.strip().lower()
+    normalized_ci_id = ci_id.strip().lower()
 
     result: List[Dict[str, Any]] = []
     for alarm in alarms:
@@ -127,10 +132,23 @@ def apply_filters(
             continue
         if normalized_region and normalized_region not in str(alarm.get("alarmregion", "")).lower():
             continue
+        if normalized_ci_id and not matches_ci_id(alarm, normalized_ci_id):
+            continue
         if normalized_keyword and not matches_keyword(alarm, normalized_keyword, keyword_field):
             continue
         result.append(alarm)
     return result
+
+
+def matches_ci_id(alarm: Dict[str, Any], ci_id: str) -> bool:
+    """匹配 CI/网元 ID。"""
+    candidates = (
+        alarm.get("neId"),
+        alarm.get("ciId"),
+        alarm.get("ciid"),
+        alarm.get("neid"),
+    )
+    return any(ci_id == str(value).strip().lower() for value in candidates if value is not None)
 
 
 def matches_keyword(alarm: Dict[str, Any], keyword: str, keyword_field: str) -> bool:
@@ -204,6 +222,7 @@ def _build_alarm_rows(alarms: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "alarmSeverityName": alarm.get("alarmSeverityName") or "-",
                 "devName": alarm.get("devName") or "-",
                 "manageIp": alarm.get("manageIp") or "-",
+                "neId": alarm.get("neId") or alarm.get("ciId") or "-",
                 "eventtime": alarm.get("eventtime") or "-",
                 "speciality": alarm.get("speciality") or "-",
                 "alarmregion": alarm.get("alarmregion") or "-",

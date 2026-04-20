@@ -146,6 +146,7 @@ uv run scripts/get_alarms.py --page_num 2 --page_size 100
 - "活跃告警有哪些" / "未清除的告警" / "current告rms" → 优先执行 `analyze_alarms.py --mode search --alarm_status 1 --include-alarms`
 - "某个设备的告警" / "设备xxx的告警" → 优先执行 `analyze_alarms.py --mode search --device_name <name> --include-alarms`
 - "某个IP的告警" / "IP为xxx的告警" → 优先执行 `analyze_alarms.py --mode search --manage_ip <ip> --include-alarms`
+- "某个 CI ID 的告警" / "ci id=18 的告警" / "网元ID 18 的告警" → 优先执行 `analyze_alarms.py --mode search --ci_id 18 --include-alarms`
 
 **统计分析类**：
 - "统计告警级别" / "各级别告警数量" / "告警严重程度分布" → 优先执行 `analyze_alarms.py --mode severity`
@@ -184,6 +185,7 @@ uv run scripts/get_alarms.py --page_num 2 --page_size 100
 - 综合分析：用分级标题组织为"概览 / 级别 / 标题 / 设备 / 专业 / 区域"
 - 单告警查询：用列表或表格展示关键字段；字段很多时分组展示
 - 搜索/严重/活跃告警明细在聊天窗口默认只展示前 20 条，并说明总数
+- 如果用户按 `ci id`/`neId` 查询，优先在结果里展示 `CI ID` 列，便于确认筛选命中
 
 图表规则：
 
@@ -239,6 +241,12 @@ uv run scripts/get_alarms.py --page_num 2 --page_size 100
 - 用户：查一下标题里包含端口的告警
 - 动作：执行 `uv run scripts/analyze_alarms.py --mode search --keyword 端口 --output markdown`
 - 回复：说明匹配数量，并表格展示告警标题、设备名称、告警级别、告警发生时间等字段
+
+### 示例 5：按 CI ID 查询告警
+
+- 用户：帮我查 ci id 等于 18 的所有告警
+- 动作：执行 `uv run scripts/analyze_alarms.py --mode search --ci_id 18 --include-alarms --output markdown`
+- 回复：先说明匹配总数，再表格展示告警标题、设备名称、管理IP、CI ID、告警发生时间、告警状态
 
 ## 注意事项
 

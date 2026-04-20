@@ -98,6 +98,7 @@ uv run scripts/analyze_alarms.py --mode search --keyword 端口 --output markdow
 - `--alarm_status`: 告警状态（1-活跃，0-已清除）
 - `--dev_name`: 设备名称
 - `--manage_ip`: 管理IP
+- `--ci_id` / `--ne_id`: CI/网元 ID，对应接口字段 `neId`
 - `--cities`: 城市列表
 - `--alarm_title`: 告警标题
 
@@ -110,6 +111,8 @@ uv run scripts/analyze_alarms.py --mode search --keyword 端口 --output markdow
 - `--keyword`: 搜索关键字
 - `--severity`: 按告警级别过滤
 - `--device_name`: 按设备名称过滤
+- `--manage_ip`: 按管理IP过滤
+- `--ci_id` / `--ne_id`: 按 CI/网元 ID 过滤
 - `--speciality`: 按专业过滤
 - `--begin_time`: 开始时间
 - `--end_time`: 结束时间
@@ -197,6 +200,12 @@ uv run scripts/analyze_alarms.py --mode search --device_name SN-XA-LHL-A --inclu
 
 ```bash
 uv run scripts/analyze_alarms.py --mode summary --cities 南京 --output markdown
+```
+
+### 场景 7：查询指定 CI ID 的告警
+
+```bash
+uv run scripts/analyze_alarms.py --mode search --ci_id 18 --include-alarms --output markdown
 ```
 
 ## 参考文档

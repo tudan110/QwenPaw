@@ -75,6 +75,7 @@ uv run scripts/analyze_alarms.py --mode summary --output markdown-echarts-only
 | `alarm_status` | str | 否 | 告警状态，`1` 表示活跃 | `1` |
 | `dev_name` | str | 否 | 设备名称 | `SN-XA-LHL-A.Leaf-4` |
 | `manage_ip` | str | 否 | 管理IP | `4.155.10.35` |
+| `ci_id` / `ne_id` | str | 否 | CI/网元 ID，对应请求体字段 `neId` | `18` |
 | `cities` | list | 否 | 城市列表 | `南京 秦淮区` |
 | `alarm_title` | str | 否 | 告警标题 | `端口DOWN` |
 
@@ -88,6 +89,7 @@ uv run scripts/analyze_alarms.py --mode summary --output markdown-echarts-only
 | `severity` | str | 否 | 按告警级别过滤 | `1` |
 | `device_name` | str | 否 | 按设备名称过滤 | `SN-XA-LHL-A.Leaf-4` |
 | `manage_ip` | str | 否 | 按管理IP过滤 | `4.155.10.35` |
+| `ci_id` / `ne_id` | str | 否 | 按 CI/网元 ID 过滤，对应请求体字段 `neId` | `18` |
 | `speciality` | str | 否 | 按专业过滤 | `IPM` |
 | `region` | str | 否 | 按区域过滤 | `XA` |
 | `begin_time` | str | 否 | 开始时间，格式 `YYYY-MM-DD HH:MM:SS` | `2026-03-15 10:00:00` |
@@ -173,7 +175,14 @@ uv run scripts/get_alarms.py --page_num 1 --page_size 10
 uv run scripts/get_alarms.py --begin_time "2026-03-15 10:00:00" --end_time "2026-03-16 10:00:00"
 ```
 
-### 场景 4：统计 / 分布 / 筛选 / 综合分析
+### 场景 4：按 CI ID 查询告警
+
+```bash
+uv run scripts/get_alarms.py --ci_id 18 --page_num 1 --page_size 100
+uv run scripts/analyze_alarms.py --mode search --ci_id 18 --include-alarms --output markdown
+```
+
+### 场景 5：统计 / 分布 / 筛选 / 综合分析
 
 优先使用：
 

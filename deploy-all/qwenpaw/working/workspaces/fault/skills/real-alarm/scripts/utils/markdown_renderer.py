@@ -111,6 +111,7 @@ def _render_alarm_section(title: str, rows: List[Dict[str, Any]]) -> str:
         ("alarmSeverityName", "告警级别"),
         ("devName", "设备名称"),
         ("manageIp", "管理IP"),
+        ("neId", "CI ID"),
         ("eventtime", "告警发生时间"),
         ("speciality", "专业"),
         ("alarmStatusName", "告警状态"),

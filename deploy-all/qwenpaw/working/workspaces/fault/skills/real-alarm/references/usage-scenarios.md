@@ -217,7 +217,24 @@ uv run scripts/analyze_alarms.py --mode search --keyword 端口 --include-alarms
 - 表格展示匹配告警
 - 支持多字段搜索
 
-### 13. 按城市筛选告警
+### 13. 按 CI ID 查询告警
+
+**用户问法示例**：
+- "帮我查 ci id 等于 18 的所有告警"
+- "查询 neId 为 18 的告警"
+- "网元 ID 18 有哪些告警？"
+
+**推荐动作**：
+```bash
+uv run scripts/analyze_alarms.py --mode search --ci_id 18 --include-alarms --output markdown
+```
+
+**回复要点**：
+- 明确筛选条件是 `CI ID = 18`
+- 说明匹配数量
+- 表格展示告警标题、设备名称、管理IP、CI ID、发生时间、状态
+
+### 14. 按城市筛选告警
 
 **用户问法示例**：
 - "南京的告警有多少？"
@@ -234,7 +251,7 @@ uv run scripts/analyze_alarms.py --mode summary --cities 南京 --output markdow
 - 展示该城市的告警统计
 - 可与其他区域对比
 
-### 14. 组合条件查询
+### 15. 组合条件查询
 
 **用户问法示例**：
 - "南京的严重告警有哪些？"

@@ -57,6 +57,9 @@ def parse_args() -> argparse.Namespace:
   # 查询严重告警
   uv run analyze_alarms.py --mode search --severity 1 --include-alarms
 
+  # 查询指定 CI/网元 ID 的告警
+  uv run analyze_alarms.py --mode search --ci_id 18 --include-alarms --output markdown
+
   # 查询指定时间范围的告警
   uv run analyze_alarms.py --mode summary --begin_time "2026-03-15 10:00:00" --end_time "2026-03-16 10:00:00"
         """,
@@ -69,6 +72,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--severity", type=str, default="", help="按告警级别过滤，例如 1")
     parser.add_argument("--device_name", type=str, default="", help="按设备名称过滤")
     parser.add_argument("--manage_ip", type=str, default="", help="按管理IP过滤")
+    parser.add_argument(
+        "--ci_id",
+        "--ne_id",
+        dest="ci_id",
+        type=str,
+        default="",
+        help="按 CI/网元 ID 过滤，对应接口字段 neId",
+    )
     parser.add_argument("--speciality", type=str, default="", help="按专业过滤")
     parser.add_argument("--region", type=str, default="", help="按区域过滤")
     parser.add_argument("--begin_time", type=str, required=False, help="开始时间，格式：YYYY-MM-DD HH:MM:SS")
@@ -92,7 +103,15 @@ def validate_args(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
     if args.output not in ALLOWED_OUTPUTS:
         return make_error(400, f"不支持的 output: {args.output}")
     if args.mode == "search" and not any(
-        [args.keyword.strip(), args.severity.strip(), args.device_name.strip(), args.manage_ip.strip(), args.speciality.strip(), args.region.strip()]
+        [
+            args.keyword.strip(),
+            args.severity.strip(),
+            args.device_name.strip(),
+            args.manage_ip.strip(),
+            args.speciality.strip(),
+            args.region.strip(),
+            args.ci_id.strip(),
+        ]
     ):
         return make_error(400, "search 模式至少需要一个过滤条件或关键字")
     return None
@@ -139,6 +158,7 @@ def main() -> None:
         alarm_severitys=args.alarm_severitys,
         alarm_status=args.alarm_status,
         cities=args.cities,
+        ci_id=args.ci_id,
     )
     if fetch_result.get("code") != 200:
         print_result(fetch_result, args.output)
@@ -157,6 +177,7 @@ def main() -> None:
         manage_ip=args.manage_ip,
         speciality=args.speciality,
         region=args.region,
+        ci_id=args.ci_id,
     )
 
     # 分析告警
@@ -184,6 +205,7 @@ def main() -> None:
             "manage_ip": args.manage_ip,
             "speciality": args.speciality,
             "region": args.region,
+            "ci_id": args.ci_id,
         },
         "query_params": {
             "begin_time": args.begin_time,
@@ -191,6 +213,7 @@ def main() -> None:
             "alarm_severitys": args.alarm_severitys,
             "alarm_status": args.alarm_status,
             "cities": args.cities,
+            "ci_id": args.ci_id,
         },
         "fetched_total": fetch_result.get("total", 0),
         "matched_total": len(filtered_alarms),
