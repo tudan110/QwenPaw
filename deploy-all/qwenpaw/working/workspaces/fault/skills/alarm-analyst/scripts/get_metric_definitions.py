@@ -456,7 +456,11 @@ def _build_metric_data_request(
     return payload
 
 
-def _build_mock_metric_data_payload(*, res_id: str | int, metric_code: str) -> dict[str, Any]:
+def _build_mock_metric_data_payload(
+    *,
+    res_id: str | int,
+    metric_code: str,
+) -> dict[str, Any]:
     payload = deepcopy(MOCK_METRIC_DATA_TEMPLATE)
     data_rows = payload.get("data", [])
     if not data_rows:
@@ -470,10 +474,10 @@ def _build_mock_metric_data_payload(*, res_id: str | int, metric_code: str) -> d
     row["processData"].pop("mysql_global_status_innodb_row_lock_timeMin", None)
     row["processData"].pop("mysql_global_status_innodb_row_lock_timeAvg", None)
     row["processData"].pop("mysql_global_status_innodb_row_lock_timeMax", None)
+    row["originalDatas"][0].pop("mysql_global_status_innodb_row_lock_time", None)
     row["processData"][f"{metric_code}Min"] = sample_value
     row["processData"][f"{metric_code}Avg"] = sample_value
     row["processData"][f"{metric_code}Max"] = sample_value
-    row["originalDatas"][0].pop("mysql_global_status_innodb_row_lock_time", None)
     row["originalDatas"][0][metric_code] = sample_value
     return payload
 

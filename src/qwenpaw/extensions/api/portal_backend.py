@@ -14,8 +14,20 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Body, FastAPI, File, HTTPException, Request, UploadFile
+from pydantic import ValidationError
 
 from qwenpaw.config.utils import load_config
+from qwenpaw.extensions.api.fault_manual_workorder_models import (
+    ManualWorkorderCloseNotificationRequest,
+    ManualWorkorderDispatchRequest,
+)
+from qwenpaw.extensions.api.fault_manual_workorder_service import (
+    build_manual_close_history_message,
+    build_manual_dispatch_history_message,
+    build_manual_workorder_record,
+    evaluate_metric_recovery,
+    merge_manual_workorder_notification,
+)
 from qwenpaw.extensions.api.fault_scenario_service import run_fault_scenario_diagnose
 from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
     query_alarm_workorders,
@@ -44,6 +56,7 @@ PORTAL_EMPLOYEE_STATUS_NAMES = {
 }
 PORTAL_FAULT_ALERT_LIMIT = 20
 RESOURCE_IMPORT_SCRIPT_TIMEOUT_SECONDS = 600
+ALARM_ANALYST_SCRIPT_TIMEOUT_SECONDS = 180
 RESOURCE_IMPORT_PREVIEW_JOBS: dict[str, dict[str, Any]] = {}
 RESOURCE_IMPORT_PREVIEW_JOBS_LOCK = threading.Lock()
 
@@ -115,6 +128,23 @@ def _veops_cmdb_import_skill_root() -> Path:
 
 def _resource_import_bridge_script() -> Path:
     return _veops_cmdb_import_skill_root() / "scripts" / "resource_import_bridge.py"
+
+
+def _alarm_analyst_skill_root() -> Path:
+    return (
+        Path(__file__).resolve().parents[4]
+        / "deploy-all"
+        / "qwenpaw"
+        / "working"
+        / "workspaces"
+        / "fault"
+        / "skills"
+        / "alarm-analyst"
+    )
+
+
+def _alarm_analyst_metric_script() -> Path:
+    return _alarm_analyst_skill_root() / "scripts" / "get_metric_definitions.py"
 
 
 def _compact_ui_message(message: dict) -> dict:
@@ -436,6 +466,34 @@ async def _save_portal_fault_history(
     )
 
 
+async def _load_portal_manual_workorders(
+    request: Request,
+    *,
+    session_id: str,
+    user_id: str = "default",
+) -> dict[str, dict]:
+    _workspace, session = await _get_workspace_and_session(request)
+    state = await session.get_session_state_dict(session_id, user_id)
+    records = state.get("portal_fault_manual_workorders", {}).get("records", {})
+    return records if isinstance(records, dict) else {}
+
+
+async def _save_portal_manual_workorders(
+    request: Request,
+    *,
+    session_id: str,
+    records: dict[str, dict],
+    user_id: str = "default",
+) -> None:
+    _workspace, session = await _get_workspace_and_session(request)
+    await session.update_session_state(
+        session_id,
+        ["portal_fault_manual_workorders", "records"],
+        records,
+        user_id=user_id,
+    )
+
+
 def _shape_fault_scenario_result(result: Any) -> dict | None:
     if result is None:
         return None
@@ -611,6 +669,45 @@ def _run_fault_disposal_diagnose(payload: dict) -> dict:
 
 def _run_fault_disposal_execute(payload: dict) -> dict:
     return _run_fault_disposal_chat_skill("execute", payload)
+
+
+def _run_alarm_metric_verification(
+    *,
+    metric_type: str,
+    res_id: str,
+    max_metrics: int = 5,
+) -> dict[str, Any]:
+    script_path = _alarm_analyst_metric_script()
+    if not script_path.exists():
+        raise FileNotFoundError(f"alarm-analyst metric script not found: {script_path}")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script_path),
+            "--metric-type",
+            metric_type,
+            "--res-id",
+            str(res_id),
+            "--max-metrics",
+            str(max(1, max_metrics)),
+            "--output",
+            "json",
+        ],
+        cwd=str(_alarm_analyst_skill_root()),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=ALARM_ANALYST_SCRIPT_TIMEOUT_SECONDS,
+        check=False,
+    )
+    stdout_text = (completed.stdout or "").strip()
+    stderr_text = (completed.stderr or "").strip()
+    if completed.returncode != 0 and not stdout_text:
+        raise RuntimeError(stderr_text or "alarm-analyst metric query failed")
+    if not stdout_text:
+        raise RuntimeError("alarm-analyst metric query returned empty output")
+    return json.loads(stdout_text)
 
 
 @router.get("/health")
@@ -886,6 +983,123 @@ async def fault_disposal_execute(
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] fault_disposal_execute failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/fault-disposal/manual-workorders/dispatch")
+async def dispatch_fault_manual_workorder(
+    request: Request,
+    payload: dict = Body(default_factory=dict),
+):
+    try:
+        parsed = ManualWorkorderDispatchRequest.model_validate(payload)
+        callback_url = str(
+            request.url_for("notify_fault_manual_workorder_closed")
+        )
+        record = build_manual_workorder_record(parsed, callback_url=callback_url)
+        records = await _load_portal_manual_workorders(request, session_id=parsed.chat_id)
+        records[str(parsed.res_id)] = record
+        await _save_portal_manual_workorders(
+            request,
+            session_id=parsed.chat_id,
+            records=records,
+        )
+
+        history = await _load_portal_fault_history(request, session_id=parsed.chat_id)
+        history.append(
+            _compact_ui_message(
+                {
+                    "id": f"agent-{datetime.now(timezone.utc).timestamp()}",
+                    **build_manual_dispatch_history_message(record),
+                }
+            )
+        )
+        await _save_portal_fault_history(request, session_id=parsed.chat_id, messages=history)
+
+        return {
+            "status": "pending_manual",
+            "chatId": parsed.chat_id,
+            "resId": parsed.res_id,
+            "manualWorkorder": record,
+            "dispatchRequest": record.get("dispatchPayload") or {},
+        }
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] dispatch_fault_manual_workorder failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/fault-disposal/manual-workorders/notify-closed", name="notify_fault_manual_workorder_closed")
+async def notify_fault_manual_workorder_closed(
+    request: Request,
+    payload: dict = Body(default_factory=dict),
+):
+    try:
+        parsed = ManualWorkorderCloseNotificationRequest.model_validate(payload)
+        records = await _load_portal_manual_workorders(request, session_id=parsed.chat_id)
+        record = records.get(str(parsed.res_id))
+        if not record:
+            raise HTTPException(
+                status_code=404,
+                detail=f"manual workorder not found for chatId={parsed.chat_id}, resId={parsed.res_id}",
+            )
+
+        metric_type = (
+            str(parsed.metric_type or "").strip()
+            or str(record.get("metricType") or "").strip()
+            or "mysql"
+        )
+        metric_result = await asyncio.to_thread(
+            _run_alarm_metric_verification,
+            metric_type=metric_type,
+            res_id=str(parsed.res_id),
+        )
+        verification = evaluate_metric_recovery(metric_result)
+        merged_record = merge_manual_workorder_notification(
+            record,
+            parsed,
+            verification=verification,
+        )
+        merged_record["metricType"] = metric_type
+        records[str(parsed.res_id)] = merged_record
+        await _save_portal_manual_workorders(
+            request,
+            session_id=parsed.chat_id,
+            records=records,
+        )
+
+        history = await _load_portal_fault_history(request, session_id=parsed.chat_id)
+        history.append(
+            _compact_ui_message(
+                {
+                    "id": f"agent-{datetime.now(timezone.utc).timestamp()}",
+                    **build_manual_close_history_message(
+                        merged_record,
+                        verification=verification,
+                    ),
+                }
+            )
+        )
+        await _save_portal_fault_history(request, session_id=parsed.chat_id, messages=history)
+
+        return {
+            "status": verification.get("status") or "unknown",
+            "chatId": parsed.chat_id,
+            "resId": parsed.res_id,
+            "manualWorkorder": merged_record,
+            "verification": verification,
+        }
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] notify_fault_manual_workorder_closed failed: {error_detail}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 

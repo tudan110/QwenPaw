@@ -453,3 +453,181 @@ def test_fault_disposal_history_preserves_unknown_message_fields(
     assert payload["messages"][0]["customField"] == {"source": "persisted"}
     assert payload["messages"][0]["extraFlag"] is True
     assert payload["messages"][0]["faultScenarioResult"]["steps"] == []
+
+
+def test_manual_workorder_dispatch_route_persists_record_and_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    history_store: dict[str, list[dict]] = {"chat-1": []}
+    workorder_store: dict[str, dict[str, dict]] = {"chat-1": {}}
+
+    async def fake_load_history(_request, *, session_id: str, user_id: str = "default") -> list[dict]:
+        return list(history_store.get(session_id, []))
+
+    async def fake_save_history(
+        _request,
+        *,
+        session_id: str,
+        messages: list[dict],
+        user_id: str = "default",
+    ) -> None:
+        history_store[session_id] = list(messages)
+
+    async def fake_load_workorders(_request, *, session_id: str, user_id: str = "default") -> dict[str, dict]:
+        return dict(workorder_store.get(session_id, {}))
+
+    async def fake_save_workorders(
+        _request,
+        *,
+        session_id: str,
+        records: dict[str, dict],
+        user_id: str = "default",
+    ) -> None:
+        workorder_store[session_id] = dict(records)
+
+    monkeypatch.setattr(portal_backend, "_load_portal_fault_history", fake_load_history)
+    monkeypatch.setattr(portal_backend, "_save_portal_fault_history", fake_save_history)
+    monkeypatch.setattr(portal_backend, "_load_portal_manual_workorders", fake_load_workorders)
+    monkeypatch.setattr(portal_backend, "_save_portal_manual_workorders", fake_save_workorders)
+
+    response = client.post(
+        "/api/portal/fault-disposal/manual-workorders/dispatch",
+        json={
+            "chatId": "chat-1",
+            "resId": "3094",
+            "metricType": "mysql",
+            "alarm": {
+                "title": "数据库锁异常",
+                "visibleContent": "数据库锁异常（db_mysql_001 10.43.150.186）",
+                "deviceName": "db_mysql_001",
+                "manageIp": "10.43.150.186",
+            },
+            "analysis": {
+                "summary": "AI 无法直接止血，转人工处理",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "pending_manual"
+    assert payload["dispatchRequest"]["chatId"] == "chat-1"
+    assert payload["dispatchRequest"]["resId"] == "3094"
+    assert payload["dispatchRequest"]["context"]["callback_url"].endswith(
+        "/api/portal/fault-disposal/manual-workorders/notify-closed"
+    )
+    assert workorder_store["chat-1"]["3094"]["status"] == "pending_manual"
+    assert history_store["chat-1"][-1]["manualWorkorder"]["resId"] == "3094"
+
+
+def test_manual_workorder_close_notification_updates_history_and_verification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    history_store: dict[str, list[dict]] = {"chat-1": []}
+    workorder_store: dict[str, dict[str, dict]] = {
+        "chat-1": {
+            "3094": {
+                "chatId": "chat-1",
+                "resId": "3094",
+                "metricType": "mysql",
+                "status": "pending_manual",
+                "workorder": {"title": "数据库锁异常"},
+            }
+        }
+    }
+
+    async def fake_load_history(_request, *, session_id: str, user_id: str = "default") -> list[dict]:
+        return list(history_store.get(session_id, []))
+
+    async def fake_save_history(
+        _request,
+        *,
+        session_id: str,
+        messages: list[dict],
+        user_id: str = "default",
+    ) -> None:
+        history_store[session_id] = list(messages)
+
+    async def fake_load_workorders(_request, *, session_id: str, user_id: str = "default") -> dict[str, dict]:
+        return dict(workorder_store.get(session_id, {}))
+
+    async def fake_save_workorders(
+        _request,
+        *,
+        session_id: str,
+        records: dict[str, dict],
+        user_id: str = "default",
+    ) -> None:
+        workorder_store[session_id] = dict(records)
+
+    monkeypatch.setattr(portal_backend, "_load_portal_fault_history", fake_load_history)
+    monkeypatch.setattr(portal_backend, "_save_portal_fault_history", fake_save_history)
+    monkeypatch.setattr(portal_backend, "_load_portal_manual_workorders", fake_load_workorders)
+    monkeypatch.setattr(portal_backend, "_save_portal_manual_workorders", fake_save_workorders)
+    monkeypatch.setattr(
+        portal_backend,
+        "_run_alarm_metric_verification",
+        lambda *, metric_type, res_id, max_metrics=5: {
+            "definitions": {"source": "live"},
+            "selectedMetrics": [
+                {"code": "mysql_global_status_innodb_row_lock_time", "name": "InnoDB 总锁等待时长"}
+            ],
+            "metricDataResults": [
+                {
+                    "metricCode": "mysql_global_status_innodb_row_lock_time",
+                    "latestValue": "0",
+                    "avgValue": "0",
+                    "source": "live",
+                }
+            ],
+        },
+    )
+
+    response = client.post(
+        "/api/portal/fault-disposal/manual-workorders/notify-closed",
+        json={
+            "chatId": "chat-1",
+            "resId": "3094",
+            "workorder": {
+                "workorderNo": "WO-001",
+                "status": "resolved",
+                "handler": "alice",
+            },
+            "processing": {
+                "summary": "已释放阻塞事务",
+                "details": "人工终止长事务后恢复写入",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "recovered"
+    assert payload["manualWorkorder"]["status"] == "manual_recovered"
+    assert payload["verification"]["summary"] == "最新关键指标未见锁等待/慢 SQL 类异常，可初步判定已恢复"
+    assert history_store["chat-1"][-1]["recoveryVerification"]["status"] == "recovered"
+
+
+def test_manual_workorder_close_notification_returns_404_when_record_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+
+    async def fake_load_workorders(_request, *, session_id: str, user_id: str = "default") -> dict[str, dict]:
+        return {}
+
+    monkeypatch.setattr(portal_backend, "_load_portal_manual_workorders", fake_load_workorders)
+
+    response = client.post(
+        "/api/portal/fault-disposal/manual-workorders/notify-closed",
+        json={
+            "chatId": "missing-chat",
+            "resId": "3094",
+            "processing": {"summary": "done"},
+        },
+    )
+
+    assert response.status_code == 404
+    assert "manual workorder not found" in response.json()["detail"]
