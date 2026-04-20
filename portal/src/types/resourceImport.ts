@@ -89,6 +89,7 @@ export interface ResourceImportRecord {
     sheet?: string;
     rowIndex?: number;
   }>;
+  sourceAttributes?: Record<string, string>;
   analysisAttributes?: Record<string, string>;
   autoFilledHints?: string[];
 }

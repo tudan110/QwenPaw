@@ -973,62 +973,51 @@ function normalizeFieldToken(value: string) {
   return String(value || "").trim().toLowerCase().replace(/[\s_\-/:]+/g, "");
 }
 
+function splitSemanticTokens(value: string) {
+  return String(value || "")
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9\u4e00-\u9fff]+/)
+    .filter(Boolean);
+}
+
 function isNameLikeUniqueKey(uniqueKey: string) {
   const normalized = normalizeFieldToken(uniqueKey);
   const raw = String(uniqueKey || "").trim().toLowerCase();
+  const tokens = new Set(splitSemanticTokens(uniqueKey));
   return (
     normalized.endsWith("name")
-    || normalized.includes("instance")
-    || normalized.includes("hostname")
+    || tokens.has("name")
+    || tokens.has("instance")
+    || tokens.has("hostname")
+    || tokens.has("servername")
+    || tokens.has("devname")
+    || tokens.has("vservername")
     || ["名称", "名字", "主机名", "设备名", "实例名", "实例名称", "组件实例名", "数据库实例名"].some((token) => raw.includes(token))
   );
 }
 
 function isIpLikeUniqueKey(uniqueKey: string) {
-  return normalizeFieldToken(uniqueKey).includes("ip");
+  const normalized = normalizeFieldToken(uniqueKey);
+  const raw = String(uniqueKey || "").trim().toLowerCase();
+  return (
+    normalized.includes("ip")
+    || ["管理地址", "管理ip", "内网地址", "内网ip", "ip地址", "主机地址", "数据库地址", "组件地址"].some((token) => raw.includes(token))
+  );
 }
 
 function isCodeLikeUniqueKey(uniqueKey: string) {
   const normalized = normalizeFieldToken(uniqueKey);
   const raw = String(uniqueKey || "").trim().toLowerCase();
-  return ["code", "no", "id", "key", "pk", "unique", "identifier", "主键", "唯一", "标识"]
-    .some((token) => normalized.includes(token) || raw.includes(token));
-}
-
-function getUniqueKeyCandidateFieldOrder(uniqueKey: string, uniqueKeyLabel = "") {
-  const merged = `${uniqueKey} ${uniqueKeyLabel}`.trim();
-  const normalized = normalizeFieldToken(merged);
-  if (isCodeLikeUniqueKey(merged)) {
-    if (normalized.includes("asset") || normalized.includes("property") || normalized.includes("dev")) {
-      return ["asset_code", "property_no", "dev_no", "id", "pk"];
-    }
-    return ["asset_code", "property_no", "dev_no", "id", "pk"];
+  const tokens = new Set(splitSemanticTokens(uniqueKey));
+  if (["主键", "唯一", "唯一标识", "资源主键", "资产标识", "编号", "编码", "标识"].some((token) => raw.includes(token))) {
+    return true;
   }
-  if (isIpLikeUniqueKey(merged)) {
-    if (normalized.includes("manage")) {
-      return ["manage_ip", "private_ip", "host_ip", "ip"];
-    }
-    if (normalized.includes("private")) {
-      return ["private_ip", "manage_ip", "host_ip", "ip"];
-    }
-    return ["manage_ip", "private_ip", "host_ip", "ip"];
+  if (["rowid", "ciid", "pid"].includes(normalized)) {
+    return true;
   }
-  if (isNameLikeUniqueKey(merged)) {
-    if (normalized.includes("middleware")) {
-      return ["middleware_name", "name", "db_instance", "serverName", "dev_name", "hostname", "vserver_name"];
-    }
-    if (normalized.includes("db")) {
-      return ["db_instance", "name", "middleware_name", "serverName", "hostname"];
-    }
-    if (normalized.includes("server") || normalized.includes("host")) {
-      return ["serverName", "hostname", "dev_name", "name", "vserver_name"];
-    }
-    if (normalized.includes("dev")) {
-      return ["dev_name", "name", "serverName", "hostname"];
-    }
-    return ["name", "middleware_name", "db_instance", "serverName", "dev_name", "hostname", "vserver_name"];
-  }
-  return [];
+  return ["code", "no", "id", "key", "pk", "unique", "identifier"].some((token) => tokens.has(token));
 }
 
 function getUniqueKeySemanticKind(uniqueKey: string, uniqueKeyLabel?: string) {
@@ -1100,59 +1089,202 @@ function isSystemGeneratedUniqueKey(
 
 function getRecordFieldValue(record: ResourceImportRecord, field: string) {
   if (field === "name") {
-    return String(record.name || record.attributes.name || record.analysisAttributes?.name || "").trim();
+    return getRecordDisplayNameValue(record);
   }
-  return String(record.attributes?.[field] || record.analysisAttributes?.[field] || "").trim();
+  return String(
+    record.attributes?.[field]
+    || record.analysisAttributes?.[field]
+    || record.sourceAttributes?.[field]
+    || "",
+  ).trim();
 }
 
-function getUniqueKeyCandidatePriority(uniqueKey: string, uniqueKeyLabel: string, field: string) {
-  const normalizedField = normalizeFieldToken(field);
-  const semanticKind = getUniqueKeySemanticKind(uniqueKey, uniqueKeyLabel);
-  const orderedFields = getUniqueKeyCandidateFieldOrder(uniqueKey, uniqueKeyLabel).map((item) => normalizeFieldToken(item));
+function getSemanticSourceAttributeValue(
+  record: ResourceImportRecord,
+  semanticKind: "name" | "ip" | "code",
+  uniqueKey = "",
+  uniqueKeyLabel = "",
+) {
+  const sourceEntries = Object.entries(record.sourceAttributes || {})
+    .map(([field, value]) => ({
+      field,
+      value: String(value || "").trim(),
+      label: getAttributeLabel(field),
+      semanticKind: getFieldSemanticKind(field, getAttributeLabel(field)),
+      similarity: getUniqueKeySemanticSimilarity(uniqueKey || semanticKind, uniqueKeyLabel, field, getAttributeLabel(field)),
+    }))
+    .filter((item) => item.value);
+  const candidates = sourceEntries
+    .filter((item) => item.semanticKind === semanticKind)
+    .sort((left, right) =>
+      right.similarity - left.similarity
+      || left.field.localeCompare(right.field, "zh-CN")
+    );
+  return candidates[0]?.value || "";
+}
 
+function getRecordDisplayNameValue(record: ResourceImportRecord) {
+  return String(
+    record.name
+    || record.attributes?.name
+    || record.analysisAttributes?.name
+    || record.attributes?.middleware_name
+    || record.analysisAttributes?.middleware_name
+    || record.attributes?.db_instance
+    || record.analysisAttributes?.db_instance
+    || record.attributes?.serverName
+    || record.analysisAttributes?.serverName
+    || record.attributes?.dev_name
+    || record.analysisAttributes?.dev_name
+    || record.attributes?.hostname
+    || record.analysisAttributes?.hostname
+    || record.attributes?.vserver_name
+    || record.analysisAttributes?.vserver_name
+    || getSemanticSourceAttributeValue(record, "name", "name", "名称")
+    || "",
+  ).trim();
+}
+
+function getSemanticResolvedUniqueKeyValue(
+  record: ResourceImportRecord,
+  uniqueKey: string,
+  uniqueKeyLabel: string,
+) {
+  const directValue = getRecordFieldValue(record, uniqueKey);
+  if (directValue) {
+    return directValue;
+  }
+  const semanticKind = getUniqueKeySemanticKind(uniqueKey, uniqueKeyLabel);
+  if (semanticKind === "name") {
+    return getRecordDisplayNameValue(record) || getSemanticSourceAttributeValue(record, "name", uniqueKey, uniqueKeyLabel);
+  }
+  if (semanticKind === "ip") {
+    return String(
+      record.attributes?.manage_ip
+      || record.analysisAttributes?.manage_ip
+      || record.attributes?.private_ip
+      || record.analysisAttributes?.private_ip
+      || record.attributes?.host_ip
+      || record.analysisAttributes?.host_ip
+      || getSemanticSourceAttributeValue(record, "ip", uniqueKey, uniqueKeyLabel)
+      || "",
+    ).trim();
+  }
+  if (semanticKind === "code") {
+    return String(
+      record.attributes?.asset_code
+      || record.analysisAttributes?.asset_code
+      || record.attributes?.property_no
+      || record.analysisAttributes?.property_no
+      || record.attributes?.dev_no
+      || record.analysisAttributes?.dev_no
+      || record.attributes?.id
+      || record.analysisAttributes?.id
+      || getSemanticSourceAttributeValue(record, "code", uniqueKey, uniqueKeyLabel)
+      || "",
+    ).trim();
+  }
+  return "";
+}
+
+function getFieldSemanticKind(field: string, label = "") {
+  const merged = `${field} ${label}`.trim();
+  if (isCodeLikeUniqueKey(merged)) {
+    return "code";
+  }
+  if (isIpLikeUniqueKey(merged)) {
+    return "ip";
+  }
+  if (isNameLikeUniqueKey(merged)) {
+    return "name";
+  }
+  return "unknown";
+}
+
+function getSemanticTerms(value: string) {
+  return splitSemanticTokens(value)
+    .filter((item) => item && (item.length >= 2 || /[\u4e00-\u9fff]/.test(item)));
+}
+
+function getUniqueKeySemanticSimilarity(uniqueKey: string, uniqueKeyLabel: string, field: string, fieldLabel: string) {
+  const uniqueMerged = `${uniqueKey} ${uniqueKeyLabel}`.trim();
+  const fieldMerged = `${field} ${fieldLabel}`.trim();
+  const normalizedUnique = normalizeFieldToken(uniqueMerged);
+  const normalizedField = normalizeFieldToken(fieldMerged);
+  if (!normalizedUnique || !normalizedField) {
+    return 0;
+  }
+  if (normalizedUnique === normalizedField) {
+    return 100;
+  }
+  if (
+    normalizedUnique.length >= 4
+    && normalizedField.length >= 4
+    && (normalizedUnique.includes(normalizedField) || normalizedField.includes(normalizedUnique))
+  ) {
+    return 82;
+  }
+  const uniqueTerms = new Set(getSemanticTerms(uniqueMerged));
+  const fieldTerms = new Set(getSemanticTerms(fieldMerged));
+  const overlap = Array.from(uniqueTerms).filter((item) => fieldTerms.has(item));
+  if (overlap.length) {
+    return 56 + Math.min(20, overlap.length * 10);
+  }
+  return 0;
+}
+
+function getUniqueKeyCandidatePriority(
+  uniqueKey: string,
+  uniqueKeyLabel: string,
+  field: string,
+  fieldLabel: string,
+  fieldSemanticKind: string,
+) {
   if (field === uniqueKey) {
     return -1;
   }
-  if (["code", "ip", "name"].includes(semanticKind)) {
-    const index = orderedFields.indexOf(normalizedField);
-    return index === -1 ? 20 : index;
+  const uniqueSemanticKind = getUniqueKeySemanticKind(uniqueKey, uniqueKeyLabel);
+  const similarity = getUniqueKeySemanticSimilarity(uniqueKey, uniqueKeyLabel, field, fieldLabel);
+  if (uniqueSemanticKind !== "unknown" && fieldSemanticKind === uniqueSemanticKind) {
+    return Math.max(0, 8 - Math.floor(similarity / 15));
+  }
+  if (similarity >= 56) {
+    return 12 - Math.floor(similarity / 20);
   }
   return 20;
 }
 
-function getUniqueKeyCandidateCompatibility(uniqueKey: string, uniqueKeyLabel: string, field: string) {
-  const normalizedField = normalizeFieldToken(field);
-  const semanticKind = getUniqueKeySemanticKind(uniqueKey, uniqueKeyLabel);
-  const orderedFields = getUniqueKeyCandidateFieldOrder(uniqueKey, uniqueKeyLabel).map((item) => normalizeFieldToken(item));
-  const orderedIndex = orderedFields.indexOf(normalizedField);
+function getUniqueKeyCandidateCompatibility(
+  uniqueKey: string,
+  uniqueKeyLabel: string,
+  field: string,
+  fieldLabel: string,
+  fieldSemanticKind: string,
+) {
+  const uniqueSemanticKind = getUniqueKeySemanticKind(uniqueKey, uniqueKeyLabel);
+  const similarity = getUniqueKeySemanticSimilarity(uniqueKey, uniqueKeyLabel, field, fieldLabel);
   if (field === uniqueKey) {
-    return 5;
+    return 6;
   }
-  if (semanticKind === "code") {
-    if (orderedIndex !== -1) {
-      return orderedIndex === 0 ? 4 : 3;
-    }
-    if (normalizedField === "id") {
-      return 2;
-    }
-    return 0;
+  if (uniqueSemanticKind === "unknown") {
+    return similarity >= 70 ? 3 : similarity >= 56 ? 2 : 0;
   }
-  if (semanticKind === "ip") {
-    if (orderedIndex !== -1) {
-      return orderedIndex === 0 ? 4 : 3;
-    }
-    return 0;
+  if (fieldSemanticKind !== uniqueSemanticKind) {
+    return similarity >= 86 ? 2 : 0;
   }
-  if (semanticKind === "name") {
-    if (orderedIndex !== -1) {
-      return orderedIndex <= 1 ? 4 : 3;
+  if (uniqueSemanticKind === "name") {
+    if (field === "name") {
+      return 5;
     }
-    if (["assetcode", "propertyno", "devno", "pk"].includes(normalizedField)) {
-      return 1;
-    }
-    return 0;
+    return similarity >= 70 ? 5 : 4;
   }
-  return normalizedField === normalizeFieldToken(uniqueKey) ? 3 : 0;
+  if (uniqueSemanticKind === "ip") {
+    return similarity >= 70 ? 5 : 4;
+  }
+  if (uniqueSemanticKind === "code") {
+    return similarity >= 70 ? 5 : 4;
+  }
+  return similarity >= 70 ? 4 : 3;
 }
 
 function getUniqueKeyResolutionPlans(
@@ -1168,7 +1300,9 @@ function getUniqueKeyResolutionPlans(
         return null;
       }
       const selectedRecords = group.records.filter((record) => record.selected);
-      const missingRecords = selectedRecords.filter((record) => isEmptyValue(getRecordFieldValue(record, uniqueKey)));
+      const missingRecords = selectedRecords.filter((record) =>
+        isEmptyValue(getSemanticResolvedUniqueKeyValue(record, uniqueKey, uniqueKeyLabel)),
+      );
       if (!missingRecords.length) {
         return null;
       }
@@ -1180,47 +1314,61 @@ function getUniqueKeyResolutionPlans(
         examples: string[];
         priority: number;
         compatibility: number;
+        semanticKind: string;
+        similarity: number;
         values: Set<string>;
       }>();
+
+      const registerCandidateValue = (field: string, value: string) => {
+        if (!field || field === uniqueKey || field === "ci_type" || field.startsWith("_")) {
+          return;
+        }
+        const cleanedValue = String(value || "").trim();
+        if (!cleanedValue) {
+          return;
+        }
+        const label = getAttributeLabel(field);
+        const semanticKind = getFieldSemanticKind(field, label);
+        const similarity = getUniqueKeySemanticSimilarity(uniqueKey, uniqueKeyLabel, field, label);
+        const current = candidateMap.get(field);
+        if (current) {
+          current.count += 1;
+          current.values.add(cleanedValue);
+          if (current.examples.length < 2 && !current.examples.includes(cleanedValue)) {
+            current.examples.push(cleanedValue);
+          }
+          return;
+        }
+        candidateMap.set(field, {
+          field,
+          label,
+          count: 1,
+          examples: [cleanedValue],
+          priority: getUniqueKeyCandidatePriority(uniqueKey, uniqueKeyLabel, field, label, semanticKind),
+          compatibility: getUniqueKeyCandidateCompatibility(uniqueKey, uniqueKeyLabel, field, label, semanticKind),
+          semanticKind,
+          similarity,
+          values: new Set([cleanedValue]),
+        });
+      };
 
       missingRecords.forEach((record) => {
         const fields = new Set<string>([
           "name",
           ...Object.keys(record.attributes || {}),
           ...Object.keys(record.analysisAttributes || {}),
+          ...Object.keys(record.sourceAttributes || {}),
         ]);
+        registerCandidateValue("name", getRecordDisplayNameValue(record));
         fields.forEach((field) => {
-          if (!field || field === uniqueKey || field === "ci_type" || field.startsWith("_")) {
-            return;
-          }
-          const value = getRecordFieldValue(record, field);
-          if (!value) {
-            return;
-          }
-          const current = candidateMap.get(field);
-          if (current) {
-            current.count += 1;
-            current.values.add(value);
-            if (current.examples.length < 2 && !current.examples.includes(value)) {
-              current.examples.push(value);
-            }
-            return;
-          }
-          candidateMap.set(field, {
-            field,
-            label: getAttributeLabel(field),
-            count: 1,
-            examples: [value],
-            priority: getUniqueKeyCandidatePriority(uniqueKey, uniqueKeyLabel, field),
-            compatibility: getUniqueKeyCandidateCompatibility(uniqueKey, uniqueKeyLabel, field),
-            values: new Set([value]),
-          });
+          registerCandidateValue(field, getRecordFieldValue(record, field));
         });
       });
 
       const candidates = Array.from(candidateMap.values())
         .sort((left, right) =>
           right.compatibility - left.compatibility
+          || right.similarity - left.similarity
           || left.priority - right.priority
           || right.values.size - left.values.size
           || right.count - left.count
@@ -1236,11 +1384,22 @@ function getUniqueKeyResolutionPlans(
           duplicateCount: Math.max(0, item.count - item.values.size),
           compatibility: item.compatibility,
           priority: item.priority,
+          semanticKind: item.semanticKind,
+          similarity: item.similarity,
           recommended: item.compatibility >= 3,
           examples: item.examples,
         }));
 
-      const compatibleCandidates = candidates.filter((item) => item.compatibility > 0);
+      const uniqueSemanticKind = getUniqueKeySemanticKind(uniqueKey, uniqueKeyLabel);
+      const compatibleCandidates = candidates.filter((item) => {
+        if (item.compatibility <= 0) {
+          return false;
+        }
+        if (uniqueSemanticKind === "unknown") {
+          return true;
+        }
+        return item.semanticKind === uniqueSemanticKind || item.similarity >= 86;
+      });
       const finalCandidates = compatibleCandidates.length ? compatibleCandidates : candidates;
 
       return {
@@ -1269,7 +1428,9 @@ function getSystemGeneratedUniqueKeyPlans(
         return null;
       }
       const selectedRecords = group.records.filter((record) => record.selected);
-      const missingRecords = selectedRecords.filter((record) => isEmptyValue(getRecordFieldValue(record, uniqueKey)));
+      const missingRecords = selectedRecords.filter((record) =>
+        isEmptyValue(getSemanticResolvedUniqueKeyValue(record, uniqueKey, getUniqueKeyLabel(preview, group.ciType))),
+      );
       if (!missingRecords.length) {
         return null;
       }
