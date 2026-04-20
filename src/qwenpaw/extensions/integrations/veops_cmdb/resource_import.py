@@ -233,12 +233,98 @@ FIELD_ALIASES = {
 }
 
 RELATION_FIELD_ALIASES = {
-    "source_model": ["source_model", "源模型", "源资源模型", "源类型", "源资源类型", "父模型", "上游模型", "from_model"],
-    "source_field": ["source_field", "source_unique_field", "源字段", "源属性", "源唯一字段", "源标识字段", "父字段", "from_field"],
-    "source_value": ["source_value", "source_unique_value", "源值", "源资源", "源资源标识", "源实例", "源名称", "源资源名称", "父资源", "from", "source"],
-    "target_model": ["target_model", "目标模型", "目标资源模型", "目标类型", "目标资源类型", "子模型", "下游模型", "to_model"],
-    "target_field": ["target_field", "target_unique_field", "目标字段", "目标属性", "目标唯一字段", "目标标识字段", "子字段", "to_field"],
-    "target_value": ["target_value", "target_unique_value", "目标值", "目标资源", "目标资源标识", "目标实例", "目标名称", "目标资源名称", "子资源", "to", "target"],
+    "source_model": [
+        "source_model",
+        "源模型",
+        "源资源模型",
+        "源类型",
+        "源资源类型",
+        "父模型",
+        "上游模型",
+        "上游资源模型",
+        "上游类型",
+        "上游资源类型",
+        "from_model",
+        "upstream_model",
+    ],
+    "source_field": [
+        "source_field",
+        "source_unique_field",
+        "源字段",
+        "源属性",
+        "源唯一字段",
+        "源标识字段",
+        "父字段",
+        "上游字段",
+        "上游匹配字段",
+        "上游标识字段",
+        "from_field",
+        "upstream_field",
+    ],
+    "source_value": [
+        "source_value",
+        "source_unique_value",
+        "源值",
+        "源资源",
+        "源资源标识",
+        "源实例",
+        "源名称",
+        "源资源名称",
+        "父资源",
+        "上游资源",
+        "上游匹配值",
+        "上游值",
+        "上游资源名称",
+        "from",
+        "source",
+        "upstream_value",
+    ],
+    "target_model": [
+        "target_model",
+        "目标模型",
+        "目标资源模型",
+        "目标类型",
+        "目标资源类型",
+        "子模型",
+        "下游模型",
+        "下游资源模型",
+        "下游类型",
+        "下游资源类型",
+        "to_model",
+        "downstream_model",
+    ],
+    "target_field": [
+        "target_field",
+        "target_unique_field",
+        "目标字段",
+        "目标属性",
+        "目标唯一字段",
+        "目标标识字段",
+        "子字段",
+        "下游字段",
+        "下游匹配字段",
+        "下游标识字段",
+        "to_field",
+        "downstream_field",
+    ],
+    "target_value": [
+        "target_value",
+        "target_unique_value",
+        "目标值",
+        "目标资源",
+        "目标资源标识",
+        "目标实例",
+        "目标名称",
+        "目标资源名称",
+        "子资源",
+        "下游资源",
+        "下游匹配值",
+        "下游值",
+        "下游资源名称",
+        "to",
+        "target",
+        "downstream_value",
+    ],
     "relation_type": ["relation_type", "关系", "关系类型", "关联类型", "连接类型", "link_type", "relation"],
 }
 
@@ -254,17 +340,17 @@ CI_TYPE_ALIASES = {
     "product": ["product", "产品", "产品线"],
     "project": ["project", "应用", "项目", "业务系统", "应用系统", "系统应用", "业务应用", "application", "app", "system"],
     "PhysicalMachine": ["physicalmachine", "物理机", "服务器", "server", "裸机"],
-    "vserver": ["vserver", "虚拟机", "vm", "虚机"],
+    "vserver": ["vserver", "虚拟机", "vm", "虚机", "云主机", "云服务器", "ecs"],
     "networkdevice": ["networkdevice", "交换机", "路由器", "防火墙", "网络设备", "switch", "router", "firewall"],
-    "database": ["database", "数据库"],
-    "mysql": ["mysql", "my sql"],
-    "PostgreSQL": ["postgresql", "postgres", "pgsql"],
-    "redis": ["redis"],
-    "Kafka": ["kafka"],
-    "elasticsearch": ["elasticsearch", "es"],
+    "database": ["database", "数据库", "数据库服务", "通用数据库", "通用数据库资源", "时序数据库", "victoriametrics"],
+    "mysql": ["mysql", "my sql", "mysql实例", "mysql资源"],
+    "PostgreSQL": ["postgresql", "postgres", "pgsql", "pg", "pg实例", "pg资源", "postgresql实例"],
+    "redis": ["redis", "缓存", "缓存服务", "缓存组件", "redis服务"],
+    "Kafka": ["kafka", "消息队列", "消息队列组件", "mq", "broker"],
+    "elasticsearch": ["elasticsearch", "es", "搜索引擎", "搜索组件", "检索引擎"],
     "nginx": ["nginx"],
     "apache": ["apache"],
-    "docker": ["docker"],
+    "docker": ["docker", "容器", "容器实例", "容器实例清单", "container", "containerinstance"],
     "kubernetes": ["kubernetes", "k8s"],
     "dcim_idc": ["dcim_idc", "数据中心", "idc", "机房"],
     "dcim_server_room": ["dcim_server_room", "机房分区", "机房区域"],
@@ -2810,16 +2896,28 @@ def _normalize_ci_type(value: str, alias_index: dict[str, str]) -> str:
         return "mysql"
     if "postgres" in lowered:
         return "PostgreSQL"
+    if any(token in lowered for token in ("pg实例", "pg资源", "pgsql", "pg ")):
+        return "PostgreSQL"
     if "kafka" in lowered:
         return "Kafka"
+    if any(token in lowered for token in ("消息队列", "messagequeue", "mq", "broker", "topic", "stream")):
+        return "Kafka"
     if lowered in {"es", "elasticsearch"}:
+        return "elasticsearch"
+    if any(token in lowered for token in ("搜索引擎", "搜索组件", "检索", "search", "opensearch", "solr")):
         return "elasticsearch"
     if "nginx" in lowered:
         return "nginx"
     if "docker" in lowered:
         return "docker"
+    if any(token in lowered for token in ("容器实例", "容器", "container")):
+        return "docker"
     if "k8s" in lowered or "kubernetes" in lowered:
         return "kubernetes"
+    if any(token in lowered for token in ("缓存服务", "缓存组件", "缓存", "cache", "key-value", "keyvalue")):
+        return "redis"
+    if any(token in lowered for token in ("victoriametrics", "时序数据库")):
+        return "database"
     if any(token in lowered for token in ("switch", "router", "network", "交换机", "交换", "路由", "防火墙", "负载均衡", "loadbalance", "lb")):
         return "networkdevice"
     if any(token in lowered for token in ("vm", "vserver", "虚拟")):
@@ -4173,6 +4271,33 @@ def _build_import_record_debug_context(
     }
 
 
+def _build_relation_debug_context(
+    *,
+    relation: dict[str, Any],
+    source_type: str,
+    target_type: str,
+    relation_type: str,
+    source_ci_id: Any = None,
+    target_ci_id: Any = None,
+    allowed: bool | None = None,
+) -> dict[str, Any]:
+    return {
+        "sourceKey": _clean_text(relation.get("sourceKey")),
+        "targetKey": _clean_text(relation.get("targetKey")),
+        "sourceType": source_type,
+        "targetType": target_type,
+        "relationType": relation_type,
+        "sourceName": _clean_text(relation.get("sourceName")),
+        "targetName": _clean_text(relation.get("targetName")),
+        "reason": _clean_text(relation.get("reason")),
+        "requiresModelRelation": bool(relation.get("requiresModelRelation")),
+        "selected": bool(relation.get("selected", True)),
+        "sourceCiId": source_ci_id,
+        "targetCiId": target_ci_id,
+        "allowed": allowed,
+    }
+
+
 def _build_preview_attributes(
     attributes: dict[str, Any],
     type_template: dict[str, Any] | None,
@@ -4766,11 +4891,36 @@ def _preflight_import_resources(
         )
         preview_key = record.get("previewKey")
         if not ci_type or ci_type == "unknown":
+            LOGGER.warning(
+                "resource-import preflight failed: %s",
+                json.dumps(
+                    {
+                        "previewKey": _clean_text(preview_key),
+                        "reason": "unknown_ci_type",
+                        "rawCiType": _clean_text(record.get("ciType")),
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
             results.append({"previewKey": preview_key, "status": "failed", "message": "资源类型未确认，无法导入"})
             continue
 
         type_template = type_templates.get(ci_type, {})
         if not type_template:
+            LOGGER.warning(
+                "resource-import preflight failed: %s",
+                json.dumps(
+                    {
+                        "previewKey": _clean_text(preview_key),
+                        "reason": "missing_type_template",
+                        "rawCiType": _clean_text(record.get("ciType")),
+                        "resolvedCiType": ci_type,
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
             results.append({"previewKey": preview_key, "status": "failed", "message": f"目标模型 {ci_type} 不存在或尚未创建完成，当前不能导入"})
             continue
 
@@ -4793,9 +4943,45 @@ def _preflight_import_resources(
         )
         unique_key = _get_import_required_unique_key(type_template)
         if not display_name and not _clean_text(cmdb_attributes.get(unique_key)):
+            LOGGER.warning(
+                "resource-import preflight failed: %s",
+                json.dumps(
+                    {
+                        **_build_import_record_debug_context(
+                            record=record,
+                            ci_type=ci_type,
+                            import_action=import_action,
+                            source_attributes=attributes,
+                            cmdb_attributes=cmdb_attributes,
+                            type_template=type_template,
+                        ),
+                        "reason": "missing_display_name_and_unique_key",
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
             results.append({"previewKey": preview_key, "status": "failed", "message": "缺少资源名称或模型唯一标识，无法导入"})
             continue
         if unique_key and not _clean_text(cmdb_attributes.get(unique_key)):
+            LOGGER.warning(
+                "resource-import preflight failed: %s",
+                json.dumps(
+                    {
+                        **_build_import_record_debug_context(
+                            record=record,
+                            ci_type=ci_type,
+                            import_action=import_action,
+                            source_attributes=attributes,
+                            cmdb_attributes=cmdb_attributes,
+                            type_template=type_template,
+                        ),
+                        "reason": "missing_required_unique_key",
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
             results.append({"previewKey": preview_key, "status": "failed", "message": f"缺少模型唯一标识字段：{_resolve_attribute_label(type_template, unique_key)}"})
             continue
 
@@ -4806,6 +4992,25 @@ def _preflight_import_resources(
             pending_choice_values=pending_choice_values,
         )
         if required_attribute_issues:
+            LOGGER.warning(
+                "resource-import preflight failed: %s",
+                json.dumps(
+                    {
+                        **_build_import_record_debug_context(
+                            record=record,
+                            ci_type=ci_type,
+                            import_action=import_action,
+                            source_attributes=attributes,
+                            cmdb_attributes=cmdb_attributes,
+                            type_template=type_template,
+                        ),
+                        "reason": "missing_required_attributes",
+                        "requiredIssues": required_attribute_issues,
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
             results.append({"previewKey": preview_key, "status": "failed", "message": "；".join(required_attribute_issues)})
             continue
 
@@ -4818,9 +5023,46 @@ def _preflight_import_resources(
         ) or (record.get("existingCi") or {})
 
         if existing_ci and import_action == "create":
+            LOGGER.warning(
+                "resource-import preflight failed: %s",
+                json.dumps(
+                    {
+                        **_build_import_record_debug_context(
+                            record=record,
+                            ci_type=ci_type,
+                            import_action=import_action,
+                            source_attributes=attributes,
+                            cmdb_attributes=cmdb_attributes,
+                            type_template=type_template,
+                            existing_ci=existing_ci,
+                        ),
+                        "reason": "existing_ci_conflict",
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
             results.append({"previewKey": preview_key, "status": "failed", "ciId": existing_ci.get("ciId"), "message": "CMDB 中已存在匹配资源，请改为更新或跳过"})
             continue
         if not existing_ci and import_action == "update":
+            LOGGER.warning(
+                "resource-import preflight failed: %s",
+                json.dumps(
+                    {
+                        **_build_import_record_debug_context(
+                            record=record,
+                            ci_type=ci_type,
+                            import_action=import_action,
+                            source_attributes=attributes,
+                            cmdb_attributes=cmdb_attributes,
+                            type_template=type_template,
+                        ),
+                        "reason": "missing_existing_ci_for_update",
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
             results.append({"previewKey": preview_key, "status": "failed", "message": "CMDB 中未找到待更新资源，请改为新建或重新预览"})
             continue
     return results
@@ -6943,7 +7185,19 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
             source_type = resource_type_map.get(str(relation.get("sourceKey")), "")
             target_type = resource_type_map.get(str(relation.get("targetKey")), "")
             relation_type = _clean_text(relation.get("relationType")) or "contain"
-            if allowed_relation_rules and (source_type, relation_type, target_type) not in allowed_relation_rules:
+            rule_allowed = (source_type, relation_type, target_type) in allowed_relation_rules if allowed_relation_rules else None
+            relation_debug_context = _build_relation_debug_context(
+                relation=relation,
+                source_type=source_type,
+                target_type=target_type,
+                relation_type=relation_type,
+                allowed=rule_allowed,
+            )
+            if allowed_relation_rules and not rule_allowed:
+                LOGGER.warning(
+                    "resource-import relation skipped by model rule check: %s",
+                    json.dumps(relation_debug_context, ensure_ascii=False, default=str),
+                )
                 report["skipped"] += 1
                 report["relationResults"].append(
                     {
@@ -6957,6 +7211,22 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
             source_ci_id = ci_id_map.get(str(relation.get("sourceKey")))
             target_ci_id = ci_id_map.get(str(relation.get("targetKey")))
             if not source_ci_id or not target_ci_id:
+                LOGGER.warning(
+                    "resource-import relation skipped because CI ids are missing: %s",
+                    json.dumps(
+                        _build_relation_debug_context(
+                            relation=relation,
+                            source_type=source_type,
+                            target_type=target_type,
+                            relation_type=relation_type,
+                            source_ci_id=source_ci_id,
+                            target_ci_id=target_ci_id,
+                            allowed=rule_allowed,
+                        ),
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                )
                 report["relationResults"].append(
                     {
                         "sourceKey": relation.get("sourceKey"),
@@ -6967,6 +7237,22 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                 )
                 continue
             try:
+                LOGGER.info(
+                    "resource-import relation creating: %s",
+                    json.dumps(
+                        _build_relation_debug_context(
+                            relation=relation,
+                            source_type=source_type,
+                            target_type=target_type,
+                            relation_type=relation_type,
+                            source_ci_id=source_ci_id,
+                            target_ci_id=target_ci_id,
+                            allowed=rule_allowed,
+                        ),
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                )
                 relation_id, _response = client.create_relation(source_ci_id, target_ci_id, relation_type)
                 if relation_id is not None:
                     created_relation_ids.append(relation_id)
@@ -6980,6 +7266,23 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                     }
                 )
             except Exception as exc:  # noqa: BLE001
+                LOGGER.error(
+                    "resource-import relation create failed: %s | context=%s",
+                    exc,
+                    json.dumps(
+                        _build_relation_debug_context(
+                            relation=relation,
+                            source_type=source_type,
+                            target_type=target_type,
+                            relation_type=relation_type,
+                            source_ci_id=source_ci_id,
+                            target_ci_id=target_ci_id,
+                            allowed=rule_allowed,
+                        ),
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                )
                 report["failed"] += 1
                 report["relationResults"].append(
                     {
