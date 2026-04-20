@@ -1,5 +1,6 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import ReactECharts from "echarts-for-react";
+import * as XLSX from "xlsx";
 import {
   getResourceImportMetadata,
   getResourceImportStart,
@@ -1453,27 +1454,163 @@ function getBatchEditorColumns(
   return sortAttributeKeys(Array.from(columnMap.keys())).map((key) => columnMap.get(key)!);
 }
 
-function buildDownloadPayload(groups: ResourceImportGroup[]) {
-  const rows = groups.flatMap((group) =>
-    group.records.map((record) => ({
-      ciType: record.ciType,
-      name: record.name,
-      selected: record.selected ? "是" : "否",
-      importAction: record.importAction || "create",
-      ...record.attributes,
-    })),
-  );
-  return JSON.stringify(rows, null, 2);
+const EXPORT_FIELD_ORDER = [
+  "ci_type",
+  "name",
+  "project",
+  "platform",
+  "private_ip",
+  "manage_ip",
+  "asset_code",
+  "service_port",
+  "status",
+  "deploy_target",
+  "host_name",
+  "upstream_resource",
+  "os_version",
+  "version",
+  "owner",
+  "description",
+  "selected",
+  "import_action",
+  "source_file",
+  "source_sheet",
+  "source_row",
+] as const;
+
+function sortExportFieldKeys(keys: string[]) {
+  return [...keys].sort((left, right) => {
+    const leftIndex = EXPORT_FIELD_ORDER.indexOf(left as typeof EXPORT_FIELD_ORDER[number]);
+    const rightIndex = EXPORT_FIELD_ORDER.indexOf(right as typeof EXPORT_FIELD_ORDER[number]);
+    if (leftIndex !== -1 || rightIndex !== -1) {
+      return (leftIndex === -1 ? 999 : leftIndex) - (rightIndex === -1 ? 999 : rightIndex);
+    }
+    return left.localeCompare(right, "zh-CN");
+  });
 }
 
-function downloadConfirmationData(groups: ResourceImportGroup[]) {
-  const blob = new Blob([buildDownloadPayload(groups)], { type: "application/json;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "resource-import-confirmation.json";
-  anchor.click();
-  URL.revokeObjectURL(url);
+function sanitizeWorksheetName(name: string, usedNames: Set<string>) {
+  const cleaned = String(name || "Sheet")
+    .replace(/[\\/?*[\]:]/g, "-")
+    .trim()
+    .slice(0, 31) || "Sheet";
+  let nextName = cleaned;
+  let counter = 2;
+  while (usedNames.has(nextName)) {
+    const suffix = `-${counter}`;
+    nextName = `${cleaned.slice(0, Math.max(0, 31 - suffix.length))}${suffix}`;
+    counter += 1;
+  }
+  usedNames.add(nextName);
+  return nextName;
+}
+
+function buildStandardExportRows(group: ResourceImportGroup) {
+  return group.records.map((record) => {
+    const sourceRow = record.sourceRows?.[0] || {};
+    const base = Object.fromEntries(
+      Object.entries(record.analysisAttributes || {})
+        .filter(([key, value]) => key && !key.startsWith("_") && !isEmptyValue(value))
+        .map(([key, value]) => [key, value]),
+    ) as Record<string, unknown>;
+
+    return {
+      ci_type: record.ciType,
+      ...base,
+      selected: record.selected ? "是" : "否",
+      import_action: record.importAction || "create",
+      source_file: sourceRow.filename || "",
+      source_sheet: sourceRow.sheet || "",
+      source_row: sourceRow.rowIndex ?? "",
+    };
+  });
+}
+
+function buildWorkbookFieldDictionary(
+  preview: ResourceImportPreview | null | undefined,
+  groups: ResourceImportGroup[],
+) {
+  const seen = new Set<string>();
+  return groups.flatMap((group) => {
+    const meta = preview?.ciTypeMetadata?.[group.ciType];
+    const definitions = meta?.attributeDefinitions || [];
+    const rows = definitions
+      .filter((definition) => {
+        const name = String(definition.name || "").trim();
+        if (!name || seen.has(`${group.ciType}:${name}`)) {
+          return false;
+        }
+        seen.add(`${group.ciType}:${name}`);
+        return true;
+      })
+      .map((definition) => ({
+        model: group.ciType,
+        model_alias: meta?.alias || group.label,
+        field: definition.name,
+        label: definition.alias || getAttributeLabel(definition.name),
+        required: definition.required ? "是" : "否",
+        is_list: definition.is_list ? "是" : "否",
+        is_choice: definition.is_choice ? "是" : "否",
+      }));
+    return rows;
+  });
+}
+
+function downloadConfirmationData(
+  preview: ResourceImportPreview | null | undefined,
+  groups: ResourceImportGroup[],
+) {
+  const workbook = XLSX.utils.book_new();
+  const usedSheetNames = new Set<string>();
+
+  const instructions = [
+    {
+      title: "说明",
+      content: "请直接在各资源 Sheet 中补充或修改标准字段后，再重新上传该 Excel。",
+    },
+    {
+      title: "字段规则",
+      content: "表头使用系统标准字段名，重新导入时匹配稳定性会明显更高。",
+    },
+    {
+      title: "保留字段",
+      content: "建议保留 ci_type、selected、import_action 这几列；source_* 仅作溯源参考。",
+    },
+  ];
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.json_to_sheet(instructions),
+    sanitizeWorksheetName("导出说明", usedSheetNames),
+  );
+
+  for (const group of groups) {
+    const rows = buildStandardExportRows(group);
+    const fieldKeys = sortExportFieldKeys(
+      Array.from(
+        new Set(rows.flatMap((row) => Object.keys(row).filter((key) => !isEmptyValue(row[key])))),
+      ),
+    );
+    const normalizedRows = rows.map((row) => Object.fromEntries(fieldKeys.map((key) => [key, row[key] ?? ""])));
+    const worksheet = XLSX.utils.json_to_sheet(normalizedRows, {
+      header: fieldKeys,
+    });
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      sanitizeWorksheetName(`${group.label}-${group.ciType}`, usedSheetNames),
+    );
+  }
+
+  const dictionaryRows = buildWorkbookFieldDictionary(preview, groups);
+  if (dictionaryRows.length) {
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(dictionaryRows),
+      sanitizeWorksheetName("字段字典", usedSheetNames),
+    );
+  }
+
+  XLSX.writeFile(workbook, "resource-import-confirmation.xlsx");
 }
 
 function getRecordIssues(record: ResourceImportRecord) {
@@ -1913,8 +2050,17 @@ function ParsingStage({
   onReturnToUpload: ResourceImportConversationCardProps["onReturnToUpload"];
 }) {
   const startedRef = useRef(false);
-  const [displayedLogs, setDisplayedLogs] = useState<string[]>([]);
+  const [displayedLogs, setDisplayedLogs] = useState<string[]>(flow.preview?.logs || []);
   const [parsePercent, setParsePercent] = useState(flow.status === "completed" ? 100 : 8);
+
+  useEffect(() => {
+    if (flow.preview?.logs?.length) {
+      setDisplayedLogs(flow.preview.logs);
+    }
+    if (flow.status === "completed") {
+      setParsePercent(100);
+    }
+  }, [flow.preview?.logs, flow.status]);
 
   useEffect(() => {
     if (flow.status !== "running" || startedRef.current) {
@@ -2695,7 +2841,6 @@ function ConfirmStage({
   const [relations, setRelations] = useState<ResourceImportRelation[]>(flow.relations || []);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorFocusPreviewKey, setEditorFocusPreviewKey] = useState<string | null>(null);
-  const [mappingAcknowledged, setMappingAcknowledged] = useState(false);
   const [uniqueKeySelections, setUniqueKeySelections] = useState<Record<string, string>>({});
   const [autoResolvedUniqueKeys, setAutoResolvedUniqueKeys] = useState<Array<{
     ciType: string;
@@ -2803,10 +2948,6 @@ function ConfirmStage({
     setEditorOpen(false);
     setEditorFocusPreviewKey(null);
   };
-
-  useEffect(() => {
-    setMappingAcknowledged(ambiguousMappings.length === 0);
-  }, [ambiguousMappings.length, messageId]);
 
   useEffect(() => {
     autoAppliedUniqueKeyPlansRef.current = new Set();
@@ -3036,19 +3177,14 @@ function ConfirmStage({
               <div className="resource-import-action-row">
                 <button
                   type="button"
-                  className="secondary"
+                  className="resource-import-highlight-action"
                   onClick={() => openBatchEditor()}
                 >
-                  先去统一编辑
+                  去统一编辑歧义字段
                 </button>
-                <label className="resource-import-structure-check">
-                  <input
-                    type="checkbox"
-                    checked={mappingAcknowledged}
-                    onChange={(event) => setMappingAcknowledged(event.target.checked)}
-                  />
-                  <span>我已确认这些歧义列不会被自动写入，相关值已手动补录或决定忽略</span>
-                </label>
+              </div>
+              <div className="resource-import-inline-notice resource-import-inline-notice-attention">
+                歧义列不会自动写入。需要保留原值时，请在统一编辑中补到正确字段；不需要的内容可直接忽略。
               </div>
             </div>
           ) : null}
@@ -3212,13 +3348,13 @@ function ConfirmStage({
             <button
               type="button"
               className="secondary"
-              onClick={() => downloadConfirmationData(resourceGroups)}
+              onClick={() => downloadConfirmationData(flow.preview || null, resourceGroups)}
             >
-              下载确认数据
+              导出标准Excel
             </button>
             <button
               type="button"
-              className="secondary"
+              className="resource-import-highlight-action"
               onClick={() => openBatchEditor()}
             >
               统一编辑全部数据
@@ -3350,7 +3486,7 @@ function ConfirmStage({
           <button
             type="button"
             className="primary"
-            disabled={flow.locked || Boolean(blockingAnalysisMessage) || Boolean(unresolvedUniqueKeyMessage) || (ambiguousMappings.length > 0 && !mappingAcknowledged)}
+            disabled={flow.locked || Boolean(blockingAnalysisMessage) || Boolean(unresolvedUniqueKeyMessage)}
             onClick={() => {
               const nextPreview = syncPreviewWithCurrentData(flow.preview || null, resourceGroups, relations);
               onBuildTopology({
@@ -3368,8 +3504,6 @@ function ConfirmStage({
                 ? "当前解析不完整，禁止继续"
                 : unresolvedUniqueKeyMessage
                   ? "请先补全唯一标识"
-                : ambiguousMappings.length > 0 && !mappingAcknowledged
-                  ? "请先确认歧义字段映射"
                   : "确认数据，建立关系 →"}
           </button>
         </div>

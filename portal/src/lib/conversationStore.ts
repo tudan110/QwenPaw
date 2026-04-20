@@ -37,12 +37,110 @@ function cloneJsonSafe<T>(value: T): T | undefined {
   }
 }
 
+function sanitizeResourceImportRecord(record: unknown): PlainRecord | null {
+  if (!isPlainRecord(record)) {
+    return null;
+  }
+  return {
+    previewKey: typeof record.previewKey === "string" ? record.previewKey : undefined,
+    ciType: typeof record.ciType === "string" ? record.ciType : undefined,
+    name: typeof record.name === "string" ? truncateText(record.name, 160) : undefined,
+    category: typeof record.category === "string" ? record.category : undefined,
+    generated: Boolean(record.generated),
+    selected: Boolean(record.selected),
+    importAction: typeof record.importAction === "string" ? record.importAction : undefined,
+    existingCi: isPlainRecord(record.existingCi) ? cloneJsonSafe(record.existingCi) : undefined,
+    issues: Array.isArray(record.issues) ? cloneJsonSafe(record.issues.slice(0, 12)) : undefined,
+    attentionFields: Array.isArray(record.attentionFields) ? cloneJsonSafe(record.attentionFields.slice(0, 12)) : undefined,
+    attributes: isPlainRecord(record.attributes) ? cloneJsonSafe(record.attributes) : undefined,
+    analysisAttributes: isPlainRecord(record.analysisAttributes) ? cloneJsonSafe(record.analysisAttributes) : undefined,
+    sourceRows: Array.isArray(record.sourceRows) ? cloneJsonSafe(record.sourceRows.slice(0, 4)) : undefined,
+    autoFilledHints: Array.isArray(record.autoFilledHints) ? cloneJsonSafe(record.autoFilledHints.slice(0, 8)) : undefined,
+  };
+}
+
+function sanitizeResourceImportGroup(group: unknown): PlainRecord | null {
+  if (!isPlainRecord(group)) {
+    return null;
+  }
+  const records = Array.isArray(group.records)
+    ? group.records
+      .slice(0, 120)
+      .map(sanitizeResourceImportRecord)
+      .filter((item): item is PlainRecord => Boolean(item))
+    : [];
+  return {
+    ciType: typeof group.ciType === "string" ? group.ciType : undefined,
+    label: typeof group.label === "string" ? truncateText(group.label, 80) : undefined,
+    count: typeof group.count === "number" ? group.count : records.length,
+    records,
+  };
+}
+
+function sanitizeResourceImportRelation(relation: unknown): PlainRecord | null {
+  if (!isPlainRecord(relation)) {
+    return null;
+  }
+  return {
+    sourceKey: typeof relation.sourceKey === "string" ? relation.sourceKey : undefined,
+    targetKey: typeof relation.targetKey === "string" ? relation.targetKey : undefined,
+    relationType: typeof relation.relationType === "string" ? relation.relationType : undefined,
+    confidence: typeof relation.confidence === "string" ? relation.confidence : undefined,
+    reason: typeof relation.reason === "string" ? truncateText(relation.reason, 220) : undefined,
+    selected: Boolean(relation.selected),
+    requiresModelRelation: Boolean(relation.requiresModelRelation),
+    sourceType: typeof relation.sourceType === "string" ? relation.sourceType : undefined,
+    targetType: typeof relation.targetType === "string" ? relation.targetType : undefined,
+    sourceName: typeof relation.sourceName === "string" ? truncateText(relation.sourceName, 120) : undefined,
+    targetName: typeof relation.targetName === "string" ? truncateText(relation.targetName, 120) : undefined,
+  };
+}
+
+function sanitizeCiTypeMetadataMap(value: unknown): PlainRecord | undefined {
+  if (!isPlainRecord(value)) {
+    return undefined;
+  }
+  return Object.fromEntries(
+    Object.entries(value).slice(0, 24).map(([key, item]) => {
+      if (!isPlainRecord(item)) {
+        return [key, undefined];
+      }
+      return [key, {
+        id: item.id,
+        name: typeof item.name === "string" ? item.name : key,
+        alias: typeof item.alias === "string" ? item.alias : undefined,
+        unique_key: typeof item.unique_key === "string" ? item.unique_key : undefined,
+        system_generated_unique_key: Boolean(item.system_generated_unique_key),
+        attributes: Array.isArray(item.attributes) ? cloneJsonSafe(item.attributes.slice(0, 40)) : undefined,
+        attributeDefinitions: Array.isArray(item.attributeDefinitions)
+          ? cloneJsonSafe(item.attributeDefinitions.slice(0, 60))
+          : undefined,
+        parentTypes: Array.isArray(item.parentTypes)
+          ? cloneJsonSafe(item.parentTypes.slice(0, 20))
+          : undefined,
+      }];
+    }),
+  );
+}
+
 function sanitizeResourceImportFlow(flow: unknown): PlainRecord | undefined {
   if (!isPlainRecord(flow)) {
     return undefined;
   }
   const preview = isPlainRecord(flow.preview) ? flow.preview : null;
   const result = isPlainRecord(flow.result) ? flow.result : null;
+  const resourceGroups = Array.isArray(flow.resourceGroups)
+    ? flow.resourceGroups
+      .slice(0, 20)
+      .map(sanitizeResourceImportGroup)
+      .filter((item): item is PlainRecord => Boolean(item))
+    : undefined;
+  const relations = Array.isArray(flow.relations)
+    ? flow.relations
+      .slice(0, 240)
+      .map(sanitizeResourceImportRelation)
+      .filter((item): item is PlainRecord => Boolean(item))
+    : undefined;
   return {
     flowId: typeof flow.flowId === "string" ? flow.flowId : undefined,
     stage: typeof flow.stage === "string" ? flow.stage : undefined,
@@ -56,13 +154,30 @@ function sanitizeResourceImportFlow(flow: unknown): PlainRecord | undefined {
           summary: isPlainRecord(preview.summary) ? cloneJsonSafe(preview.summary) : undefined,
           analysisStatus: typeof preview.analysisStatus === "string" ? preview.analysisStatus : undefined,
           analysisIssues: Array.isArray(preview.analysisIssues)
-            ? cloneJsonSafe(preview.analysisIssues.slice(0, 6))
+            ? cloneJsonSafe(preview.analysisIssues.slice(0, 16))
             : undefined,
           warnings: Array.isArray(preview.warnings)
-            ? preview.warnings.slice(0, 8).map((item) => truncateText(item, 180))
+            ? preview.warnings.slice(0, 24).map((item) => truncateText(item, 220))
             : undefined,
+          logs: Array.isArray(preview.logs)
+            ? preview.logs.slice(0, 80).map((item) => truncateText(item, 220))
+            : undefined,
+          cleaningSummary: Array.isArray(preview.cleaningSummary)
+            ? cloneJsonSafe(preview.cleaningSummary.slice(0, 40))
+            : undefined,
+          mappingSummary: Array.isArray(preview.mappingSummary)
+            ? cloneJsonSafe(preview.mappingSummary.slice(0, 80))
+            : undefined,
+          ciTypeMetadata: sanitizeCiTypeMetadataMap(preview.ciTypeMetadata),
+          structureAnalysis: isPlainRecord(preview.structureAnalysis)
+            ? cloneJsonSafe(preview.structureAnalysis)
+            : undefined,
+          resourceGroups,
+          relations,
         }
       : undefined,
+    resourceGroups,
+    relations,
     result: result
       ? {
           status: typeof result.status === "string" ? result.status : undefined,
@@ -71,6 +186,15 @@ function sanitizeResourceImportFlow(flow: unknown): PlainRecord | undefined {
           skipped: typeof result.skipped === "number" ? result.skipped : undefined,
           failed: typeof result.failed === "number" ? result.failed : undefined,
           error: typeof result.error === "string" ? truncateText(result.error, 240) : undefined,
+          structureResults: Array.isArray(result.structureResults)
+            ? cloneJsonSafe(result.structureResults.slice(0, 120))
+            : undefined,
+          resourceResults: Array.isArray(result.resourceResults)
+            ? cloneJsonSafe(result.resourceResults.slice(0, 240))
+            : undefined,
+          relationResults: Array.isArray(result.relationResults)
+            ? cloneJsonSafe(result.relationResults.slice(0, 240))
+            : undefined,
         }
       : undefined,
   };

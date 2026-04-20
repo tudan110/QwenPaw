@@ -1,4 +1,8 @@
 {
+  "id": "resource",
+  "name": "资产管理员",
+  "description": "快速发现与智能纳管。\n\n我可以帮您完成以下工作：\n• 资源清单导入 - 上传Excel/CSV台账，自动映射字段并导入CMDB\n• IP扫描发现 - 自动扫描指定网段，快速发现网络设备\n• 云账号导入 - 一键导入阿里云、AWS、华为云等账号\n• API自动发现 - 通过API接口自动发现各类资源\n• 协议适配 - 支持SNMP、SSH、Restful等多种协议\n• 资源建模 - 自动构建CMDB资源模型\n• 拓扑生成 - 自动生成资源关联拓扑图",
+  "workspace_dir": "~/.qwenpaw/workspaces/resource",
   "channels": {
     "imessage": {
       "enabled": false,
@@ -12,7 +16,6 @@
       "require_mention": false,
       "db_path": "~/Library/Messages/chat.db",
       "poll_sec": 1.0,
-      "media_dir": null,
       "max_decoded_size": 10485760
     },
     "discord": {
@@ -46,7 +49,6 @@
       "card_template_id": "",
       "card_template_key": "content",
       "robot_code": "",
-      "media_dir": null,
       "card_auto_layout": false
     },
     "feishu": {
@@ -63,7 +65,6 @@
       "app_secret": "",
       "encrypt_key": "",
       "verification_token": "",
-      "media_dir": null,
       "domain": "feishu"
     },
     "qq": {
@@ -93,8 +94,7 @@
       "require_mention": false,
       "bot_token": "",
       "http_proxy": "",
-      "http_proxy_auth": "",
-      "show_typing": null
+      "http_proxy_auth": ""
     },
     "mattermost": {
       "enabled": false,
@@ -108,8 +108,6 @@
       "require_mention": false,
       "url": "",
       "bot_token": "",
-      "media_dir": null,
-      "show_typing": null,
       "thread_follow_without_mention": false
     },
     "mqtt": {
@@ -123,18 +121,12 @@
       "deny_message": "",
       "require_mention": false,
       "host": "",
-      "port": null,
       "transport": "",
       "clean_session": true,
       "qos": 2,
-      "username": null,
-      "password": null,
       "subscribe_topic": "",
       "publish_topic": "",
-      "tls_enabled": false,
-      "tls_ca_certs": null,
-      "tls_certfile": null,
-      "tls_keyfile": null
+      "tls_enabled": false
     },
     "console": {
       "enabled": true,
@@ -145,8 +137,7 @@
       "group_policy": "open",
       "allow_from": [],
       "deny_message": "",
-      "require_mention": false,
-      "media_dir": null
+      "require_mention": false
     },
     "matrix": {
       "enabled": false,
@@ -205,7 +196,6 @@
       "require_mention": false,
       "bot_id": "",
       "secret": "",
-      "media_dir": null,
       "welcome_text": "",
       "max_reconnect_attempts": -1
     },
@@ -237,8 +227,7 @@
       "require_mention": false,
       "bot_token": "",
       "bot_token_file": "",
-      "base_url": "",
-      "media_dir": null
+      "base_url": ""
     },
     "onebot": {
       "enabled": false,
@@ -277,6 +266,86 @@
       }
     }
   },
+  "heartbeat": {
+    "enabled": false,
+    "every": "6h",
+    "target": "main"
+  },
+  "last_dispatch": {
+    "channel": "console",
+    "user_id": "default",
+    "session_id": "portal-query-1776217267524-vqxqx9"
+  },
+  "running": {
+    "max_iters": 100,
+    "llm_retry_enabled": true,
+    "llm_max_retries": 3,
+    "llm_backoff_base": 1.0,
+    "llm_backoff_cap": 10.0,
+    "llm_max_concurrent": 10,
+    "llm_max_qpm": 600,
+    "llm_rate_limit_pause": 5.0,
+    "llm_rate_limit_jitter": 1.0,
+    "llm_acquire_timeout": 300.0,
+    "max_input_length": 131072,
+    "history_max_length": 10000,
+    "context_compact": {
+      "token_count_model": "default",
+      "token_count_use_mirror": false,
+      "token_count_estimate_divisor": 4.0,
+      "context_compact_enabled": true,
+      "memory_compact_ratio": 0.75,
+      "memory_reserve_ratio": 0.1,
+      "compact_with_thinking_block": true
+    },
+    "tool_result_compact": {
+      "enabled": true,
+      "recent_n": 2,
+      "old_max_bytes": 3000,
+      "recent_max_bytes": 50000,
+      "retention_days": 5
+    },
+    "memory_summary": {
+      "memory_summary_enabled": true,
+      "memory_prompt_enabled": true,
+      "force_memory_search": false,
+      "force_max_results": 1,
+      "force_min_score": 0.3,
+      "force_memory_search_timeout": 10.0,
+      "rebuild_memory_index_on_start": false
+    },
+    "embedding_config": {
+      "backend": "openai",
+      "api_key": "",
+      "base_url": "",
+      "model_name": "",
+      "dimensions": 1024,
+      "enable_cache": true,
+      "use_dimensions": false,
+      "max_cache_size": 3000,
+      "max_input_length": 8192,
+      "max_batch_size": 10
+    },
+    "memory_manager_backend": "remelight"
+  },
+  "llm_routing": {
+    "enabled": false,
+    "mode": "local_first",
+    "local": {
+      "provider_id": "",
+      "model": ""
+    }
+  },
+  "active_model": {
+    "provider_id": "ctyun",
+    "model": "Qwen3.5-397B-A17B"
+  },
+  "language": "en",
+  "system_prompt_files": [
+    "AGENTS.md",
+    "SOUL.md",
+    "PROFILE.md"
+  ],
   "tools": {
     "builtin_tools": {
       "execute_shell_command": {
@@ -329,7 +398,7 @@
       },
       "browser_use": {
         "name": "browser_use",
-        "enabled": true,
+        "enabled": false,
         "description": "Browser automation and web interaction",
         "display_to_user": true,
         "async_execution": false,
@@ -408,154 +477,5 @@
         "icon": "💬"
       }
     }
-  },
-  "last_api": {
-    "host": "127.0.0.1",
-    "port": 8088
-  },
-  "agents": {
-    "active_agent": "default",
-    "agent_order": [
-      "default",
-      "QwenPaw_QA_Agent_0.2",
-      "query",
-      "fault",
-      "knowledge",
-      "resource"
-    ],
-    "profiles": {
-      "default": {
-        "id": "default",
-        "workspace_dir": "~/.qwenpaw/workspaces/default",
-        "enabled": true
-      },
-      "QwenPaw_QA_Agent_0.2": {
-        "id": "QwenPaw_QA_Agent_0.2",
-        "workspace_dir": "~/.qwenpaw/workspaces/QwenPaw_QA_Agent_0.2",
-        "enabled": true
-      },
-      "query": {
-        "id": "query",
-        "workspace_dir": "~/.qwenpaw/workspaces/query",
-        "enabled": true
-      },
-      "fault": {
-        "id": "fault",
-        "workspace_dir": "~/.qwenpaw/workspaces/fault",
-        "enabled": true
-      },
-      "knowledge": {
-        "id": "knowledge",
-        "workspace_dir": "~/.qwenpaw/workspaces/knowledge",
-        "enabled": true
-      },
-      "resource": {
-        "id": "resource",
-        "workspace_dir": "~/.qwenpaw/workspaces/resource",
-        "enabled": true
-      }
-    },
-    "defaults": {
-      "heartbeat": {
-        "enabled": false,
-        "every": "6h",
-        "target": "main",
-        "activeHours": null
-      }
-    },
-    "running": {
-      "max_iters": 100,
-      "llm_retry_enabled": true,
-      "llm_max_retries": 3,
-      "llm_backoff_base": 1.0,
-      "llm_backoff_cap": 10.0,
-      "llm_max_concurrent": 10,
-      "llm_max_qpm": 600,
-      "llm_rate_limit_pause": 5.0,
-      "llm_rate_limit_jitter": 1.0,
-      "llm_acquire_timeout": 300.0,
-      "max_input_length": 131072,
-      "history_max_length": 10000,
-      "context_compact": {
-        "token_count_model": "default",
-        "token_count_use_mirror": false,
-        "token_count_estimate_divisor": 4.0,
-        "context_compact_enabled": true,
-        "memory_compact_ratio": 0.75,
-        "memory_reserve_ratio": 0.1,
-        "compact_with_thinking_block": true
-      },
-      "tool_result_compact": {
-        "enabled": true,
-        "recent_n": 2,
-        "old_max_bytes": 3000,
-        "recent_max_bytes": 50000,
-        "retention_days": 5
-      },
-      "memory_summary": {
-        "memory_summary_enabled": true,
-        "memory_prompt_enabled": true,
-        "force_memory_search": false,
-        "force_max_results": 1,
-        "force_min_score": 0.3,
-        "force_memory_search_timeout": 10.0,
-        "rebuild_memory_index_on_start": false
-      },
-      "embedding_config": {
-        "backend": "openai",
-        "api_key": "",
-        "base_url": "",
-        "model_name": "",
-        "dimensions": 1024,
-        "enable_cache": true,
-        "use_dimensions": false,
-        "max_cache_size": 3000,
-        "max_input_length": 8192,
-        "max_batch_size": 10
-      },
-      "memory_manager_backend": "remelight"
-    },
-    "llm_routing": {
-      "enabled": false,
-      "mode": "local_first",
-      "local": {
-        "provider_id": "",
-        "model": ""
-      },
-      "cloud": null
-    },
-    "language": "zh",
-    "installed_md_files_language": "zh",
-    "system_prompt_files": [
-      "AGENTS.md",
-      "SOUL.md",
-      "PROFILE.md"
-    ],
-    "audio_mode": "auto",
-    "transcription_provider_type": "disabled",
-    "transcription_provider_id": "",
-    "transcription_model": "whisper-1"
-  },
-  "last_dispatch": null,
-  "security": {
-    "tool_guard": {
-      "enabled": true,
-      "guarded_tools": null,
-      "denied_tools": [],
-      "custom_rules": [],
-      "disabled_rules": []
-    },
-    "file_guard": {
-      "enabled": true,
-      "sensitive_files": []
-    },
-    "skill_scanner": {
-      "mode": "warn",
-      "timeout": 30,
-      "whitelist": []
-    }
-  },
-  "show_tool_details": true,
-  "user_timezone": "Asia/Shanghai",
-  "plugins": {}
+  }
 }

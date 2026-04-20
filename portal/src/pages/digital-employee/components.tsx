@@ -221,6 +221,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   ticketActionNotice,
 }: any) {
   const allBlocks = message.processBlocks || [];
+  const condensedBlocks = condenseBackgroundPollingBlocks(allBlocks);
   const hasInterleavedResponses = allBlocks.some(
     (block: any) => block?.kind === "response" && block.content,
   );
@@ -228,8 +229,8 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   // Interleaved mode: response blocks exist in processBlocks (loaded history)
   // Legacy mode: no response blocks, text lives in message.content (streaming)
   const displayBlocks = hasInterleavedResponses
-    ? allBlocks
-    : allBlocks.filter((block: any) => block?.kind !== "response");
+    ? condensedBlocks
+    : condensedBlocks.filter((block: any) => block?.kind !== "response");
 
   const renderedMessageContent = hasInterleavedResponses
     ? (isStreamingMessage ? message.content : null)
@@ -488,6 +489,89 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     </div>
   );
 });
+
+function condenseBackgroundPollingBlocks(blocks: any[] = []) {
+  const condensed: any[] = [];
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    const current = blocks[index];
+    if (!isPollingToolBlock(current)) {
+      condensed.push(current);
+      continue;
+    }
+
+    const toolBlocks = [current];
+    const waitingResponses: any[] = [];
+    let cursor = index + 1;
+
+    while (cursor < blocks.length) {
+      const candidate = blocks[cursor];
+      if (isWaitingPollingResponse(candidate)) {
+        waitingResponses.push(candidate);
+        cursor += 1;
+        continue;
+      }
+      if (isPollingToolBlock(candidate)) {
+        toolBlocks.push(candidate);
+        cursor += 1;
+        continue;
+      }
+      break;
+    }
+
+    if (toolBlocks.length === 1 && waitingResponses.length === 0) {
+      condensed.push(current);
+      continue;
+    }
+
+    condensed.push(buildPollingSummaryBlock(toolBlocks, waitingResponses));
+    index = cursor - 1;
+  }
+
+  return condensed;
+}
+
+function isPollingToolBlock(block: any) {
+  return block?.kind === "tool" && block?.toolName === "check_agent_task";
+}
+
+function isWaitingPollingResponse(block: any) {
+  if (block?.kind !== "response") {
+    return false;
+  }
+  const text = String(block.content || "").trim();
+  if (!text || text.length > 120) {
+    return false;
+  }
+  return /继续(等待|查询)|任务仍在(运行|处理)|稍后|轮询|查询任务状态|待查询结果|pending|running/i.test(text);
+}
+
+function buildPollingSummaryBlock(toolBlocks: any[], waitingResponses: any[]) {
+  const latestTool = toolBlocks[toolBlocks.length - 1] || toolBlocks[0];
+  const latestWaitingText = [...waitingResponses]
+    .reverse()
+    .map((item) => String(item.content || "").trim())
+    .find(Boolean);
+  const pollCount = toolBlocks.length;
+  const foldedCount = Math.max(pollCount - 1, 0) + waitingResponses.length;
+  const summaryLines = [
+    `后台协同任务正在处理中，已自动轮询 ${pollCount} 次。`,
+    foldedCount > 0 ? `中间 ${foldedCount} 条轮询日志已折叠显示。` : "",
+    latestWaitingText ? `最近状态：${latestWaitingText}` : "最近状态：任务仍在运行，等待最终结果返回。",
+  ].filter(Boolean);
+
+  return {
+    ...latestTool,
+    id: `polling-summary-${toolBlocks[0]?.id || Date.now()}`,
+    title: "后台协同轮询",
+    subtitle: `已轮询 ${pollCount} 次`,
+    icon: "fa-hourglass-half",
+    inputContent: "",
+    outputContent: summaryLines.join("\n"),
+    content: summaryLines.join("\n"),
+    defaultOpen: false,
+  };
+}
 
 function CopyGlyph({
   copied,

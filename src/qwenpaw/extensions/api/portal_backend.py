@@ -107,7 +107,7 @@ def _veops_cmdb_import_skill_root() -> Path:
         / "qwenpaw"
         / "working"
         / "workspaces"
-        / "query"
+        / "resource"
         / "skills"
         / "veops-cmdb-import"
     )

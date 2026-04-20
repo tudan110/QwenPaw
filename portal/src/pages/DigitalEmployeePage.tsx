@@ -89,6 +89,7 @@ const sidebarEmployeePriority = [
 
 const REMOTE_AGENT_IDS: Record<string, string> = {
   fault: "fault",
+  resource: "resource",
   query: "query",
   knowledge: "knowledge",
 };
@@ -113,7 +114,7 @@ const PORTAL_CLOSE_DRAWER_MESSAGE = {
   type: "portal:close-drawer",
   reason: "switch-traditional-view",
 } as const;
-const RESOURCE_IMPORT_OWNER_ID = "query";
+const RESOURCE_IMPORT_OWNER_ID = "resource";
 const RESOURCE_IMPORT_COMMAND = "导入资源清单";
 const PORTAL_RESOURCE_IMPORT_SOURCE = "portal-resource-import";
 const RESOURCE_IMPORT_INTENT_PATTERN =
@@ -1057,11 +1058,13 @@ function buildMentionCollaborationPrompt({
   currentAgentId,
   targetEmployee,
   userRequest,
+  preferBackground = false,
 }: {
   currentEmployee: any;
   currentAgentId: string;
   targetEmployee: any;
   userRequest: string;
+  preferBackground?: boolean;
 }) {
   const targetAgentId = resolveEmployeeAgentId(String(targetEmployee?.id || ""));
   const normalizedRequest = String(userRequest || "").trim();
@@ -1074,6 +1077,13 @@ function buildMentionCollaborationPrompt({
           "如果拿到了应用或资源拓扑，请直接返回可渲染的 ```echarts 代码块，优先使用 tree 树状图并设置从左到右展开，不要只返回文字摘要。",
         ]
       : [];
+  const executionHints = preferBackground
+    ? [
+        "这次协同是长耗时任务，请不要使用 chat_with_agent 做前台阻塞等待。",
+        "请改用后台协同路径：先用 submit_to_agent 提交给目标智能体，再用 check_agent_task 轮询结果并整合后回复用户。",
+        "如果第一次轮询仍是 pending 或 running，请至少继续等待 15-20 秒后再查询，避免用户看到工具调用后长时间无反馈。",
+      ]
+    : [];
 
   return [
     `你当前是数字员工「${currentEmployee?.name || currentAgentId}」。`,
@@ -1081,12 +1091,59 @@ function buildMentionCollaborationPrompt({
     "请不要要求用户切换页面，也不要把本次请求交回前端路由处理。",
     "请直接使用你已启用的内置技能 Multi-Agent Collaboration（multi_agent_collaboration），在当前会话中发起智能体协同并整合结果后回复用户。",
     "给目标智能体的协同请求正文请直接概括任务本身，不要重复写 [Agent ... requesting]，也不要以 User explicitly asked... 这类泛化说明开头。",
+    ...executionHints,
     ...extraCollaborationHints,
     `当前智能体（from-agent）：${currentAgentId}`,
     `目标智能体（to-agent）：${targetAgentId}`,
     normalizedRequest
       ? `用户希望协同处理的内容：${normalizedRequest}`
       : `用户目前只 @ 了「${targetEmployee?.name || targetAgentId}」，请先确认需要对方协助的具体问题，再决定如何发起协同。`,
+  ].join("\n");
+}
+
+function buildResourceImportTopologyCollaborationRequest(scope: {
+  includesProject: boolean;
+  applicationName: string;
+  ciIds: Array<string | number>;
+  resources: Array<{
+    ciId?: string | number;
+    ciType?: string;
+    name?: string;
+    previewKey?: string;
+  }>;
+}) {
+  const ciIdText = scope.ciIds.join(", ");
+  const resourceSummary = scope.resources
+    .slice(0, 12)
+    .map((item) => `${item.name || item.previewKey || "未命名资源"}(${item.ciType || "未分类"}${item.ciId ? `, CI ID: ${item.ciId}` : ""})`)
+    .join("；");
+  const ciCountText = scope.ciIds.length ? `${scope.ciIds.length} 个` : "0 个";
+
+  if (scope.includesProject && scope.applicationName) {
+    return [
+      `请基于本次导入结果，查询应用 ${scope.applicationName} 的 CMDB 关系拓扑。`,
+      `这次导入/保留的资源范围共 ${ciCountText} CI，CI ID：${ciIdText || "无"}。`,
+      resourceSummary ? `本次导入资源摘要：${resourceSummary}。` : "",
+      "请优先围绕这次导入涉及的资源构建结果，不要扩展到无关应用或全系统。",
+      "如支持按 CI ID 或应用过滤，请先过滤再查询。",
+      "请优先使用已启用的 veops-cmdb skill，并返回可直接渲染的 ```echarts 代码块，优先 tree 树状图，从左到右展开。",
+    ].filter(Boolean).join("\n");
+  }
+
+  if (scope.ciIds.length) {
+    return [
+      "请基于本次导入结果，查询这批资源之间的局部 CMDB 拓扑。",
+      `本次导入/保留的资源共 ${ciCountText} CI，CI ID：${ciIdText}。`,
+      resourceSummary ? `本次导入资源摘要：${resourceSummary}。` : "",
+      "不要查询全系统，也不要自动扩展到无关应用。",
+      "只返回这些资源之间的节点和关系；没有关系的资源也要作为独立节点展示。",
+      "请优先使用已启用的 veops-cmdb skill，并返回可直接渲染的 ```echarts 代码块，优先 tree 树状图，从左到右展开。",
+    ].filter(Boolean).join("\n");
+  }
+
+  return [
+    "用户希望查看本次导入拓扑，但当前上下文没有可靠的导入范围。",
+    "请先提示用户重新选择导入结果，或明确本次导入的应用/资源范围后再查询。",
   ].join("\n");
 }
 
@@ -3272,21 +3329,19 @@ export default function DigitalEmployeePage({
       const visibleContent = scope.includesProject && scope.applicationName
         ? `查看${scope.applicationName}导入拓扑`
         : "查看本次导入拓扑";
-      const resourceSummary = scope.resources
-        .slice(0, 12)
-        .map((item) => `${item.name || item.previewKey}(${item.ciType || "未分类"}, CI ID: ${item.ciId})`)
-        .join("；");
-      const ciIdText = scope.ciIds.join(", ");
-      const systemContent = scope.includesProject && scope.applicationName
-        ? `请直接使用现有 CMDB 拓扑能力，查询应用 ${scope.applicationName} 的关系拓扑，并优先聚焦本次导入涉及的资源。若支持按 CI ID 过滤，请优先限定这些资源：${ciIdText || "无"}。不要查询全系统，也不要扩展到无关应用。用 echarts 树状图展示。`
-        : scope.ciIds.length
-          ? `请直接使用现有 CMDB 拓扑能力，仅查询本次导入成功或保留的这些资源，不要查询全系统，也不要自动扩展到整个应用。优先按这些 CI ID 过滤：${ciIdText}。资源清单：${resourceSummary}。只返回这些资源之间的节点与关系；如果某个资源没有关联关系，也要作为独立节点展示。用 echarts 树状图展示。`
-          : "请直接使用现有 CMDB 拓扑能力查询本次导入资源的局部拓扑，不要查询全系统，也不要自动扩展到无关应用。若找不到本次导入的范围，请先提示我重新选择导入结果。";
-      void dispatchActiveMessage(systemContent, {
+      const queryEmployee = getEmployeeById("query");
+      const collaborationPrompt = buildMentionCollaborationPrompt({
+        currentEmployee,
+        currentAgentId: remoteAgentId || resolveEmployeeAgentId(String(currentEmployee?.id || "")),
+        targetEmployee: queryEmployee,
+        userRequest: buildResourceImportTopologyCollaborationRequest(scope),
+        preferBackground: true,
+      });
+      void dispatchActiveMessage(collaborationPrompt, {
         visibleContent,
       });
     },
-    [dispatchActiveMessage, findResourceImportFlowById],
+    [currentEmployee, dispatchActiveMessage, findResourceImportFlowById, remoteAgentId],
   );
 
   useEffect(() => {

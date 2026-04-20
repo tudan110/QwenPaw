@@ -128,7 +128,7 @@ export const digitalEmployees: DigitalEmployee[] = [
     urgent: false,
     gradient: "linear-gradient(135deg, #8B5CF6, #7C3AED)",
     capabilities: ["指标查询", "报表生成", "趋势分析", "数据可视化", "自定义取数"],
-    quickCommands: ["导入资源清单", "生成业务可用性报表", "分析告警趋势", "导出性能数据"],
+    quickCommands: ["生成业务可用性报表", "分析告警趋势", "导出性能数据", "查询设备趋势报表"],
     welcome:
       "您好！我是数据分析员。数据分析与报表生成。<br><br>我可以帮您完成以下工作：<br>• 指标查询 - 自然语言查询各类监控指标<br>• 报表生成 - 自动生成日报、周报、月报<br>• 趋势分析 - 分析指标趋势，预测容量需求<br>• 数据可视化 - 生成直观的图表和仪表盘<br>• 自定义取数 - 按需提取数据，支持多种格式导出<br><br>请直接输入您的数据需求，或选择下方的快捷命令。",
   },
@@ -159,13 +159,13 @@ export const digitalEmployees: DigitalEmployee[] = [
     gradient: "linear-gradient(135deg, #3B82F6, #1D4ED8)",
     capabilities: ["IP扫描发现", "云账号导入", "API自动发现", "协议适配", "资源建模", "拓扑生成"],
     quickCommands: [
+      "导入资源清单",
       "扫描10.0.1.0/24网段的网络设备",
-      "导入阿里云账号发现资源",
       "发现PaaS组件（Kafka/Redis/MySQL）",
       "自动纳管新上线的服务器",
     ],
     welcome:
-      "您好！我是资产管理员。快速发现与智能纳管。<br><br>我可以帮您完成以下工作：<br>• IP扫描发现 - 自动扫描指定网段，快速发现网络设备<br>• 云账号导入 - 一键导入阿里云、AWS、华为云等账号<br>• API自动发现 - 通过API接口自动发现各类资源<br>• 协议适配 - 支持SNMP、SSH、Restful等多种协议<br>• 资源建模 - 自动构建CMDB资源模型<br>• 拓扑生成 - 自动生成资源关联拓扑图<br><br>请直接输入您的需求，或选择下方的快捷命令。",
+      "您好！我是资产管理员。快速发现与智能纳管。<br><br>我可以帮您完成以下工作：<br>• 资源清单导入 - 上传Excel/CSV台账，自动映射字段并导入CMDB<br>• IP扫描发现 - 自动扫描指定网段，快速发现网络设备<br>• 云账号导入 - 一键导入阿里云、AWS、华为云等账号<br>• API自动发现 - 通过API接口自动发现各类资源<br>• 协议适配 - 支持SNMP、SSH、Restful等多种协议<br>• 资源建模 - 自动构建CMDB资源模型<br>• 拓扑生成 - 自动生成资源关联拓扑图<br><br>请直接输入您的需求，或选择下方的快捷命令。",
   },
   {
     id: "inspection",
