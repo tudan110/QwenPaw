@@ -3,7 +3,7 @@ name: alarm-analyst
 category: root-cause
 tags: [fault, alarm, diagnosis, cmdb, mysql, metrics, deadlock, workorder, collaboration, portal, topology, application]
 triggers: [告警分析, 故障分析, 数据库锁异常, 数据库死锁分析, 告警处置分析, 告警根因分析, 活动告警处置, 告警闭环, 应用新增数据失败, CMDB 插入失败]
-description: 面向单条活动告警或单个应用故障现象驱动的故障分析与闭环处置技能。适用于 Portal 中用户点击右上角铃铛告警后，或直接描述“某应用新增数据失败 / CMDB 插入数据失败”等现象后，由故障处置员数字员工接管，并向用户展示从智观活动告警、CMDB 资源确认、应用拓扑拆解、指标分析、影响范围判断、处置建议、恢复验证到清除告警/更新工单状态的完整过程。当前阶段优先输出用户可见的过程化脚手架，后续再接入智观、指标和工单真实接口。
+description: 面向单条活动告警或单个应用故障现象驱动的故障分析与闭环处置技能。适用于 Portal 中用户点击右上角铃铛告警后，或直接描述“某应用新增数据失败 / CMDB 插入数据失败”等现象后，由故障处置员数字员工接管，并向用户展示从智观活动告警、CMDB 资源确认、应用拓扑拆解、指标分析、影响范围判断、处置建议、恢复验证到清除告警/更新工单状态的完整过程。若当前工作区已具备 shell、跨智能体和指标接口能力，应优先执行真实查询，不要只复述流程模板。
 ---
 
 # Alarm Analyst
@@ -88,31 +88,56 @@ Portal 落地时，需要体现以下链路：
 
 ---
 
-## 四、当前阶段目标
+## 四、执行优先级
 
-当前阶段的重点不是“假装所有接口都接好了”，而是：
+本 skill 不是纯展示模板。**只要当前工作区已经具备可用工具，就必须优先执行真实动作，再组织说明。**
 
-1. 把完整的分析与闭环逻辑明确展示给用户
-2. 在回复中体现真实系统边界：哪些接口已接，哪些接口待接
-3. 在接口未接入时，仍然输出可信的过程化内容
-4. 让用户知道下一步会调用哪个系统、验证什么假设、预计产出什么结果
+优先级如下：
 
-因此当前阶段即使缺少真实接口，也必须做到：
+1. 先实际调用可用能力：
+   - 使用 `list_agents` / `chat_with_agent` / `multi_agent_collaboration` 协作 query 数字员工查询 CMDB
+   - 使用 `execute_shell_command` 执行 `scripts/get_metric_definitions.py`
+2. 再把执行结果整理成面向用户的阶段化输出
+3. 只有当真实调用失败时，才允许退回“计划 + mock + 失败原因”模式
 
-1. 从告警文本中提取关键实体
-2. 明确说明要调用智观、CMDB、指标系统中的哪些能力
-3. 明确说明会如何判断影响范围
-4. 明确说明会如何做恢复验证
-5. 明确说明闭环成功和闭环失败两条分支
+如果已经满足执行条件，就不要只回复：
 
-不允许只回复：
+- `计划调用`
+- `下一步执行`
+- `需要继续吗`
+- `请告诉我是否继续`
 
-- `正在分析，请稍后`
-- `后续将接入接口`
-- `暂时没有接口`
-- `暂未完成`
+必须先做真实调用，再汇报结果。
 
-必须把过程本身展示出来。
+### 什么时候允许只展示计划
+
+只有以下情况才允许只展示计划而不执行：
+
+1. 当前工具里没有 `execute_shell_command`
+2. 当前工具里没有 `list_agents` / `chat_with_agent` / `multi_agent_collaboration`
+3. 缺少执行所需关键参数，且无法从当前上下文推断
+4. 用户明确要求“先不要执行，只给方案”
+
+除此之外，默认都应直接执行。
+
+### 最短执行路径
+
+对于 `数据库锁异常（db_mysql_001 10.43.150.186）` 这类 MySQL 告警，默认最短路径是：
+
+1. 从告警文本中提取资产编号、IP、告警标题
+2. 通过 query 数字员工的 `veops-cmdb` 查询 CMDB，获取：
+   - `ciType`
+   - `CI ID`
+   - 应用/环境/拓扑
+3. 如果已确认 `ciType = mysql`，立刻执行：
+
+```bash
+cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-type mysql --res-id <CMDB返回的CI_ID> --output markdown
+```
+
+4. 读取脚本结果，再组织分析结论
+
+不要停在“计划执行这个命令”。
 
 ---
 
@@ -157,16 +182,20 @@ Portal 落地时，需要体现以下链路：
 当前建议配置：
 
 ```bash
-INOE_API_BASE_URL=http://192.168.102.172:2023
-ALARM_ANALYST_METRIC_TIMEOUT_SECONDS=10
+INOE_API_BASE_URL=http://192.168.130.51:30080
+INOE_API_TOKEN=your_jwt_token_here
+ALARM_ANALYST_METRIC_TIMEOUT_SECONDS=120
 ALARM_ANALYST_METRIC_PAGE_SIZE=20
 ```
 
 ### 配置约定
 
-- `.env` 中只放 **base_url** 和少量通用参数
+- `.env` 中至少要有 `INOE_API_BASE_URL` 和 `INOE_API_TOKEN`
+- `INOE_API_TOKEN` 沿用实时告警系统同类接口的 JWT 鉴权方式
 - 具体 API 路径、请求体和调用时机写在本 `SKILL.md` 中
 - 如果后续更换指标服务地址，优先只改 `.env`，不要在多个脚本或提示词里硬编码
+- 如果缺少 token，不要继续请求；直接返回配置缺失错误
+- `getMetricDefinitions` 与 `getMetricData` 默认共用同一个 `INOE_API_BASE_URL`
 
 ### 当前指标定义接口
 
@@ -180,6 +209,7 @@ MySQL 示例请求：
 
 ```bash
 curl --location "${INOE_API_BASE_URL}/resource/threshold/getMetricDefinitions" \
+  --header "Authorization: Bearer ${INOE_API_TOKEN}" \
   --header 'Content-Type: application/json' \
   --data '{
     "metricType":"mysql",
@@ -188,16 +218,66 @@ curl --location "${INOE_API_BASE_URL}/resource/threshold/getMetricDefinitions" \
   }'
 ```
 
+### 当前指标数据接口
+
+在拿到候选指标并由 AI 选出最值得关注的指标后，要继续逐个调用指标值接口：
+
+- **Method**: `POST`
+- **Path**: `/resource/pm/getMetricData`
+- **Base URL**: 来自 `.env` 中的 `INOE_API_BASE_URL`
+
+请求规则：
+
+- `mulRes[].resId` 必须填 **CMDB 返回的 CI ID**
+- `queryKeys` 当前每次只允许传 **1 个** 指标编码，所以需要对 AI 选中的指标逐个遍历查询
+- `queryKeys[0]` 使用指标定义接口返回的 `metricCode`
+- `queryType = 0` 表示查询最近一次指标值；此时 `startTime` 和 `endTime` 可以不传
+
+MySQL 最近一次指标查询示例：
+
+```bash
+curl --location "${INOE_API_BASE_URL}/resource/pm/getMetricData" \
+  --header "Authorization: Bearer ${INOE_API_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "mulRes":[{"resId":3094}],
+    "queryKeys":["mysql_global_status_innodb_row_lock_time"],
+    "queryType":"0"
+  }'
+```
+
+### 当前可执行脚本入口
+
+确认 `ciType` 后，不要只在回复里写“计划调用指标定义接口”，而是要优先执行本 skill 内的真实脚本：
+
+```bash
+cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-type mysql --output markdown
+```
+
+如果当前已经拿到明确 `ciType`，例如 `mysql`，就把它直接传给 `--metric-type`。如果还拿到了 CMDB 返回的 CI ID，则继续补上：
+
+```bash
+cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-type mysql --res-id 3094 --output markdown
+```
+
+如果用户上下文里还没确认 `ciType`，不能跳过 CMDB 确认步骤。
+
 ### 调用规则
 
 - `metricType` 默认使用 CMDB 查询确认后的 `ciType`
 - 例如 `ciType = mysql` 时，调用：
   - `metricType: "mysql"`
+- 一旦 `ciType` 已确认，就应先执行 `scripts/get_metric_definitions.py`，不要只停留在“计划调用”层
+- 如果已经从 CMDB 查到了 CI ID，则应继续把该值作为 `--res-id` 传入脚本，让脚本遍历查询关键指标值
 - 如果 `ciType` 尚未确认，不要猜测调用；先继续完成 CMDB 确认
-- 如果接口暂时不可用，也必须在回复中明确写出：
+- 如果 `.env` 缺少 `INOE_API_TOKEN`，必须停止调用并明确提示配置缺失
+- 如果接口调用失败，也必须在回复中明确写出：
   - 已确认的 `ciType`
-  - 计划调用的指标定义接口
-  - 计划筛选的关键指标
+  - 已实际执行的接口调用参数
+  - 失败原因（如超时、空响应、非 JSON、HTTP 错误）
+  - 原本计划筛选的关键指标
+- `getMetricDefinitions` 调不通时，使用内置 MySQL mock 指标定义继续分析
+- `getMetricData` 调不通时，使用内置 mock 指标值继续分析
 
 ---
 
@@ -482,9 +562,16 @@ graph TD
 对于 MySQL 示例：
 
 - 已确认：`ciType = mysql`
-- 下一步调用：
+- 下一步先执行：
+  - `cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-type mysql --res-id 3094 --output markdown`
+- 该脚本内部会调用：
   - `POST /resource/threshold/getMetricDefinitions`
-  - Body:
+  - 根据返回的 `metricCode` 选出高相关指标
+  - 再逐个调用 `POST /resource/pm/getMetricData`
+  - 其中 `mulRes[].resId = 3094`，这个值来自 CMDB 返回的 CI ID
+  - `queryKeys` 每次只传 1 个 `metricCode`
+  - `queryType = 0` 时默认查询最近一次，不需要传时间范围
+  - 第一步 Body:
 
 ```json
 {
@@ -495,6 +582,16 @@ graph TD
 ```
 
 然后由 AI 从返回指标中优先筛选与数据库锁异常最相关的指标。
+
+选出关键指标后，继续逐个查询其指标值，例如：
+
+```json
+{
+  "mulRes": [{"resId": 3094}],
+  "queryKeys": ["mysql_global_status_innodb_row_lock_time"],
+  "queryType": "0"
+}
+```
 
 优先关注：
 
@@ -549,6 +646,14 @@ graph TD
 - 影响对象：数据库实例 / 应用 / 上游调用方
 - 影响类型：写入阻塞 / 响应变慢 / 事务失败 / 超时
 - 影响等级：局部 / 应用级 / 跨应用
+
+MySQL 场景下，默认执行规则如下：
+
+1. 从 `getMetricDefinitions(metricType=mysql)` 返回结果中选出最相关指标
+2. 把 CMDB 返回的 CI ID 作为 `resId`
+3. 对每个选中的 `metricCode` 单独调用一次 `getMetricData`
+4. 默认 `queryType = 0`，先拿最近一次指标值
+5. 如果接口失败，回退到 mock 指标值继续完成影响分析
 
 不要只写“可能影响业务”，要尽量指出影响链。
 
@@ -692,10 +797,16 @@ graph TD
 - 当前按示例场景继续推演：故障链路涉及 mysql 组件，数据库问题优先级较高
 
 ### 5. 指标采集计划
-- 已确认 `ciType = mysql`，下一步应先调用指标定义接口：
+- 已确认 `ciType = mysql`，下一步应先执行：
+  - `cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-type mysql --res-id <CMDB返回的CI_ID> --output markdown`
+- 该脚本会先调用：
   - `POST /resource/threshold/getMetricDefinitions`
   - `metricType = mysql`
-- 先拿到 mysql 可分析的指标定义列表，再由 AI 挑选关键指标
+- 然后由 AI 挑选关键指标，并继续逐个调用：
+  - `POST /resource/pm/getMetricData`
+  - 其中 `mulRes[].resId = <CMDB返回的CI_ID>`
+  - `queryKeys = [metricCode]`
+  - `queryType = 0`
 - 因资源类型为 MySQL，后续应重点关注：
   - 锁等待会话数
   - 死锁次数
@@ -710,11 +821,12 @@ graph TD
 - 如果锁等待会话数持续升高，通常说明存在阻塞链
 - 如果死锁次数突增，通常说明并发事务竞争加剧
 - 如果慢 SQL 和长事务同时增加，则需要优先怀疑长事务放大锁持有时间
-- 待查询：当前锁等待会话数
-- 待查询：最近 15 分钟死锁次数
-- 待查询：慢 SQL 数量变化
-- 待查询：长事务数量
-- 待查询：InnoDB 行锁等待时长
+- 默认通过 `getMetricData` 逐个查询：
+  - 当前锁等待会话数
+  - 最近一次锁等待总时长
+  - 最近一次慢 SQL 相关指标
+  - 最近一次活跃线程/连接压力指标
+- 若接口不可用，则回退到 mock 指标值继续分析
 - 影响范围初步判断：
   - 直接影响对象：MySQL 实例 db_mysql_001
   - 可能影响：依赖该实例的上游应用写入链路
@@ -810,6 +922,10 @@ graph TD
 ## 十二、执行要求
 
 - 当前阶段不要假装已经拿到了真实智观、指标或工单接口结果
+- 如果当前工具可用，必须优先做真实调用，不要只把 skill 内容原样展开给用户
+- 拿到用户告警后，不要在末尾反问“是否继续执行真实接口调用”；默认直接执行
+- 如果已经执行了 `execute_shell_command` 或协作 query 数字员工，回复中必须体现真实执行结果、失败原因或 mock 回退情况
+- 如果 `ciType` 已经确认，必须优先执行 `scripts/get_metric_definitions.py`，不要只输出“计划调用指标定义接口”
 - 但必须把“告警 -> 智观 -> query/veops-cmdb -> `getMetricDefinitions` -> AI 挑关键指标 -> 指标值 -> 影响范围 -> 处置 -> 恢复验证 -> 清除告警 -> 更新工单状态”这条链路完整写给用户
 - 查询 CMDB 时，默认体现为通过 query 数字员工下的 `veops-cmdb` 完成
 - 如果查询到拓扑，默认以 `echarts` 树状图展示，并保留 query 返回的图表代码块
@@ -824,3 +940,4 @@ graph TD
 - 恢复验证不能省略
 - “清除告警”和“修改工单状态”不能省略
 - 结论不能只有一句话，必须包含过程和闭环路径
+- 如果真实调用已经失败，必须把失败结果写清楚，例如 `502 Bad Gateway`、空响应、缺少 token，而不是笼统写“当前缺少真实接口”

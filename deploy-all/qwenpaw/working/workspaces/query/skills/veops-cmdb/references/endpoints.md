@@ -1,8 +1,8 @@
-# VEOPS CMDB 测试环境说明
+# VEOPS CMDB 接口说明
 
 ## 基础信息
 
-- 基础地址：`http://192.168.130.211:8000`
+- 基础地址：来自 `.env` 中的 `VEOPS_BASE_URL`
 - CMDB 入口：`/cmdb/`
 - 登录页跳转：`/user/login?redirect=%2Fcmdb%2F`
 
