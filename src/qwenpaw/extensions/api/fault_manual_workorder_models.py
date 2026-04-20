@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+
+
+class AlarmInfoPayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    alarm_id: str = Field(default="", validation_alias=AliasChoices("alarm_id", "alarmId", "id"))
+    title: str = ""
+    visible_content: str = Field(
+        default="",
+        validation_alias=AliasChoices("visible_content", "visibleContent"),
+    )
+    device_name: str = Field(
+        default="",
+        validation_alias=AliasChoices("device_name", "deviceName", "devName"),
+    )
+    manage_ip: str = Field(
+        default="",
+        validation_alias=AliasChoices("manage_ip", "manageIp"),
+    )
+    asset_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("asset_id", "assetId", "assetNo"),
+    )
+    level: str = ""
+    status: str = ""
+    event_time: str = Field(
+        default="",
+        validation_alias=AliasChoices("event_time", "eventTime"),
+    )
+
+
+class AnalysisPayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    summary: str = ""
+    root_cause: str | dict[str, Any] = Field(
+        default="",
+        validation_alias=AliasChoices("root_cause", "rootCause"),
+    )
+    suggestions: list[str] = Field(default_factory=list)
+    selected_metrics: list[dict[str, Any]] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("selected_metrics", "selectedMetrics"),
+    )
+
+
+class DispatchTicketOptions(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    title: str = ""
+    priority: str = "P1"
+    category: str = "database-lock"
+    source: str = "portal-fault-disposal"
+    external_system: str = Field(
+        default="manual-workorder",
+        validation_alias=AliasChoices("external_system", "externalSystem"),
+    )
+
+
+class ManualWorkorderDispatchRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    chat_id: str = Field(
+        ...,
+        min_length=1,
+        serialization_alias="chatId",
+        validation_alias=AliasChoices("chat_id", "chatId", "sessionId"),
+    )
+    res_id: str = Field(
+        ...,
+        min_length=1,
+        validation_alias=AliasChoices("res_id", "resId"),
+    )
+    metric_type: str = Field(
+        default="mysql",
+        validation_alias=AliasChoices("metric_type", "metricType"),
+    )
+    alarm: AlarmInfoPayload
+    analysis: AnalysisPayload = Field(default_factory=AnalysisPayload)
+    ticket: DispatchTicketOptions = Field(default_factory=DispatchTicketOptions)
+
+
+class WorkorderHandlePayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    workorder_no: str = Field(
+        default="",
+        validation_alias=AliasChoices("workorder_no", "workorderNo"),
+    )
+    status: str = "resolved"
+    handler: str = ""
+    completed_at: str = Field(
+        default="",
+        validation_alias=AliasChoices("completed_at", "completedAt"),
+    )
+
+
+class ProcessingResultPayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    summary: str = ""
+    details: str = ""
+
+
+class ManualWorkorderCloseNotificationRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    chat_id: str = Field(
+        ...,
+        min_length=1,
+        serialization_alias="chatId",
+        validation_alias=AliasChoices("chat_id", "chatId", "sessionId"),
+    )
+    res_id: str = Field(
+        ...,
+        min_length=1,
+        validation_alias=AliasChoices("res_id", "resId"),
+    )
+    metric_type: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("metric_type", "metricType"),
+    )
+    workorder: WorkorderHandlePayload = Field(default_factory=WorkorderHandlePayload)
+    processing: ProcessingResultPayload = Field(default_factory=ProcessingResultPayload)
