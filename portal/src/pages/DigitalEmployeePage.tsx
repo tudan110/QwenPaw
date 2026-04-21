@@ -74,7 +74,7 @@ import {
 import { useAlarmWorkbench } from "./digital-employee/useAlarmWorkbench";
 import { usePortalModels } from "./digital-employee/usePortalModels";
 import { useRemoteChatSession } from "./digital-employee/useRemoteChatSession";
-import { portalAppTitle } from "../config/portalBranding";
+import { portalAppTitle, portalGatewayAgentId } from "../config/portalBranding";
 import portalLogo from "../assets/images/portal-logo.png";
 import "./digital-employee.css";
 
@@ -95,7 +95,7 @@ const REMOTE_AGENT_IDS: Record<string, string> = {
 };
 const DASHBOARD_CHAT_CHANNEL = "console";
 
-const PORTAL_HOME_AGENT_ID = "default";
+const PORTAL_HOME_AGENT_ID = portalGatewayAgentId;
 const EMPLOYEE_MENTION_ALIASES: Record<string, string[]> = {
   resource: ["资产", "资源", "纳管"],
   fault: ["故障", "告警", "修复"],
@@ -713,6 +713,8 @@ function buildDashboardEmployeeSnapshots(
 function formatEmployeeStatsLabel(employee: (typeof digitalEmployees)[number]) {
   const total = employee.tasks.toLocaleString("zh-CN");
   switch (employee.id) {
+    case PORTAL_HOME_ID:
+      return "统一受理并协调后台能力";
     case "query":
       return `已分析 ${total} 份报表`;
     case "fault":
@@ -732,6 +734,7 @@ function formatEmployeeStatsLabel(employee: (typeof digitalEmployees)[number]) {
 
 function getEmployeeProfileMotto(employeeId: string, fallback: string) {
   const mottos: Record<string, string> = {
+    [PORTAL_HOME_ID]: "统一接入，按需协同",
     query: "精准洞察，数据即答案",
     fault: "秒级响应，闭环处置",
     resource: "精准纳管，一网打尽",
@@ -745,6 +748,12 @@ function getEmployeeProfileMotto(employeeId: string, fallback: string) {
 
 function getChatSidebarActivities(employeeId: string): ChatSidebarActivityItem[] {
   const activities: Record<string, ChatSidebarActivityItem[]> = {
+    [PORTAL_HOME_ID]: [
+      { id: "portal-home-activity-1", time: "10:32", text: "接收新的自然语言请求", tone: "green" },
+      { id: "portal-home-activity-2", time: "10:08", text: "协调后台能力处理任务", tone: "blue" },
+      { id: "portal-home-activity-3", time: "09:40", text: "汇总结果并回传会话", tone: "purple" },
+      { id: "portal-home-activity-4", time: "09:18", text: "维护统一入口会话上下文", tone: "slate" },
+    ],
     query: [
       { id: "query-activity-1", time: "10:23", text: "执行趋势分析任务", tone: "green" },
       { id: "query-activity-2", time: "09:45", text: "生成设备分布报表", tone: "blue" },
@@ -788,8 +797,8 @@ function getChatSidebarActivities(employeeId: string): ChatSidebarActivityItem[]
 
 const PORTAL_HOME_EMPLOYEE: DigitalEmployee = {
   id: PORTAL_HOME_ID,
-  name: "数字员工协同入口",
-  desc: "统一接入对话，可通过 @ 标签切换到具体数字员工",
+  name: "智观 AI",
+  desc: "portal 对外统一入口",
   icon: "fa-comments",
   tasks: 0,
   success: "100%",
@@ -797,18 +806,19 @@ const PORTAL_HOME_EMPLOYEE: DigitalEmployee = {
   urgent: false,
   gradient: "linear-gradient(135deg, #1d4ed8, #0f172a)",
   capabilities: [
-    "@mention 路由",
-    "对话协同",
-    "跨员工切换",
-    "入口导航",
+    "自然语言对话",
+    "统一入口接入",
+    "后台能力协同",
+    "运维问题受理",
   ],
   quickCommands: [
+      RESOURCE_IMPORT_COMMAND,
     "当前有哪些设备？",
     "数据库响应很慢，请帮我定位",
-    "Oracle 死锁怎么处理？",
-    "帮我判断这个问题应该交给哪个数字员工",
+    "你是谁？",
   ],
-  welcome: "",
+  welcome:
+    "您好！我是智观 AI，是当前 portal 对外的统一入口。<br><br>您可以直接和我对话，先从普通问题开始即可。",
 };
 
 type PendingPortalDispatch = {
@@ -819,6 +829,7 @@ type PendingPortalDispatch = {
 };
 
 type PortalLocationState = {
+  gatewayPresentationEmployeeId?: string;
   pendingPortalDispatch?: PendingPortalDispatch;
   pendingResourceImport?: {
     token: string;
@@ -1232,7 +1243,7 @@ function buildPortalAssistantReply(content: string) {
     "可直接复制这些示例继续：",
     "- `当前有哪些设备？`",
     "- `数据库响应很慢，请帮我定位`",
-    "- `Oracle 死锁怎么处理？`",
+    `- \`${RESOURCE_IMPORT_COMMAND}\``,
   ].join("\n");
 }
 
@@ -1338,11 +1349,12 @@ export default function DigitalEmployeePage({
     selectedEmployee?.id === "fault" && currentEntry === ALARM_WORKORDER_ENTRY,
   );
 
-  const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
   const [inputMessage, setInputMessage] = useState("");
+  const [pendingPortalHomeMessage, setPendingPortalHomeMessage] = useState("");
   const [inputCursor, setInputCursor] = useState<number | null>(null);
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const [messages, setMessages] = useState<any[]>([]);
+  const [portalHomeChatMode, setPortalHomeChatMode] = useState(false);
   const [conversationStore, setConversationStore] = useState<ConversationStoreState>(
     () => loadConversationStore() as ConversationStoreState,
   );
@@ -1511,7 +1523,6 @@ export default function DigitalEmployeePage({
   const handledDashboardSessionOpenRef = useRef("");
   const chatInputRef = useRef<HTMLInputElement | null>(null);
   const homeComposerRef = useRef<HTMLTextAreaElement | null>(null);
-  const employeeDropdownRef = useRef<HTMLDivElement | null>(null);
   const alertPopupRef = useRef<HTMLDivElement | null>(null);
   const activeAlertTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [historyEditingId, setHistoryEditingId] = useState("");
@@ -2224,6 +2235,7 @@ export default function DigitalEmployeePage({
       view: "chat",
       panel: null,
       state: {
+        gatewayPresentationEmployeeId: resourceImportEmployee.id,
         pendingResourceImport: {
           token: `pending-resource-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           targetEmployeeId: resourceImportEmployee.id,
@@ -2584,6 +2596,7 @@ export default function DigitalEmployeePage({
 
       setCurrentSessionId(nextSession?.id || "");
       setMessages(initialMessages);
+      setPortalHomeChatMode(false);
       return;
     }
 
@@ -2591,6 +2604,7 @@ export default function DigitalEmployeePage({
     resetRemoteState({
       initialMessages: isPortalHome ? [] : [createWelcomeMessage(currentEmployeeBase)],
     });
+    setPortalHomeChatMode(false);
   }, [
     currentEmployeeBase?.id,
     isPortalHome,
@@ -2791,10 +2805,7 @@ export default function DigitalEmployeePage({
     const employeeId = selectedEmployee?.id || lastSidebarEmployeeId || sidebarEmployees[0]?.id || null;
     return sidebarEmployees.find((employee) => employee.id === employeeId) || sidebarEmployees[0] || null;
   }, [lastSidebarEmployeeId, selectedEmployee?.id, sidebarEmployees]);
-  const otherSidebarEmployees = useMemo(
-    () => sidebarEmployees.filter((employee) => employee.id !== currentSidebarEmployee?.id),
-    [currentSidebarEmployee?.id, sidebarEmployees],
-  );
+  const sidebarCardEmployee = portalHomeEmployee;
 
   useEffect(() => {
     if (currentView !== "dashboard") {
@@ -3096,11 +3107,15 @@ export default function DigitalEmployeePage({
   const isInspirationMode = activeAdvancedPanel === "inspiration";
   const isCliMode = activeAdvancedPanel === "cli";
   const isResourceImportMode = activeAdvancedPanel === "resource-import";
+  const isGatewayPresentedChildView = Boolean(
+    selectedEmployee?.id
+    && locationState?.gatewayPresentationEmployeeId === selectedEmployee.id,
+  );
   const effectiveMcpEmployee = isMcpMode ? (selectedEmployee || currentSidebarEmployee) : selectedEmployee;
   const effectiveMcpAgentId = effectiveMcpEmployee
     ? (REMOTE_AGENT_IDS[effectiveMcpEmployee.id] || "default")
     : "default";
-  const showPortalHomeHero = isPortalHomeChat && safeMessages.length === 0;
+  const showPortalHomeHero = isPortalHomeChat && !portalHomeChatMode && safeMessages.length === 0;
   const mentionContext = useMemo(
     () => extractMentionQuery(inputMessage, inputCursor),
     [inputCursor, inputMessage],
@@ -3230,6 +3245,7 @@ export default function DigitalEmployeePage({
 
     navigate(nextPath, {
       state: {
+        gatewayPresentationEmployeeId: employee.id,
         pendingPortalDispatch: {
           token: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           targetEmployeeId: employee.id,
@@ -3396,7 +3412,9 @@ export default function DigitalEmployeePage({
 
     navigate(`${location.pathname}${location.search}`, {
       replace: true,
-      state: {},
+      state: {
+        gatewayPresentationEmployeeId: currentEmployee.id,
+      } satisfies PortalLocationState,
     });
 
     window.setTimeout(() => {
@@ -3431,7 +3449,9 @@ export default function DigitalEmployeePage({
 
     navigate(`${location.pathname}${location.search}`, {
       replace: true,
-      state: {},
+      state: {
+        gatewayPresentationEmployeeId: currentEmployee.id,
+      } satisfies PortalLocationState,
     });
 
     window.setTimeout(() => {
@@ -3479,7 +3499,6 @@ export default function DigitalEmployeePage({
       return;
     }
     setLastSidebarEmployeeId(selectedEmployee.id);
-    setEmployeeDropdownOpen(false);
   }, [selectedEmployee?.id]);
 
   useEffect(() => {
@@ -3501,23 +3520,6 @@ export default function DigitalEmployeePage({
     navigate,
     selectedEmployee,
   ]);
-
-  useEffect(() => {
-    if (!employeeDropdownOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!employeeDropdownRef.current?.contains(event.target as Node)) {
-        setEmployeeDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-    };
-  }, [employeeDropdownOpen]);
 
   const getEmployeeStatusBadgeClassName = useCallback((employee: any) => {
     if (employee.urgent) {
@@ -3612,22 +3614,6 @@ export default function DigitalEmployeePage({
     </div>
   ), [getEmployeeStatusBadgeClassName, getEmployeeStatusLabel]);
 
-  const prefillEmployeeMention = useCallback((employee: any) => {
-    const rawContent = String(inputMessage || "").trim();
-    const mentionResult = extractMentionTarget(rawContent);
-    const nextContent = mentionResult.employee ? mentionResult.cleanContent : rawContent;
-    const nextValue = nextContent ? `@${employee.name} ${nextContent}` : `@${employee.name} `;
-    const nextCursor = nextValue.length;
-
-    setInputMessage(nextValue);
-    setInputCursor(nextCursor);
-
-    window.requestAnimationFrame(() => {
-      homeComposerRef.current?.focus();
-      homeComposerRef.current?.setSelectionRange(nextCursor, nextCursor);
-    });
-  }, [inputMessage]);
-
   const applyMentionSuggestion = (employeeName: string) => {
     if (!mentionContext) {
       return;
@@ -3691,14 +3677,9 @@ export default function DigitalEmployeePage({
     }
   };
 
-  const handleSendMessage = async (preset = "") => {
-    const rawContent = (preset || inputMessage).trim();
+  const sendResolvedMessage = useCallback(async (rawContent: string) => {
     if (!rawContent || !currentEmployee) {
       return;
-    }
-
-    if (!preset) {
-      setInputMessage("");
     }
 
     const mentionResult = extractMentionTarget(rawContent);
@@ -3763,6 +3744,51 @@ export default function DigitalEmployeePage({
     }
 
     await dispatchActiveMessage(rawContent);
+  }, [
+    currentEmployee,
+    currentEmployee.id,
+    dispatchActiveMessage,
+    extractMentionTarget,
+    isRemoteEmployee,
+    navigateToEmployeePage,
+    openResourceImport,
+    queueMentionDispatch,
+    remoteAgentId,
+    selectedEmployee,
+  ]);
+
+  useEffect(() => {
+    if (!pendingPortalHomeMessage || !isPortalHomeChat || !portalHomeChatMode) {
+      return;
+    }
+
+    const nextMessage = pendingPortalHomeMessage;
+    setPendingPortalHomeMessage("");
+    void sendResolvedMessage(nextMessage);
+  }, [
+    isPortalHomeChat,
+    pendingPortalHomeMessage,
+    portalHomeChatMode,
+    sendResolvedMessage,
+  ]);
+
+  const handleSendMessage = async (preset = "") => {
+    const rawContent = (preset || inputMessage).trim();
+    if (!rawContent || !currentEmployee) {
+      return;
+    }
+
+    if (!preset) {
+      setInputMessage("");
+    }
+
+    if (showPortalHomeHero) {
+      setPendingPortalHomeMessage(rawContent);
+      setPortalHomeChatMode(true);
+      return;
+    }
+
+    await sendResolvedMessage(rawContent);
   };
 
   const handleSelectHistory = async (session: SessionRecord) => {
@@ -3776,6 +3802,7 @@ export default function DigitalEmployeePage({
       );
       setCurrentSessionId(session.id);
       setMessages(session.messages || []);
+      setPortalHomeChatMode(Boolean(session.messages?.length) || isPortalResourceImportSession(session));
       setHistoryVisible(false);
       return;
     }
@@ -3786,11 +3813,13 @@ export default function DigitalEmployeePage({
       setCurrentChatId("");
       setCurrentSessionId("");
       setMessages(ensureObjectArray(session.messages));
+      setPortalHomeChatMode(true);
       setHistoryVisible(false);
       return;
     }
 
     setActivePortalResourceImportSessionId("");
+    setPortalHomeChatMode(true);
     await handleSelectRemoteHistory(session);
   };
 
@@ -3865,19 +3894,22 @@ export default function DigitalEmployeePage({
 
     if (isRemoteEmployee) {
       resetRemoteState({
-        initialMessages: [createWelcomeMessage(currentEmployee)],
+        initialMessages: isPortalHome ? [] : [createWelcomeMessage(currentEmployee)],
       });
+      setPortalHomeChatMode(false);
       return;
     }
 
     const initialMessages = [createWelcomeMessage(currentEmployee)];
     createAndActivateLocalSession(currentEmployee, initialMessages);
     setMessages(initialMessages);
+    setPortalHomeChatMode(false);
     setHistoryVisible(false);
   }, [
     createAndActivateLocalSession,
     currentEmployee,
     isAlarmWorkbenchMode,
+    isPortalHome,
     isRemoteEmployee,
     loadAlarmWorkorders,
     resetAlarmWorkbench,
@@ -4166,9 +4198,36 @@ export default function DigitalEmployeePage({
   }
 
   const currentEmployeeModelLabel = activeModelLabel || "默认模型";
-  const currentEmployeeStatusLabel = getEmployeeStatusLabel(currentEmployee);
-  const currentEmployeeStatsLabel = formatEmployeeStatsLabel(currentEmployeeBase);
-  const currentEmployeeMotto = getEmployeeProfileMotto(currentEmployee.id, currentEmployee.desc);
+  const visibleEmployee = isGatewayPresentedChildView ? portalHomeEmployee : currentEmployee;
+  const visibleEmployeeStatusLabel = getEmployeeStatusLabel(visibleEmployee);
+  const visibleEmployeeStatsLabel = formatEmployeeStatsLabel(
+    isGatewayPresentedChildView ? portalHomeEmployee : currentEmployeeBase,
+  );
+  const visibleEmployeeMotto = getEmployeeProfileMotto(visibleEmployee.id, visibleEmployee.desc);
+  const visibleEmployeeActivities = isGatewayPresentedChildView
+    ? getChatSidebarActivities(PORTAL_HOME_ID)
+    : currentEmployeeActivities;
+  const visibleEmployeeWorkload = isGatewayPresentedChildView
+    ? [44, 63, 58, 81, 76, 54, 67]
+    : chatSidebarWorkload;
+  const visibleEmployeeEfficiency = isGatewayPresentedChildView
+    ? { completed: 17, total: 18, response: "1.0s", collaboration: 12 }
+    : chatSidebarEfficiency;
+  const visibleEmployeeCollaborators = isGatewayPresentedChildView
+    ? employeesWithRuntimeStatus
+      .filter((employee) => employee.id !== selectedEmployee?.id)
+      .slice(0, 3)
+      .map((employee) => ({
+        ...employee,
+        collaborationCount: ({
+          query: 14,
+          fault: 8,
+          knowledge: 11,
+          inspection: 6,
+          order: 9,
+        } as Record<string, number>)[employee.id] || 6,
+      }))
+    : chatSidebarCollaborators;
   const showChatSidebarToggle = Boolean(!isPortalHomeChat && selectedEmployee);
   const chatSidebarToggleButton = showChatSidebarToggle ? (
     <button
@@ -4245,50 +4304,21 @@ export default function DigitalEmployeePage({
 
           <div className="agents-title">
             <span className="agents-title-copy">
-              <i className="fas fa-users" />
-              数字员工矩阵
+              <i className="fas fa-comments" />
+              统一入口
             </span>
           </div>
 
           <div className="agent-list">
-            <div
-              ref={employeeDropdownRef}
-              className={
-                employeeDropdownOpen
-                  ? "agent-dropdown agent-dropdown-open"
-                  : "agent-dropdown"
-              }
-            >
-              {currentSidebarEmployee ? renderSidebarEmployeeCard(currentSidebarEmployee, {
-                active: true,
-                expandable: true,
-                expanded: employeeDropdownOpen,
-                onClick: () => {
-                  setEmployeeDropdownOpen(false);
-                  navigateToEmployeePage(currentSidebarEmployee, {
-                    view: "chat",
-                    panel: null,
-                  });
-                },
-                onToggleExpand: () => setEmployeeDropdownOpen((prev) => !prev),
-              }) : null}
-
-              {employeeDropdownOpen ? (
-                <div className="agent-dropdown-menu">
-                  {otherSidebarEmployees.map((employee) =>
-                    renderSidebarEmployeeCard(employee, {
-                      onClick: () => {
-                        setEmployeeDropdownOpen(false);
-                        navigateToEmployeePage(employee, {
-                          view: "chat",
-                          panel: null,
-                        });
-                      },
-                    }),
-                  )}
-                </div>
-              ) : null}
-            </div>
+            {sidebarCardEmployee ? renderSidebarEmployeeCard(sidebarCardEmployee, {
+              active: true,
+              onClick: () => {
+                navigateToPortalHome({
+                  view: "chat",
+                  panel: null,
+                });
+              },
+            }) : null}
           </div>
 
           <AdvancedModelEntry
@@ -4341,7 +4371,7 @@ export default function DigitalEmployeePage({
                   : "main-content card-mode"
           }
         >
-          {!isPortalHomeChat && currentView !== "dashboard" ? (
+          {!showPortalHomeHero && currentView !== "dashboard" ? (
             <div className="portal-global-quick-actions">
               {renderAlertBell()}
               <button
@@ -4419,7 +4449,7 @@ export default function DigitalEmployeePage({
             <ResourceImportPanel />
           ) : (
             <>
-          {!isPortalHomeChat ? (
+          {!showPortalHomeHero ? (
             <div className="top-bar">
               <div className="active-agent-title">
                 <div className="active-agent-avatar">
@@ -4431,7 +4461,7 @@ export default function DigitalEmployeePage({
                         ? "fa-chart-pie"
                         : currentView === "tasks"
                           ? "fa-clock"
-                          : currentEmployee.icon
+                          : visibleEmployee.icon
                     }`}
                   />
                 </div>
@@ -4440,10 +4470,10 @@ export default function DigitalEmployeePage({
                     {currentView === "overview"
                       ? "数字总览"
                       : currentView === "dashboard"
-                        ? "数字员工看板"
-                        : currentView === "tasks"
-                          ? "定时任务"
-                          : currentEmployee.name}
+                      ? "数字员工看板"
+                      : currentView === "tasks"
+                        ? "定时任务"
+                        : visibleEmployee.name}
                   </h2>
                   <span>
                     {currentView === "overview"
@@ -4451,10 +4481,10 @@ export default function DigitalEmployeePage({
                       : currentView === "dashboard"
                         ? "查看实时任务概览和泳道看板"
                         : currentView === "tasks"
-                          ? "查看和管理 CoPaw 定时任务"
-                          : isAlarmWorkbenchMode
-                            ? "告警触发后自动生成的待处置工单视图"
-                            : currentEmployee.desc}
+                        ? "查看和管理 CoPaw 定时任务"
+                        : isAlarmWorkbenchMode
+                          ? "告警触发后自动生成的待处置工单视图"
+                          : visibleEmployee.desc}
                   </span>
                 </div>
               </div>
@@ -4752,7 +4782,7 @@ export default function DigitalEmployeePage({
           {currentView === "chat" ? (
             <div
               className={
-                isPortalHomeChat
+                showPortalHomeHero
                   ? "chat-container portal-home-chat"
                   : selectedEmployee
                     ? "chat-container show-cards"
@@ -4809,27 +4839,6 @@ export default function DigitalEmployeePage({
                     </div>
                     <h2>智观 AI</h2>
                     <p>以对话方式发起运维协同</p>
-                  </div>
-
-                  <div className="portal-employee-switcher compact stage">
-                    <div className="portal-employee-switcher-grid compact stage">
-                      {employeesWithRuntimeStatus.map((employee) => (
-                        <button
-                          key={`compact-stage-${employee.id}`}
-                          type="button"
-                          className="portal-employee-pill compact stage"
-                          onClick={() => prefillEmployeeMention(employee)}
-                        >
-                          <DigitalEmployeeAvatar
-                            employee={employee}
-                            className="portal-employee-pill-avatar compact"
-                          />
-                          <span className="portal-employee-pill-copy compact">
-                            <strong>{employee.name}</strong>
-                          </span>
-                        </button>
-                      ))}
-                    </div>
                   </div>
 
                   <div className="portal-home-composer-card">
@@ -4924,14 +4933,13 @@ export default function DigitalEmployeePage({
               ) : (
                 <>
                   <div className="chat-main">
-                    {!isPortalHomeChat ? (
                     <div className="chat-header">
                       <div className="chat-header-main">
                         <div className="chat-header-copy">
                           <strong>
                             {isAlarmWorkbenchMode
-                              ? `${currentEmployee.name} - 告警工单处置`
-                              : `${currentEmployee.name} - 智能服务`}
+                              ? `${visibleEmployee.name} - 告警工单处置`
+                              : `${visibleEmployee.name} - 智能服务`}
                           </strong>
                           <span>支持历史追溯、模型切换与专属能力调用</span>
                         </div>
@@ -5017,7 +5025,6 @@ export default function DigitalEmployeePage({
                         )}
                       </div>
                     </div>
-                    ) : null}
 
                     <div
                       className="chat-messages"
@@ -5110,7 +5117,7 @@ export default function DigitalEmployeePage({
                             }}
                             onKeyDown={(event) => handleComposerKeyDown(event)}
                             onKeyUp={handleInputSelection}
-                            placeholder={`向 ${currentEmployee.name} 描述您的需求...`}
+                            placeholder={`向 ${visibleEmployee.name} 描述您的需求...`}
                           />
                         </div>
                         {mentionSuggestions.length ? (
@@ -5205,13 +5212,13 @@ export default function DigitalEmployeePage({
                             <div className="chat-side-profile-hero">
                               <div className="chat-side-profile-avatar-wrap">
                                 <DigitalEmployeeAvatar
-                                  employee={currentEmployee}
+                                  employee={visibleEmployee}
                                   className="chat-side-profile-avatar"
                                 />
                               </div>
                               <div className="chat-side-profile-meta">
-                                <strong>{currentEmployee.name}</strong>
-                                <p>"{currentEmployeeMotto}"</p>
+                                <strong>{visibleEmployee.name}</strong>
+                                <p>"{visibleEmployeeMotto}"</p>
                               </div>
                             </div>
                             <div className="chat-side-info-list">
@@ -5220,14 +5227,14 @@ export default function DigitalEmployeePage({
                                 <span className="chat-side-info-value">
                                   <span
                                     className={
-                                      currentEmployee.urgent
+                                      visibleEmployee.urgent
                                         ? "chat-side-status-badge urgent"
-                                        : currentEmployee.status === "running"
+                                        : visibleEmployee.status === "running"
                                           ? "chat-side-status-badge running"
                                           : "chat-side-status-badge stopped"
                                     }
                                   >
-                                    {currentEmployeeStatusLabel}
+                                    {visibleEmployeeStatusLabel}
                                   </span>
                                 </span>
                               </div>
@@ -5237,14 +5244,14 @@ export default function DigitalEmployeePage({
                               </div>
                               <div className="chat-side-info-row">
                                 <span className="chat-side-info-label">统计</span>
-                                <span className="chat-side-info-value">{currentEmployeeStatsLabel}</span>
+                                <span className="chat-side-info-value">{visibleEmployeeStatsLabel}</span>
                               </div>
                             </div>
                             <div className="chat-side-capability-block">
                               <div className="chat-side-capability-row">
                                 <div className="chat-side-capability-title">核心能力</div>
                                 <div className="chat-side-tag-group">
-                                  {currentEmployee.capabilities.slice(0, 3).map((capability, index) => (
+                                  {visibleEmployee.capabilities.slice(0, 3).map((capability, index) => (
                                     <span
                                       key={capability}
                                       className={
@@ -5286,7 +5293,7 @@ export default function DigitalEmployeePage({
                         {!chatSidebarCollapsedSections.activity ? (
                           <div className="chat-side-card-body">
                             <div className="chat-side-activity-list">
-                              {currentEmployeeActivities.map((activity) => (
+                              {visibleEmployeeActivities.map((activity) => (
                                 <div key={activity.id} className="chat-side-activity-item">
                                   <span className={`chat-side-activity-dot ${activity.tone}`} />
                                   <span className="chat-side-activity-time">{activity.time}</span>
@@ -5321,23 +5328,23 @@ export default function DigitalEmployeePage({
                             <div className="chat-side-stats-list">
                               <div className="chat-side-stat-row">
                                 <span>今日任务</span>
-                                <strong>{chatSidebarEfficiency.completed}/{chatSidebarEfficiency.total}</strong>
+                                <strong>{visibleEmployeeEfficiency.completed}/{visibleEmployeeEfficiency.total}</strong>
                               </div>
                               <div className="chat-side-stat-row">
                                 <span>响应速度</span>
-                                <strong>{chatSidebarEfficiency.response}</strong>
+                                <strong>{visibleEmployeeEfficiency.response}</strong>
                               </div>
                               <div className="chat-side-stat-row">
                                 <span>协作次数</span>
-                                <strong>{chatSidebarEfficiency.collaboration} 次</strong>
+                                <strong>{visibleEmployeeEfficiency.collaboration} 次</strong>
                               </div>
                             </div>
                             <div className="chat-side-workload">
                               <div className="chat-side-workload-title">本周工作量</div>
                               <div className="chat-side-workload-bars">
-                                {chatSidebarWorkload.map((value, index) => (
+                                {visibleEmployeeWorkload.map((value, index) => (
                                   <span
-                                    key={`${currentEmployee.id}-workload-${index}`}
+                                    key={`${visibleEmployee.id}-workload-${index}`}
                                     className="chat-side-workload-bar"
                                     style={{ height: `${value}%` }}
                                   />
@@ -5378,7 +5385,7 @@ export default function DigitalEmployeePage({
                         {!chatSidebarCollapsedSections.collaboration ? (
                           <div className="chat-side-card-body">
                             <div className="chat-side-collaboration-list">
-                              {chatSidebarCollaborators.map((employee) => (
+                              {visibleEmployeeCollaborators.map((employee) => (
                                 <button
                                   key={`chat-sidebar-${employee.id}`}
                                   type="button"

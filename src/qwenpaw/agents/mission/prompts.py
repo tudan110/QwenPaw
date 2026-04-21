@@ -380,7 +380,7 @@ Repeat for each story in the batch.  Save **all** returned TASK_IDs.
 
 Poll **all** running tasks in a loop:
 ```bash
-sleep 30
+sleep 60
 qwenpaw agents chat --background --task-id <TASK_ID_1>
 qwenpaw agents chat --background --task-id <TASK_ID_2>
 # ... one per running task
@@ -388,7 +388,7 @@ qwenpaw agents chat --background --task-id <TASK_ID_2>
 - As each task finishes (status "completed" or "failed"), record it
   and stop polling that ID.
 - Continue polling the remaining tasks.
-- Increase interval for long tasks (30s → 60s → 120s).
+- Increase interval for long tasks (60s → 120s → 180s).
 - While waiting, you may **do useful work** — read progress.txt,
   check prd.json, prepare prompts for the next batch, etc.
 

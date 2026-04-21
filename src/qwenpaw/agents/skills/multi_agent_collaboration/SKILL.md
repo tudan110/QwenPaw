@@ -342,7 +342,7 @@ Check status with:
 
 1. **继续处理其他工作** - 回复用户其他问题、执行其他任务
 2. **在合适时机查询** - 处理完其他工作后，或用户询问进度时
-3. **如果必须等待** - 使用合理间隔（10-60秒），不要立即查询
+3. **如果必须等待** - 使用合理间隔（60-180秒），不要立即查询
 
 ```bash
 # 方式 1：处理其他任务后再查（推荐）
@@ -352,7 +352,7 @@ qwenpaw agents chat --background \
   --task-id 20802ea3-832d-4fb4-86f0-666ad79fcc80
 
 # 方式 2：如果必须等待，使用合理间隔
-sleep 30 && qwenpaw agents chat --background \
+sleep 60 && qwenpaw agents chat --background \
   --task-id 20802ea3-832d-4fb4-86f0-666ad79fcc80
 ```
 
@@ -397,7 +397,7 @@ sleep 30 && qwenpaw agents chat --background \
    Started at: 1774516703
 
 💡 Don't wait - continue with other tasks first!
-   Check again later (10-30s):
+   Check again later (prefer 60-120s for long tasks):
   qwenpaw agents chat --background --task-id 20802ea3-...
 ```
 
@@ -431,10 +431,10 @@ Error: （错误信息...）
 
 | 任务类型 | 建议首次查询 | 后续间隔 | 等待期间做什么 |
 |---------|------------|---------|--------------|
-| 简单分析 | 10 秒后 | 5-10 秒 | 处理其他用户请求 |
-| 复杂分析 | 30 秒后 | 10-20 秒 | 完成当前对话其他部分 |
-| 批量处理 | 1 分钟后 | 20-30 秒 | 执行其他独立任务 |
-| 超大任务 | 2 分钟后 | 30-60 秒 | 继续用户的其他工作 |
+| 简单分析 | 30 秒后 | 30-60 秒 | 处理其他用户请求 |
+| 复杂分析 | 1 分钟后 | 60-120 秒 | 完成当前对话其他部分 |
+| 批量处理 | 2 分钟后 | 120-180 秒 | 执行其他独立任务 |
+| 超大任务 | 3 分钟后 | 180-300 秒 | 继续用户的其他工作 |
 
 #### ✅ 推荐做法
 
@@ -454,10 +454,10 @@ qwenpaw agents chat --background --task-id <id>
 
 **方式 2：定时轮询**（如果必须等待）
 ```bash
-# 递增间隔，先快后慢
-sleep 10 && qwenpaw agents chat --background --task-id <id>
-sleep 20 && qwenpaw agents chat --background --task-id <id>
-sleep 30 && qwenpaw agents chat --background --task-id <id>
+# 递增间隔，避免刚启动就频繁查询
+sleep 60 && qwenpaw agents chat --background --task-id <id>
+sleep 120 && qwenpaw agents chat --background --task-id <id>
+sleep 180 && qwenpaw agents chat --background --task-id <id>
 ```
 
 #### ❌ 不要这样做

@@ -81,7 +81,11 @@ function extractErrorMessage(error: unknown): string {
 function getAgentCandidates(agentId?: string) {
   const fallbackAgentId =
     import.meta.env.VITE_COPAW_FALLBACK_AGENT_ID || DEFAULT_FALLBACK_AGENT_ID;
-  return [...new Set([agentId, fallbackAgentId].filter(Boolean))];
+  const trimmedAgentId = agentId?.trim();
+  if (trimmedAgentId) {
+    return [trimmedAgentId];
+  }
+  return fallbackAgentId ? [fallbackAgentId] : [];
 }
 
 function isMissingAgentResponse(status: number, errorText?: string) {
