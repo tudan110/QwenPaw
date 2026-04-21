@@ -18,6 +18,7 @@ def test_query_portal_real_alarms_normalizes_live_rows(monkeypatch) -> None:
                 {
                     "alarmuniqueid": "COMMON__1776338881568_2044739586778116096",
                     "alarmtitle": "数据库锁异常",
+                    "devId": 3094,
                     "alarmseverity": "1",
                     "alarmstatus": "1",
                     "eventtime": "2026-04-15 19:20:00",
@@ -40,6 +41,7 @@ def test_query_portal_real_alarms_normalizes_live_rows(monkeypatch) -> None:
     assert payload["source"] == "live"
     assert payload["total"] == 1
     assert payload["items"][0]["id"] == "COMMON__1776338881568_2044739586778116096"
+    assert payload["items"][0]["resId"] == "3094"
     assert payload["items"][0]["level"] == "critical"
     assert payload["items"][0]["employeeId"] == "fault"
     assert payload["items"][0]["dispatchContent"] == "mysql/死锁 + cmdb/新增/插入"

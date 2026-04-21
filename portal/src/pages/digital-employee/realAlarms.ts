@@ -7,6 +7,7 @@ export const PORTAL_REAL_ALARM_POLL_INTERVAL_MS = 15000;
 
 type PortalBellAlert = {
   id: string;
+  resId: string;
   employeeId: string;
   level: "critical" | "urgent" | "warning" | "info";
   message: string;
@@ -36,6 +37,7 @@ export function normalizePortalBellAlerts(
     })
     .map((item) => ({
       id: item.id,
+      resId: item.resId,
       employeeId: item.employeeId || "fault",
       level: item.level,
       message: toAlertMessage(item),

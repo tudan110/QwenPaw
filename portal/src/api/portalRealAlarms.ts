@@ -2,6 +2,7 @@ import { requestPortalApi } from "./portalWorkorders";
 
 export interface PortalRealAlarmItem {
   id: string;
+  resId: string;
   title: string;
   level: "critical" | "urgent" | "warning" | "info";
   status: "active";

@@ -836,6 +836,7 @@ type PortalOpsAlertLevel = "critical" | "urgent" | "warning" | "info";
 
 type PortalOpsAlert = {
   id: string;
+  resId: string;
   employeeId: string;
   level: PortalOpsAlertLevel;
   message: string;

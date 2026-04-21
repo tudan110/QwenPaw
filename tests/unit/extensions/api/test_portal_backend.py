@@ -195,6 +195,7 @@ def test_real_alarms_route_returns_backend_payload(monkeypatch) -> None:
             "items": [
                 {
                     "id": "mock-deadlock-1",
+                    "resId": "3094",
                     "title": "数据库锁异常",
                     "level": "critical",
                     "status": "active",
@@ -217,6 +218,7 @@ def test_real_alarms_route_returns_backend_payload(monkeypatch) -> None:
     assert received["limit"] == 8
     assert response.json()["source"] == "mock"
     assert response.json()["items"][0]["employeeId"] == "fault"
+    assert response.json()["items"][0]["resId"] == "3094"
 
 
 def test_real_alarms_route_returns_500_when_backend_query_fails(monkeypatch) -> None:
