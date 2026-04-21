@@ -241,7 +241,7 @@ def _check_task_status(
             click.echo(
                 "💡 Don't wait - continue with other tasks first!",
             )
-            click.echo("   Check again later (prefer 60-120s for long tasks):")
+            click.echo("   Check again later (10-30s):")
             click.echo(
                 f"  qwenpaw agents chat --background --task-id {task_id}",
             )
