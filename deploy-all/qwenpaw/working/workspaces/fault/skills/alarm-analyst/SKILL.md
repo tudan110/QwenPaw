@@ -97,6 +97,7 @@ Portal 落地时，需要体现以下链路：
 1. 先实际调用可用能力：
    - 使用 `list_agents` / `chat_with_agent` / `multi_agent_collaboration` 协作 query 数字员工查询 CMDB
    - 使用 `execute_shell_command` 执行 `scripts/get_metric_definitions.py`
+   - 已拿到 `resId/CI ID` 后，优先执行 `scripts/analyze_alarm_context.py` 聚合 CMDB 拓扑、关联告警和指标
 2. 再把执行结果整理成面向用户的阶段化输出
 3. 只有当真实调用失败时，才允许退回“计划 + mock + 失败原因”模式
 
@@ -129,13 +130,19 @@ Portal 落地时，需要体现以下链路：
    - `ciType`
    - `CI ID`
    - 应用/环境/拓扑
-3. 如果已确认 `ciType = mysql`，立刻执行：
+3. 如果已经拿到当前告警对应的 `resId/CI ID`，优先直接执行：
+
+```bash
+cd skills/alarm-analyst && python scripts/analyze_alarm_context.py --res-id <当前告警对应的CI_ID> --alarm-title "数据库锁异常" --device-name db_mysql_001 --manage-ip 10.43.150.186 --output markdown
+```
+
+4. 如果还需要针对根资源进一步拉取关键指标，或 `analyze_alarm_context.py` 已确认 `ciType = mysql`，继续执行：
 
 ```bash
 cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-type mysql --res-id <CMDB返回的CI_ID> --output markdown
 ```
 
-4. 读取脚本结果，再组织分析结论
+5. 读取脚本结果，再组织分析结论
 
 不要停在“计划执行这个命令”。
 
@@ -247,6 +254,28 @@ curl --location "${INOE_API_BASE_URL}/resource/pm/getMetricData" \
 ```
 
 ### 当前可执行脚本入口
+
+当已经拿到当前告警的 `resId/CI ID`，优先使用聚合脚本：
+
+```bash
+cd skills/alarm-analyst && python scripts/analyze_alarm_context.py --res-id 3094 --output markdown
+```
+
+如果当前上下文还带有告警标题、设备名和管理 IP，继续补全：
+
+```bash
+cd skills/alarm-analyst && python scripts/analyze_alarm_context.py --res-id 3094 --alarm-title "数据库锁异常" --device-name db_mysql_001 --manage-ip 10.43.150.186 --event-time "2026-04-20 18:39:19" --output markdown
+```
+
+该脚本会按以下顺序执行真实动作：
+
+1. 以 `resId` 为根查询 CMDB 关系拓扑
+2. 收集关联资源 ID
+3. 按这些资源 ID 遍历查询实时告警
+4. 对根资源继续执行指标定义 / 指标值查询
+5. 输出可直接交给 AI 继续根因分析的结构化结果
+
+如果只需要单独做指标定义与指标值查询，再执行：
 
 确认 `ciType` 后，不要只在回复里写“计划调用指标定义接口”，而是要优先执行本 skill 内的真实脚本：
 
