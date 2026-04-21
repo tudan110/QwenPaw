@@ -14,7 +14,9 @@
 import argparse
 import json
 import os
+import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -161,6 +163,11 @@ def _handle_http_error(error: requests.exceptions.HTTPError) -> Dict[str, Any]:
     """将 HTTPError 转成统一错误响应。"""
     status_code = error.response.status_code
     error_msg = error.response.text if error.response.text else str(error)
+    return _build_http_error(status_code, error_msg)
+
+
+def _build_http_error(status_code: int, error_msg: str) -> Dict[str, Any]:
+    """按 HTTP 状态码构造统一错误响应。"""
     message_map = {
         401: "认证失败，请检查 token 是否有效",
         403: "权限不足，无法访问该资源",
@@ -169,6 +176,75 @@ def _handle_http_error(error: requests.exceptions.HTTPError) -> Dict[str, Any]:
     return _make_error(
         status_code, message_map.get(status_code, f"HTTP错误: {error_msg}")
     )
+
+
+def _curl_post_json(
+    *,
+    url: str,
+    headers: Dict[str, str],
+    data: Dict[str, Any],
+    timeout_seconds: int = 30,
+) -> Dict[str, Any]:
+    """使用系统 curl 作为 requests 的网络兼容性回退。"""
+    with tempfile.NamedTemporaryFile(delete=False) as body_file:
+        body_path = body_file.name
+
+    args = [
+        "curl",
+        "-sS",
+        "-X",
+        "POST",
+        "--connect-timeout",
+        str(int(timeout_seconds)),
+        "--max-time",
+        str(int(timeout_seconds)),
+        "-o",
+        body_path,
+        "-w",
+        "%{http_code}",
+    ]
+    for key, value in headers.items():
+        args.extend(["-H", f"{key}: {value}"])
+    args.extend(["--data-binary", json.dumps(data, ensure_ascii=False)])
+    args.append(url)
+
+    try:
+        completed = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=max(int(timeout_seconds) + 5, 10),
+            check=False,
+        )
+        if completed.returncode != 0:
+            error_text = (completed.stderr or completed.stdout or "curl 请求失败").strip()
+            if "timed out" in error_text.lower():
+                return _make_error(408, "请求超时，请检查网络连接或稍后重试")
+            return _make_error(500, f"curl 请求失败: {error_text}")
+
+        status_code = int((completed.stdout or "").strip() or "0")
+        with open(body_path, "r", encoding="utf-8", errors="replace") as handle:
+            response_text = handle.read()
+        if status_code >= 400:
+            return _build_http_error(status_code, response_text)
+        if not response_text.strip():
+            return _make_error(500, "接口返回空响应")
+        result = json.loads(response_text)
+        if not isinstance(result, dict):
+            return _make_error(500, "接口返回格式异常：预期为 JSON 对象")
+        return result
+    except json.JSONDecodeError as error:
+        return _make_error(500, f"curl 响应解析失败: {str(error)}")
+    except subprocess.TimeoutExpired:
+        return _make_error(408, "请求超时，请检查网络连接或稍后重试")
+    except Exception as error:  # noqa: BLE001
+        return _make_error(500, f"curl 回退失败: {str(error)}")
+    finally:
+        try:
+            os.unlink(body_path)
+        except OSError:
+            pass
 
 
 def _build_city_list(cities: List[str]) -> List[Dict[str, Any]]:
@@ -308,7 +384,7 @@ def execute(
         return _make_error(408, "请求超时，请检查网络连接或稍后重试")
 
     except requests.exceptions.ConnectionError:
-        return _make_error(500, "连接失败，请检查服务器地址是否正确")
+        return _curl_post_json(url=url, headers=headers, data=data, timeout_seconds=30)
 
     except requests.exceptions.HTTPError as e:
         return _handle_http_error(e)
