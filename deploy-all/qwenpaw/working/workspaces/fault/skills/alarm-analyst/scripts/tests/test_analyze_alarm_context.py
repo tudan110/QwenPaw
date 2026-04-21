@@ -2,6 +2,7 @@ import unittest
 
 from analyze_alarm_context import (
     _build_alarm_comparison_summary,
+    _extract_resource_dicts,
     _build_topology_summary,
     _collect_related_resource_ids,
     _infer_correlation_findings,
@@ -20,6 +21,34 @@ class AnalyzeAlarmContextTests(unittest.TestCase):
         result = _collect_related_resource_ids(root_res_id="4001", resource_rows=resource_rows)
 
         self.assertEqual(result, ["4001", "5002", "6003"])
+
+    def test_collect_related_resource_ids_extracts_nested_relation_endpoints(self):
+        resource_rows = [
+            {
+                "src_ci_id": "4001",
+                "dst_ci_id": "5002",
+                "parent": {"_id": 6003, "ci_type": "docker", "name": "mysql-pod"},
+                "child": {"id": "7004", "ci_type": "vserver", "name": "node-1"},
+            }
+        ]
+
+        result = _collect_related_resource_ids(root_res_id="3094", resource_rows=resource_rows)
+
+        self.assertEqual(result, ["3094", "4001", "5002", "6003", "7004"])
+
+    def test_extract_resource_dicts_keeps_nested_resource_objects(self):
+        resources = _extract_resource_dicts(
+            [
+                {
+                    "relation": "deploy",
+                    "source": {"_id": 3094, "ci_type": "mysql", "name": "db_mysql_001"},
+                    "target": {"_id": 5002, "ci_type": "docker", "name": "mysql-pod"},
+                }
+            ]
+        )
+
+        resource_ids = {_resource["name"] for _resource in resources}
+        self.assertEqual(resource_ids, {"db_mysql_001", "mysql-pod"})
 
     def test_build_topology_summary_counts_ci_types(self):
         resource_rows = [

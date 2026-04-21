@@ -159,7 +159,36 @@ def _fetch_root_resource_detail(client: Any, root_res_id: str) -> dict[str, Any]
 
 
 def _resource_res_id(item: dict[str, Any]) -> str:
-    return _safe_str(item.get("_id") or item.get("id"))
+    for value in _resource_res_ids(item):
+        return value
+    return ""
+
+
+def _resource_res_ids(item: dict[str, Any]) -> list[str]:
+    candidate_keys = (
+        "_id",
+        "id",
+        "ci_id",
+        "ciId",
+        "root_id",
+        "rootId",
+        "src_ci_id",
+        "srcCiId",
+        "dst_ci_id",
+        "dstCiId",
+        "source_id",
+        "target_id",
+        "parent_id",
+        "child_id",
+    )
+    values: list[str] = []
+    seen: set[str] = set()
+    for key in candidate_keys:
+        value = _safe_str(item.get(key))
+        if value and value not in seen:
+            seen.add(value)
+            values.append(value)
+    return values
 
 
 def _resource_name(item: dict[str, Any]) -> str:
@@ -190,6 +219,23 @@ def _resource_ci_type_alias(item: dict[str, Any]) -> str:
     return _safe_str(item.get("ci_type_alias")) or _resource_ci_type(item) or "资源"
 
 
+def _extract_resource_dicts(payload: Any) -> list[dict[str, Any]]:
+    resources: list[dict[str, Any]] = []
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if _resource_res_id(node):
+                resources.append(node)
+            for value in node.values():
+                _walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item)
+
+    _walk(payload)
+    return resources
+
+
 def _collect_related_resource_ids(root_res_id: str, resource_rows: list[dict[str, Any]]) -> list[str]:
     ordered_ids: list[str] = []
     seen: set[str] = set()
@@ -202,8 +248,9 @@ def _collect_related_resource_ids(root_res_id: str, resource_rows: list[dict[str
         ordered_ids.append(normalized)
 
     _push(root_res_id)
-    for item in resource_rows:
-        _push(_resource_res_id(item))
+    for item in _extract_resource_dicts(resource_rows):
+        for related_res_id in _resource_res_ids(item):
+            _push(related_res_id)
     return ordered_ids
 
 
@@ -214,7 +261,12 @@ def _build_topology_summary(
     root_resource: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     resource_ids = _collect_related_resource_ids(root_res_id, resource_rows)
-    ci_type_counts = Counter(_resource_ci_type(item) or "unknown" for item in resource_rows if _resource_res_id(item))
+    extracted_resources = _extract_resource_dicts(resource_rows)
+    ci_type_counts = Counter(
+        _resource_ci_type(item) or "unknown"
+        for item in extracted_resources
+        if _resource_res_id(item)
+    )
 
     normalized_resources = []
     seen: set[str] = set()
@@ -230,7 +282,7 @@ def _build_topology_summary(
         seen.add(normalized_root_resource["resId"])
         normalized_resources.append(normalized_root_resource)
 
-    for item in resource_rows:
+    for item in extracted_resources:
         res_id = _resource_res_id(item)
         if not res_id or res_id in seen:
             continue
