@@ -39,6 +39,7 @@ from .auth import AuthMiddleware
 from .routers import router as api_router, create_agent_scoped_router
 from .routers.agent_scoped import AgentContextMiddleware
 from .routers.voice import voice_router
+from ..extensions.api.portal_backend import router as portal_router
 from ..envs import load_envs_into_environ
 from ..providers.provider_manager import ProviderManager
 from ..local_models.manager import LocalModelManager
@@ -608,6 +609,8 @@ def get_doctor_runtime():
 
 
 app.include_router(api_router, prefix="/api")
+# Portal backend routes already include their own `/api/portal` prefix.
+app.include_router(portal_router)
 
 # Agent-scoped router: /api/agents/{agentId}/chats, etc.
 agent_scoped_router = create_agent_scoped_router()
