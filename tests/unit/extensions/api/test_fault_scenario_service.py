@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from qwenpaw.extensions.api.fault_scenario_service import (
+    _parse_alarm_dispatch_context,
     _fault_skill_root,
     detect_fault_scenario,
     parse_fault_scenario_output,
@@ -83,8 +84,47 @@ def test_fault_skill_root_prefers_env_override(monkeypatch: pytest.MonkeyPatch) 
     assert _fault_skill_root() == Path("/configured/fault-skills")
 
 
-def test_run_fault_scenario_diagnose_returns_scaffold_result_without_shelling_out(
+def test_parse_alarm_dispatch_context_extracts_res_id_and_event_time() -> None:
+    context = _parse_alarm_dispatch_context(
+        "数据库锁异常（db_mysql_001 10.43.150.186）\n资源 ID（CI ID）：3094\n告警时间：2026-04-20 18:39:19"
+    )
+
+    assert context["res_id"] == "3094"
+    assert context["event_time"] == "2026-04-20 18:39:19"
+    assert context["manage_ip"] == "10.43.150.186"
+
+
+def test_run_fault_scenario_diagnose_uses_alarm_analyst_when_res_id_exists(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        "qwenpaw.extensions.api.fault_scenario_service._run_alarm_analyst_context",
+        lambda payload: {
+            "summary": "已完成拓扑关联告警与指标联合分析。",
+            "rootCause": {"type": "mysql", "object": "db_mysql_001"},
+            "steps": [{"id": "cmdb-topology", "status": "success"}],
+            "logEntries": [{"stage": "related-alarms", "summary": "已查询关联告警"}],
+            "actions": [],
+        },
+    )
+
+    payload = run_fault_scenario_diagnose(
+        {
+            "sessionId": "fault-scenario-1",
+            "employeeId": "fault",
+            "content": "数据库锁异常（db_mysql_001 10.43.150.186）\n资源 ID（CI ID）：3094\n告警时间：2026-04-20 18:39:19",
+        }
+    )
+
+    assert payload["session"]["sessionId"] == "fault-scenario-1"
+    assert payload["session"]["scene"] == "cmdb_add_failed_mysql_deadlock"
+    assert "联合分析" in payload["result"]["summary"]
+    assert payload["result"]["rootCause"]["object"] == "db_mysql_001"
+    assert payload["result"]["steps"][0]["status"] == "success"
+    assert payload["result"]["logEntries"][0]["stage"] == "related-alarms"
+
+
+def test_run_fault_scenario_diagnose_returns_scaffold_when_res_id_missing() -> None:
     payload = run_fault_scenario_diagnose(
         {
             "sessionId": "fault-scenario-1",
@@ -93,9 +133,5 @@ def test_run_fault_scenario_diagnose_returns_scaffold_result_without_shelling_ou
         }
     )
 
-    assert payload["session"]["sessionId"] == "fault-scenario-1"
-    assert payload["session"]["scene"] == "cmdb_add_failed_mysql_deadlock"
-    assert "脚手架" in payload["result"]["summary"]
-    assert payload["result"]["rootCause"]["object"] == "cmdb_device"
+    assert "资源 ID" in payload["result"]["summary"]
     assert payload["result"]["steps"][0]["status"] == "scaffolded"
-    assert payload["result"]["logEntries"][0]["stage"] == "database-analysis"

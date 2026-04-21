@@ -1236,22 +1236,33 @@ function buildPortalAssistantReply(content: string) {
   ].join("\n");
 }
 
-function buildPortalAlertDispatchText(content: string, resId?: string) {
+function buildPortalAlertDispatchText(content: string, resId?: string, eventTime?: string) {
   const normalizedContent = String(content || "").trim();
   const normalizedResId = String(resId || "").trim();
+  const normalizedEventTime = String(eventTime || "").trim();
+  const appendedLines: string[] = [];
 
-  if (!normalizedResId) {
-    return normalizedContent;
+  if (normalizedResId) {
+    const resIdLine = `资源 ID（CI ID）：${normalizedResId}`;
+    if (!normalizedContent.includes(resIdLine)) {
+      appendedLines.push(resIdLine);
+    }
   }
 
-  const resIdLine = `资源 ID（CI ID）：${normalizedResId}`;
-  if (normalizedContent.includes(resIdLine)) {
-    return normalizedContent;
+  if (normalizedEventTime) {
+    const eventTimeLine = `告警时间：${normalizedEventTime}`;
+    if (!normalizedContent.includes(eventTimeLine)) {
+      appendedLines.push(eventTimeLine);
+    }
   }
 
-  return normalizedContent
-    ? `${normalizedContent}\n${resIdLine}`
-    : resIdLine;
+  if (!normalizedContent) {
+    return appendedLines.join("\n");
+  }
+  if (!appendedLines.length) {
+    return normalizedContent;
+  }
+  return `${normalizedContent}\n${appendedLines.join("\n")}`;
 }
 
 class DigitalEmployeeErrorBoundary extends Component<
@@ -2278,6 +2289,7 @@ export default function DigitalEmployeePage({
       const normalizedVisibleContent = buildPortalAlertDispatchText(
         alert.visibleContent || alert.dispatchContent,
         alert.resId,
+        alert.timeLabel,
       );
       navigateToEmployeePage(employee, {
         entry: alert.routeEntry ?? null,
