@@ -2,8 +2,7 @@
   "id": "gateway",
   "name": "智观 AI",
   "description": "统一对外运维入口。可以独立完成普通对话、问答和常规运维支持；在需要更专业能力或跨域处理时，可通过多智能体协同调用 query、fault、resource、knowledge 等专业 agent，并对结果统一收口。",
-  "workspace_dir": "/app/working/workspaces/gateway",
-  "template_id": "default",
+  "workspace_dir": "~/.qwenpaw/workspaces/gateway",
   "channels": {
     "imessage": {
       "enabled": false,

@@ -421,7 +421,8 @@
       "query",
       "fault",
       "knowledge",
-      "resource"
+      "resource",
+      "gateway"
     ],
     "profiles": {
       "default": {
@@ -452,6 +453,11 @@
       "resource": {
         "id": "resource",
         "workspace_dir": "~/.qwenpaw/workspaces/resource",
+        "enabled": true
+      },
+      "gateway": {
+        "id": "gateway",
+        "workspace_dir": "~/.qwenpaw/workspaces/gateway",
         "enabled": true
       }
     },
