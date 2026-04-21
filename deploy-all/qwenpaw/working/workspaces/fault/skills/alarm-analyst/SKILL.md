@@ -273,11 +273,22 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py --res-id 3094
 1. 以 `resId` 为根，通过 `veops-cmdb` 查询根资源详情，明确根资源 `ciType`
 2. 以同一个 `resId` 为根查询 CMDB 关系拓扑
 3. 收集拓扑中的全部关联资源 ID
-4. 按这些资源 ID 遍历查询 **当前窗口** 的实时告警
-5. 按同样的资源 ID 再遍历查询 **前一等长窗口** 的告警，形成环比基线
+4. **必须**按这些资源 ID 遍历查询它们在“当前告警发生时间前后 10 分钟”窗口内的告警
+5. 可选由 AI 自主指定环比时间窗口；若未指定，则默认再查询一个前一等长窗口作为环比基线
 6. 根据根资源 `ciType` 查询指标定义，筛选关键指标
 7. 遍历查询这些关键指标的指标值
 8. 输出可直接交给 AI 继续根因分析的结构化结果，包括：根资源类型、拓扑、当前窗口告警、环比告警、指标与初步关系判断
+
+默认最近告警查询时间窗口是：
+
+- `event_time - 10 分钟`
+- `event_time + 10 分钟`
+
+如需由 AI 自主指定环比窗口，可继续补充：
+
+```bash
+cd skills/alarm-analyst && python scripts/analyze_alarm_context.py --res-id 3094 --event-time "2026-04-20 18:39:19" --window-minutes 10 --compare-begin-time "2026-04-08 15:39:35" --compare-end-time "2026-04-15 15:39:35" --output markdown
+```
 
 如果只需要单独做指标定义与指标值查询，再执行：
 

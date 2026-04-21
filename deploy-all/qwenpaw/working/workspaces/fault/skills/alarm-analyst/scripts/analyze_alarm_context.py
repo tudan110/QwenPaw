@@ -29,7 +29,7 @@ except ImportError:
 
 
 ALLOWED_OUTPUTS = {"json", "markdown"}
-DEFAULT_LOOKBACK_DAYS = 7
+DEFAULT_ALARM_WINDOW_MINUTES = 10
 DEFAULT_REAL_ALARM_PAGE_SIZE = 100
 DEFAULT_RELATED_ALARM_PREVIEW_LIMIT = 20
 
@@ -103,6 +103,42 @@ def _parse_datetime(value: str | None) -> datetime | None:
 
 def _format_datetime(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _build_alarm_query_windows(
+    *,
+    event_time: str,
+    window_minutes: int,
+    compare_begin_time: str = "",
+    compare_end_time: str = "",
+) -> dict[str, str]:
+    if window_minutes < 1:
+        raise ValueError("window_minutes 必须大于等于 1")
+
+    event_dt = _parse_datetime(event_time) or datetime.now(timezone.utc)
+    recent_begin_dt = event_dt - timedelta(minutes=window_minutes)
+    recent_end_dt = event_dt + timedelta(minutes=window_minutes)
+
+    custom_compare_begin = _parse_datetime(compare_begin_time)
+    custom_compare_end = _parse_datetime(compare_end_time)
+    if bool(custom_compare_begin) != bool(custom_compare_end):
+        raise ValueError("compare_begin_time 和 compare_end_time 必须同时提供")
+
+    if custom_compare_begin and custom_compare_end:
+        previous_begin_dt = custom_compare_begin
+        previous_end_dt = custom_compare_end
+    else:
+        window_span = recent_end_dt - recent_begin_dt
+        previous_end_dt = recent_begin_dt
+        previous_begin_dt = previous_end_dt - window_span
+
+    return {
+        "recentBeginTime": _format_datetime(recent_begin_dt),
+        "recentEndTime": _format_datetime(recent_end_dt),
+        "previousBeginTime": _format_datetime(previous_begin_dt),
+        "previousEndTime": _format_datetime(previous_end_dt),
+        "anchorEventTime": _format_datetime(event_dt),
+    }
 
 
 def _load_cmdb_client():
@@ -593,6 +629,9 @@ def analyze_alarm_context(
     manage_ip: str = "",
     event_time: str = "",
     metric_type: str = "",
+    window_minutes: int = DEFAULT_ALARM_WINDOW_MINUTES,
+    compare_begin_time: str = "",
+    compare_end_time: str = "",
     api_base_url: str | None = None,
     token: str | None = None,
     related_alarm_preview_limit: int = DEFAULT_RELATED_ALARM_PREVIEW_LIMIT,
@@ -601,15 +640,16 @@ def analyze_alarm_context(
     if not root_res_id:
         raise ValueError("res_id 不能为空")
 
-    event_dt = _parse_datetime(event_time)
-    end_dt = event_dt or datetime.now(timezone.utc)
-    begin_dt = end_dt - timedelta(days=DEFAULT_LOOKBACK_DAYS)
-    previous_begin_dt = begin_dt - timedelta(days=DEFAULT_LOOKBACK_DAYS)
-    previous_end_dt = begin_dt
-    begin_time = _format_datetime(begin_dt)
-    end_time = _format_datetime(end_dt)
-    previous_begin_time = _format_datetime(previous_begin_dt)
-    previous_end_time = _format_datetime(previous_end_dt)
+    windows = _build_alarm_query_windows(
+        event_time=event_time,
+        window_minutes=window_minutes,
+        compare_begin_time=compare_begin_time,
+        compare_end_time=compare_end_time,
+    )
+    begin_time = windows["recentBeginTime"]
+    end_time = windows["recentEndTime"]
+    previous_begin_time = windows["previousBeginTime"]
+    previous_end_time = windows["previousEndTime"]
 
     client, _find_project, cmdb_access_mode = _load_cmdb_client()
     root_resource = _fetch_root_resource_detail(client, root_res_id)
@@ -675,6 +715,7 @@ def analyze_alarm_context(
         "msg": "查询成功",
         "currentAlarm": current_alarm,
         "timeWindow": {
+            "anchorEventTime": windows["anchorEventTime"],
             "beginTime": begin_time,
             "endTime": end_time,
             "previousBeginTime": previous_begin_time,
@@ -815,6 +856,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--manage-ip", default="", help="当前告警管理 IP")
     parser.add_argument("--event-time", default="", help="当前告警发生时间，格式 YYYY-MM-DD HH:MM:SS")
     parser.add_argument("--metric-type", default="", help="可选，显式指定指标类型；不传时优先从根资源 ciType 推断")
+    parser.add_argument("--window-minutes", type=int, default=DEFAULT_ALARM_WINDOW_MINUTES, help="最近告警查询窗口，默认以告警时间为中心前后 10 分钟")
+    parser.add_argument("--compare-begin-time", default="", help="可选，AI 自定义环比窗口开始时间，格式 YYYY-MM-DD HH:MM:SS")
+    parser.add_argument("--compare-end-time", default="", help="可选，AI 自定义环比窗口结束时间，格式 YYYY-MM-DD HH:MM:SS")
     parser.add_argument("--api-base-url", default=None, help="告警/指标 API 基础地址，默认读取 .env")
     parser.add_argument("--token", default=None, help="Bearer Token，默认读取 .env")
     parser.add_argument("--related-alarm-preview-limit", type=int, default=DEFAULT_RELATED_ALARM_PREVIEW_LIMIT, help="Markdown 预览关联告警条数")
@@ -832,6 +876,9 @@ def main() -> None:
             manage_ip=args.manage_ip,
             event_time=args.event_time,
             metric_type=args.metric_type,
+            window_minutes=args.window_minutes,
+            compare_begin_time=args.compare_begin_time,
+            compare_end_time=args.compare_end_time,
             api_base_url=args.api_base_url,
             token=args.token,
             related_alarm_preview_limit=args.related_alarm_preview_limit,

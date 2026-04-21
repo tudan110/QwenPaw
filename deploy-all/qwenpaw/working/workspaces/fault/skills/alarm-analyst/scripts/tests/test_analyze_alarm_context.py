@@ -2,6 +2,7 @@ import unittest
 
 from analyze_alarm_context import (
     _build_alarm_comparison_summary,
+    _build_alarm_query_windows,
     _extract_resource_dicts,
     _build_topology_summary,
     _collect_related_resource_ids,
@@ -10,6 +11,28 @@ from analyze_alarm_context import (
 
 
 class AnalyzeAlarmContextTests(unittest.TestCase):
+    def test_build_alarm_query_windows_defaults_to_plus_minus_ten_minutes(self):
+        windows = _build_alarm_query_windows(
+            event_time="2026-04-20 18:39:19",
+            window_minutes=10,
+        )
+
+        self.assertEqual(windows["recentBeginTime"], "2026-04-20 18:29:19")
+        self.assertEqual(windows["recentEndTime"], "2026-04-20 18:49:19")
+        self.assertEqual(windows["previousBeginTime"], "2026-04-20 18:09:19")
+        self.assertEqual(windows["previousEndTime"], "2026-04-20 18:29:19")
+
+    def test_build_alarm_query_windows_accepts_ai_defined_compare_window(self):
+        windows = _build_alarm_query_windows(
+            event_time="2026-04-20 18:39:19",
+            window_minutes=10,
+            compare_begin_time="2026-04-08 15:39:35",
+            compare_end_time="2026-04-15 15:39:35",
+        )
+
+        self.assertEqual(windows["previousBeginTime"], "2026-04-08 15:39:35")
+        self.assertEqual(windows["previousEndTime"], "2026-04-15 15:39:35")
+
     def test_collect_related_resource_ids_deduplicates_and_keeps_root_first(self):
         resource_rows = [
             {"_id": 4001, "ci_type": "mysql", "name": "mysql-main"},
