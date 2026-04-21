@@ -77,16 +77,6 @@ def _veops_find_project_path() -> Path:
     )
 
 
-def _veops_env_path() -> Path:
-    return (
-        _workspace_root()
-        / "query"
-        / "skills"
-        / "veops-cmdb"
-        / ".env"
-    )
-
-
 def _load_module(module_name: str, path: Path):
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
@@ -116,7 +106,13 @@ def _format_datetime(value: datetime) -> str:
 
 
 def _load_cmdb_config(find_project_module: Any) -> dict[str, str]:
-    env_path = _veops_env_path()
+    env_path = (
+        _workspace_root()
+        / "query"
+        / "skills"
+        / "veops-cmdb"
+        / ".env"
+    )
     if not env_path.exists():
         raise ValueError(f"未找到 veops-cmdb 的环境文件：{env_path}")
 

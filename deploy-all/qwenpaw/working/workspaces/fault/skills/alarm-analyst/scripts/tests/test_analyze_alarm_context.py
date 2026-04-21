@@ -20,14 +20,13 @@ class AnalyzeAlarmContextTests(unittest.TestCase):
                 "VEOPS_PASSWORD": "secret",
             }
         )
-        with patch("analyze_alarm_context._veops_env_path", return_value=Path("/tmp/veops-cmdb/.env")):
-            with patch.object(Path, "exists", return_value=True):
-                config = _load_cmdb_config(fake_find_project)
+        with patch.object(Path, "exists", return_value=True):
+            config = _load_cmdb_config(fake_find_project)
 
         self.assertEqual(config["base_url"], "http://cmdb.example.com")
         self.assertEqual(config["username"], "tester")
         self.assertEqual(config["password"], "secret")
-        self.assertEqual(config["env_path"], "/tmp/veops-cmdb/.env")
+        self.assertTrue(config["env_path"].endswith("/query/skills/veops-cmdb/.env"))
 
     def test_collect_related_resource_ids_deduplicates_and_keeps_root_first(self):
         resource_rows = [
