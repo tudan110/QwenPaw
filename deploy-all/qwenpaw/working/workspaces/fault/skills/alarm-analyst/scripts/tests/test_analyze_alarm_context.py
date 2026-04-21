@@ -1,6 +1,7 @@
 import unittest
 
 from analyze_alarm_context import (
+    _build_alarm_comparison_summary,
     _build_topology_summary,
     _collect_related_resource_ids,
     _infer_correlation_findings,
@@ -34,7 +35,24 @@ class AnalyzeAlarmContextTests(unittest.TestCase):
         self.assertEqual(summary["ciTypeCounts"]["docker"], 2)
         self.assertEqual(summary["resources"][0]["resId"], "4001")
 
-    def test_infer_correlation_findings_mentions_same_alarm_title_and_metric_anomaly(self):
+    def test_build_alarm_comparison_summary_reports_growth(self):
+        summary = _build_alarm_comparison_summary(
+            current_rows=[
+                {"alarmtitle": "数据库锁异常", "resId": "3094"},
+                {"alarmtitle": "数据库锁异常", "resId": "6003"},
+                {"alarmtitle": "MySQL连接数过高", "resId": "5002"},
+            ],
+            previous_rows=[
+                {"alarmtitle": "数据库锁异常", "resId": "3094"},
+            ],
+        )
+
+        self.assertEqual(summary["currentTotal"], 3)
+        self.assertEqual(summary["previousTotal"], 1)
+        self.assertEqual(summary["deltaTotal"], 2)
+        self.assertEqual(summary["titleDelta"]["数据库锁异常"], 1)
+
+    def test_infer_correlation_findings_mentions_same_alarm_title_metric_anomaly_and_alarm_growth(self):
         findings = _infer_correlation_findings(
             current_alarm={
                 "alarmtitle": "数据库锁异常",
@@ -54,10 +72,17 @@ class AnalyzeAlarmContextTests(unittest.TestCase):
                     "unit": "ms",
                 }
             ],
+            alarm_comparison={
+                "currentTotal": 3,
+                "previousTotal": 1,
+                "deltaTotal": 2,
+                "titleDelta": {"数据库锁异常": 1},
+            },
         )
 
         self.assertTrue(any("同名告警" in item for item in findings))
         self.assertTrue(any("锁等待" in item for item in findings))
+        self.assertTrue(any("环比" in item for item in findings))
 
 
 if __name__ == "__main__":

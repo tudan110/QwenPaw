@@ -383,6 +383,36 @@ def _merge_related_alarm_results(results: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
+def _build_alarm_comparison_summary(
+    *,
+    current_rows: list[dict[str, Any]],
+    previous_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    current_title_counts = Counter(_safe_str(row.get("alarmtitle")) or "未命名告警" for row in current_rows)
+    previous_title_counts = Counter(_safe_str(row.get("alarmtitle")) or "未命名告警" for row in previous_rows)
+
+    title_delta: dict[str, int] = {}
+    for title in set(current_title_counts) | set(previous_title_counts):
+        delta = current_title_counts.get(title, 0) - previous_title_counts.get(title, 0)
+        if delta:
+            title_delta[title] = delta
+
+    current_total = len(current_rows)
+    previous_total = len(previous_rows)
+    delta_total = current_total - previous_total
+    growth_ratio = None
+    if previous_total > 0:
+        growth_ratio = round((delta_total / previous_total) * 100, 2)
+
+    return {
+        "currentTotal": current_total,
+        "previousTotal": previous_total,
+        "deltaTotal": delta_total,
+        "growthRatio": growth_ratio,
+        "titleDelta": title_delta,
+    }
+
+
 def _to_float(value: Any) -> float | None:
     text = _safe_str(value)
     if not text:
@@ -398,6 +428,7 @@ def _infer_correlation_findings(
     current_alarm: dict[str, Any],
     related_alarm_rows: list[dict[str, Any]],
     metric_data_results: list[dict[str, Any]],
+    alarm_comparison: dict[str, Any] | None = None,
 ) -> list[str]:
     findings: list[str] = []
     current_title = _safe_str(current_alarm.get("alarmtitle"))
@@ -428,6 +459,31 @@ def _infer_correlation_findings(
             findings.append(
                 f"根资源 `{current_res_id}` 上同时存在 {len(same_res_titles)} 类告警，说明当前故障可能已经引起复合症状，而不是单一异常。"
             )
+
+    comparison = alarm_comparison or {}
+    delta_total = int(comparison.get("deltaTotal") or 0)
+    previous_total = int(comparison.get("previousTotal") or 0)
+    if delta_total > 0:
+        if previous_total > 0:
+            findings.append(
+                f"关联告警总量相较上一等长时间窗口环比上升 `{delta_total}` 条，说明当前故障影响面正在扩大。"
+            )
+        else:
+            findings.append("上一等长时间窗口未观察到关联告警，而当前窗口已有多条关联告警，说明问题是近期新增并正在扩散。")
+    elif delta_total < 0:
+        findings.append(
+            f"关联告警总量相较上一等长时间窗口环比下降 `{abs(delta_total)}` 条，说明故障影响可能已部分收敛，但根资源仍需继续核查。"
+        )
+
+    hottest_delta = sorted(
+        (comparison.get("titleDelta") or {}).items(),
+        key=lambda item: abs(item[1]),
+        reverse=True,
+    )
+    if hottest_delta:
+        title, delta = hottest_delta[0]
+        if delta > 0:
+            findings.append(f"告警 `{title}` 在当前窗口较上一窗口新增 `{delta}` 条，优先级应高于其他伴随告警。")
 
     for item in metric_data_results:
         metric_code = _safe_str(item.get("metricCode")).lower()
@@ -471,8 +527,12 @@ def analyze_alarm_context(
     event_dt = _parse_datetime(event_time)
     end_dt = event_dt or datetime.now(timezone.utc)
     begin_dt = end_dt - timedelta(days=DEFAULT_LOOKBACK_DAYS)
+    previous_begin_dt = begin_dt - timedelta(days=DEFAULT_LOOKBACK_DAYS)
+    previous_end_dt = begin_dt
     begin_time = _format_datetime(begin_dt)
     end_time = _format_datetime(end_dt)
+    previous_begin_time = _format_datetime(previous_begin_dt)
+    previous_end_time = _format_datetime(previous_end_dt)
 
     client, _find_project, cmdb_access_mode = _load_cmdb_client()
     payload = client._request_json(  # noqa: SLF001 - 复用 skill 内部 HTTP helper
@@ -482,7 +542,7 @@ def analyze_alarm_context(
     topology_summary = _build_topology_summary(root_res_id, topology_rows)
     resolved_metric_type = _infer_metric_type(metric_type, topology_summary)
 
-    related_alarm_results = [
+    recent_alarm_results = [
         _query_alarms_for_res_id(
             res_id=related_res_id,
             begin_time=begin_time,
@@ -492,7 +552,22 @@ def analyze_alarm_context(
         )
         for related_res_id in topology_summary["resourceIds"]
     ]
-    merged_related_alarms = _merge_related_alarm_results(related_alarm_results)
+    previous_alarm_results = [
+        _query_alarms_for_res_id(
+            res_id=related_res_id,
+            begin_time=previous_begin_time,
+            end_time=previous_end_time,
+            api_base_url=api_base_url,
+            token=token,
+        )
+        for related_res_id in topology_summary["resourceIds"]
+    ]
+    merged_recent_alarms = _merge_related_alarm_results(recent_alarm_results)
+    merged_previous_alarms = _merge_related_alarm_results(previous_alarm_results)
+    alarm_comparison = _build_alarm_comparison_summary(
+        current_rows=merged_recent_alarms["rows"],
+        previous_rows=merged_previous_alarms["rows"],
+    )
 
     from get_metric_definitions import analyze_metrics  # local script import
 
@@ -512,8 +587,9 @@ def analyze_alarm_context(
     }
     findings = _infer_correlation_findings(
         current_alarm=current_alarm,
-        related_alarm_rows=merged_related_alarms["rows"],
+        related_alarm_rows=merged_recent_alarms["rows"],
         metric_data_results=metric_analysis.get("metricDataResults") or [],
+        alarm_comparison=alarm_comparison,
     )
 
     return {
@@ -523,12 +599,21 @@ def analyze_alarm_context(
         "timeWindow": {
             "beginTime": begin_time,
             "endTime": end_time,
+            "previousBeginTime": previous_begin_time,
+            "previousEndTime": previous_end_time,
         },
         "cmdbAccessMode": cmdb_access_mode,
         "topology": topology_summary,
         "relatedAlarms": {
-            **merged_related_alarms,
-            "previewRows": merged_related_alarms["rows"][: max(1, related_alarm_preview_limit)],
+            "recent": {
+                **merged_recent_alarms,
+                "previewRows": merged_recent_alarms["rows"][: max(1, related_alarm_preview_limit)],
+            },
+            "previous": {
+                **merged_previous_alarms,
+                "previewRows": merged_previous_alarms["rows"][: max(1, related_alarm_preview_limit)],
+            },
+            "comparison": alarm_comparison,
         },
         "metricAnalysis": metric_analysis,
         "findings": findings,
@@ -581,13 +666,16 @@ def render_markdown(result: dict[str, Any]) -> str:
     related_alarms = result.get("relatedAlarms") or {}
     metric_analysis = result.get("metricAnalysis") or {}
     current_alarm = result.get("currentAlarm") or {}
+    recent_alarms = related_alarms.get("recent") or {}
+    previous_alarms = related_alarms.get("previous") or {}
+    alarm_comparison = related_alarms.get("comparison") or {}
 
     ci_type_summary = "、".join(
         f"{ci_type} {count} 个"
         for ci_type, count in sorted((topology.get("ciTypeCounts") or {}).items(), key=lambda item: item[0])
     ) or "-"
     top_titles = sorted(
-        (related_alarms.get("titleCounts") or {}).items(),
+        (recent_alarms.get("titleCounts") or {}).items(),
         key=lambda item: item[1],
         reverse=True,
     )[:5]
@@ -612,10 +700,16 @@ def render_markdown(result: dict[str, Any]) -> str:
         _render_resources_table(topology.get("resources") or []),
         "",
         "## 关联告警汇总",
-        f"- 关联告警总数：`{related_alarms.get('total', 0)}`",
+        f"- 当前窗口关联告警总数：`{recent_alarms.get('total', 0)}`",
+        f"- 前一等长窗口关联告警总数：`{previous_alarms.get('total', 0)}`",
+        f"- 环比变化：`{alarm_comparison.get('deltaTotal', 0)}` 条",
         f"- 高频告警：{top_title_summary}",
         "",
-        _render_alarm_rows_table(related_alarms.get("previewRows") or []),
+        "### 当前窗口关联告警",
+        _render_alarm_rows_table(recent_alarms.get("previewRows") or []),
+        "",
+        "### 前一等长窗口关联告警",
+        _render_alarm_rows_table(previous_alarms.get("previewRows") or []),
         "",
         "## 指标分析",
         f"- 指标类型：`{metric_analysis.get('metricType') or '-'}`",
