@@ -1,4 +1,7 @@
 import unittest
+from unittest.mock import patch
+
+import analyze_alarm_context as alarm_context_module
 
 from analyze_alarm_context import (
     _build_alarm_comparison_summary,
@@ -153,6 +156,90 @@ class AnalyzeAlarmContextTests(unittest.TestCase):
         self.assertTrue(any("同名告警" in item for item in findings))
         self.assertTrue(any("锁等待" in item for item in findings))
         self.assertTrue(any("环比" in item for item in findings))
+
+    @patch("analyze_alarm_context._query_alarms_for_res_id")
+    @patch("analyze_alarm_context._load_cmdb_client")
+    @patch("analyze_alarm_context._fetch_root_resource_detail")
+    @patch("analyze_alarm_context._build_topology_summary")
+    @patch("get_metric_definitions.analyze_metrics")
+    def test_analyze_alarm_context_queries_root_metrics_before_topology_fanout(
+        self,
+        mock_analyze_metrics,
+        mock_build_topology_summary,
+        mock_fetch_root_resource_detail,
+        mock_load_cmdb_client,
+        mock_query_alarms_for_res_id,
+    ):
+        call_order = []
+
+        class _FakeClient:
+            def _request_json(self, _path):
+                call_order.append("topology")
+                return {"result": [{"_id": 5002, "ci_type": "docker", "name": "mysql-pod"}]}
+
+        mock_load_cmdb_client.return_value = (_FakeClient(), None, "anonymous")
+        mock_fetch_root_resource_detail.return_value = {
+            "_id": 3094,
+            "ci_type": "mysql",
+            "ci_type_alias": "MySQL",
+            "name": "db_mysql_001",
+        }
+
+        def _fake_build_topology_summary(root_res_id, resource_rows, root_resource=None):
+            if resource_rows:
+                return {
+                    "rootResId": root_res_id,
+                    "rootResource": {
+                        "resId": "3094",
+                        "ciType": "mysql",
+                        "ciTypeAlias": "MySQL",
+                        "name": "db_mysql_001",
+                        "isRoot": True,
+                    },
+                    "resourceCount": 2,
+                    "resourceIds": ["3094", "5002"],
+                    "ciTypeCounts": {"docker": 1},
+                    "resources": [],
+                }
+            return {
+                "rootResId": root_res_id,
+                "rootResource": {
+                    "resId": "3094",
+                    "ciType": "mysql",
+                    "ciTypeAlias": "MySQL",
+                    "name": "db_mysql_001",
+                    "isRoot": True,
+                },
+                "resourceCount": 1,
+                "resourceIds": ["3094"],
+                "ciTypeCounts": {},
+                "resources": [],
+            }
+
+        mock_build_topology_summary.side_effect = _fake_build_topology_summary
+
+        def _fake_query_alarms_for_res_id(**kwargs):
+            call_order.append(f"alarm:{kwargs['res_id']}")
+            return {"resId": kwargs["res_id"], "code": 200, "msg": "ok", "total": 0, "rows": []}
+
+        mock_query_alarms_for_res_id.side_effect = _fake_query_alarms_for_res_id
+
+        def _fake_analyze_metrics(**kwargs):
+            call_order.append("metrics")
+            return {"metricType": kwargs["metric_type"], "metricDataResults": [], "selectedMetrics": []}
+
+        mock_analyze_metrics.side_effect = _fake_analyze_metrics
+
+        result = alarm_context_module.analyze_alarm_context(
+            res_id="3094",
+            event_time="2026-04-20 18:39:19",
+        )
+
+        self.assertEqual(result["metricAnalysis"]["metricType"], "mysql")
+        self.assertEqual(call_order[0], "alarm:3094")
+        self.assertEqual(call_order[1], "alarm:3094")
+        self.assertEqual(call_order[2], "metrics")
+        self.assertEqual(call_order[3], "topology")
 
 
 if __name__ == "__main__":

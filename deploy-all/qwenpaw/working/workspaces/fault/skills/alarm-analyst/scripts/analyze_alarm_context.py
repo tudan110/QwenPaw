@@ -653,39 +653,27 @@ def analyze_alarm_context(
 
     client, _find_project, cmdb_access_mode = _load_cmdb_client()
     root_resource = _fetch_root_resource_detail(client, root_res_id)
-    payload = client._request_json(  # noqa: SLF001 - 复用 skill 内部 HTTP helper
-        f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(root_res_id)}&level=1,2,3&count=10000"
-    )
-    topology_rows = [item for item in payload.get("result", []) if isinstance(item, dict)] if isinstance(payload, dict) else []
-    topology_summary = _build_topology_summary(root_res_id, topology_rows, root_resource=root_resource)
+    topology_summary = _build_topology_summary(root_res_id, [], root_resource=root_resource)
     resolved_metric_type = _infer_metric_type(metric_type, topology_summary)
 
     recent_alarm_results = [
         _query_alarms_for_res_id(
-            res_id=related_res_id,
+            res_id=root_res_id,
             begin_time=begin_time,
             end_time=end_time,
             api_base_url=api_base_url,
             token=token,
         )
-        for related_res_id in topology_summary["resourceIds"]
     ]
     previous_alarm_results = [
         _query_alarms_for_res_id(
-            res_id=related_res_id,
+            res_id=root_res_id,
             begin_time=previous_begin_time,
             end_time=previous_end_time,
             api_base_url=api_base_url,
             token=token,
         )
-        for related_res_id in topology_summary["resourceIds"]
     ]
-    merged_recent_alarms = _merge_related_alarm_results(recent_alarm_results)
-    merged_previous_alarms = _merge_related_alarm_results(previous_alarm_results)
-    alarm_comparison = _build_alarm_comparison_summary(
-        current_rows=merged_recent_alarms["rows"],
-        previous_rows=merged_previous_alarms["rows"],
-    )
 
     from get_metric_definitions import analyze_metrics  # local script import
 
@@ -694,6 +682,41 @@ def analyze_alarm_context(
         res_id=root_res_id,
         api_base_url=api_base_url,
         token=token,
+    )
+
+    payload = client._request_json(  # noqa: SLF001 - 复用 skill 内部 HTTP helper
+        f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(root_res_id)}&level=1,2,3&count=10000"
+    )
+    topology_rows = [item for item in payload.get("result", []) if isinstance(item, dict)] if isinstance(payload, dict) else []
+    topology_summary = _build_topology_summary(root_res_id, topology_rows, root_resource=root_resource)
+
+    recent_alarm_results.extend(
+        _query_alarms_for_res_id(
+            res_id=related_res_id,
+            begin_time=begin_time,
+            end_time=end_time,
+            api_base_url=api_base_url,
+            token=token,
+        )
+        for related_res_id in topology_summary["resourceIds"]
+        if _safe_str(related_res_id) != root_res_id
+    )
+    previous_alarm_results.extend(
+        _query_alarms_for_res_id(
+            res_id=related_res_id,
+            begin_time=previous_begin_time,
+            end_time=previous_end_time,
+            api_base_url=api_base_url,
+            token=token,
+        )
+        for related_res_id in topology_summary["resourceIds"]
+        if _safe_str(related_res_id) != root_res_id
+    )
+    merged_recent_alarms = _merge_related_alarm_results(recent_alarm_results)
+    merged_previous_alarms = _merge_related_alarm_results(previous_alarm_results)
+    alarm_comparison = _build_alarm_comparison_summary(
+        current_rows=merged_recent_alarms["rows"],
+        previous_rows=merged_previous_alarms["rows"],
     )
 
     current_alarm = {
