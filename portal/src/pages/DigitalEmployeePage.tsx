@@ -1236,6 +1236,24 @@ function buildPortalAssistantReply(content: string) {
   ].join("\n");
 }
 
+function buildPortalAlertDispatchText(content: string, resId?: string) {
+  const normalizedContent = String(content || "").trim();
+  const normalizedResId = String(resId || "").trim();
+
+  if (!normalizedResId) {
+    return normalizedContent;
+  }
+
+  const resIdLine = `资源 ID（CI ID）：${normalizedResId}`;
+  if (normalizedContent.includes(resIdLine)) {
+    return normalizedContent;
+  }
+
+  return normalizedContent
+    ? `${normalizedContent}\n${resIdLine}`
+    : resIdLine;
+}
+
 class DigitalEmployeeErrorBoundary extends Component<
   { children: ReactNode },
   { hasError: boolean }
@@ -2257,7 +2275,10 @@ export default function DigitalEmployeePage({
     }
 
     if (alert.dispatchContent) {
-      const normalizedVisibleContent = (alert.visibleContent || alert.dispatchContent).trim();
+      const normalizedVisibleContent = buildPortalAlertDispatchText(
+        alert.visibleContent || alert.dispatchContent,
+        alert.resId,
+      );
       navigateToEmployeePage(employee, {
         entry: alert.routeEntry ?? null,
         view: "chat",
