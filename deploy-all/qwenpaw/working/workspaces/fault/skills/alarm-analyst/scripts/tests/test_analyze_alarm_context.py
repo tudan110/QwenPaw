@@ -35,6 +35,24 @@ class AnalyzeAlarmContextTests(unittest.TestCase):
         self.assertEqual(summary["ciTypeCounts"]["docker"], 2)
         self.assertEqual(summary["resources"][0]["resId"], "4001")
 
+    def test_build_topology_summary_prefers_explicit_root_resource_for_root_ci_type(self):
+        summary = _build_topology_summary(
+            root_res_id="3094",
+            resource_rows=[
+                {"_id": 5002, "ci_type": "docker", "ci_type_alias": "Docker", "name": "mysql-pod"},
+            ],
+            root_resource={
+                "_id": 3094,
+                "ci_type": "mysql",
+                "ci_type_alias": "MySQL",
+                "name": "db_mysql_001",
+            },
+        )
+
+        self.assertEqual(summary["rootResource"]["resId"], "3094")
+        self.assertEqual(summary["rootResource"]["ciType"], "mysql")
+        self.assertEqual(summary["resources"][0]["ciType"], "mysql")
+
     def test_build_alarm_comparison_summary_reports_growth(self):
         summary = _build_alarm_comparison_summary(
             current_rows=[

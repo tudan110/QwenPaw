@@ -149,6 +149,15 @@ def _fetch_topology_relations(root_res_id: str) -> list[dict[str, Any]]:
     return []
 
 
+def _fetch_root_resource_detail(client: Any, root_res_id: str) -> dict[str, Any]:
+    payload = client._request_json(f"/api/v0.1/ci/{urllib.parse.quote(root_res_id)}")  # noqa: SLF001
+    if isinstance(payload, dict):
+        result = payload.get("result")
+        if isinstance(result, dict):
+            return result
+    return {}
+
+
 def _resource_res_id(item: dict[str, Any]) -> str:
     return _safe_str(item.get("_id") or item.get("id"))
 
@@ -198,12 +207,29 @@ def _collect_related_resource_ids(root_res_id: str, resource_rows: list[dict[str
     return ordered_ids
 
 
-def _build_topology_summary(root_res_id: str, resource_rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _build_topology_summary(
+    root_res_id: str,
+    resource_rows: list[dict[str, Any]],
+    *,
+    root_resource: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     resource_ids = _collect_related_resource_ids(root_res_id, resource_rows)
     ci_type_counts = Counter(_resource_ci_type(item) or "unknown" for item in resource_rows if _resource_res_id(item))
 
     normalized_resources = []
     seen: set[str] = set()
+    normalized_root_resource = None
+    if root_resource:
+        normalized_root_resource = {
+            "resId": _safe_str(root_resource.get("_id") or root_resource.get("id") or root_res_id),
+            "name": _resource_name(root_resource),
+            "ciType": _resource_ci_type(root_resource),
+            "ciTypeAlias": _resource_ci_type_alias(root_resource),
+            "isRoot": True,
+        }
+        seen.add(normalized_root_resource["resId"])
+        normalized_resources.append(normalized_root_resource)
+
     for item in resource_rows:
         res_id = _resource_res_id(item)
         if not res_id or res_id in seen:
@@ -220,20 +246,19 @@ def _build_topology_summary(root_res_id: str, resource_rows: list[dict[str, Any]
         )
 
     if _safe_str(root_res_id) and _safe_str(root_res_id) not in seen:
-        normalized_resources.insert(
-            0,
-            {
-                "resId": _safe_str(root_res_id),
-                "name": _safe_str(root_res_id),
-                "ciType": "",
-                "ciTypeAlias": "资源",
-                "isRoot": True,
-            },
-        )
+        normalized_root_resource = {
+            "resId": _safe_str(root_res_id),
+            "name": _safe_str(root_res_id),
+            "ciType": "",
+            "ciTypeAlias": "资源",
+            "isRoot": True,
+        }
+        normalized_resources.insert(0, normalized_root_resource)
 
     normalized_resources.sort(key=lambda item: (not item["isRoot"], item["ciTypeAlias"], item["name"]))
     return {
         "rootResId": _safe_str(root_res_id),
+        "rootResource": normalized_root_resource,
         "resourceCount": len(resource_ids),
         "resourceIds": resource_ids,
         "ciTypeCounts": dict(ci_type_counts),
@@ -245,9 +270,9 @@ def _infer_metric_type(metric_type: str | None, topology_summary: dict[str, Any]
     explicit = _safe_str(metric_type)
     if explicit:
         return explicit
-    for resource in topology_summary.get("resources") or []:
-        if resource.get("isRoot") and _safe_str(resource.get("ciType")):
-            return _safe_str(resource["ciType"])
+    root_resource = topology_summary.get("rootResource") or {}
+    if _safe_str(root_resource.get("ciType")):
+        return _safe_str(root_resource["ciType"])
     for resource in topology_summary.get("resources") or []:
         if _safe_str(resource.get("ciType")):
             return _safe_str(resource["ciType"])
@@ -535,11 +560,12 @@ def analyze_alarm_context(
     previous_end_time = _format_datetime(previous_end_dt)
 
     client, _find_project, cmdb_access_mode = _load_cmdb_client()
+    root_resource = _fetch_root_resource_detail(client, root_res_id)
     payload = client._request_json(  # noqa: SLF001 - 复用 skill 内部 HTTP helper
         f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(root_res_id)}&level=1,2,3&count=10000"
     )
     topology_rows = [item for item in payload.get("result", []) if isinstance(item, dict)] if isinstance(payload, dict) else []
-    topology_summary = _build_topology_summary(root_res_id, topology_rows)
+    topology_summary = _build_topology_summary(root_res_id, topology_rows, root_resource=root_resource)
     resolved_metric_type = _infer_metric_type(metric_type, topology_summary)
 
     recent_alarm_results = [
@@ -686,6 +712,7 @@ def render_markdown(result: dict[str, Any]) -> str:
         "",
         "## 当前告警",
         f"- 资源 ID（CI ID）：`{current_alarm.get('resId') or '-'}`",
+        f"- 根资源类型（ciType）：`{(topology.get('rootResource') or {}).get('ciType') or '-'}`",
         f"- 告警标题：`{current_alarm.get('alarmtitle') or '-'}`",
         f"- 设备名称：`{current_alarm.get('devName') or '-'}`",
         f"- 管理 IP：`{current_alarm.get('manageIp') or '-'}`",
