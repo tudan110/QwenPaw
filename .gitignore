@@ -127,5 +127,6 @@ deploy-all/qwenpaw/data/
 tmp/
 
 .codex
+.omx
 
 ###### Custom ignore files end ######
