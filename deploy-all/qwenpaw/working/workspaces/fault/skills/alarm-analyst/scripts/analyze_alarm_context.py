@@ -656,25 +656,6 @@ def analyze_alarm_context(
     topology_summary = _build_topology_summary(root_res_id, [], root_resource=root_resource)
     resolved_metric_type = _infer_metric_type(metric_type, topology_summary)
 
-    recent_alarm_results = [
-        _query_alarms_for_res_id(
-            res_id=root_res_id,
-            begin_time=begin_time,
-            end_time=end_time,
-            api_base_url=api_base_url,
-            token=token,
-        )
-    ]
-    previous_alarm_results = [
-        _query_alarms_for_res_id(
-            res_id=root_res_id,
-            begin_time=previous_begin_time,
-            end_time=previous_end_time,
-            api_base_url=api_base_url,
-            token=token,
-        )
-    ]
-
     from get_metric_definitions import analyze_metrics  # local script import
 
     metric_analysis = analyze_metrics(
@@ -690,7 +671,7 @@ def analyze_alarm_context(
     topology_rows = [item for item in payload.get("result", []) if isinstance(item, dict)] if isinstance(payload, dict) else []
     topology_summary = _build_topology_summary(root_res_id, topology_rows, root_resource=root_resource)
 
-    recent_alarm_results.extend(
+    recent_alarm_results = [
         _query_alarms_for_res_id(
             res_id=related_res_id,
             begin_time=begin_time,
@@ -699,9 +680,8 @@ def analyze_alarm_context(
             token=token,
         )
         for related_res_id in topology_summary["resourceIds"]
-        if _safe_str(related_res_id) != root_res_id
-    )
-    previous_alarm_results.extend(
+    ]
+    previous_alarm_results = [
         _query_alarms_for_res_id(
             res_id=related_res_id,
             begin_time=previous_begin_time,
@@ -710,8 +690,7 @@ def analyze_alarm_context(
             token=token,
         )
         for related_res_id in topology_summary["resourceIds"]
-        if _safe_str(related_res_id) != root_res_id
-    )
+    ]
     merged_recent_alarms = _merge_related_alarm_results(recent_alarm_results)
     merged_previous_alarms = _merge_related_alarm_results(previous_alarm_results)
     alarm_comparison = _build_alarm_comparison_summary(

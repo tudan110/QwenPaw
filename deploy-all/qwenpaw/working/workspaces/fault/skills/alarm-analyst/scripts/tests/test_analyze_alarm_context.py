@@ -157,18 +157,18 @@ class AnalyzeAlarmContextTests(unittest.TestCase):
         self.assertTrue(any("锁等待" in item for item in findings))
         self.assertTrue(any("环比" in item for item in findings))
 
-    @patch("analyze_alarm_context._query_alarms_for_res_id")
     @patch("analyze_alarm_context._load_cmdb_client")
     @patch("analyze_alarm_context._fetch_root_resource_detail")
     @patch("analyze_alarm_context._build_topology_summary")
+    @patch("analyze_alarm_context._query_alarms_for_res_id")
     @patch("get_metric_definitions.analyze_metrics")
-    def test_analyze_alarm_context_queries_root_metrics_before_topology_fanout(
+    def test_analyze_alarm_context_queries_root_metrics_before_topology_alarm_fanout(
         self,
         mock_analyze_metrics,
+        mock_query_alarms_for_res_id,
         mock_build_topology_summary,
         mock_fetch_root_resource_detail,
         mock_load_cmdb_client,
-        mock_query_alarms_for_res_id,
     ):
         call_order = []
 
@@ -236,10 +236,12 @@ class AnalyzeAlarmContextTests(unittest.TestCase):
         )
 
         self.assertEqual(result["metricAnalysis"]["metricType"], "mysql")
-        self.assertEqual(call_order[0], "alarm:3094")
-        self.assertEqual(call_order[1], "alarm:3094")
-        self.assertEqual(call_order[2], "metrics")
-        self.assertEqual(call_order[3], "topology")
+        self.assertEqual(call_order[0], "metrics")
+        self.assertEqual(call_order[1], "topology")
+        self.assertEqual(call_order[2], "alarm:3094")
+        self.assertEqual(call_order[3], "alarm:5002")
+        self.assertEqual(call_order[4], "alarm:3094")
+        self.assertEqual(call_order[5], "alarm:5002")
 
 
 if __name__ == "__main__":
