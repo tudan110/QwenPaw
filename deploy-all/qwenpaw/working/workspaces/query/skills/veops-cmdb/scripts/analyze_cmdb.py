@@ -28,7 +28,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from veops_http import build_url, create_session, try_login  # noqa: E402
+from veops_http import build_url, create_session, request_with_fallback, try_login  # noqa: E402
 
 ALLOWED_MODES = {"summary", "model-groups", "relation-types", "app-relations"}
 ALLOWED_OUTPUTS = {"json", "markdown", "markdown-echarts-only"}
@@ -101,7 +101,12 @@ def build_error(message: str, code: int = 500) -> Dict[str, Any]:
 
 
 def fetch_json(api_path: str, session: Any, base_url: str) -> Dict[str, Any]:
-    response = session.get(build_url(base_url, api_path), timeout=30)
+    response = request_with_fallback(
+        session,
+        "GET",
+        build_url(base_url, api_path),
+        timeout=30,
+    )
     try:
         body = response.json()
     except json.JSONDecodeError:

@@ -2,6 +2,8 @@
 import argparse
 import json
 import os
+import subprocess
+import tempfile
 import sys
 from typing import Any
 from urllib.parse import urljoin
@@ -33,11 +35,127 @@ def create_session() -> requests.Session:
     return session
 
 
+class FallbackResponse:
+    def __init__(self, status_code: int, text: str) -> None:
+        self.status_code = status_code
+        self.text = text
+
+    def json(self) -> Any:
+        return json.loads(self.text)
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"HTTP {self.status_code}", response=self)
+
+
+def _merged_headers(
+    session: requests.Session,
+    headers: dict[str, str] | None = None,
+) -> dict[str, str]:
+    merged = dict(session.headers)
+    if headers:
+        merged.update(headers)
+    return {str(key): str(value) for key, value in merged.items() if value is not None}
+
+
+def _should_fallback_to_curl(error: Exception) -> bool:
+    if isinstance(error, requests.RequestException):
+        return True
+    if isinstance(error, OSError):
+        return True
+    return "No route to host" in str(error)
+
+
+def _curl_request(
+    *,
+    url: str,
+    method: str,
+    headers: dict[str, str],
+    json_payload: dict[str, Any] | None,
+    timeout: int | float,
+) -> FallbackResponse:
+    with tempfile.NamedTemporaryFile(delete=False) as body_file:
+        body_path = body_file.name
+
+    args = [
+        "curl",
+        "-sS",
+        "-X",
+        method.upper(),
+        "--connect-timeout",
+        str(int(timeout)),
+        "--max-time",
+        str(int(timeout)),
+        "-o",
+        body_path,
+        "-w",
+        "%{http_code}",
+    ]
+    for key, value in headers.items():
+        args.extend(["-H", f"{key}: {value}"])
+    if json_payload is not None:
+        args.extend(["--data-binary", json.dumps(json_payload, ensure_ascii=False)])
+    args.append(url)
+
+    try:
+        completed = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=max(int(timeout) + 5, 10),
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError((completed.stderr or completed.stdout or "curl 请求失败").strip())
+        status_text = (completed.stdout or "").strip()
+        status_code = int(status_text or "0")
+        with open(body_path, "r", encoding="utf-8", errors="replace") as handle:
+            body_text = handle.read()
+        return FallbackResponse(status_code=status_code, text=body_text)
+    finally:
+        try:
+            os.unlink(body_path)
+        except OSError:
+            pass
+
+
+def request_with_fallback(
+    session: requests.Session,
+    method: str,
+    url: str,
+    *,
+    json_payload: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: int | float = 30,
+) -> requests.Response | FallbackResponse:
+    try:
+        return session.request(
+            method=method.upper(),
+            url=url,
+            json=json_payload,
+            headers=headers,
+            timeout=timeout,
+        )
+    except Exception as error:  # noqa: BLE001
+        if not _should_fallback_to_curl(error):
+            raise
+        return _curl_request(
+            url=url,
+            method=method,
+            headers=_merged_headers(session, headers),
+            json_payload=json_payload,
+            timeout=timeout,
+        )
+
+
 def login(session: requests.Session, base_url: str, username: str, password: str) -> dict[str, Any]:
     url = build_url(base_url, "/api/v1/acl/login")
-    response = session.post(
+    response = request_with_fallback(
+        session,
+        "POST",
         url,
-        json={"username": username, "password": password},
+        json_payload={"username": username, "password": password},
         timeout=20,
     )
     response.raise_for_status()
@@ -69,6 +187,37 @@ def envelope(response: requests.Response) -> dict[str, Any]:
     return {"状态码": response.status_code, "响应体": parse_body(response)}
 
 
+def fetch_with_auth_fallback(
+    session: requests.Session,
+    *,
+    base_url: str,
+    path: str,
+    username: str,
+    password: str,
+    timeout: int | float = 30,
+) -> requests.Response | FallbackResponse:
+    url = build_url(base_url, path)
+    response = request_with_fallback(
+        session,
+        "GET",
+        url,
+        timeout=timeout,
+    )
+    if response.status_code not in {401, 403}:
+        return response
+
+    auth_payload = try_login(session, base_url, username, password)
+    if not auth_payload:
+        return response
+
+    return request_with_fallback(
+        session,
+        "GET",
+        url,
+        timeout=timeout,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="VEOPS CMDB 后台 HTTP 客户端")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -92,7 +241,9 @@ def main() -> int:
 
         if args.command == "login":
             if auth_payload:
-                info_response = session.get(
+                info_response = request_with_fallback(
+                    session,
+                    "GET",
                     build_url(base_url, "/api/v1/acl/users/info"),
                     timeout=20,
                 )
@@ -114,7 +265,14 @@ def main() -> int:
             )
             return 0
 
-        response = session.get(build_url(base_url, args.path), timeout=30)
+        response = fetch_with_auth_fallback(
+            session,
+            base_url=base_url,
+            path=args.path,
+            username=username,
+            password=password,
+            timeout=30,
+        )
         print(json.dumps(envelope(response), ensure_ascii=False, indent=2))
         return 0
     except requests.HTTPError as exc:

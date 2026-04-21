@@ -4,8 +4,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import urllib.parse
+import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
 from pathlib import Path
@@ -40,6 +43,13 @@ def _normalize_token(value: str) -> str:
     return "".join(ch for ch in text if ch not in " \t\r\n_-()/\\:：")
 
 
+class CmdbHttpStatusError(RuntimeError):
+    def __init__(self, status_code: int, body: str) -> None:
+        super().__init__(f"HTTP {status_code}: {body}")
+        self.status_code = status_code
+        self.body = body
+
+
 class CmdbHttpClient:
     def __init__(self, base_url: str, username: str, password: str) -> None:
         self.base_url = base_url.rstrip("/")
@@ -47,8 +57,9 @@ class CmdbHttpClient:
         self.password = password
         self.jar = CookieJar()
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
+        self._authenticated = False
 
-    def _request_json(
+    def _request_json_once(
         self,
         path: str,
         *,
@@ -69,11 +80,111 @@ class CmdbHttpClient:
             headers=req_headers,
             method=method,
         )
-        with self.opener.open(req, timeout=30) as response:
-            return json.load(response)
+        try:
+            with self.opener.open(req, timeout=30) as response:
+                return json.load(response)
+        except urllib.error.HTTPError:
+            raise
+        except Exception:
+            return self._curl_request_json(path, method=method, payload=payload, headers=req_headers)
+
+    def _request_json(
+        self,
+        path: str,
+        *,
+        method: str = "GET",
+        payload: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
+        try:
+            return self._request_json_once(
+                path,
+                method=method,
+                payload=payload,
+                headers=headers,
+            )
+        except urllib.error.HTTPError as error:
+            if error.code in {401, 403} and not self._authenticated and self.try_login():
+                return self._request_json_once(
+                    path,
+                    method=method,
+                    payload=payload,
+                    headers=headers,
+                )
+            raise
+        except CmdbHttpStatusError as error:
+            if error.status_code in {401, 403} and not self._authenticated and self.try_login():
+                return self._request_json_once(
+                    path,
+                    method=method,
+                    payload=payload,
+                    headers=headers,
+                )
+            raise
+
+    def _curl_request_json(
+        self,
+        path: str,
+        *,
+        method: str = "GET",
+        payload: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
+        url = f"{self.base_url}{path}"
+        merged_headers = {"Accept-Language": "zh"}
+        for key, value in getattr(self.opener, "addheaders", []):
+            merged_headers[str(key)] = str(value)
+        if headers:
+            merged_headers.update(headers)
+
+        with tempfile.NamedTemporaryFile(delete=False) as body_file:
+            body_path = body_file.name
+
+        args = [
+            "curl",
+            "-sS",
+            "-X",
+            method.upper(),
+            "--connect-timeout",
+            "30",
+            "--max-time",
+            "30",
+            "-o",
+            body_path,
+            "-w",
+            "%{http_code}",
+        ]
+        for key, value in merged_headers.items():
+            args.extend(["-H", f"{key}: {value}"])
+        if payload is not None:
+            args.extend(["--data-binary", json.dumps(payload, ensure_ascii=False)])
+        args.append(url)
+
+        try:
+            completed = subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=35,
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError((completed.stderr or completed.stdout or "curl 请求失败").strip())
+            status_code = int((completed.stdout or "").strip() or "0")
+            with open(body_path, "r", encoding="utf-8", errors="replace") as handle:
+                response_text = handle.read()
+            if status_code >= 400:
+                raise CmdbHttpStatusError(status_code, response_text)
+            return json.loads(response_text)
+        finally:
+            try:
+                os.unlink(body_path)
+            except OSError:
+                pass
 
     def login(self) -> None:
-        payload = self._request_json(
+        payload = self._request_json_once(
             "/api/v1/acl/login",
             method="POST",
             payload={"username": self.username, "password": self.password},
@@ -82,6 +193,7 @@ class CmdbHttpClient:
         if not token:
             raise RuntimeError(f"登录响应缺少 token: {payload}")
         self.opener.addheaders = [("Access-Token", token), ("Accept-Language", "zh")]
+        self._authenticated = True
 
     def try_login(self) -> bool:
         username = _clean_text(self.username)
