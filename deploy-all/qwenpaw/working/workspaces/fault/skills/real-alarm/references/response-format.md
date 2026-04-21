@@ -30,6 +30,7 @@
   "alarmtitle": "端口DOWN",
   "vendor": "",
   "devName": "SN-XA-LHL-A.Leaf-4.MCN.CX600",
+  "devId": 18,
   "manageIp": "4.155.10.35",
   "locatenename": "BindIfName=-",
   "alarmregion": "XA",
@@ -67,6 +68,7 @@
 | 字段 | 类型 | 说明 | 示例 |
 |------|------|------|------|
 | `devName` | string | 设备名称 | `SN-XA-LHL-A.Leaf-4.MCN.CX600` |
+| `devId` | int/string | 当前告警对应的资源 ID，即 `resId/ci id` | `18` |
 | `manageIp` | string | 管理IP | `4.155.10.35` |
 | `vendor` | string | 厂商 | `HW` |
 | `locatenename` | string | 位置名称 | `BindIfName=-` |
@@ -152,7 +154,7 @@
 ### 查询场景
 
 1. **简单列表**：优先展示 `alarmtitle`、`alarmseverity`、`alarmclass`、`devName`、`eventtime`
-2. **详细信息**：补充 `manageIp`、`speciality`、`alarmstatus`、`alarmregion`
+2. **详细信息**：补充 `manageIp`、`devId`、`speciality`、`alarmstatus`、`alarmregion`
 3. **分析统计**：按 `alarmseverity`、`alarmclass`、`speciality`、`devName`、`alarmregion` 分组
 
 ### 排序建议
@@ -171,3 +173,4 @@
 - 时间范围：使用 `eventtime`（告警发生时间）或 `params.beginEventtime` / `params.endEventtime` 进行时间范围筛选
 - 设备筛选：`devName` 或 `manageIp`
 - 区域筛选：`alarmregion` 或 `alarmcounty`
+- CI ID 展示与本地筛选：优先使用 `neId/ciId`，若接口仅返回 `devId`，则将 `devId` 视为当前告警的 `resId/CI ID`

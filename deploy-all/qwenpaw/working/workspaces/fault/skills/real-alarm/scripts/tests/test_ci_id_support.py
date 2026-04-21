@@ -4,7 +4,8 @@ from unittest.mock import MagicMock, patch
 
 from analyze_alarms import validate_args
 from get_alarms import execute
-from utils.alarm_analyzer import apply_filters
+from utils.alarm_analyzer import apply_filters, analyze_by_mode
+from utils.alarm_normalizer import build_alarm_rows, normalize_alarms
 
 
 class CiIdSupportTests(unittest.TestCase):
@@ -25,11 +26,46 @@ class CiIdSupportTests(unittest.TestCase):
             {"alarmtitle": "A", "neId": 18},
             {"alarmtitle": "B", "neId": 19},
             {"alarmtitle": "C", "ciId": "18"},
+            {"alarmtitle": "D", "devId": "18"},
         ]
 
         filtered = apply_filters(alarms, ci_id="18")
 
-        self.assertEqual([alarm["alarmtitle"] for alarm in filtered], ["A", "C"])
+        self.assertEqual([alarm["alarmtitle"] for alarm in filtered], ["A", "C", "D"])
+
+    def test_build_alarm_rows_uses_dev_id_as_ci_id_fallback(self):
+        rows = build_alarm_rows(
+            normalize_alarms(
+                [
+                    {
+                        "alarmtitle": "A",
+                        "alarmseverity": "1",
+                        "alarmstatus": "1",
+                        "devId": "18",
+                    }
+                ]
+            )
+        )
+
+        self.assertEqual(rows[0]["neId"], "18")
+
+    def test_search_mode_preview_uses_dev_id_as_ci_id_fallback(self):
+        result = analyze_by_mode(
+            mode="search",
+            alarms=normalize_alarms(
+                [
+                    {
+                        "alarmtitle": "A",
+                        "alarmseverity": "1",
+                        "alarmstatus": "1",
+                        "devId": "18",
+                    }
+                ]
+            ),
+            include_alarms=True,
+        )
+
+        self.assertEqual(result["rows"][0]["neId"], "18")
 
     def test_search_mode_accepts_ci_id_as_only_filter(self):
         args = Namespace(

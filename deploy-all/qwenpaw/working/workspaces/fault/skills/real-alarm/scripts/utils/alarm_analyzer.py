@@ -145,6 +145,7 @@ def matches_ci_id(alarm: Dict[str, Any], ci_id: str) -> bool:
     candidates = (
         alarm.get("neId"),
         alarm.get("ciId"),
+        alarm.get("devId"),
         alarm.get("ciid"),
         alarm.get("neid"),
     )
@@ -222,7 +223,7 @@ def _build_alarm_rows(alarms: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "alarmSeverityName": alarm.get("alarmSeverityName") or "-",
                 "devName": alarm.get("devName") or "-",
                 "manageIp": alarm.get("manageIp") or "-",
-                "neId": alarm.get("neId") or alarm.get("ciId") or "-",
+                "neId": alarm.get("neId") or alarm.get("ciId") or alarm.get("devId") or "-",
                 "eventtime": alarm.get("eventtime") or "-",
                 "speciality": alarm.get("speciality") or "-",
                 "alarmregion": alarm.get("alarmregion") or "-",

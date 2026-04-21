@@ -124,6 +124,7 @@ INOE_API_TOKEN=your_jwt_token_here
 - 接口地址：`{INOE_API_BASE_URL}/resource/realalarm/list`
 - 鉴权方式：`Authorization: Bearer <token>`
 - 请求体：JSON 格式，包含分页参数和筛选条件
+- 返回兼容约定：接口返回中的 `devId` 现在表示当前告警对应的 `resId/CI ID`；skill 在展示和本地筛选时会把 `devId` 作为 `CI ID` 的回退字段
 
 ## 告警级别说明
 
