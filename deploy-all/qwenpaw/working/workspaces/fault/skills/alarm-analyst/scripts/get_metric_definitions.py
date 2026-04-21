@@ -9,7 +9,7 @@
 
 说明:
     - 默认读取当前 skill 目录下的 .env 文件
-    - 先按 ciType 调用 /resource/threshold/getMetricDefinitions
+    - 先按 ciType 调用 /resource/resource/threshold/getMetricDefinitions
     - 再按 AI 选出的关键指标逐个调用 /resource/pm/getMetricData
     - getMetricDefinitions / getMetricData 任一接口不可用时，自动回退到内置 mock 数据
 """
@@ -387,7 +387,7 @@ def fetch_metric_definitions(
     if resolved_page_size < 1:
         raise ValueError("page_size 必须大于等于 1")
 
-    url = f"{_normalize_base_url(api_base_url)}/resource/threshold/getMetricDefinitions"
+    url = f"{_normalize_base_url(api_base_url)}/resource/resource/threshold/getMetricDefinitions"
     headers = {
         "Content-Type": "application/json;charset=UTF-8",
         "Accept": "application/json",

@@ -210,13 +210,13 @@ ALARM_ANALYST_METRIC_PAGE_SIZE=20
 当已经通过 query 数字员工 + `veops-cmdb` 确认资源 `ciType` 后，应先调用指标定义接口，拿到该资源类型可分析的指标列表，再由 AI 从中筛选关键指标。
 
 - **Method**: `POST`
-- **Path**: `/resource/threshold/getMetricDefinitions`
+- **Path**: `/resource/resource/threshold/getMetricDefinitions`
 - **Base URL**: 来自 `.env` 中的 `INOE_API_BASE_URL`
 
 MySQL 示例请求：
 
 ```bash
-curl --location "${INOE_API_BASE_URL}/resource/threshold/getMetricDefinitions" \
+curl --location "${INOE_API_BASE_URL}/resource/resource/threshold/getMetricDefinitions" \
   --header "Authorization: Bearer ${INOE_API_TOKEN}" \
   --header 'Content-Type: application/json' \
   --data '{
@@ -598,7 +598,7 @@ graph TD
 - 下一步先执行：
   - `cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-type mysql --res-id 3094 --output markdown`
 - 该脚本内部会调用：
-  - `POST /resource/threshold/getMetricDefinitions`
+  - `POST /resource/resource/threshold/getMetricDefinitions`
   - 根据返回的 `metricCode` 选出高相关指标
   - 再逐个调用 `POST /resource/pm/getMetricData`
   - 其中 `mulRes[].resId = 3094`，这个值来自 CMDB 返回的 CI ID
@@ -833,7 +833,7 @@ MySQL 场景下，默认执行规则如下：
 - 已确认 `ciType = mysql`，下一步应先执行：
   - `cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-type mysql --res-id <CMDB返回的CI_ID> --output markdown`
 - 该脚本会先调用：
-  - `POST /resource/threshold/getMetricDefinitions`
+  - `POST /resource/resource/threshold/getMetricDefinitions`
   - `metricType = mysql`
 - 然后由 AI 挑选关键指标，并继续逐个调用：
   - `POST /resource/pm/getMetricData`
