@@ -105,7 +105,8 @@ def _format_datetime(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _load_cmdb_config(find_project_module: Any) -> dict[str, str]:
+def _load_cmdb_client():
+    find_project = _load_module("veops_find_project", _veops_find_project_path())
     env_path = (
         _workspace_root()
         / "query"
@@ -116,29 +117,20 @@ def _load_cmdb_config(find_project_module: Any) -> dict[str, str]:
     if not env_path.exists():
         raise ValueError(f"未找到 veops-cmdb 的环境文件：{env_path}")
 
-    env = find_project_module._load_env_file(env_path)  # noqa: SLF001
+    env = find_project._load_env_file(env_path)  # noqa: SLF001
     base_url = _safe_str(env.get("VEOPS_BASE_URL"))
     if not base_url:
         raise ValueError(f"veops-cmdb 的环境文件缺少 VEOPS_BASE_URL：{env_path}")
 
-    return {
-        "base_url": base_url,
-        "username": _safe_str(env.get("VEOPS_USERNAME")),
-        "password": _safe_str(env.get("VEOPS_PASSWORD")),
-        "env_path": str(env_path),
-    }
-
-
-def _load_cmdb_client():
-    find_project = _load_module("veops_find_project", _veops_find_project_path())
-    env = _load_cmdb_config(find_project)
+    username = _safe_str(env.get("VEOPS_USERNAME"))
+    password = _safe_str(env.get("VEOPS_PASSWORD"))
     client = find_project.CmdbHttpClient(
-        base_url=env["base_url"],
-        username=env["username"],
-        password=env["password"],
+        base_url=base_url,
+        username=username,
+        password=password,
     )
     login_mode = "anonymous"
-    if env["username"] and env["password"]:
+    if username and password:
         try:
             client.login()
             login_mode = "authenticated"

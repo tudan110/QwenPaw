@@ -199,7 +199,7 @@ ALARM_ANALYST_METRIC_PAGE_SIZE=20
 
 - `.env` 中至少要有 `INOE_API_BASE_URL` 和 `INOE_API_TOKEN`
 - `INOE_API_TOKEN` 沿用实时告警系统同类接口的 JWT 鉴权方式
-- 当需要调用 `veops-cmdb` 查询拓扑时，应固定使用 **`veops-cmdb` 技能目录** 下的 `.env`，不要读取当前 `alarm-analyst` 目录下的 `.env`，也不要去 query 工作目录兜底找配置
+- 当需要调用 `veops-cmdb` 查询拓扑时，直接遵循 `veops-cmdb` 自己的配置与访问规则，不在当前 skill 内重复声明
 - 具体 API 路径、请求体和调用时机写在本 `SKILL.md` 中
 - 如果后续更换指标服务地址，优先只改 `.env`，不要在多个脚本或提示词里硬编码
 - 如果缺少 token，不要继续请求；直接返回配置缺失错误

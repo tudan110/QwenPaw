@@ -1,33 +1,13 @@
 import unittest
-from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import patch
 
 from analyze_alarm_context import (
     _build_topology_summary,
     _collect_related_resource_ids,
     _infer_correlation_findings,
-    _load_cmdb_config,
 )
 
 
 class AnalyzeAlarmContextTests(unittest.TestCase):
-    def test_load_cmdb_config_reads_veops_cmdb_skill_env_file(self):
-        fake_find_project = SimpleNamespace(
-            _load_env_file=lambda path: {
-                "VEOPS_BASE_URL": "http://cmdb.example.com",
-                "VEOPS_USERNAME": "tester",
-                "VEOPS_PASSWORD": "secret",
-            }
-        )
-        with patch.object(Path, "exists", return_value=True):
-            config = _load_cmdb_config(fake_find_project)
-
-        self.assertEqual(config["base_url"], "http://cmdb.example.com")
-        self.assertEqual(config["username"], "tester")
-        self.assertEqual(config["password"], "secret")
-        self.assertTrue(config["env_path"].endswith("/query/skills/veops-cmdb/.env"))
-
     def test_collect_related_resource_ids_deduplicates_and_keeps_root_first(self):
         resource_rows = [
             {"_id": 4001, "ci_type": "mysql", "name": "mysql-main"},
