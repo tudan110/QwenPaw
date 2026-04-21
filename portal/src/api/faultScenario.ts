@@ -14,10 +14,10 @@ export async function diagnoseFaultScenario(
   const timerId = window.setTimeout(() => controller.abort(), timeoutMs);
   const abortWithParentSignal = () => controller.abort();
 
-  options.signal?.addEventListener("abort", abortWithParentSignal);
+    options.signal?.addEventListener("abort", abortWithParentSignal);
 
   try {
-    const response = await fetch("/portal-api/fault-scenarios/diagnose", {
+    const response = await fetch("/portal-api/alarm-analyst/diagnose", {
       method: "POST",
       signal: controller.signal,
       headers: { "Content-Type": "application/json" },

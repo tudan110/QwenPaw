@@ -148,18 +148,18 @@ def test_build_portal_employee_status_payload_prefers_recent_session_for_idle() 
     assert payload["currentJob"] == "最近会话：Oracle 死锁方案"
 
 
-def test_fault_scenario_diagnose_route_returns_structured_result(
+def test_alarm_analyst_diagnose_route_returns_structured_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = TestClient(portal_backend.app)
 
     monkeypatch.setattr(
         portal_backend,
-        "run_fault_scenario_diagnose",
+        "run_alarm_analyst_diagnose",
         lambda payload: {
             "session": {
                 "sessionId": payload["sessionId"],
-                "scene": "cmdb_add_failed_mysql_deadlock",
+                "scene": "alarm_analyst_rca",
             },
             "result": {
                 "summary": "已定位为数据库死锁导致 CMDB 新增失败",
@@ -171,7 +171,7 @@ def test_fault_scenario_diagnose_route_returns_structured_result(
     )
 
     response = client.post(
-        "/api/portal/fault-scenarios/diagnose",
+        "/api/portal/alarm-analyst/diagnose",
         json={
             "sessionId": "fault-scenario-1",
             "employeeId": "fault",

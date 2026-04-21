@@ -28,7 +28,7 @@ from qwenpaw.extensions.api.fault_manual_workorder_service import (
     evaluate_metric_recovery,
     merge_manual_workorder_notification,
 )
-from qwenpaw.extensions.api.fault_scenario_service import run_fault_scenario_diagnose
+from qwenpaw.extensions.api.alarm_analyst_service import run_alarm_analyst_diagnose
 from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders import (
     query_alarm_workorders,
 )
@@ -1149,6 +1149,55 @@ async def portal_fault_scenario_diagnose(
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] portal_fault_scenario_diagnose failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/alarm-analyst/diagnose")
+async def portal_alarm_analyst_diagnose(
+    request: Request,
+    payload: dict = Body(default_factory=dict),
+):
+    try:
+        session_id = str(payload.get("sessionId") or "").strip()
+        if not session_id:
+            raise HTTPException(status_code=422, detail="sessionId is required")
+
+        result = _shape_fault_scenario_response(run_alarm_analyst_diagnose(payload))
+        if hasattr(request.app.state, "multi_agent_manager"):
+            history = await _load_portal_fault_history(request, session_id=session_id)
+            history.append(
+                _compact_ui_message(
+                    {
+                        "id": f"user-{datetime.now(timezone.utc).timestamp()}",
+                        "type": "user",
+                        "content": payload.get("content", ""),
+                    }
+                )
+            )
+            history.append(
+                _compact_ui_message(
+                    {
+                        "id": f"agent-{datetime.now(timezone.utc).timestamp()}",
+                        "type": "agent",
+                        "content": result["result"]["summary"],
+                        "faultScenarioResult": result["result"],
+                    }
+                )
+            )
+            await _save_portal_fault_history(
+                request,
+                session_id=session_id,
+                messages=history,
+            )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] portal_alarm_analyst_diagnose failed: {error_detail}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
