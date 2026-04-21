@@ -28,7 +28,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from veops_http import build_url, create_session, login  # noqa: E402
+from veops_http import build_url, create_session, try_login  # noqa: E402
 
 ALLOWED_MODES = {"summary", "model-groups", "relation-types", "app-relations"}
 ALLOWED_OUTPUTS = {"json", "markdown", "markdown-echarts-only"}
@@ -404,11 +404,11 @@ def render_markdown(result: Dict[str, Any]) -> str:
 
 def analyze(mode: str, skill_root: Path, env: Dict[str, str]) -> Dict[str, Any]:
     session = create_session()
-    login(
+    try_login(
         session,
         env["VEOPS_BASE_URL"],
-        env["VEOPS_USERNAME"],
-        env["VEOPS_PASSWORD"],
+        env.get("VEOPS_USERNAME", ""),
+        env.get("VEOPS_PASSWORD", ""),
     )
     models = load_models(session, env["VEOPS_BASE_URL"])
     relations = load_all_relations(session, env["VEOPS_BASE_URL"])

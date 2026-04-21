@@ -78,16 +78,6 @@ def _veops_find_project_path() -> Path:
     )
 
 
-def _veops_env_path() -> Path:
-    return (
-        _workspace_root()
-        / "query"
-        / "skills"
-        / "veops-cmdb"
-        / ".env"
-    )
-
-
 def _load_module(module_name: str, path: Path):
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
@@ -116,20 +106,41 @@ def _format_datetime(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _load_cmdb_config() -> dict[str, str]:
+    base_url = _safe_str(os.getenv("VEOPS_BASE_URL"))
+    username = _safe_str(os.getenv("VEOPS_USERNAME"))
+    password = _safe_str(os.getenv("VEOPS_PASSWORD"))
+
+    if not base_url:
+        raise ValueError("未设置 VEOPS_BASE_URL，请在当前 skill 目录下的 .env 中配置 CMDB 地址")
+
+    return {
+        "base_url": base_url,
+        "username": username,
+        "password": password,
+    }
+
+
 def _load_cmdb_client():
     find_project = _load_module("veops_find_project", _veops_find_project_path())
-    env = find_project._load_env_file(_veops_env_path())  # noqa: SLF001
+    env = _load_cmdb_config()
     client = find_project.CmdbHttpClient(
-        base_url=env["VEOPS_BASE_URL"],
-        username=env["VEOPS_USERNAME"],
-        password=env["VEOPS_PASSWORD"],
+        base_url=env["base_url"],
+        username=env["username"],
+        password=env["password"],
     )
-    client.login()
-    return client, find_project
+    login_mode = "anonymous"
+    if env["username"] and env["password"]:
+        try:
+            client.login()
+            login_mode = "authenticated"
+        except Exception:
+            login_mode = "anonymous"
+    return client, find_project, login_mode
 
 
 def _fetch_topology_relations(root_res_id: str) -> list[dict[str, Any]]:
-    client, _find_project = _load_cmdb_client()
+    client, _find_project, _login_mode = _load_cmdb_client()
     payload = client._request_json(  # noqa: SLF001 - 复用 skill 内部 HTTP helper
         f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(root_res_id)}&level=1,2,3&count=10000"
     )
@@ -463,7 +474,11 @@ def analyze_alarm_context(
     begin_time = _format_datetime(begin_dt)
     end_time = _format_datetime(end_dt)
 
-    topology_rows = _fetch_topology_relations(root_res_id)
+    client, _find_project, cmdb_access_mode = _load_cmdb_client()
+    payload = client._request_json(  # noqa: SLF001 - 复用 skill 内部 HTTP helper
+        f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(root_res_id)}&level=1,2,3&count=10000"
+    )
+    topology_rows = [item for item in payload.get("result", []) if isinstance(item, dict)] if isinstance(payload, dict) else []
     topology_summary = _build_topology_summary(root_res_id, topology_rows)
     resolved_metric_type = _infer_metric_type(metric_type, topology_summary)
 
@@ -509,6 +524,7 @@ def analyze_alarm_context(
             "beginTime": begin_time,
             "endTime": end_time,
         },
+        "cmdbAccessMode": cmdb_access_mode,
         "topology": topology_summary,
         "relatedAlarms": {
             **merged_related_alarms,
@@ -588,6 +604,7 @@ def render_markdown(result: dict[str, Any]) -> str:
         f"- 告警时间：`{current_alarm.get('eventTime') or '-'}`",
         "",
         "## CMDB 拓扑扩散",
+        f"- CMDB 访问方式：`{result.get('cmdbAccessMode') or '-'}`",
         f"- 关系时间窗口：`{result.get('timeWindow', {}).get('beginTime', '-')}` ~ `{result.get('timeWindow', {}).get('endTime', '-')}`",
         f"- 关联资源数：`{topology.get('resourceCount', 0)}`",
         f"- 资源类型分布：{ci_type_summary}",

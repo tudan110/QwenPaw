@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-ENV_FILE="${VEOPS_ENV_FILE:-${SKILL_ROOT}/.env}"
+ENV_FILE="${SKILL_ROOT}/.env"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "缺少环境变量文件：${ENV_FILE}" >&2
@@ -16,8 +16,6 @@ source "${ENV_FILE}"
 set +a
 
 : "${VEOPS_BASE_URL:?必须配置 VEOPS_BASE_URL}"
-: "${VEOPS_USERNAME:?必须配置 VEOPS_USERNAME}"
-: "${VEOPS_PASSWORD:?必须配置 VEOPS_PASSWORD}"
 
 VEOPS_CMDB_URL="${VEOPS_BASE_URL%/}/cmdb/"
 VEOPS_API_BASE_URL="${VEOPS_BASE_URL%/}/api"

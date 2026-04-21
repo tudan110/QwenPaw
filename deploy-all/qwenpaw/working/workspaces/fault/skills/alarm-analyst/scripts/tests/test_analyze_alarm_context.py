@@ -1,13 +1,32 @@
+import os
 import unittest
+from unittest.mock import patch
 
 from analyze_alarm_context import (
     _build_topology_summary,
     _collect_related_resource_ids,
     _infer_correlation_findings,
+    _load_cmdb_config,
 )
 
 
 class AnalyzeAlarmContextTests(unittest.TestCase):
+    def test_load_cmdb_config_reads_current_skill_env_vars(self):
+        with patch.dict(
+            os.environ,
+            {
+                "VEOPS_BASE_URL": "http://cmdb.example.com",
+                "VEOPS_USERNAME": "tester",
+                "VEOPS_PASSWORD": "secret",
+            },
+            clear=False,
+        ):
+            config = _load_cmdb_config()
+
+        self.assertEqual(config["base_url"], "http://cmdb.example.com")
+        self.assertEqual(config["username"], "tester")
+        self.assertEqual(config["password"], "secret")
+
     def test_collect_related_resource_ids_deduplicates_and_keeps_root_first(self):
         resource_rows = [
             {"_id": 4001, "ci_type": "mysql", "name": "mysql-main"},

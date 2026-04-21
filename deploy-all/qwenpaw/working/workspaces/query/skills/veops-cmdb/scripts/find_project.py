@@ -23,6 +23,10 @@ def _load_env_file(path: Path) -> dict[str, str]:
     return values
 
 
+def _default_env_file() -> Path:
+    return Path(__file__).resolve().parents[1] / ".env"
+
+
 def _clean_text(value: Any) -> str:
     if value is None:
         return ""
@@ -78,6 +82,17 @@ class CmdbHttpClient:
         if not token:
             raise RuntimeError(f"登录响应缺少 token: {payload}")
         self.opener.addheaders = [("Access-Token", token), ("Accept-Language", "zh")]
+
+    def try_login(self) -> bool:
+        username = _clean_text(self.username)
+        password = _clean_text(self.password)
+        if not username or not password:
+            return False
+        try:
+            self.login()
+            return True
+        except Exception:
+            return False
 
     def list_projects(self) -> list[dict[str, Any]]:
         query = urllib.parse.quote("_type:project", safe=":_")
@@ -200,14 +215,14 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="输出 JSON")
     args = parser.parse_args()
 
-    env_file = Path(os.environ.get("VEOPS_ENV_FILE", Path(__file__).resolve().parents[1] / ".env"))
+    env_file = _default_env_file()
     env = _load_env_file(env_file)
     client = CmdbHttpClient(
         base_url=env["VEOPS_BASE_URL"],
-        username=env["VEOPS_USERNAME"],
-        password=env["VEOPS_PASSWORD"],
+        username=env.get("VEOPS_USERNAME", ""),
+        password=env.get("VEOPS_PASSWORD", ""),
     )
-    client.login()
+    client.try_login()
     projects = client.list_projects()
     matched_projects, mode = _match_projects(projects, args.keyword)
 

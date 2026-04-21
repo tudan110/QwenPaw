@@ -49,6 +49,15 @@ def login(session: requests.Session, base_url: str, username: str, password: str
     return payload
 
 
+def try_login(session: requests.Session, base_url: str, username: str, password: str) -> dict[str, Any] | None:
+    if not str(username or "").strip() or not str(password or "").strip():
+        return None
+    try:
+        return login(session, base_url, username, password)
+    except Exception:
+        return None
+
+
 def parse_body(response: requests.Response) -> Any:
     try:
         return response.json()
@@ -72,27 +81,30 @@ def main() -> int:
     args = parser.parse_args()
 
     base_url = os.environ["VEOPS_BASE_URL"]
-    username = os.environ["VEOPS_USERNAME"]
-    password = os.environ["VEOPS_PASSWORD"]
+    username = os.environ.get("VEOPS_USERNAME", "")
+    password = os.environ.get("VEOPS_PASSWORD", "")
     cmdb_url = os.environ.get("VEOPS_CMDB_URL", base_url.rstrip("/") + "/cmdb/")
 
     session = create_session()
 
     try:
-        auth_payload = login(session, base_url, username, password)
+        auth_payload = try_login(session, base_url, username, password)
 
         if args.command == "login":
-            info_response = session.get(
-                build_url(base_url, "/api/v1/acl/users/info"),
-                timeout=20,
-            )
-            info_response.raise_for_status()
-            info = parse_body(info_response)
+            if auth_payload:
+                info_response = session.get(
+                    build_url(base_url, "/api/v1/acl/users/info"),
+                    timeout=20,
+                )
+                info_response.raise_for_status()
+                info = parse_body(info_response)
+            else:
+                info = {}
             print(
                 json.dumps(
                     {
-                        "状态": "已登录",
-                        "用户名": auth_payload.get("username"),
+                        "状态": "已登录" if auth_payload else "匿名访问",
+                        "用户名": (auth_payload or {}).get("username", ""),
                         "CMDB": cmdb_url,
                         "用户信息": info.get("result", info),
                     },
