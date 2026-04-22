@@ -3,7 +3,7 @@ name: mysql-deadlock-inspector
 category: evidence
 tags: [fault, mysql, deadlock, lock-wait, transaction, scaffold]
 triggers: [MySQL 死锁排查, 锁等待排查, 阻塞事务分析, 死锁证据]
-description: 面向 MySQL 死锁、锁等待和阻塞事务证据采集的只读 skill。当前阶段保留 JSON 脚手架，供 scenario-root-cause-analyst 后续接线。
+description: 面向 MySQL 死锁、锁等待和阻塞事务证据采集的只读 skill。当前阶段保留 JSON 脚手架，供后续 RCA 链路接线。
 ---
 
 # MySQL Deadlock Inspector

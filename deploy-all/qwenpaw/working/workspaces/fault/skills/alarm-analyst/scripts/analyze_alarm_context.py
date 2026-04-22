@@ -621,6 +621,104 @@ def _infer_correlation_findings(
     return findings
 
 
+def _empty_metric_analysis(metric_type: str = "") -> dict[str, Any]:
+    return {
+        "metricType": _safe_str(metric_type),
+        "selectedMetrics": [],
+        "metricDataResults": [],
+    }
+
+
+def _build_alarm_query_execution(
+    *,
+    expected_res_ids: list[str],
+    results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    success_ids: list[str] = []
+    failed_ids: list[str] = []
+
+    for result in results:
+        res_id = _safe_str(result.get("resId"))
+        if not res_id:
+            continue
+        if int(result.get("code") or 0) == 200:
+            success_ids.append(res_id)
+        else:
+            failed_ids.append(res_id)
+
+    return {
+        "expectedQueries": len(expected_res_ids),
+        "attemptedQueries": len(results),
+        "successIds": success_ids,
+        "failedIds": failed_ids,
+    }
+
+
+def _build_execution_summary(
+    *,
+    res_id: str,
+    event_time: str,
+    device_name: str,
+    manage_ip: str,
+    topology_summary: dict[str, Any],
+    metric_analysis: dict[str, Any],
+    recent_alarm_results: list[dict[str, Any]],
+    previous_alarm_results: list[dict[str, Any]],
+    metric_skipped_reason: str = "",
+) -> dict[str, Any]:
+    root_resource = topology_summary.get("rootResource") or {}
+    resource_ids = [_safe_str(item) for item in topology_summary.get("resourceIds") or [] if _safe_str(item)]
+    metric_type = _safe_str(metric_analysis.get("metricType"))
+    selected_metrics = metric_analysis.get("selectedMetrics") or []
+    metric_data_results = metric_analysis.get("metricDataResults") or []
+    recent_execution = _build_alarm_query_execution(expected_res_ids=resource_ids, results=recent_alarm_results)
+    previous_execution = _build_alarm_query_execution(expected_res_ids=resource_ids, results=previous_alarm_results)
+    root_resolved = bool(_safe_str(root_resource.get("resId") or res_id))
+    metric_type_resolved = bool(metric_type)
+    metric_failed_count = max(len(selected_metrics) - len(metric_data_results), 0)
+
+    status = "success"
+    if not root_resolved or not metric_type_resolved:
+        status = "blocked"
+    elif (
+        recent_execution["attemptedQueries"] != recent_execution["expectedQueries"]
+        or previous_execution["attemptedQueries"] != previous_execution["expectedQueries"]
+        or recent_execution["failedIds"]
+        or previous_execution["failedIds"]
+        or metric_failed_count > 0
+    ):
+        status = "partial"
+
+    return {
+        "status": status,
+        "inputAnchors": {
+            "resIdFound": bool(_safe_str(res_id)),
+            "eventTimeFound": bool(_safe_str(event_time)),
+            "deviceNameFound": bool(_safe_str(device_name)),
+            "manageIpFound": bool(_safe_str(manage_ip)),
+        },
+        "rootResource": {
+            "resolved": root_resolved,
+            "resId": _safe_str(root_resource.get("resId") or res_id),
+            "ciType": _safe_str(root_resource.get("ciType")),
+        },
+        "metrics": {
+            "metricTypeResolved": metric_type_resolved,
+            "selectedCount": len(selected_metrics),
+            "queriedCount": len(metric_data_results),
+            "failedCount": metric_failed_count,
+            "skippedReason": _safe_str(metric_skipped_reason),
+        },
+        "topology": {
+            "resourceIdsExpected": len(resource_ids),
+            "resourceIdsCollected": len(resource_ids),
+            "resourceIds": resource_ids,
+        },
+        "relatedAlarmsRecent": recent_execution,
+        "relatedAlarmsPrevious": previous_execution,
+    }
+
+
 def analyze_alarm_context(
     *,
     res_id: str,
@@ -655,15 +753,20 @@ def analyze_alarm_context(
     root_resource = _fetch_root_resource_detail(client, root_res_id)
     topology_summary = _build_topology_summary(root_res_id, [], root_resource=root_resource)
     resolved_metric_type = _infer_metric_type(metric_type, topology_summary)
+    metric_skipped_reason = ""
+    metric_analysis = _empty_metric_analysis()
 
-    from get_metric_definitions import analyze_metrics  # local script import
+    if resolved_metric_type:
+        from get_metric_definitions import analyze_metrics  # local script import
 
-    metric_analysis = analyze_metrics(
-        metric_type=resolved_metric_type or "mysql",
-        res_id=root_res_id,
-        api_base_url=api_base_url,
-        token=token,
-    )
+        metric_analysis = analyze_metrics(
+            metric_type=resolved_metric_type,
+            res_id=root_res_id,
+            api_base_url=api_base_url,
+            token=token,
+        )
+    else:
+        metric_skipped_reason = "missing_root_ci_type"
 
     payload = client._request_json(  # noqa: SLF001 - 复用 skill 内部 HTTP helper
         f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(root_res_id)}&level=1,2,3&count=10000"
@@ -711,6 +814,17 @@ def analyze_alarm_context(
         metric_data_results=metric_analysis.get("metricDataResults") or [],
         alarm_comparison=alarm_comparison,
     )
+    execution = _build_execution_summary(
+        res_id=root_res_id,
+        event_time=event_time,
+        device_name=device_name,
+        manage_ip=manage_ip,
+        topology_summary=topology_summary,
+        metric_analysis=metric_analysis,
+        recent_alarm_results=recent_alarm_results,
+        previous_alarm_results=previous_alarm_results,
+        metric_skipped_reason=metric_skipped_reason,
+    )
 
     return {
         "code": 200,
@@ -738,6 +852,7 @@ def analyze_alarm_context(
         },
         "metricAnalysis": metric_analysis,
         "findings": findings,
+        "execution": execution,
     }
 
 

@@ -78,7 +78,7 @@ Portal 落地时，需要体现以下链路：
 
 - 用户只是想看最近有哪些活动告警、告警数量、告警分布 -> 用 `real-alarm`
 - 用户已经具备完整工单上下文，要继续工单闭环 -> 用 `fault-disposal`
-- 用户要做固定场景码的场景级 RCA 编排 -> 用 `scenario-root-cause-analyst`
+- 用户要做固定场景码或预定义剧本式的场景 RCA -> 当前工作区不提供专门 skill，优先回到 `alarm-analyst` 或直接走业务侧编排
 
 简化判断：
 
