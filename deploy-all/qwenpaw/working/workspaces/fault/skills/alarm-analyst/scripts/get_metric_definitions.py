@@ -19,7 +19,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
+import tempfile
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -240,6 +242,100 @@ def _get_page_size(page_size: int | None) -> int:
     return int(raw)
 
 
+def _should_fallback_to_curl(error: Exception) -> bool:
+    if isinstance(error, requests.RequestException):
+        return True
+    if isinstance(error, OSError):
+        return True
+    return "No route to host" in str(error)
+
+
+def _curl_post_json(
+    *,
+    url: str,
+    headers: dict[str, str],
+    json_payload: dict[str, Any],
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    with tempfile.NamedTemporaryFile(delete=False) as body_file:
+        body_path = body_file.name
+
+    args = [
+        "curl",
+        "-sS",
+        "--location",
+        "-X",
+        "POST",
+        "--connect-timeout",
+        str(int(timeout_seconds)),
+        "--max-time",
+        str(int(timeout_seconds)),
+        "-o",
+        body_path,
+        "-w",
+        "%{http_code}",
+    ]
+    for key, value in headers.items():
+        args.extend(["-H", f"{key}: {value}"])
+    args.extend(["--data-binary", json.dumps(json_payload, ensure_ascii=False)])
+    args.append(url)
+
+    try:
+        completed = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=max(int(timeout_seconds) + 5, 10),
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError((completed.stderr or completed.stdout or "curl 请求失败").strip())
+        status_code = int((completed.stdout or "").strip() or "0")
+        with open(body_path, "r", encoding="utf-8", errors="replace") as handle:
+            body_text = handle.read()
+        if status_code >= 400:
+            raise requests.HTTPError(f"HTTP {status_code}: {body_text[:200]}")
+        if not body_text.strip():
+            raise ValueError("curl 接口返回空响应")
+        return json.loads(body_text)
+    finally:
+        try:
+            os.unlink(body_path)
+        except OSError:
+            pass
+
+
+def _post_json_with_fallback(
+    *,
+    url: str,
+    headers: dict[str, str],
+    json_payload: dict[str, Any],
+    timeout_seconds: int,
+) -> tuple[dict[str, Any], str]:
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json=json_payload,
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        response_text = response.text.strip()
+        if not response_text:
+            raise ValueError("接口返回空响应")
+        return response.json(), "requests"
+    except (requests.exceptions.RequestException, ValueError, json.JSONDecodeError) as error:
+        if not _should_fallback_to_curl(error):
+            raise
+        return _curl_post_json(
+            url=url,
+            headers=headers,
+            json_payload=json_payload,
+            timeout_seconds=timeout_seconds,
+        ), "curl"
+
+
 def _pick_first(item: dict[str, Any], keys: tuple[str, ...]) -> str:
     for key in keys:
         value = _safe_str(item.get(key))
@@ -398,19 +494,15 @@ def fetch_metric_definitions(
         "pageSize": resolved_page_size,
         "pageNum": page_num,
     }
+    resolved_timeout = _get_timeout(timeout_seconds)
 
     try:
-        response = requests.post(
-            url,
+        response_payload, _transport = _post_json_with_fallback(
+            url=url,
             headers=headers,
-            json=request_payload,
-            timeout=_get_timeout(timeout_seconds),
+            json_payload=request_payload,
+            timeout_seconds=resolved_timeout,
         )
-        response.raise_for_status()
-        response_text = response.text.strip()
-        if not response_text:
-            raise ValueError("指标定义接口返回空响应")
-        response_payload = response.json()
         raw_rows = _extract_metric_rows(response_payload)
         if not raw_rows:
             raise ValueError("指标定义接口未返回可用指标列表")
@@ -548,21 +640,17 @@ def fetch_metric_data(
         start_time=start_time,
         end_time=end_time,
     )
+    resolved_timeout = _get_timeout(timeout_seconds)
 
     source = "live"
     fallback_reason = None
     try:
-        response = requests.post(
-            url,
+        response_payload, _transport = _post_json_with_fallback(
+            url=url,
             headers=headers,
-            json=request_payload,
-            timeout=_get_timeout(timeout_seconds),
+            json_payload=request_payload,
+            timeout_seconds=resolved_timeout,
         )
-        response.raise_for_status()
-        response_text = response.text.strip()
-        if not response_text:
-            raise ValueError("指标数据接口返回空响应")
-        response_payload = response.json()
         data_rows = response_payload.get("data") or []
         if not data_rows:
             raise ValueError("指标数据接口未返回有效 data")
