@@ -162,7 +162,7 @@ class AnalyzeAlarmContextTests(unittest.TestCase):
     @patch("analyze_alarm_context._build_topology_summary")
     @patch("analyze_alarm_context._query_alarms_for_res_id")
     @patch("get_metric_definitions.analyze_metrics")
-    def test_analyze_alarm_context_queries_root_metrics_before_topology_alarm_fanout(
+    def test_analyze_alarm_context_completes_metrics_and_topology_before_alarm_fanout(
         self,
         mock_analyze_metrics,
         mock_query_alarms_for_res_id,
@@ -236,12 +236,12 @@ class AnalyzeAlarmContextTests(unittest.TestCase):
         )
 
         self.assertEqual(result["metricAnalysis"]["metricType"], "mysql")
-        self.assertEqual(call_order[0], "metrics")
-        self.assertEqual(call_order[1], "topology")
-        self.assertEqual(call_order[2], "alarm:3094")
-        self.assertEqual(call_order[3], "alarm:5002")
-        self.assertEqual(call_order[4], "alarm:3094")
-        self.assertEqual(call_order[5], "alarm:5002")
+        metrics_index = call_order.index("metrics")
+        topology_index = call_order.index("topology")
+        first_alarm_index = next(index for index, item in enumerate(call_order) if item.startswith("alarm:"))
+        self.assertLess(metrics_index, first_alarm_index)
+        self.assertLess(topology_index, first_alarm_index)
+        self.assertEqual(call_order[first_alarm_index:], ["alarm:3094", "alarm:5002", "alarm:3094", "alarm:5002"])
         self.assertEqual(result["execution"]["status"], "success")
         self.assertEqual(result["execution"]["rootResource"]["ciType"], "mysql")
         self.assertEqual(result["execution"]["relatedAlarmsRecent"]["expectedQueries"], 2)

@@ -125,7 +125,7 @@ Portal 落地时，需要体现以下链路：
 
 对于 `数据库锁异常（db_mysql_001 10.43.150.186）` 这类 MySQL 告警，默认最短路径是：
 
-1. 从告警文本中提取资产编号、IP、告警标题
+1. 从告警文本中提取资产编号、IP、告警标题、`resId/CI ID`、告警时间
 2. 通过 query 数字员工的 `veops-cmdb` 查询 CMDB，获取：
    - `ciType`
    - `CI ID`
@@ -136,13 +136,18 @@ Portal 落地时，需要体现以下链路：
 cd skills/alarm-analyst && python scripts/analyze_alarm_context.py --res-id <当前告警对应的CI_ID> --alarm-title "数据库锁异常" --device-name db_mysql_001 --manage-ip 10.43.150.186 --output markdown
 ```
 
-4. 如果还需要针对根资源进一步拉取关键指标，或 `analyze_alarm_context.py` 已确认 `ciType = mysql`，继续执行：
+4. 先读取聚合脚本结果，确认：
+   - 当前告警根资源在 CMDB 中的关联拓扑
+   - 拓扑中全部关联资源 ID
+   - 这些资源 ID 在当前窗口/环比窗口的告警 fan-out 结果
+5. 再根据根资源 `ciType` 和“拓扑 fan-out 告警”一起确定指标采集范围
+6. 如果还需要针对根资源进一步拉取关键指标，或 `analyze_alarm_context.py` 已确认 `ciType = mysql`，继续执行：
 
 ```bash
 cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-type mysql --res-id <CMDB返回的CI_ID> --output markdown
 ```
 
-5. 读取脚本结果，再组织分析结论
+7. 把“拓扑关联告警 + 根资源关键指标”一起交给 AI 做根因分析，再组织结论
 
 不要停在“计划执行这个命令”。
 
@@ -272,18 +277,24 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py --res-id 3094
 
 围绕单条告警做根因分析时，AI 必须按下面顺序执行，不允许跳步，也不允许把其中任何一步省略成一句“计划执行”：
 
-1. 以当前告警的 `resId` 作为根节点，先通过 `veops-cmdb` 查询**根资源详情**
-2. 从根资源详情中确认该告警对应资源的 `ciType`
+1. 接收并解析当前告警，提取至少：
+   - 告警标题
+   - `resId/CI ID`
+   - 告警时间
+   - 设备名 / 管理 IP
+2. 以当前告警的 `resId` 作为根节点，通过 `veops-cmdb` 查询**根资源详情**
 3. 再以同一个 `resId` 作为根节点，通过 `veops-cmdb` 查询 **CMDB 拓扑关系**
 4. 从拓扑结果中提取**全部**相关资源 ID（CI ID），不能只取根资源，也不能只取每条关系中的一端
 5. 把这些资源 ID 全部收集起来后，再逐个调用 `real-alarm` 查询告警
 6. `real-alarm` 的告警查询必须把当前资源 ID 放入请求体里的 `neId`
 7. 默认查询窗口必须锚定在**当前告警发生时间前后 10 分钟**
 8. 如果 AI 认为需要做趋势/环比，再额外指定一个比较窗口，继续查询这些资源的环比告警
-9. 在完成拓扑关联告警查询后，再根据**根资源**的 `ciType` 调用 `getMetricDefinitions`
-10. 由 AI 从指标定义结果中筛出和当前故障最相关的指标
-11. 再逐个调用 `getMetricData` 查询这些指标的指标值
-12. 最终把以下信息一起交给 AI 做根因分析：
+9. 在拿到“拓扑关联资源告警”之后，再结合**根资源**的 `ciType` 和当前故障上下文，确定指标采集范围
+10. 由 AI 做第一轮故障类型识别，判断更像数据库、应用、中间件、网络还是基础资源问题
+11. 再根据**根资源**的 `ciType` 调用 `getMetricDefinitions`
+12. 由 AI 从指标定义结果中筛出和当前故障最相关的指标
+13. 再逐个调用 `getMetricData` 查询这些指标的指标值
+14. 最终把以下信息一起交给 AI 做根因分析：
    - 根资源详情
    - 根资源 `ciType`
    - CMDB 拓扑关系
@@ -337,13 +348,13 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py --res-id 3094
 该脚本会按以下顺序执行真实动作：
 
 1. 以 `resId` 为根，通过 `veops-cmdb` 查询根资源详情，明确根资源 `ciType`
-2. 根据根资源 `ciType` 查询指标定义，筛选关键指标
-3. 遍历查询这些关键指标的指标值
-4. 以同一个 `resId` 为根查询 CMDB 关系拓扑
-5. 收集拓扑中的全部关联资源 ID
-6. **必须**按这些资源 ID 遍历查询它们在“当前告警发生时间前后 10 分钟”窗口内的告警
-7. 可选由 AI 自主指定环比时间窗口；若未指定，则默认再查询一个前一等长窗口作为环比基线
-8. 输出可直接交给 AI 继续根因分析的结构化结果，包括：根资源类型、指标结果、拓扑、当前窗口告警、环比告警与初步关系判断
+2. 以同一个 `resId` 为根查询 CMDB 关系拓扑
+3. 收集拓扑中的全部关联资源 ID
+4. **必须**按这些资源 ID 遍历查询它们在“当前告警发生时间前后 10 分钟”窗口内的告警
+5. 可选由 AI 自主指定环比时间窗口；若未指定，则默认再查询一个前一等长窗口作为环比基线
+6. 再根据根资源 `ciType` 查询指标定义，筛选关键指标
+7. 遍历查询这些关键指标的指标值
+8. 输出可直接交给 AI 继续根因分析的结构化结果，包括：根资源类型、拓扑、当前窗口告警、环比告警、指标结果与初步关系判断
 
 默认最近告警查询时间窗口是：
 

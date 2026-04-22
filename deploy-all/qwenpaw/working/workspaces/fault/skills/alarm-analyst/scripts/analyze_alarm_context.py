@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import json
 import sys
@@ -719,6 +720,40 @@ def _build_execution_summary(
     }
 
 
+def _fetch_topology_summary(
+    *,
+    client: Any,
+    root_res_id: str,
+    root_resource: dict[str, Any],
+) -> dict[str, Any]:
+    payload = client._request_json(  # noqa: SLF001 - 复用 skill 内部 HTTP helper
+        f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(root_res_id)}&level=1,2,3&count=10000"
+    )
+    topology_rows = [item for item in payload.get("result", []) if isinstance(item, dict)] if isinstance(payload, dict) else []
+    return _build_topology_summary(root_res_id, topology_rows, root_resource=root_resource)
+
+
+def _fetch_metric_analysis(
+    *,
+    resolved_metric_type: str,
+    root_res_id: str,
+    api_base_url: str | None,
+    token: str | None,
+) -> tuple[dict[str, Any], str]:
+    if not resolved_metric_type:
+        return _empty_metric_analysis(), "missing_root_ci_type"
+
+    from get_metric_definitions import analyze_metrics  # local script import
+
+    metric_analysis = analyze_metrics(
+        metric_type=resolved_metric_type,
+        res_id=root_res_id,
+        api_base_url=api_base_url,
+        token=token,
+    )
+    return metric_analysis, ""
+
+
 def analyze_alarm_context(
     *,
     res_id: str,
@@ -753,26 +788,22 @@ def analyze_alarm_context(
     root_resource = _fetch_root_resource_detail(client, root_res_id)
     topology_summary = _build_topology_summary(root_res_id, [], root_resource=root_resource)
     resolved_metric_type = _infer_metric_type(metric_type, topology_summary)
-    metric_skipped_reason = ""
-    metric_analysis = _empty_metric_analysis()
-
-    if resolved_metric_type:
-        from get_metric_definitions import analyze_metrics  # local script import
-
-        metric_analysis = analyze_metrics(
-            metric_type=resolved_metric_type,
-            res_id=root_res_id,
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        topology_future = executor.submit(
+            _fetch_topology_summary,
+            client=client,
+            root_res_id=root_res_id,
+            root_resource=root_resource,
+        )
+        metric_future = executor.submit(
+            _fetch_metric_analysis,
+            resolved_metric_type=resolved_metric_type,
+            root_res_id=root_res_id,
             api_base_url=api_base_url,
             token=token,
         )
-    else:
-        metric_skipped_reason = "missing_root_ci_type"
-
-    payload = client._request_json(  # noqa: SLF001 - 复用 skill 内部 HTTP helper
-        f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(root_res_id)}&level=1,2,3&count=10000"
-    )
-    topology_rows = [item for item in payload.get("result", []) if isinstance(item, dict)] if isinstance(payload, dict) else []
-    topology_summary = _build_topology_summary(root_res_id, topology_rows, root_resource=root_resource)
+        topology_summary = topology_future.result()
+        metric_analysis, metric_skipped_reason = metric_future.result()
 
     recent_alarm_results = [
         _query_alarms_for_res_id(
