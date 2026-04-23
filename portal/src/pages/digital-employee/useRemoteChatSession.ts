@@ -793,13 +793,17 @@ export function useRemoteChatSession({
         };
       } else {
         setIsCreatingChat(true);
-        ensuredChat = await createChat(nextRemoteAgentId, {
-          name: chatName || normalizedVisibleContent,
-          session_id: sessionId || createRemoteSessionId(nextEmployee.id),
-          user_id: COPAW_USER_ID,
-          channel: COPAW_CHANNEL,
-          meta: chatMeta || undefined,
-        });
+        try {
+          ensuredChat = await createChat(nextRemoteAgentId, {
+            name: chatName || normalizedVisibleContent,
+            session_id: sessionId || createRemoteSessionId(nextEmployee.id),
+            user_id: COPAW_USER_ID,
+            channel: COPAW_CHANNEL,
+            meta: chatMeta || undefined,
+          });
+        } finally {
+          setIsCreatingChat(false);
+        }
       }
 
       setCurrentChatId(ensuredChat.id);

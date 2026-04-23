@@ -277,6 +277,27 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     !message.hideDisposalOperation;
   const copyableContent = String(renderedMessageContent || "").trim();
   const traceBundleSubtitle = buildTraceBundleSubtitle(auxiliaryTraceBlocks);
+  const [isTraceBundleOpen, setIsTraceBundleOpen] = useState(false);
+  const wasStreamingTraceBundleRef = useRef(false);
+
+  useEffect(() => {
+    if (!auxiliaryTraceBlocks.length) {
+      wasStreamingTraceBundleRef.current = false;
+      setIsTraceBundleOpen(false);
+      return;
+    }
+
+    if (isStreamingMessage) {
+      wasStreamingTraceBundleRef.current = true;
+      setIsTraceBundleOpen(true);
+      return;
+    }
+
+    if (wasStreamingTraceBundleRef.current) {
+      setIsTraceBundleOpen(false);
+      wasStreamingTraceBundleRef.current = false;
+    }
+  }, [auxiliaryTraceBlocks.length, isStreamingMessage]);
 
   return (
     <div
@@ -289,9 +310,15 @@ export const ChatMessageItem = memo(function ChatMessageItem({
       >
         <i className={`fas ${message.type === "user" ? "fa-user" : message.icon}`} />
       </div>
-      <div className="message-content">
-        {auxiliaryTraceBlocks.length ? (
-          <details className="trace-block trace-bundle">
+        <div className="message-content">
+          {auxiliaryTraceBlocks.length ? (
+          <details
+            className="trace-block trace-bundle"
+            open={isTraceBundleOpen}
+            onToggle={(event) => {
+              setIsTraceBundleOpen(event.currentTarget.open);
+            }}
+          >
             <summary className="trace-summary">
               <span className="trace-label">
                 <i className="fas fa-layer-group" />

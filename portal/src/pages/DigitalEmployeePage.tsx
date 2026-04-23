@@ -4922,10 +4922,10 @@ export default function DigitalEmployeePage({
                       </div>
                       <button
                         className={
-                          isCreatingChat
-                            ? "send-btn disabled"
-                            : isConversationRunning
-                              ? "send-btn stop-mode"
+                          isConversationRunning
+                            ? "send-btn stop-mode"
+                            : isCreatingChat
+                              ? "send-btn disabled"
                               : "send-btn"
                         }
                         onClick={() => {
@@ -4935,7 +4935,7 @@ export default function DigitalEmployeePage({
                           }
                           void handleSendMessage();
                         }}
-                        disabled={isCreatingChat}
+                        disabled={isCreatingChat && !isConversationRunning}
                         aria-label={isConversationRunning ? "停止聊天" : "发送消息"}
                       >
                         {isConversationRunning ? (
@@ -5167,10 +5167,10 @@ export default function DigitalEmployeePage({
                         ) : null}
                         <button
                           className={
-                            isCreatingChat
-                              ? "send-btn disabled"
-                              : isConversationRunning
-                                ? "send-btn stop-mode"
+                            isConversationRunning
+                              ? "send-btn stop-mode"
+                              : isCreatingChat
+                                ? "send-btn disabled"
                                 : "send-btn"
                           }
                           onClick={() => {
@@ -5180,7 +5180,7 @@ export default function DigitalEmployeePage({
                             }
                             void handleSendMessage();
                           }}
-                          disabled={isCreatingChat}
+                          disabled={isCreatingChat && !isConversationRunning}
                           aria-label={isConversationRunning ? "停止聊天" : "发送消息"}
                         >
                           {isConversationRunning ? (

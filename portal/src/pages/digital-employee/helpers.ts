@@ -191,12 +191,7 @@ export function buildEmployeePagePath(
   } = {},
 ) {
   const params = new URLSearchParams();
-  const entry =
-    options.entry !== undefined
-      ? options.entry
-      : employee?.id === "fault" && employee?.urgent
-        ? ALARM_WORKORDER_ENTRY
-        : null;
+  const entry = options.entry ?? null;
 
   if (entry) {
     params.set("entry", entry);
