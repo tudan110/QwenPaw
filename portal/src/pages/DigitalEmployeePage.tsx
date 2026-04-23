@@ -3877,6 +3877,19 @@ export default function DigitalEmployeePage({
     setExecutionVisible(false);
     setActivePortalResourceImportSessionId("");
 
+    if (!isPortalHome) {
+      resetAlarmWorkbench();
+      resetRemoteState({
+        initialMessages: [],
+      });
+      setPortalHomeChatMode(false);
+      setHistoryVisible(false);
+      navigate(buildPortalHomePath({ view: "chat" }), {
+        state: null,
+      });
+      return;
+    }
+
     if (isAlarmWorkbenchMode) {
       resetAlarmWorkbench();
       resetRemoteState({
@@ -3913,6 +3926,7 @@ export default function DigitalEmployeePage({
     isPortalHome,
     isRemoteEmployee,
     loadAlarmWorkorders,
+    navigate,
     resetAlarmWorkbench,
     resetRemoteState,
     setActivePortalResourceImportSessionId,
