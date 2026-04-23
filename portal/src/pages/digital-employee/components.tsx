@@ -12,7 +12,6 @@ import {
 } from "./helpers";
 import { ResourceImportConversationCard } from "./resourceImportConversationCard";
 import { FaultScenarioResultCard } from "./faultScenarioComponents";
-import { AlarmAnalystCardPanel } from "./alarmAnalystCardComponents";
 
 export function AlarmWorkorderBoard({
   workorders,
@@ -239,15 +238,10 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     Boolean(message.workordersLoading) ||
     Boolean(message.workordersError);
   const hasResourceImportFlow = Boolean(message.resourceImportFlow);
-  const alarmAnalystCard = message.alarmAnalystCard;
   const faultScenarioResult = message.faultScenarioResult;
-  const visibleDisplayBlocks = alarmAnalystCard
-    ? displayBlocks.filter((block: any) => block?.kind !== "response")
-    : displayBlocks;
-  const primaryResponseBlock = alarmAnalystCard
-    ? null
-    : [...displayBlocks].reverse().find((block: any) => block?.kind === "response" && block.content) || null;
-  const auxiliaryTraceBlocks = visibleDisplayBlocks.filter(
+  const primaryResponseBlock =
+    [...displayBlocks].reverse().find((block: any) => block?.kind === "response" && block.content) || null;
+  const auxiliaryTraceBlocks = displayBlocks.filter(
     (block: any) => !(primaryResponseBlock && block?.kind === "response" && block.id === primaryResponseBlock.id),
   );
   const trailingResponseContent = [...displayBlocks].reverse().find(
@@ -357,8 +351,6 @@ export const ChatMessageItem = memo(function ChatMessageItem({
               resolveFiles={resolveResourceImportFiles}
             />
           </div>
-        ) : alarmAnalystCard ? (
-          <AlarmAnalystCardPanel card={alarmAnalystCard} />
         ) : renderedMessageContent ? (
           <div
             className={
