@@ -6,7 +6,8 @@
 
 ## 功能特性
 
-- **告警查询**：支持分页查询、时间范围查询、多条件筛选
+- **告警查询**：支持分页查询、时间范围查询、资源分类筛选、多条件筛选
+- **页面统计接口**：支持 `/resource/alarmQuery/queryAlarmClassCount`，按页面字段查询告警类别统计
 - **统计分析**：按级别、标题、设备、专业、区域等多维度统计
 - **数据筛选**：支持关键字搜索、设备筛选、级别筛选等
 - **CI ID 兼容**：支持把接口返回中的 `devId` 识别为当前告警对应的 `resId/ci id`
@@ -26,7 +27,7 @@ cp .env.example .env
 编辑 `.env` 文件，填入实际的 API 配置：
 
 ```bash
-INOE_API_BASE_URL=http://192.168.130.211:30080
+INOE_API_BASE_URL=http://<host>:<port>/prod-api
 INOE_API_TOKEN=your_jwt_token_here
 ```
 
@@ -82,6 +83,18 @@ uv run scripts/analyze_alarms.py --mode search --severity 1 --include-alarms --o
 uv run scripts/analyze_alarms.py --mode search --keyword 端口 --output markdown
 ```
 
+#### 页面告警类别统计
+
+```bash
+uv run scripts/query_alarm_class_count.py --alarm_status 1 --alarm_class application --output markdown
+```
+
+如果要查数据库当前告警类别统计：
+
+```bash
+uv run scripts/query_alarm_class_count.py --ne_alias 数据库 --alarm_status 1 --alarm_class application --output markdown
+```
+
 ## 使用说明
 
 ### 脚本说明
@@ -100,6 +113,8 @@ uv run scripts/analyze_alarms.py --mode search --keyword 端口 --output markdow
 - `--dev_name`: 设备名称
 - `--manage_ip`: 管理IP
 - `--ci_id` / `--ne_id`: CI/网元 ID，对应接口字段 `neId`
+- `--ne_alias` / `--neAlias`: 资源分类，对应接口字段 `neAlias`
+- `--resource_type` / `--resource`: 资源分类别名，会映射为 `neAlias`
 - `--cities`: 城市列表
 - `--alarm_title`: 告警标题
 
@@ -114,6 +129,8 @@ uv run scripts/analyze_alarms.py --mode search --keyword 端口 --output markdow
 - `--device_name`: 按设备名称过滤
 - `--manage_ip`: 按管理IP过滤
 - `--ci_id` / `--ne_id`: 按 CI/网元 ID 过滤
+- `--ne_alias` / `--neAlias`: 按资源分类过滤，对应接口字段 `neAlias`
+- `--resource_type` / `--resource`: 资源分类别名，会映射为 `neAlias`
 - `--speciality`: 按专业过滤
 - `--begin_time`: 开始时间
 - `--end_time`: 结束时间
@@ -122,6 +139,21 @@ uv run scripts/analyze_alarms.py --mode search --keyword 端口 --output markdow
 - `--cities`: 城市列表
 - `--include-alarms`: 包含完整告警列表
 - `--output`: 输出格式（json/markdown/markdown-echarts-only）
+
+#### query_alarm_class_count.py
+
+页面告警类别统计脚本，对应接口 `/resource/alarmQuery/queryAlarmClassCount`。
+
+**主要参数**：
+- `--start_time` / `--startTime`: 开始时间，对应页面字段 `startTime`
+- `--end_time` / `--endTime`: 结束时间，对应页面字段 `endTime`
+- `--alarm_class` / `--alarmClass`: 告警类别，对应页面字段 `alarmClass`
+- `--alarm_status` / `--alarmstatus`: 告警状态，对应页面字段 `alarmstatus`
+- `--ne_alias` / `--neAlias`: 资源分类，对应页面字段 `neAlias`
+- `--resource_type` / `--resource`: 资源分类别名，会映射为 `neAlias`
+- `--output`: 输出格式（json/markdown）
+
+未指定的筛选条件不会出现在请求体中。例如不传 `neAlias` 就查全部资源分类。
 
 ### 输出格式
 
@@ -208,6 +240,14 @@ uv run scripts/analyze_alarms.py --mode summary --cities 南京 --output markdow
 ```bash
 uv run scripts/analyze_alarms.py --mode search --ci_id 18 --include-alarms --output markdown
 ```
+
+### 场景 8：查询数据库当前告警
+
+```bash
+uv run scripts/analyze_alarms.py --mode search --ne_alias 数据库 --alarm_status 1 --include-alarms --output markdown
+```
+
+资源分类映射：数据库 -> `数据库`，网络设备 -> `网络设备`，中间件 -> `中间件`，操作系统 -> `操作系统`，服务器/计算资源 -> `计算资源`。
 
 ## 参考文档
 

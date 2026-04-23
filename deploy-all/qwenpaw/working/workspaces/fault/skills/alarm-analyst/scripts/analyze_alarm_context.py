@@ -59,7 +59,7 @@ def _workspace_root() -> Path:
 def _real_alarm_script_path() -> Path:
     return (
         _workspace_root()
-        / "fault"
+        / "query"
         / "skills"
         / "real-alarm"
         / "scripts"

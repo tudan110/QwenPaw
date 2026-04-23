@@ -17,7 +17,7 @@ MOCK_DATA_PATH = (
     / "qwenpaw"
     / "working"
     / "workspaces"
-    / "fault"
+    / "query"
     / "skills"
     / "real-alarm"
     / "mock_data.json"

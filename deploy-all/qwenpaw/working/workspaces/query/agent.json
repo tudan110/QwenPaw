@@ -1,7 +1,7 @@
 {
   "id": "query",
   "name": "数据分析员",
-  "description": "数据分析与报表生成。\n\n我可以帮您完成以下工作：\n• 指标查询 - 自然语言查询各类监控指标\n• 报表生成 - 自动生成日报、周报、月报\n• 趋势分析 - 分析指标趋势，预测容量需求\n• 数据可视化 - 生成直观的图表和仪表盘\n• 自定义取数 - 按需提取数据，支持多种格式导出",
+  "description": "数据分析员。负责统一查询类能力与报表生成，包括指标查询、CMDB/资源查询、资源状态总览、资源性能Top、数据库性能指标清单、实时告警列表、告警统计、告警详情、资源分类告警查询和数据可视化。用户询问‘数据库状态总览’、‘数据库性能Top’、‘网络设备CPU排行’等资源状态/性能问题时，应由 query 使用 resource-insight-query skill 处理；CMDB count/group、资源数量统计、制造商/厂商分布统计等接口由 veops-cmdb skill 处理，例如‘查询中间件制造商分布统计’应使用 veops-cmdb 的 inoe-stat group --resource_type middleware --attr vendor；资源类型/type 对应关系应通过 veops-cmdb 的 inoe-stat types 动态查询。用户询问‘查询数据库当前告警’、‘查询当前数据库告警’、‘当前数据库告警’、‘当前告警数量’、‘告警级别分布’等查询类告警请求时，应由 query 使用 real-alarm skill 处理；其中数据库告警必须传 neAlias=数据库，当前/实时告警必须传 alarmstatus=1。",
   "workspace_dir": "~/.qwenpaw/workspaces/query",
   "channels": {
     "imessage": {
@@ -338,7 +338,7 @@
   },
   "active_model": {
     "provider_id": "ctyun",
-    "model": "Qwen3.5-397B-A17B"
+    "model": "5fea387da7f54ba38eab3d4a4fb4e9d8"
   },
   "language": "en",
   "system_prompt_files": [

@@ -34,6 +34,8 @@ def fetch_all_alarms(
     alarm_status: Optional[str] = None,
     cities: Optional[List[str]] = None,
     ci_id: Optional[str] = None,
+    ne_alias: Optional[str] = None,
+    resource_type: Optional[str] = None,
 ) -> Dict[str, Any]:
     """分页获取全部告警。"""
     first_page = execute(
@@ -47,6 +49,8 @@ def fetch_all_alarms(
         alarm_status=alarm_status,
         cities=cities,
         ci_id=ci_id,
+        ne_alias=ne_alias,
+        resource_type=resource_type,
     )
     if first_page.get("code") != 200:
         return first_page
@@ -77,6 +81,8 @@ def fetch_all_alarms(
             alarm_status=alarm_status,
             cities=cities,
             ci_id=ci_id,
+            ne_alias=ne_alias,
+            resource_type=resource_type,
         )
         if page_result.get("code") != 200:
             page_result["partial_rows"] = rows

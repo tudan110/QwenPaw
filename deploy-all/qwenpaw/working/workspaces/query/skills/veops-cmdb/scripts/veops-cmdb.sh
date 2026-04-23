@@ -15,6 +15,7 @@ usage() {
   scripts/veops-cmdb.sh model-attributes <type_id>
   scripts/veops-cmdb.sh model-relations <type_id>
   scripts/veops-cmdb.sh analyze [--mode <mode>] [--output <output>]
+  scripts/veops-cmdb.sh inoe-stat [count|group|child|child-group|group-attr|types] [--resource_type <type>] [--type_id <id>] [--attr <attr>] [--output json|markdown]
 EOF
 }
 
@@ -51,6 +52,10 @@ case "${COMMAND}" in
   analyze)
     source "${SCRIPT_DIR}/_env.sh"
     exec "${VEOPS_PYTHON_BIN}" "${SCRIPT_DIR}/analyze_cmdb.py" "$@"
+    ;;
+  inoe-stat)
+    source "${SCRIPT_DIR}/_env.sh"
+    exec "${VEOPS_PYTHON_BIN}" "${SCRIPT_DIR}/inoe_cmdb_stats.py" "$@"
     ;;
   *)
     echo "未知命令：${COMMAND}" >&2

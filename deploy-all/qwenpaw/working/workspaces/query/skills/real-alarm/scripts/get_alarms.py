@@ -73,7 +73,7 @@ def get_api_base_url() -> str:
     Returns:
         API 基础地址字符串
     """
-    return os.getenv("INOE_API_BASE_URL", "http://192.168.130.211:30080")
+    return os.getenv("INOE_API_BASE_URL", "")
 
 
 def get_token() -> Optional[str]:
@@ -130,6 +130,45 @@ def _normalize_base_url(api_base_url: Optional[str]) -> str:
     return base_url.rstrip("/")
 
 
+RESOURCE_NE_ALIAS_MAP = {
+    "database": "数据库",
+    "data_base": "数据库",
+    "db": "数据库",
+    "数据库": "数据库",
+    "network": "网络设备",
+    "network_device": "网络设备",
+    "networkdevice": "网络设备",
+    "net": "网络设备",
+    "网络": "网络设备",
+    "网络设备": "网络设备",
+    "middleware": "中间件",
+    "middle": "中间件",
+    "中间件": "中间件",
+    "operating_system": "操作系统",
+    "operatingsystem": "操作系统",
+    "os": "操作系统",
+    "操作系统": "操作系统",
+    "server": "计算资源",
+    "compute": "计算资源",
+    "compute_resource": "计算资源",
+    "计算": "计算资源",
+    "计算资源": "计算资源",
+    "服务器": "计算资源",
+}
+
+
+def _normalize_ne_alias(
+    ne_alias: Optional[str] = None, resource_type: Optional[str] = None
+) -> Optional[str]:
+    """把自然语言资源类型归一到实时告警接口的 neAlias 枚举值。"""
+    raw_value = (ne_alias or resource_type or "").strip()
+    if not raw_value:
+        return None
+
+    normalized_key = raw_value.lower().replace("-", "_").replace(" ", "_")
+    return RESOURCE_NE_ALIAS_MAP.get(normalized_key, raw_value)
+
+
 def _validate_paging(page_num: int, page_size: int) -> Optional[Dict[str, Any]]:
     """校验分页参数。"""
     if page_num < 1:
@@ -184,6 +223,7 @@ def _curl_post_json(
     headers: Dict[str, str],
     data: Dict[str, Any],
     timeout_seconds: int = 30,
+    allow_array: bool = False,
 ) -> Dict[str, Any]:
     """使用系统 curl 作为 requests 的网络兼容性回退。"""
     with tempfile.NamedTemporaryFile(delete=False) as body_file:
@@ -231,6 +271,8 @@ def _curl_post_json(
         if not response_text.strip():
             return _make_error(500, "接口返回空响应")
         result = json.loads(response_text)
+        if allow_array and isinstance(result, list):
+            return {"code": 200, "msg": "操作成功", "data": result}
         if not isinstance(result, dict):
             return _make_error(500, "接口返回格式异常：预期为 JSON 对象")
         return result
@@ -282,6 +324,8 @@ def execute(
     cities: List[str] = None,
     alarm_title: str = None,
     ci_id: str = None,
+    ne_alias: str = None,
+    resource_type: str = None,
 ) -> Dict[str, Any]:
     """
     执行实时告警查询
@@ -301,6 +345,8 @@ def execute(
         cities: 城市列表
         alarm_title: 告警标题
         ci_id: CI/网元 ID，对应接口字段 neId
+        ne_alias: 资源分类，对应接口字段 neAlias，如 数据库/网络设备/中间件/操作系统/计算资源
+        resource_type: 资源分类别名，如 database/network/server
 
     Returns:
         Dict: 包含查询结果或错误信息的字典
@@ -322,11 +368,15 @@ def execute(
 
     # 接口配置
     base_url = _normalize_base_url(api_base_url)
+    if not base_url:
+        return _make_error(400, "未设置 INOE_API_BASE_URL，请检查 .env 或 --api_base_url 参数")
     url = f"{base_url}/resource/realalarm/list"
     headers = {
         "Authorization": f"Bearer {normalized_token}",
         "Content-Type": "application/json;charset=UTF-8",
     }
+
+    normalized_ne_alias = _normalize_ne_alias(ne_alias, resource_type)
 
     # 构建请求参数
     data = {
@@ -366,6 +416,8 @@ def execute(
         "linkId": "",
         "params": {"beginEventtime": begin_time, "endEventtime": end_time},
     }
+    if normalized_ne_alias:
+        data["neAlias"] = normalized_ne_alias
 
     try:
         # 发送 POST 请求
@@ -421,12 +473,15 @@ def main():
   # 查询指定 CI/网元 ID 的告警
   uv run get_alarms.py --ci_id 18
 
+  # 查询数据库当前活跃告警
+  uv run get_alarms.py --ne_alias 数据库 --alarm_status 1
+
   # 直接指定 token
   uv run get_alarms.py --token "eyJhbGc..." --page_num 1 --page_size 10
 
 配置文件:
   配置从 skill 目录下的 .env 文件读取：
-  - INOE_API_BASE_URL  API 基础地址（如：http://192.168.130.211:30080）
+  - INOE_API_BASE_URL  API 基础地址（如：http://<host>:<port>/prod-api）
   - INOE_API_TOKEN     API Token（JWT）
         """,
     )
@@ -496,6 +551,24 @@ def main():
     )
 
     parser.add_argument(
+        "--ne_alias",
+        "--neAlias",
+        dest="ne_alias",
+        type=str,
+        required=False,
+        help="资源分类，对应接口字段 neAlias，如 数据库/网络设备/中间件/操作系统/计算资源",
+    )
+
+    parser.add_argument(
+        "--resource_type",
+        "--resource",
+        dest="resource_type",
+        type=str,
+        required=False,
+        help="资源分类别名，如 database/network/middleware/os/server",
+    )
+
+    parser.add_argument(
         "--cities",
         type=str,
         nargs="+",
@@ -531,6 +604,8 @@ def main():
         dev_name=args.dev_name,
         manage_ip=args.manage_ip,
         ci_id=args.ci_id,
+        ne_alias=args.ne_alias,
+        resource_type=args.resource_type,
         cities=args.cities,
         alarm_title=args.alarm_title,
     )

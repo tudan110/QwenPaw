@@ -1,6 +1,6 @@
 ---
 name: multi_agent_collaboration
-description: Use this skill when another agent's expertise/context is needed, or when the user explicitly asks to involve another agent. First list agents, then use qwenpaw agents chat for two-way communication with replies. | 当需要其他 agent 的专长/上下文，或用户明确要求调用其他 agent 时使用；先查 agent，再用 qwenpaw agents chat 双向通信（有回复）
+description: Use this skill when another agent's expertise/context is needed, or when the user explicitly asks to involve another agent. Prefer the built-in chat_with_agent tool for foreground collaboration; use background submission only for explicitly long-running work. | 当需要其他 agent 的专长/上下文，或用户明确要求调用其他 agent 时使用；优先用内置 chat_with_agent 前台协作，只有明确长耗时任务才使用后台提交。
 metadata:
   builtin_skill_version: "1.3"
   qwenpaw:
@@ -33,10 +33,36 @@ metadata:
 3. **调用前先查 agent，不要猜 ID**
 4. **需要上下文续聊时，必须传 `--session-id`**
 5. **不要回调消息来源 agent**
+6. **如果工具列表中有 `chat_with_agent`，查询类协同必须优先用它，不要走 `qwenpaw agents chat --background`**
+7. **实时告警、资源查询、CMDB 查询、拓扑查询默认都属于前台查询；只有明确超时或用户要求后台时才提交后台任务**
 
 ---
 
-## 最常用命令
+## 工具优先级
+
+### 0) 首选：内置 `chat_with_agent` 工具
+
+如果当前工具列表中存在 `chat_with_agent`，优先直接调用工具，而不是通过 `execute_shell_command` 执行 `qwenpaw agents chat`。
+
+适用场景：
+
+- 查询实时告警、当前告警、数据库告警、设备状态
+- 查询 CMDB、资源详情、资源关系或拓扑
+- 让 `query` / `fault` / `resource` / `knowledge` 返回一次性结果
+- 用户没有明确要求“后台执行”“稍后再看”“长时间分析”
+
+调用要求：
+
+- `to_agent` 填目标 agent ID，例如 `query`
+- `text` 只写任务正文，不要重复写 `[Agent ... requesting]`
+- 查询类任务 `timeout` 建议 60 秒
+- 如果前台工具返回超时，再考虑后台路径
+
+---
+
+## CLI 兜底命令
+
+仅当没有 `chat_with_agent` / `submit_to_agent` / `check_agent_task` 这些内置工具时，才使用下面的 CLI 方式。
 
 ### 1) 先查询可用 agents
 
@@ -44,7 +70,7 @@ metadata:
 qwenpaw agents list
 ```
 
-### 2) 发起新对话（实时模式）
+### 2) 发起新对话（实时模式，CLI 兜底）
 
 ```bash
 qwenpaw agents chat \
@@ -53,9 +79,9 @@ qwenpaw agents chat \
   --text "[Agent <your_agent> requesting] ..."
 ```
 
-### 3) 发起复杂任务（后台模式）
+### 3) 发起复杂任务（后台模式，仅限长耗时）
 
-**复杂任务**包括：数据分析、报告生成、批量处理、外部API调用等。
+**后台模式只用于明确长耗时任务**，例如大批量日志分析、长报告生成、批量文件处理。不要把普通查询、告警查询、CMDB 查询、拓扑查询默认放到后台。
 
 ```bash
 qwenpaw agents chat --background \
@@ -107,8 +133,9 @@ qwenpaw agents chat \
 
 | 任务类型 | 使用模式 | 命令 |
 |---------|---------|------|
-| 简单快速查询 | 实时模式 | `qwenpaw agents chat` |
-| 复杂任务（数据分析、批量处理等） | 后台模式 | `qwenpaw agents chat --background` |
+| 简单快速查询 | 前台工具优先 | `chat_with_agent` |
+| CLI 兜底的简单查询 | 实时模式 | `qwenpaw agents chat` |
+| 明确长耗时任务 | 后台模式 | `submit_to_agent` 或 `qwenpaw agents chat --background` |
 
 **复杂任务示例**：
 - 分析大量数据或日志文件
@@ -117,7 +144,7 @@ qwenpaw agents chat \
 - 调用慢速外部 API
 - 需要并行执行的独立任务
 
-**判断标准**：如果不确定任务会花多长时间，或者任务很复杂，优先使用后台模式。
+**判断标准**：如果不确定但任务只是查询类，先用 `chat_with_agent` 前台调用；只有前台超时、任务明显批量/长报告、或用户明确要求后台时，才使用后台模式。
 
 ---
 
@@ -301,11 +328,14 @@ qwenpaw agents chat \
 - 报告生成（生成长篇报告、文档）
 - 批量处理（处理多个文件）
 - 外部 API 调用（调用慢速服务）
-- 不确定任务时长的复杂任务
+- 不确定任务时长的复杂任务，但不包括普通查询类协同
 
 ❌ **不需要后台模式**：
 - 简单快速查询
 - 明确知道很快完成的任务
+- 实时告警查询
+- 资源 / CMDB / 拓扑查询
+- 转给 query 数字员工的一次性查询
 
 ### 后台任务示例
 

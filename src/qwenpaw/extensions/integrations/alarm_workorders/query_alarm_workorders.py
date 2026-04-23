@@ -127,6 +127,13 @@ def _resolve_real_alarm_script() -> Path:
         return Path(env_script).expanduser().resolve()
 
     candidates = [
+        _default_working_dir()
+        / "workspaces"
+        / "query"
+        / "skills"
+        / "real-alarm"
+        / "scripts"
+        / "get_alarms.py",
         _read_active_workspace_dir() / "skills" / "real-alarm" / "scripts" / "get_alarms.py",
         PROJECT_ROOT
         / "src"

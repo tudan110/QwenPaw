@@ -952,6 +952,7 @@ class VeopsCmdbClient:
         self.client = httpx.Client(
             timeout=timeout,
             headers={"Accept-Language": "zh"},
+            trust_env=False,
         )
         self.relation_type_map: dict[str, int] = {}
 
@@ -3922,7 +3923,7 @@ def _prepare_import_structure(
     if not isinstance(items, list):
         return []
 
-    metadata = load_resource_import_metadata()
+    metadata: dict[str, Any] | None = None
     type_map, group_map = _refresh_ci_type_state(client)
     results: list[dict[str, Any]] = []
 
@@ -3973,6 +3974,8 @@ def _prepare_import_structure(
             if not unique_key_name:
                 raise RuntimeError(f"{resource_label} 缺少模型唯一标识配置，当前不能继续导入")
 
+            if metadata is None:
+                metadata = load_resource_import_metadata()
             unique_key_id = _resolve_attribute_id_from_metadata(
                 metadata,
                 unique_key_name,
@@ -4352,6 +4355,7 @@ def _autofill_deterministic_cmdb_attributes(
         if private_ip_value:
             next_attributes[private_ip_key] = private_ip_value
 
+    unique_value = ""
     unique_key = _get_import_required_unique_key(type_template)
     if unique_key and not _clean_text(next_attributes.get(unique_key)):
         if _is_code_like_unique_key(unique_key):
@@ -4383,10 +4387,64 @@ def _autofill_deterministic_cmdb_attributes(
                 canonical_attributes.get("private_ip"),
                 canonical_attributes.get("manage_ip"),
             )
-        if unique_value:
-            next_attributes[unique_key] = unique_value
+    if unique_value:
+        next_attributes[unique_key] = unique_value
+
+    for definition in _attribute_definitions(type_template):
+        attr_name = _clean_text(definition.get("name"))
+        if not attr_name or _clean_text(next_attributes.get(attr_name)):
+            continue
+        if not bool(definition.get("required") or definition.get("is_required")):
+            continue
+        default_value = _extract_attribute_default_value(definition)
+        if not default_value:
+            continue
+        normalized_value, unresolved_choice = _normalize_choice_attribute_value(
+            attribute_definition=definition,
+            value=default_value,
+        )
+        if unresolved_choice or not normalized_value:
+            continue
+        next_attributes[attr_name] = normalized_value
 
     return next_attributes
+
+
+def _extract_attribute_default_value(attribute_definition: dict[str, Any] | None) -> str:
+    if not attribute_definition:
+        return ""
+    raw_default = attribute_definition.get("default")
+    if isinstance(raw_default, dict):
+        for key in ("default", "value", "label"):
+            value = _clean_text(raw_default.get(key))
+            if value:
+                return value
+    if isinstance(raw_default, list):
+        for item in raw_default:
+            value = _clean_text(item)
+            if value:
+                return value
+    cleaned_default = _clean_text(raw_default)
+    if cleaned_default:
+        return cleaned_default
+
+    attr_name = _clean_text(attribute_definition.get("name")).lower()
+    attr_alias = _clean_text(attribute_definition.get("alias"))
+    if attr_name == "status" or attr_alias == "资产状态":
+        for item in (attribute_definition.get("choices") or []):
+            if not isinstance(item, dict):
+                continue
+            label = _clean_text(item.get("label"))
+            value = _clean_text(item.get("value"))
+            if label == "在线" or value == "在线":
+                return value or label
+        for item in (attribute_definition.get("choices") or []):
+            if not isinstance(item, dict):
+                continue
+            value = _clean_text(item.get("value")) or _clean_text(item.get("label"))
+            if value:
+                return value
+    return ""
 
 
 def _collect_deterministic_autofill_hints(
@@ -4554,6 +4612,112 @@ def _collect_pending_choice_values(
     return pending
 
 
+def _merge_pending_choice_value(
+    pending: dict[tuple[str, str], list[dict[str, str]]],
+    *,
+    ci_type: str,
+    attr_name: str,
+    value: str,
+) -> None:
+    cleaned_value = _clean_text(value)
+    if not ci_type or not attr_name or not cleaned_value:
+        return
+    key = (ci_type, attr_name)
+    values = pending.setdefault(key, [])
+    if any(_clean_text(item.get("value")) == cleaned_value for item in values if isinstance(item, dict)):
+        return
+    values.append({"value": cleaned_value, "label": cleaned_value})
+
+
+def _collect_existing_reference_choice_values(
+    client: VeopsCmdbClient,
+    *,
+    type_templates: dict[str, dict[str, Any]],
+    ordered_records: list[dict[str, Any]],
+) -> dict[tuple[str, str], list[dict[str, str]]]:
+    type_name_by_id: dict[int, str] = {}
+    for name, template in type_templates.items():
+        try:
+            type_name_by_id[int(template.get("id"))] = name
+        except Exception:
+            continue
+
+    pending: dict[tuple[str, str], list[dict[str, str]]] = {}
+    lookup_cache: dict[tuple[str, str, str], bool] = {}
+    for record in ordered_records:
+        ci_type = _clean_text(record.get("ciType"))
+        type_template = type_templates.get(ci_type)
+        if not ci_type or not type_template:
+            continue
+        for item in _attribute_definitions(type_template):
+            attr_name = _clean_text(item.get("name"))
+            ref_attr_id = item.get("choice_reference_attr_id")
+            ref_type_ids = item.get("choice_reference_type_ids") or []
+            if not attr_name or not ref_attr_id or not ref_type_ids:
+                continue
+            reference_value = _choice_reference_value_for_record(
+                record=record,
+                attr_name=attr_name,
+                type_template=type_template,
+            )
+            if not reference_value:
+                continue
+            existing_values = {
+                _clean_text(choice.get("value"))
+                for choice in (item.get("choices") or [])
+                if isinstance(choice, dict) and _clean_text(choice.get("value"))
+            }
+            if reference_value in existing_values:
+                continue
+            for ref_type_id in ref_type_ids:
+                try:
+                    ref_type_name = type_name_by_id.get(int(ref_type_id))
+                except Exception:
+                    ref_type_name = None
+                ref_template = type_templates.get(ref_type_name or "")
+                ref_attr_name = _attribute_name_by_id(ref_template, ref_attr_id)
+                if not ref_type_name or not ref_attr_name:
+                    continue
+                cache_key = (ref_type_name, ref_attr_name, reference_value)
+                if cache_key not in lookup_cache:
+                    try:
+                        rows = client.query_ci(
+                            f"_type:{ref_type_name},{ref_attr_name}:{quote(reference_value, safe='._-:/')}",
+                            count=1,
+                        )
+                    except Exception:
+                        rows = []
+                    lookup_cache[cache_key] = bool(rows)
+                if lookup_cache[cache_key]:
+                    _merge_pending_choice_value(
+                        pending,
+                        ci_type=ci_type,
+                        attr_name=attr_name,
+                        value=reference_value,
+                    )
+                    break
+    return pending
+
+
+def _merge_pending_choice_values(
+    *sources: dict[tuple[str, str], list[dict[str, str]]] | None,
+) -> dict[tuple[str, str], list[dict[str, str]]]:
+    merged: dict[tuple[str, str], list[dict[str, str]]] = {}
+    for source in sources:
+        for key, values in (source or {}).items():
+            ci_type, attr_name = key
+            for item in values:
+                if not isinstance(item, dict):
+                    continue
+                _merge_pending_choice_value(
+                    merged,
+                    ci_type=ci_type,
+                    attr_name=attr_name,
+                    value=_clean_text(item.get("value")) or _clean_text(item.get("label")),
+                )
+    return merged
+
+
 def _choice_extras_for_attribute(
     *,
     ci_type: str,
@@ -4595,43 +4759,64 @@ def _runtime_choice_extras_for_attribute(
     source_attributes: dict[str, Any],
     pending_choice_values: dict[tuple[str, str], list[dict[str, str]]] | None,
 ) -> list[dict[str, str]]:
-    extras = _choice_extras_for_attribute(
+    return _choice_extras_for_attribute(
         ci_type=ci_type,
         attribute_name=attribute_name,
         pending_choice_values=pending_choice_values,
     )
-    seen_values = {
-        _clean_text(item.get("value"))
-        for item in extras
-        if isinstance(item, dict) and _clean_text(item.get("value"))
-    }
-    platform_key = _resolve_import_target_key(type_template=type_template, canonical_field="platform")
-    project_key = _resolve_import_target_key(type_template=type_template, canonical_field="project")
-    candidate_values: list[str] = []
-    if attribute_name == platform_key:
-        candidate_values.extend(
-            [
-                _clean_text(source_attributes.get("platform")),
-                _clean_text(source_attributes.get("project")),
-                _clean_text(source_attributes.get(platform_key)),
-                _clean_text(source_attributes.get(project_key)),
-            ]
-        )
-    elif attribute_name == project_key:
-        candidate_values.extend(
-            [
-                _clean_text(source_attributes.get("project")),
-                _clean_text(source_attributes.get("platform")),
-                _clean_text(source_attributes.get(project_key)),
-                _clean_text(source_attributes.get(platform_key)),
-            ]
-        )
-    for value in candidate_values:
-        if not value or value in seen_values:
+
+
+def _normalize_cmdb_attribute_values(
+    *,
+    ci_type: str,
+    type_template: dict[str, Any] | None,
+    source_attributes: dict[str, Any],
+    cmdb_attributes: dict[str, Any],
+    pending_choice_values: dict[tuple[str, str], list[dict[str, str]]] | None = None,
+) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    for key, value in cmdb_attributes.items():
+        attr_name = _clean_text(key)
+        if not attr_name or value in (None, "", []):
             continue
-        seen_values.add(value)
-        extras.append({"value": value, "label": value})
-    return extras
+        attribute_definition = _find_attribute_definition(type_template, attr_name)
+        if isinstance(value, list):
+            normalized_items: list[str] = []
+            unresolved_choice = False
+            for item in value:
+                normalized_value, unresolved_choice = _normalize_choice_attribute_value(
+                    attribute_definition=attribute_definition,
+                    value=_clean_text(item),
+                    extra_choices=_runtime_choice_extras_for_attribute(
+                        ci_type=ci_type,
+                        attribute_name=attr_name,
+                        type_template=type_template,
+                        source_attributes=source_attributes,
+                        pending_choice_values=pending_choice_values,
+                    ),
+                )
+                if unresolved_choice:
+                    break
+                if normalized_value:
+                    normalized_items.append(normalized_value)
+            if not unresolved_choice and normalized_items:
+                normalized[attr_name] = normalized_items
+            continue
+
+        normalized_value, unresolved_choice = _normalize_choice_attribute_value(
+            attribute_definition=attribute_definition,
+            value=_clean_text(value),
+            extra_choices=_runtime_choice_extras_for_attribute(
+                ci_type=ci_type,
+                attribute_name=attr_name,
+                type_template=type_template,
+                source_attributes=source_attributes,
+                pending_choice_values=pending_choice_values,
+            ),
+        )
+        if not unresolved_choice and normalized_value:
+            normalized[attr_name] = normalized_value
+    return normalized
 
 
 def _split_deferred_self_referential_choice_attributes(
@@ -5456,9 +5641,16 @@ def _preflight_import_resources(
     structure_selected_model_map: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
-    pending_choice_values = _collect_pending_choice_values(
-        type_templates=type_templates,
-        ordered_records=ordered_records,
+    pending_choice_values = _merge_pending_choice_values(
+        _collect_pending_choice_values(
+            type_templates=type_templates,
+            ordered_records=ordered_records,
+        ),
+        _collect_existing_reference_choice_values(
+            client,
+            type_templates=type_templates,
+            ordered_records=ordered_records,
+        ),
     )
     for record in ordered_records:
         import_action = _clean_text(record.get("importAction")) or "create"
@@ -7457,6 +7649,7 @@ def _merge_attribute_definitions(
             "required": bool(attr.get("is_required")),
             "is_choice": bool(attr.get("is_choice")),
             "is_list": bool(attr.get("is_list")),
+            "default": attr.get("default"),
             "default_show": bool(attr.get("default_show")) or name in preferred_order,
             "value_type": _clean_text(attr.get("value_type")),
             "order": preferred_order.get(name, int(attr.get("order") or index)),
@@ -7479,6 +7672,7 @@ def _merge_attribute_definitions(
                 "required": False,
                 "is_choice": bool(attr.get("is_choice")),
                 "is_list": bool(attr.get("is_list")),
+                "default": attr.get("default"),
                 "default_show": True,
                 "value_type": _clean_text(attr.get("value_type")),
                 "order": preferred_order.get(name, index),
@@ -7491,6 +7685,8 @@ def _merge_attribute_definitions(
         definitions[name]["order"] = preferred_order.get(name, definitions[name].get("order", index))
         if not definitions[name].get("choices"):
             definitions[name]["choices"] = _extract_choice_definitions(attr)
+        if definitions[name].get("default") in (None, "", [], {}) and attr.get("default") not in (None, "", [], {}):
+            definitions[name]["default"] = attr.get("default")
         if not definitions[name].get("choice_reference_attr_id") and choice_reference_attr_id not in (None, ""):
             definitions[name]["choice_reference_attr_id"] = choice_reference_attr_id
         if not definitions[name].get("choice_reference_type_ids") and choice_reference_type_ids:
@@ -7730,9 +7926,16 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
             payload.get("relations") or [],
             type_templates=type_templates,
         )
-        pending_choice_values = _collect_pending_choice_values(
-            type_templates=type_templates,
-            ordered_records=ordered_records,
+        pending_choice_values = _merge_pending_choice_values(
+            _collect_pending_choice_values(
+                type_templates=type_templates,
+                ordered_records=ordered_records,
+            ),
+            _collect_existing_reference_choice_values(
+                client,
+                type_templates=type_templates,
+                ordered_records=ordered_records,
+            ),
         )
         preflight_results = _preflight_import_resources(
             client,
@@ -7786,6 +7989,13 @@ def import_preview_to_cmdb(payload: dict[str, Any]) -> dict[str, Any]:
                 **supplemental_cmdb_attributes,
                 **confirmed_cmdb_attributes,
             }
+            cmdb_attributes = _normalize_cmdb_attribute_values(
+                ci_type=ci_type,
+                type_template=type_template,
+                source_attributes=merged_attributes,
+                cmdb_attributes=cmdb_attributes,
+                pending_choice_values=pending_choice_values,
+            )
             allowed_attribute_names = _allowed_attribute_names(type_template)
             if allowed_attribute_names:
                 cmdb_attributes = {

@@ -1,6 +1,6 @@
 # API 规范
 
-本文档描述 `real-alarm` 技能的唯一查询入口、参数、分页策略和错误处理约定。
+本文档描述 `real-alarm` 技能的查询入口、参数、分页策略和错误处理约定。
 
 ## 推荐入口
 
@@ -59,6 +59,14 @@ uv run scripts/analyze_alarms.py --mode summary --output markdown-echarts-only
 
 不要要求用户自行调用 HTTP API。
 
+### 3. 页面类别统计入口
+
+```bash
+uv run scripts/query_alarm_class_count.py [options]
+```
+
+适用于页面中 `/resource/alarmQuery/queryAlarmClassCount` 对应的告警类别统计。该接口为通用接口，不传筛选条件时请求体为 `{}`，用于查询全量；指定资源、状态、类别或时间时，只传对应字段。
+
 ## 参数说明
 
 ### get_alarms.py 参数
@@ -76,8 +84,24 @@ uv run scripts/analyze_alarms.py --mode summary --output markdown-echarts-only
 | `dev_name` | str | 否 | 设备名称 | `SN-XA-LHL-A.Leaf-4` |
 | `manage_ip` | str | 否 | 管理IP | `4.155.10.35` |
 | `ci_id` / `ne_id` | str | 否 | CI/网元 ID，对应请求体字段 `neId` | `18` |
+| `ne_alias` / `neAlias` | str | 否 | 资源分类，对应请求体字段 `neAlias` | `数据库`, `网络设备`, `中间件`, `操作系统`, `计算资源` |
+| `resource_type` / `resource` | str | 否 | 资源分类别名，会映射为 `neAlias` | `database`, `network`, `middleware`, `os`, `server` |
 | `cities` | list | 否 | 城市列表 | `南京 秦淮区` |
 | `alarm_title` | str | 否 | 告警标题 | `端口DOWN` |
+
+### query_alarm_class_count.py 参数
+
+| 参数名称 | 类型 | 是否必填 | 页面字段 | 说明 | 示例 |
+|---------|------|---------|----------|------|------|
+| `token` | str | 否 | - | JWT 令牌；默认从环境变量 `INOE_API_TOKEN` 读取 | `eyJ...` |
+| `api_base_url` | str | 否 | - | API 基础地址；默认从环境变量 `INOE_API_BASE_URL` 读取 | `http://host:port/prod-api` |
+| `start_time` / `startTime` | str | 否 | `startTime` | 开始时间，格式 `YYYY-MM-DD HH:MM:SS`；不传则不带该字段 | `2026-04-22 12:00:00` |
+| `end_time` / `endTime` | str | 否 | `endTime` | 结束时间，格式 `YYYY-MM-DD HH:MM:SS`；不传则不带该字段 | `2026-04-23 12:00:00` |
+| `alarm_class` / `alarmClass` | str | 否 | `alarmClass` | 告警类别；页面数据库概览传 `application` | `application` |
+| `alarm_status` / `alarmstatus` | str | 否 | `alarmstatus` | 告警状态；页面当前告警传 `1` | `1` |
+| `ne_alias` / `neAlias` | str | 否 | `neAlias` | 资源分类；不传则查询全部资源分类 | `数据库` |
+| `resource_type` / `resource` | str | 否 | `neAlias` | 资源分类别名，会映射为 `neAlias` | `database`, `network`, `middleware`, `os`, `server` |
+| `output` | str | 否 | - | 输出格式 | `json`, `markdown` |
 
 ### analyze_alarms.py 参数
 
@@ -90,6 +114,8 @@ uv run scripts/analyze_alarms.py --mode summary --output markdown-echarts-only
 | `device_name` | str | 否 | 按设备名称过滤 | `SN-XA-LHL-A.Leaf-4` |
 | `manage_ip` | str | 否 | 按管理IP过滤 | `4.155.10.35` |
 | `ci_id` / `ne_id` | str | 否 | 按 CI/网元 ID 过滤，对应请求体字段 `neId` | `18` |
+| `ne_alias` / `neAlias` | str | 否 | 按资源分类过滤，对应请求体字段 `neAlias` | `数据库`, `网络设备`, `中间件`, `操作系统`, `计算资源` |
+| `resource_type` / `resource` | str | 否 | 资源分类别名，会映射为 `neAlias` | `database`, `network`, `middleware`, `os`, `server` |
 | `speciality` | str | 否 | 按专业过滤 | `IPM` |
 | `region` | str | 否 | 按区域过滤 | `XA` |
 | `begin_time` | str | 否 | 开始时间，格式 `YYYY-MM-DD HH:MM:SS` | `2026-03-15 10:00:00` |
@@ -107,11 +133,11 @@ uv run scripts/analyze_alarms.py --mode summary --output markdown-echarts-only
 技能目录下的 `.env`：
 
 ```bash
-INOE_API_BASE_URL=http://192.168.130.211:30080
+INOE_API_BASE_URL=http://<host>:<port>/prod-api
 INOE_API_TOKEN=your_jwt_token_here
 ```
 
-配置文件位置：`.claude/skills/real-alarm/.env`
+配置文件位置：当前 skill 目录下的 `.env`
 
 读取优先级：
 
@@ -120,10 +146,15 @@ INOE_API_TOKEN=your_jwt_token_here
 
 ## 接口信息
 
-- 请求方式：`POST`
-- 接口地址：`{INOE_API_BASE_URL}/resource/realalarm/list`
+- 实时列表请求方式：`POST`
+- 实时列表接口地址：`{INOE_API_BASE_URL}/resource/realalarm/list`
+- 告警类别统计请求方式：`POST`
+- 告警类别统计接口地址：`{INOE_API_BASE_URL}/resource/alarmQuery/queryAlarmClassCount`
 - 鉴权方式：`Authorization: Bearer <token>`
-- 请求体：JSON 格式，包含分页参数和筛选条件
+- 实时列表请求体：JSON 格式，包含分页参数和筛选条件；`neAlias` 只有在用户指定资源分类时才传，不指定时查询全部
+- 告警类别统计请求体：页面确认字段为 `startTime`、`endTime`、`alarmClass`、`alarmstatus`、`neAlias`；脚本只传明确给出的字段，不指定时查询全部
+- 告警类别统计返回：当前接口会直接返回数组，例如元素包含 `alarmSeverity`、`count`；脚本会规范化为 `{"code": 200, "msg": "操作成功", "data": [...]}` 便于 Agent 统一处理
+- 资源分类字段：`neAlias`，可用值包括 `数据库`、`网络设备`、`中间件`、`操作系统`、`计算资源`
 - 返回兼容约定：接口返回中的 `devId` 现在表示当前告警对应的 `resId/CI ID`；skill 在展示和本地筛选时会把 `devId` 作为 `CI ID` 的回退字段
 
 ## 告警级别说明
@@ -183,7 +214,40 @@ uv run scripts/get_alarms.py --ci_id 18 --page_num 1 --page_size 100
 uv run scripts/analyze_alarms.py --mode search --ci_id 18 --include-alarms --output markdown
 ```
 
-### 场景 5：统计 / 分布 / 筛选 / 综合分析
+### 场景 5：按资源分类查询当前告警
+
+```bash
+uv run scripts/get_alarms.py --ne_alias 数据库 --alarm_status 1 --page_num 1 --page_size 10
+uv run scripts/analyze_alarms.py --mode search --ne_alias 数据库 --alarm_status 1 --include-alarms --output markdown
+```
+
+注意：“查询当前数据库告警”和“查询数据库当前告警”等价，都必须传 `neAlias=数据库`。如果不传 `neAlias`，接口会返回全量告警，不能把全量总数当作数据库告警总数。
+
+资源分类映射：
+
+| 用户说法 | 接口 `neAlias` |
+|---------|----------------|
+| 数据库 / database / db | `数据库` |
+| 网络设备 / network | `网络设备` |
+| 中间件 / middleware | `中间件` |
+| 操作系统 / os | `操作系统` |
+| 服务器 / 计算资源 / server | `计算资源` |
+
+### 场景 6：调用页面类别统计接口
+
+查询全量告警类别统计：
+
+```bash
+uv run scripts/query_alarm_class_count.py --output markdown
+```
+
+查询数据库当前应用类告警统计：
+
+```bash
+uv run scripts/query_alarm_class_count.py --ne_alias 数据库 --alarm_status 1 --alarm_class application --output markdown
+```
+
+### 场景 7：统计 / 分布 / 筛选 / 综合分析
 
 优先使用：
 

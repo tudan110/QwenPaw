@@ -98,10 +98,10 @@ const DASHBOARD_CHAT_CHANNEL = "console";
 const PORTAL_HOME_AGENT_ID = portalGatewayAgentId;
 const EMPLOYEE_MENTION_ALIASES: Record<string, string[]> = {
   resource: ["资产", "资源", "纳管"],
-  fault: ["故障", "告警", "修复"],
+  fault: ["故障", "处置", "修复", "根因"],
   inspection: ["巡检", "巡查", "检查"],
   order: ["工单", "流程", "审批"],
-  query: ["数据", "数字", "洞察", "报表"],
+  query: ["数据", "数字", "洞察", "报表", "查询", "告警"],
   knowledge: ["知识", "知库", "文档"],
 };
 
@@ -1091,9 +1091,9 @@ function buildMentionCollaborationPrompt({
       : [];
   const executionHints = preferBackground
     ? [
-        "这次协同是长耗时任务，请不要使用 chat_with_agent 做前台阻塞等待。",
-        "请改用后台协同路径：先用 submit_to_agent 提交给目标智能体，再用 check_agent_task 轮询结果并整合后回复用户。",
-        "如果第一次轮询仍是 pending 或 running，请至少继续等待 15-20 秒后再查询，避免用户看到工具调用后长时间无反馈。",
+        "这次协同可能耗时较长，但如果工具列表中存在 chat_with_agent，仍应先使用 chat_with_agent 做一次前台协同，timeout 建议 60 秒。",
+        "只有 chat_with_agent 明确超时、用户要求后台执行，或任务确实需要长时间批处理时，才改用 submit_to_agent / check_agent_task 后台路径。",
+        "不要为了普通查询、告警查询、CMDB 查询或拓扑查询默认使用 qwenpaw agents chat --background 轮询。",
       ]
     : [];
 
@@ -1101,7 +1101,8 @@ function buildMentionCollaborationPrompt({
     `你当前是数字员工「${currentEmployee?.name || currentAgentId}」。`,
     `用户在当前会话中 @ 了另一位数字员工「${targetEmployee?.name || targetAgentId}」。`,
     "请不要要求用户切换页面，也不要把本次请求交回前端路由处理。",
-    "请直接使用你已启用的内置技能 Multi-Agent Collaboration（multi_agent_collaboration），在当前会话中发起智能体协同并整合结果后回复用户。",
+    "请优先使用你已启用的内置工具 chat_with_agent 发起前台智能体协同并整合结果后回复用户；只有工具不可用时，才退回 Multi-Agent Collaboration（multi_agent_collaboration）技能。",
+    "查询类协同请使用 chat_with_agent，参数示例：to_agent 为目标智能体 ID，text 为任务正文，timeout 建议 60。",
     "给目标智能体的协同请求正文请直接概括任务本身，不要重复写 [Agent ... requesting]，也不要以 User explicitly asked... 这类泛化说明开头。",
     ...executionHints,
     ...extraCollaborationHints,
@@ -1214,8 +1215,8 @@ function scoreMentionCandidate(employee: (typeof digitalEmployees)[number], quer
 function buildPortalAssistantReply(content: string) {
   const normalized = String(content || "").trim();
   const suggestions = [
-    { employee: "数据分析员", keywords: ["设备", "指标", "报表", "趋势", "性能", "查询", "可用性"] },
-    { employee: "故障处置员", keywords: ["故障", "异常", "超时", "中断", "恢复", "慢", "报警", "告警"] },
+    { employee: "数据分析员", keywords: ["设备", "指标", "报表", "趋势", "性能", "查询", "可用性", "告警", "报警"] },
+    { employee: "故障处置员", keywords: ["故障", "异常", "超时", "中断", "恢复", "慢", "处置", "根因"] },
     { employee: "资产管理员", keywords: ["资产", "纳管", "扫描", "发现", "拓扑", "资源"] },
     { employee: "巡检专员", keywords: ["巡检", "健康", "检查", "日报", "周报"] },
     { employee: "知识专员", keywords: ["怎么", "最佳实践", "方案", "知识", "原理"] },

@@ -76,13 +76,13 @@ Portal 落地时，需要体现以下链路：
 
 以下场景不要使用本技能：
 
-- 用户只是想看最近有哪些活动告警、告警数量、告警分布 -> 用 `real-alarm`
+- 用户只是想看最近有哪些活动告警、告警数量、告警分布 -> 交给 `query` 数字员工的 `real-alarm`
 - 用户已经具备完整工单上下文，要继续工单闭环 -> 用 `fault-disposal`
 - 用户要做固定场景码或预定义剧本式的场景 RCA -> 当前工作区不提供专门 skill，优先回到 `alarm-analyst` 或直接走业务侧编排
 
 简化判断：
 
-- “看告警列表” -> `real-alarm`
+- “看告警列表” -> `query` 数字员工的 `real-alarm`
 - “基于单条告警做分析与闭环” -> `alarm-analyst`
 - “基于工单继续处置” -> `fault-disposal`
 
@@ -96,7 +96,6 @@ Portal 落地时，需要体现以下链路：
 
 1. 先实际调用可用能力：
    - 如果需要跨智能体协作，**优先使用内置工具 `chat_with_agent`**；只有在 `chat_with_agent` 不可用或确实不适配当前任务时，才考虑 `list_agents` / `multi_agent_collaboration`
-   - 使用 `chat_with_agent` 协作 query 数字员工查询 CMDB
    - 使用 `execute_shell_command` 执行 `scripts/get_metric_definitions.py`
    - 已拿到 `resId/CI ID` 后，优先执行 `scripts/analyze_alarm_context.py` 聚合 CMDB 拓扑、关联告警和指标
 2. 再把执行结果整理成面向用户的阶段化输出

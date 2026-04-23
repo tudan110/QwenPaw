@@ -60,6 +60,9 @@ def parse_args() -> argparse.Namespace:
   # 查询指定 CI/网元 ID 的告警
   uv run analyze_alarms.py --mode search --ci_id 18 --include-alarms --output markdown
 
+  # 查询数据库当前活跃告警
+  uv run analyze_alarms.py --mode search --ne_alias 数据库 --alarm_status 1 --include-alarms --output markdown
+
   # 查询指定时间范围的告警
   uv run analyze_alarms.py --mode summary --begin_time "2026-03-15 10:00:00" --end_time "2026-03-16 10:00:00"
         """,
@@ -79,6 +82,22 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="",
         help="按 CI/网元 ID 过滤，对应接口字段 neId",
+    )
+    parser.add_argument(
+        "--ne_alias",
+        "--neAlias",
+        dest="ne_alias",
+        type=str,
+        default="",
+        help="按资源分类过滤，对应接口字段 neAlias，如 数据库/网络设备/中间件/操作系统/计算资源",
+    )
+    parser.add_argument(
+        "--resource_type",
+        "--resource",
+        dest="resource_type",
+        type=str,
+        default="",
+        help="资源分类别名，如 database/network/middleware/os/server",
     )
     parser.add_argument("--speciality", type=str, default="", help="按专业过滤")
     parser.add_argument("--region", type=str, default="", help="按区域过滤")
@@ -111,6 +130,8 @@ def validate_args(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
             args.speciality.strip(),
             args.region.strip(),
             args.ci_id.strip(),
+            getattr(args, "ne_alias", "").strip(),
+            getattr(args, "resource_type", "").strip(),
         ]
     ):
         return make_error(400, "search 模式至少需要一个过滤条件或关键字")
@@ -159,6 +180,8 @@ def main() -> None:
         alarm_status=args.alarm_status,
         cities=args.cities,
         ci_id=args.ci_id,
+        ne_alias=args.ne_alias,
+        resource_type=args.resource_type,
     )
     if fetch_result.get("code") != 200:
         print_result(fetch_result, args.output)
@@ -206,6 +229,8 @@ def main() -> None:
             "speciality": args.speciality,
             "region": args.region,
             "ci_id": args.ci_id,
+            "ne_alias": args.ne_alias,
+            "resource_type": args.resource_type,
         },
         "query_params": {
             "begin_time": args.begin_time,
@@ -214,6 +239,8 @@ def main() -> None:
             "alarm_status": args.alarm_status,
             "cities": args.cities,
             "ci_id": args.ci_id,
+            "ne_alias": args.ne_alias,
+            "resource_type": args.resource_type,
         },
         "fetched_total": fetch_result.get("total", 0),
         "matched_total": len(filtered_alarms),

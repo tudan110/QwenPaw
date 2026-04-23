@@ -268,6 +268,32 @@ uv run scripts/analyze_alarms.py --mode search --severity 1 --cities 南京 --in
 - 展示匹配结果
 - 精准定位问题
 
+### 16. 按资源分类查询当前告警
+
+**用户问法示例**：
+- "查询数据库当前告警"
+- "查询当前数据库告警"
+- "当前数据库告警"
+- "网络设备现在有哪些告警？"
+- "服务器实时告警有哪些？"
+
+**推荐动作**：
+```bash
+uv run scripts/analyze_alarms.py --mode search --ne_alias 数据库 --alarm_status 1 --include-alarms --output markdown
+```
+
+**资源分类映射**：
+- 数据库 / database / db -> `数据库`
+- 网络设备 / network -> `网络设备`
+- 中间件 / middleware -> `中间件`
+- 操作系统 / os -> `操作系统`
+- 服务器 / 计算资源 / server -> `计算资源`
+
+**回复要点**：
+- 明确筛选条件是接口字段 `neAlias`
+- 当前告警应同时传 `--alarm_status 1`
+- 不要先拉全量告警再本地过滤资源分类
+
 ## 使用建议
 
 ### 优先使用 analyze_alarms.py
