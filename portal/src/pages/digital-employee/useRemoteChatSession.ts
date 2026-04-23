@@ -17,6 +17,7 @@ import { getFaultDisposalHistory } from "../../api/faultDisposalBridge";
 import {
   buildAlarmAnalystCardRequest,
   mergeAlarmAnalystCards,
+  shouldEnableAlarmAnalystCards,
 } from "../../alarm-analyst/shared";
 import {
   buildThinkingBlock,
@@ -93,6 +94,7 @@ export function useRemoteChatSession({
   const [isStreaming, setIsStreaming] = useState(false);
 
   const streamAbortRef = useRef<AbortController | null>(null);
+  const streamAbortNoticeModeRef = useRef<"show" | "silent" | null>(null);
   const activeAssistantMessageIdRef = useRef<string | null>(null);
   const streamAssistantMapRef = useRef(new Map());
   const streamMessageMetaRef = useRef(new Map());
@@ -106,6 +108,7 @@ export function useRemoteChatSession({
   const currentChatIdRef = useRef(currentChatId);
   const currentSessionIdRef = useRef(currentSessionId);
   const currentChatStatusRef = useRef(currentChatStatus);
+  const currentChatMetaRef = useRef<any>(null);
   const isStreamingRef = useRef(isStreaming);
   const isCreatingChatRef = useRef(isCreatingChat);
   const remoteAgentIdRef = useRef(remoteAgentId);
@@ -396,13 +399,17 @@ export function useRemoteChatSession({
     { silent = false }: { silent?: boolean } = {},
   ) => {
     const hadActiveStream = Boolean(
-      streamAbortRef.current || activeAssistantMessageIdRef.current || isStreamingRef.current,
+      streamAbortRef.current
+      || activeAssistantMessageIdRef.current
+      || isStreamingRef.current
+      || currentChatStatusRef.current === "running",
     );
     if (requestStop && isRemoteEmployeeRef.current && currentChatIdRef.current) {
       stopChat(remoteAgentIdRef.current || undefined, currentChatIdRef.current).catch(
         () => {},
       );
     }
+    streamAbortNoticeModeRef.current = silent ? "silent" : "show";
     flushStreamUpdates();
     streamAbortRef.current?.abort();
     streamAbortRef.current = null;
@@ -429,7 +436,10 @@ export function useRemoteChatSession({
     finalText: string;
   }) => {
     if (
-      currentEmployeeRef.current?.id !== "fault" ||
+      !shouldEnableAlarmAnalystCards({
+        employeeId: currentEmployeeRef.current?.id || "",
+        session: currentChatMetaRef.current,
+      }) ||
       !currentChatIdRef.current ||
       !currentSessionIdRef.current ||
       !backendMessageId ||
@@ -540,6 +550,7 @@ export function useRemoteChatSession({
         && String(session?.meta?.source || "") === "portal-fault-workorder";
       let history = null;
       let nextMessages = null;
+      let enhancementSessionId = String(session?.sessionId || "").trim();
 
       if (isPortalFaultWorkbench) {
         try {
@@ -579,27 +590,36 @@ export function useRemoteChatSession({
           nextEmployee,
           session,
         );
-        const enhancementSessionId =
-          session.sessionId ||
+        enhancementSessionId = String(
+          enhancementSessionId ||
           history.session_id ||
           history.sessionId ||
-          "";
-        if (nextEmployee.id === "fault" && enhancementSessionId) {
-          try {
-            const cardResponse = await listAlarmAnalystCards(session.id, {
-              sessionId: enhancementSessionId,
-              agentId: nextRemoteAgentId,
-            });
-            nextMessages = mergeAlarmAnalystCards(nextMessages, (cardResponse.cards || []) as any);
-          } catch (error) {
-            console.warn("Failed to hydrate alarm analyst cards:", error);
-          }
+          "",
+        ).trim();
+      }
+
+      if (
+        shouldEnableAlarmAnalystCards({
+          employeeId: nextEmployee.id,
+          session,
+        })
+        && enhancementSessionId
+      ) {
+        try {
+          const cardResponse = await listAlarmAnalystCards(session.id, {
+            sessionId: enhancementSessionId,
+            agentId: nextRemoteAgentId,
+          });
+          nextMessages = mergeAlarmAnalystCards(nextMessages || [], (cardResponse.cards || []) as any);
+        } catch (error) {
+          console.warn("Failed to hydrate alarm analyst cards:", error);
         }
       }
 
       setCurrentChatId(session.id);
-      setCurrentSessionId(session.sessionId || "");
+      setCurrentSessionId(enhancementSessionId || session.sessionId || "");
       setCurrentChatStatus(history.status || session.status || "idle");
+      currentChatMetaRef.current = session?.meta || history?.meta || null;
       setMessages(nextMessages);
       setHistoryVisible(false);
     } catch (error: any) {
@@ -731,6 +751,7 @@ export function useRemoteChatSession({
 
     const normalizedVisibleContent = (visibleContent || content).trim();
     const userMessage = createUserMessage(normalizedVisibleContent);
+    streamAbortNoticeModeRef.current = null;
     streamAssistantMapRef.current = new Map();
     streamMessageMetaRef.current = new Map();
     streamPendingTextRef.current = new Map();
@@ -785,6 +806,7 @@ export function useRemoteChatSession({
       setCurrentSessionId(ensuredChat.session_id);
       currentChatIdRef.current = ensuredChat.id;
       currentSessionIdRef.current = ensuredChat.session_id;
+      currentChatMetaRef.current = chatMeta || ensuredChat.meta || currentChatMetaRef.current || null;
 
       await streamChat(
         nextRemoteAgentId,
@@ -819,7 +841,9 @@ export function useRemoteChatSession({
       streamProcessBlocksRef.current = new Map();
     } catch (error: any) {
       if (controller.signal.aborted) {
-        finalizePendingResponse("本轮对话已停止。");
+        if (streamAbortNoticeModeRef.current == null) {
+          finalizePendingResponse("本轮对话已停止。");
+        }
       } else {
         finalizePendingResponse(`对话失败：${normalizeRemoteChatErrorMessage(error)}`);
         setCurrentChatStatus("idle");
@@ -830,6 +854,7 @@ export function useRemoteChatSession({
       }
       setIsCreatingChat(false);
       setIsStreaming(false);
+      streamAbortNoticeModeRef.current = null;
       streamMessageMetaRef.current = new Map();
       streamPendingTextRef.current = new Map();
       streamResponseTextRef.current = new Map();
@@ -856,6 +881,7 @@ export function useRemoteChatSession({
     setRemoteSessions([]);
     setCurrentSessionId("");
     setCurrentChatId("");
+    currentChatMetaRef.current = null;
     setIsCreatingChat(false);
     streamMessageMetaRef.current = new Map();
     streamPendingTextRef.current = new Map();

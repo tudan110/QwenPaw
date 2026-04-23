@@ -5,6 +5,7 @@ import {
   buildAlarmAnalystCardRequest,
   getAlarmAnalystReportMarkdown,
   mergeAlarmAnalystCards,
+  shouldEnableAlarmAnalystCards,
 } from "./shared";
 
 test("builds alarm analyst card request from grouped response blocks", () => {
@@ -101,4 +102,42 @@ test("merges stored cards by raw report markdown when message id differs", () =>
   const merged = mergeAlarmAnalystCards(messages, cards);
 
   assert.equal(merged[0].alarmAnalystCard.summary.conclusion, "历史回放兜底匹配");
+});
+
+test("only enables alarm analyst cards for fault workorder sessions", () => {
+  assert.equal(
+    shouldEnableAlarmAnalystCards({
+      employeeId: "fault",
+      session: { meta: { source: "portal-fault-workorder" } },
+    }),
+    true,
+  );
+  assert.equal(
+    shouldEnableAlarmAnalystCards({
+      employeeId: "fault",
+      session: { meta: { source: "portal-chat" } },
+    }),
+    false,
+  );
+  assert.equal(
+    shouldEnableAlarmAnalystCards({
+      employeeId: "fault",
+      session: { title: "故障处置 · MySQL 告警 · WO-001" },
+    }),
+    true,
+  );
+  assert.equal(
+    shouldEnableAlarmAnalystCards({
+      employeeId: "fault",
+      session: { detail: "工单：WO-001 · 状态：已完成" },
+    }),
+    true,
+  );
+  assert.equal(
+    shouldEnableAlarmAnalystCards({
+      employeeId: "query",
+      session: { meta: { source: "portal-fault-workorder" } },
+    }),
+    false,
+  );
 });

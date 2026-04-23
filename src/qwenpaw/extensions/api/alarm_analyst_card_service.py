@@ -28,6 +28,11 @@ RESOURCE_ID_FALLBACK_RE = re.compile(r"(?:根资源|资源)\D{0,8}([0-9]{3,})")
 ROOT_RESOURCE_RE = re.compile(
     r"(?:根资源|根因对象|根因资源|根资源为)[:：]?\s*([A-Za-z0-9_.\-\u4e00-\u9fa5]+)"
 )
+APPLICATION_VALUE_RE = re.compile(r"^(?:受影响应用|影响应用|应用)\s*[:：]\s*(.+)$")
+RESOURCE_VALUE_RE = re.compile(r"^(?:受影响资源|影响资源|资源|CI\s*ID)\s*[:：]\s*(.+)$", re.IGNORECASE)
+SECTION_ONLY_APPLICATIONS = {"受影响应用", "影响应用", "应用"}
+SECTION_ONLY_RESOURCES = {"受影响资源", "影响资源", "资源", "ciid", "ci id"}
+ENTITY_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-()（）/\u4e00-\u9fa5\s]{1,32}$")
 SEVERITY_KEYWORDS = (
     ("critical", ("p0", "严重", "critical", "高危", "紧急")),
     ("major", ("p1", "major", "高", "重要")),
@@ -171,17 +176,17 @@ def _normalize_heading(value: str) -> str:
 
 def _first_meaningful_item(text: str) -> str:
     bullets = [
-        re.sub(r"\s+", " ", item).strip(" -")
+        _sanitize_inline_text(item)
         for item in BULLET_LINE_RE.findall(str(text or ""))
-        if item.strip()
+        if _sanitize_inline_text(item)
     ]
     if bullets:
         return bullets[0]
 
     for line in str(text or "").splitlines():
-        cleaned = line.strip().strip("-").strip()
+        cleaned = _sanitize_inline_text(line)
         if cleaned and not cleaned.startswith("#"):
-            return re.sub(r"\s+", " ", cleaned)
+            return cleaned
     return "已完成故障根因分析。"
 
 
@@ -221,42 +226,61 @@ def _extract_impact_entities(
     applications: list[AlarmAnalystCardImpactEntity] = []
     resources: list[AlarmAnalystCardImpactEntity] = []
     blast_radius_text = ""
+    current_group: str | None = None
 
     for line in str(text or "").splitlines():
-        cleaned = line.strip().strip("-").strip()
+        raw_cleaned = str(line or "").strip()
+        cleaned = _sanitize_inline_text(raw_cleaned)
         if not cleaned:
             continue
-        if "应用" in cleaned:
-            values = _split_named_values(cleaned)
-            applications.extend(
-                AlarmAnalystCardImpactEntity(name=value)
-                for value in values
-                if value
-            )
-        if "资源" in cleaned or "CI ID" in cleaned:
-            values = _split_named_values(cleaned)
-            for value in values:
-                if not value:
-                    continue
-                resources.append(
-                    AlarmAnalystCardImpactEntity(
-                        id=value if value.isdigit() else None,
-                        name=value,
-                    )
-                )
-        if not blast_radius_text:
-            blast_radius_text = cleaned
+        normalized_label = _normalize_heading(cleaned)
+        application_match = APPLICATION_VALUE_RE.match(cleaned)
+        resource_match = RESOURCE_VALUE_RE.match(cleaned)
 
-    return _dedupe_entities(applications), _dedupe_entities(resources), blast_radius_text
+        if normalized_label in {_normalize_heading(value) for value in SECTION_ONLY_APPLICATIONS}:
+            current_group = "application"
+            continue
+        if normalized_label in {_normalize_heading(value) for value in SECTION_ONLY_RESOURCES}:
+            current_group = "resource"
+            continue
+
+        if application_match:
+            current_group = "application"
+            applications.extend(_build_impact_entities(application_match.group(1), kind="application"))
+            continue
+        if resource_match:
+            current_group = "resource"
+            resources.extend(_build_impact_entities(resource_match.group(1), kind="resource"))
+            continue
+
+        if current_group == "application":
+            matched_entities = _build_impact_entities(cleaned, kind="application")
+            if matched_entities:
+                applications.extend(matched_entities)
+                continue
+        elif current_group == "resource":
+            matched_entities = _build_impact_entities(cleaned, kind="resource")
+            if matched_entities:
+                resources.extend(matched_entities)
+                continue
+
+        if not blast_radius_text and _is_readable_summary_line(raw_cleaned, cleaned):
+            blast_radius_text = cleaned[:120]
+
+    deduped_applications = _dedupe_entities(applications)
+    deduped_resources = _dedupe_entities(resources)
+    if not blast_radius_text:
+        blast_radius_text = _summarize_blast_radius(deduped_applications, deduped_resources)
+    return deduped_applications, deduped_resources, blast_radius_text
 
 
 def _split_named_values(line: str) -> list[str]:
     tail = re.split(r"[:：]", line, maxsplit=1)
     value_text = tail[1] if len(tail) > 1 else line
     values = [
-        item.strip()
+        _sanitize_inline_text(item)
         for item in re.split(r"[、,，/；;]+", value_text)
-        if item.strip()
+        if _sanitize_inline_text(item)
     ]
     return values
 
@@ -280,14 +304,14 @@ def _extract_recommendations(text: str) -> list[AlarmAnalystCardRecommendation]:
     items = BULLET_LINE_RE.findall(str(text or ""))
 
     for index, item in enumerate(items):
-        content = re.sub(r"\s+", " ", item).strip()
+        content = _sanitize_inline_text(item)
         if not content:
             continue
         priority = _detect_priority(content, fallback=index)
-        title = re.sub(r"^(P[0-2])[:：\s-]*", "", content, flags=re.IGNORECASE).strip()
+        title = _extract_brief_title(content, fallback=f"建议 {index + 1}")
         recommendations.append(
             AlarmAnalystCardRecommendation(
-                title=title[:36] or f"建议 {index + 1}",
+                title=title,
                 priority=priority,
                 description=content,
                 risk=_extract_risk(content),
@@ -330,13 +354,13 @@ def _extract_evidence(
     evidence: list[AlarmAnalystCardEvidence] = []
 
     for item in BULLET_LINE_RE.findall(str(evidence_section or "")):
-        cleaned = re.sub(r"\s+", " ", item).strip()
+        cleaned = _sanitize_inline_text(item)
         if not cleaned:
             continue
         evidence.append(
             AlarmAnalystCardEvidence(
                 kind=_detect_evidence_kind(cleaned),
-                title=cleaned[:24],
+                title=_extract_brief_title(cleaned, fallback="关键证据"),
                 summary=cleaned,
             )
         )
@@ -438,3 +462,73 @@ def _get_block_value(
 
 def _build_content_hash(text: str) -> str:
     return hashlib.sha256(str(text or "").strip().encode("utf-8")).hexdigest()[:16]
+
+
+def _sanitize_inline_text(text: str) -> str:
+    cleaned = str(text or "").strip()
+    cleaned = re.sub(r"^\s*(?:[-*+]\s+|\d+\.\s+|\d+[、)]\s+)?", "", cleaned)
+    cleaned = cleaned.replace("**", "").replace("`", "")
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip(" |：:-")
+
+
+def _build_impact_entities(value_text: str, *, kind: str) -> list[AlarmAnalystCardImpactEntity]:
+    entities: list[AlarmAnalystCardImpactEntity] = []
+    for value in _split_named_values(value_text):
+        entity_name = _sanitize_entity_name(value)
+        if not entity_name:
+            continue
+        entities.append(
+            AlarmAnalystCardImpactEntity(
+                id=entity_name if kind == "resource" and entity_name.isdigit() else None,
+                name=entity_name,
+            )
+        )
+    return entities
+
+
+def _sanitize_entity_name(value: str) -> str:
+    cleaned = _sanitize_inline_text(value)
+    if not cleaned or len(cleaned) > 32:
+        return ""
+    if "|" in str(value or ""):
+        return ""
+    if len(cleaned.split()) > 4:
+        return ""
+    if not ENTITY_NAME_RE.fullmatch(cleaned):
+        return ""
+    if re.search(r"(查询|拓扑|告警|窗口|任务|变更|链路|写入|恢复|确认)", cleaned) and len(cleaned) > 12:
+        return ""
+    return cleaned
+
+
+def _is_readable_summary_line(raw_line: str, cleaned_line: str) -> bool:
+    if not cleaned_line or len(cleaned_line) > 120:
+        return False
+    if "|" in str(raw_line or ""):
+        return False
+    if APPLICATION_VALUE_RE.match(cleaned_line) or RESOURCE_VALUE_RE.match(cleaned_line):
+        return False
+    normalized = _normalize_heading(cleaned_line)
+    if normalized in {_normalize_heading(value) for value in SECTION_ONLY_APPLICATIONS | SECTION_ONLY_RESOURCES}:
+        return False
+    return True
+
+
+def _summarize_blast_radius(
+    applications: list[AlarmAnalystCardImpactEntity],
+    resources: list[AlarmAnalystCardImpactEntity],
+) -> str:
+    parts: list[str] = []
+    if applications:
+        parts.append(f"{len(applications)} 个应用")
+    if resources:
+        parts.append(f"{len(resources)} 个资源")
+    return f"影响 {('、'.join(parts))}" if parts else ""
+
+
+def _extract_brief_title(text: str, *, fallback: str) -> str:
+    content = re.sub(r"^(P[0-2])[:：\s-]*", "", str(text or ""), flags=re.IGNORECASE).strip()
+    content = _sanitize_inline_text(content)
+    title = re.split(r"\s*(?:→|->|=>|；|;|。)\s*", content, maxsplit=1)[0].strip()
+    return (title[:32] or fallback).strip()

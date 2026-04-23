@@ -61,6 +61,48 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function getAlarmAnalystSessionMeta(value: any) {
+  if (isPlainRecord(value?.meta)) {
+    return value.meta;
+  }
+  if (isPlainRecord(value)) {
+    return value;
+  }
+  return null;
+}
+
+export function shouldEnableAlarmAnalystCards({
+  employeeId,
+  session,
+}: {
+  employeeId: string;
+  session?: any;
+}) {
+  if (String(employeeId || "").trim() !== "fault") {
+    return false;
+  }
+
+  const meta = getAlarmAnalystSessionMeta(session);
+  if (String(meta?.source || "").trim() === "portal-fault-workorder") {
+    return true;
+  }
+  if (String(meta?.workorderNo || "").trim()) {
+    return true;
+  }
+
+  const title = String(session?.title || session?.name || meta?.title || "").trim();
+  if (/^故障处置\s*[·\-]/.test(title)) {
+    return true;
+  }
+
+  const detail = String(session?.detail || "").trim();
+  if (/工单[:：]/.test(detail)) {
+    return true;
+  }
+
+  return false;
+}
+
 export function getAlarmAnalystSourceMessageId(message: any) {
   return String(
     message?.enhancementSourceMessageId ||

@@ -74,3 +74,33 @@ def test_build_alarm_analyst_card_extracts_summary_recommendations_and_hash() ->
     assert card.recommendations[0].priority == "p0"
     assert card.recommendations[1].action_type == "observe"
     assert card.evidence[-1].kind == "tool"
+
+
+def test_build_alarm_analyst_card_filters_noisy_impact_and_sanitizes_titles() -> None:
+    card = build_alarm_analyst_card(
+        chat_id="chat-2",
+        message_id="assistant-2",
+        employee_id="fault",
+        report_markdown=(
+            "数据库锁异常 — 完整故障分析报告\n"
+            "## 根因分析结论\n"
+            "- 根因：MySQL 资源 3094 存在锁竞争。\n"
+            "## 影响范围\n"
+            "### 受影响应用\n"
+            "- CMDB\n"
+            "- 应用拓扑确认（query -> veops-cmdb）\n"
+            "- 天翼智观应用中依赖 MySQL 的写入链路\n"
+            "### 受影响资源\n"
+            "- 3094\n"
+            "- Redis-01\n"
+            "- | 2980 | 天翼智观（应用） | ✅ 0条 |\n"
+            "## 处置建议\n"
+            "- P0：`数据库死锁 + 数据库锁异常 + 连接异常` 三告警同一时间点出现 → 锁竞争已激化到死锁级别。\n"
+        ),
+        process_blocks=[],
+    )
+
+    assert [item.name for item in card.impact.affected_applications] == ["CMDB"]
+    assert [item.name for item in card.impact.affected_resources] == ["3094", "Redis-01"]
+    assert card.impact.blast_radius_text == "影响 1 个应用、2 个资源"
+    assert card.recommendations[0].title == "数据库死锁 + 数据库锁异常 + 连接异常 三告警同一时间点出现"

@@ -1591,6 +1591,8 @@ export default function DigitalEmployeePage({
     remoteAgentId,
     setMessages,
   });
+  const isConversationRunning = isStreaming || currentChatStatus === "running";
+  const isInteractionLocked = isCreatingChat || isConversationRunning;
 
   const {
     alarmWorkorders,
@@ -2700,7 +2702,7 @@ export default function DigitalEmployeePage({
   }, [chatSidebarCollapsed]);
 
   useEffect(() => {
-    if (isStreaming || isCreatingChat) {
+    if (isInteractionLocked) {
       return;
     }
 
@@ -2744,7 +2746,7 @@ export default function DigitalEmployeePage({
       cancelled = true;
       window.clearInterval(timerId);
     };
-  }, [isCreatingChat, isStreaming]);
+  }, [isInteractionLocked]);
 
   useEffect(() => {
     const timerId = window.setInterval(() => {
@@ -3672,7 +3674,7 @@ export default function DigitalEmployeePage({
       }
     }
 
-    if (event.key === "Enter" && (!multiline || !event.shiftKey) && !isStreaming) {
+    if (event.key === "Enter" && (!multiline || !event.shiftKey) && !isInteractionLocked) {
       event.preventDefault();
       void handleSendMessage();
     }
@@ -4408,7 +4410,7 @@ export default function DigitalEmployeePage({
                 loading={modelsLoading}
                 switching={modelsSwitching}
                 submitting={modelsSubmitting}
-                disabled={isCreatingChat || isStreaming}
+                disabled={isInteractionLocked}
                 notice={modelNotice}
                 onRefresh={() => void fetchModelState()}
                 onSubmitProvider={handleSaveProvider}
@@ -4860,7 +4862,7 @@ export default function DigitalEmployeePage({
                     <textarea
                       ref={homeComposerRef}
                       value={inputMessage}
-                      disabled={isCreatingChat || isStreaming}
+                      disabled={isInteractionLocked}
                       onBlur={() => window.setTimeout(() => setInputCursor(null), 120)}
                       onClick={handleInputSelection}
                       onChange={(event) => {
@@ -4912,7 +4914,7 @@ export default function DigitalEmployeePage({
                               }
                               void handleSendMessage(command);
                             }}
-                            disabled={isCreatingChat || isStreaming}
+                            disabled={isInteractionLocked}
                           >
                             {command}
                           </button>
@@ -4922,21 +4924,21 @@ export default function DigitalEmployeePage({
                         className={
                           isCreatingChat
                             ? "send-btn disabled"
-                            : isStreaming
+                            : isConversationRunning
                               ? "send-btn stop-mode"
                               : "send-btn"
                         }
                         onClick={() => {
-                          if (isStreaming) {
+                          if (isConversationRunning) {
                             stopActiveStream(true);
                             return;
                           }
                           void handleSendMessage();
                         }}
                         disabled={isCreatingChat}
-                        aria-label={isStreaming ? "停止聊天" : "发送消息"}
+                        aria-label={isConversationRunning ? "停止聊天" : "发送消息"}
                       >
-                        {isStreaming ? (
+                        {isConversationRunning ? (
                           <span className="send-btn-stop-icon" aria-hidden="true" />
                         ) : (
                           <i className="fas fa-paper-plane" />
@@ -4963,7 +4965,7 @@ export default function DigitalEmployeePage({
                             className={
                               isAlarmWorkbenchMode
                                 ? "chat-status-pill alert"
-                                : isStreaming || currentChatStatus === "running"
+                                : isConversationRunning
                                   ? "chat-status-pill running"
                                   : "chat-status-pill"
                             }
@@ -4972,7 +4974,7 @@ export default function DigitalEmployeePage({
                               ? "告警触发"
                               : isCreatingChat
                                 ? "创建中"
-                                : isStreaming || currentChatStatus === "running"
+                                : isConversationRunning
                                   ? "对话中"
                                   : currentChatId
                                     ? "历史可追溯"
@@ -4995,7 +4997,7 @@ export default function DigitalEmployeePage({
                                 eligibleProviders={eligibleProviders}
                                 loading={modelsLoading}
                                 switching={modelsSwitching}
-                                disabled={isCreatingChat || isStreaming}
+                                disabled={isInteractionLocked}
                                 notice={modelNotice}
                                 onSelectModel={handleSelectModel}
                                 onOpenConfig={openModelConfig}
@@ -5021,7 +5023,7 @@ export default function DigitalEmployeePage({
                                 eligibleProviders={eligibleProviders}
                                 loading={modelsLoading}
                                 switching={modelsSwitching}
-                                disabled={isCreatingChat || isStreaming}
+                                disabled={isInteractionLocked}
                                 notice={modelNotice}
                                 onSelectModel={handleSelectModel}
                                 onOpenConfig={openModelConfig}
@@ -5101,7 +5103,7 @@ export default function DigitalEmployeePage({
                                 }
                                 void handleSendMessage(command);
                               }}
-                              disabled={isCreatingChat || isStreaming}
+                              disabled={isInteractionLocked}
                             >
                               <i className="fas fa-bolt" />
                               {command}
@@ -5123,7 +5125,7 @@ export default function DigitalEmployeePage({
                             ref={chatInputRef}
                             type="text"
                             value={inputMessage}
-                            disabled={isCreatingChat || isStreaming}
+                            disabled={isInteractionLocked}
                             onBlur={() => window.setTimeout(() => setInputCursor(null), 120)}
                             onClick={handleInputSelection}
                             onChange={(event) => {
@@ -5167,21 +5169,21 @@ export default function DigitalEmployeePage({
                           className={
                             isCreatingChat
                               ? "send-btn disabled"
-                              : isStreaming
+                              : isConversationRunning
                                 ? "send-btn stop-mode"
                                 : "send-btn"
                           }
                           onClick={() => {
-                            if (isStreaming) {
+                            if (isConversationRunning) {
                               stopActiveStream(true);
                               return;
                             }
                             void handleSendMessage();
                           }}
                           disabled={isCreatingChat}
-                          aria-label={isStreaming ? "停止聊天" : "发送消息"}
+                          aria-label={isConversationRunning ? "停止聊天" : "发送消息"}
                         >
-                          {isStreaming ? (
+                          {isConversationRunning ? (
                             <span className="send-btn-stop-icon" aria-hidden="true" />
                           ) : (
                             <i className="fas fa-paper-plane" />
@@ -5531,7 +5533,7 @@ export default function DigitalEmployeePage({
                     const isLockedRemoteSession =
                       isRemoteEmployee &&
                       isActiveSession &&
-                      (isStreaming || currentChatStatus === "running");
+                      isConversationRunning;
 
                     return (
                       <div
