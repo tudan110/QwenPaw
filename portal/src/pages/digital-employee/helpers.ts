@@ -224,10 +224,19 @@ export function getSeverityClassName(severityLevel: any) {
 }
 
 export function createWelcomeMessage(employee: any) {
+  const welcomeContent = String(employee?.welcome || "").trim();
+  if (!welcomeContent) {
+    return null;
+  }
   return createAgentMessage(employee, {
     id: `welcome-${employee.id}-${Date.now()}`,
-    content: employee.welcome,
+    content: welcomeContent,
   });
+}
+
+export function createInitialMessages(employee: any) {
+  const welcomeMessage = createWelcomeMessage(employee);
+  return welcomeMessage ? [welcomeMessage] : [];
 }
 
 export function createAgentMessage(employee: any, overrides: Record<string, any> = {}) {

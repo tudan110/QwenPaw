@@ -139,6 +139,7 @@ COPY deploy-all/qwenpaw/data/qwenpaw/ /app/.working.backup/
 COPY deploy-all/qwenpaw/working/workspaces/query/skills /app/.working.backup/workspaces/query/skills
 COPY deploy-all/qwenpaw/working/workspaces/resource/skills /app/.working.backup/workspaces/resource/skills
 COPY deploy-all/qwenpaw/working/workspaces/fault/skills /app/.working.backup/workspaces/fault/skills
+COPY deploy-all/qwenpaw/working/workspaces/order/skills /app/.working.backup/workspaces/order/skills
 COPY deploy-all/qwenpaw/working/workspaces/knowledge/skills /app/.working.backup/workspaces/knowledge/skills
 # Copy secret directory data to backup
 COPY deploy-all/qwenpaw/data/qwenpaw.secret/ /app/.working.secret.backup/

@@ -57,8 +57,8 @@ import {
   buildSessionTitle,
   createAgentMessage,
   createAlarmWorkorderMessage,
+  createInitialMessages,
   createUserMessage,
-  createWelcomeMessage,
   normalizeRemoteSessions,
   parsePortalAdvancedPanel,
   parsePortalView,
@@ -91,6 +91,7 @@ const REMOTE_AGENT_IDS: Record<string, string> = {
   fault: "fault",
   resource: "resource",
   query: "query",
+  order: "order",
   knowledge: "knowledge",
 };
 const DASHBOARD_CHAT_CHANNEL = "console";
@@ -100,7 +101,7 @@ const EMPLOYEE_MENTION_ALIASES: Record<string, string[]> = {
   resource: ["资产", "资源", "纳管"],
   fault: ["故障", "处置", "修复", "根因"],
   inspection: ["巡检", "巡查", "检查"],
-  order: ["工单", "流程", "审批"],
+  order: ["工单", "待办", "已办", "流程", "审批", "派单", "转派"],
   query: ["数据", "数字", "洞察", "报表", "查询", "告警"],
   knowledge: ["知识", "知库", "文档"],
 };
@@ -115,10 +116,13 @@ const PORTAL_CLOSE_DRAWER_MESSAGE = {
   reason: "switch-traditional-view",
 } as const;
 const RESOURCE_IMPORT_OWNER_ID = "resource";
+const ORDER_OWNER_ID = "order";
 const RESOURCE_IMPORT_COMMAND = "导入资源清单";
 const PORTAL_RESOURCE_IMPORT_SOURCE = "portal-resource-import";
 const RESOURCE_IMPORT_INTENT_PATTERN =
   /(导入资源清单|资源清单导入|批量导入|资源纳管|导入资源|智能导入|上传台账导入)/;
+const ORDER_INTENT_PATTERN =
+  /(工单|待办工单|已办工单|待处理工单|已处理工单|工单详情|查看详情|创建工单|处置工单|流转记录|流程跟踪|审批记录)/;
 const CHAT_SCROLL_BOTTOM_THRESHOLD_PX = 48;
 
 function createResourceImportFlowId() {
@@ -128,6 +132,11 @@ function createResourceImportFlowId() {
 function isResourceImportIntent(value: string) {
   const normalized = String(value || "").replace(/\s+/g, "");
   return RESOURCE_IMPORT_INTENT_PATTERN.test(normalized);
+}
+
+function isOrderIntent(value: string) {
+  const normalized = String(value || "").replace(/\s+/g, "");
+  return ORDER_INTENT_PATTERN.test(normalized);
 }
 
 function isPortalResourceImportSession(session: SessionRecord | null | undefined) {
@@ -815,7 +824,7 @@ const PORTAL_HOME_EMPLOYEE: DigitalEmployee = {
       RESOURCE_IMPORT_COMMAND,
     "当前有哪些设备？",
     "数据库响应很慢，请帮我定位",
-    "你是谁？",
+    "查看待办工单",
   ],
   welcome:
     "您好！我是智观 AI，是当前 portal 对外的统一入口。<br><br>您可以直接和我对话，先从普通问题开始即可。",
@@ -1214,16 +1223,20 @@ function scoreMentionCandidate(employee: (typeof digitalEmployees)[number], quer
 
 function buildPortalAssistantReply(content: string) {
   const normalized = String(content || "").trim();
+  const isOrderIntent = /工单|待办|已办|审批|流程|派单|转派/.test(normalized);
   const suggestions = [
+    { employee: "工单调度员", keywords: ["工单", "待办", "已办", "审批", "流程", "派单", "转派"] },
     { employee: "数据分析员", keywords: ["设备", "指标", "报表", "趋势", "性能", "查询", "可用性", "告警", "报警"] },
     { employee: "故障处置员", keywords: ["故障", "异常", "超时", "中断", "恢复", "慢", "处置", "根因"] },
     { employee: "资产管理员", keywords: ["资产", "纳管", "扫描", "发现", "拓扑", "资源"] },
     { employee: "巡检专员", keywords: ["巡检", "健康", "检查", "日报", "周报"] },
     { employee: "知识专员", keywords: ["怎么", "最佳实践", "方案", "知识", "原理"] },
-    { employee: "工单调度员", keywords: ["工单", "审批", "转派", "流程"] },
   ];
+  const rankedSuggestions = isOrderIntent
+    ? suggestions
+    : [...suggestions.slice(1), suggestions[0]];
 
-  const recommended = suggestions
+  const recommended = rankedSuggestions
     .filter((item) => item.keywords.some((keyword) => normalized.includes(keyword)))
     .map((item) => item.employee)
     .slice(0, 2);
@@ -2577,7 +2590,7 @@ export default function DigitalEmployeePage({
     if (!isRemoteEmployee) {
       setActivePortalResourceImportSessionId("");
       resetRemoteState();
-      const initialMessages = isPortalHome ? [] : [createWelcomeMessage(currentEmployeeBase)];
+      const initialMessages = isPortalHome ? [] : createInitialMessages(currentEmployeeBase);
       const nextSession = isPortalHome
         ? null
         : createConversationSession(currentEmployeeBase, initialMessages);
@@ -2605,7 +2618,7 @@ export default function DigitalEmployeePage({
 
     setActivePortalResourceImportSessionId("");
     resetRemoteState({
-      initialMessages: isPortalHome ? [] : [createWelcomeMessage(currentEmployeeBase)],
+      initialMessages: isPortalHome ? [] : createInitialMessages(currentEmployeeBase),
     });
     setPortalHomeChatMode(false);
   }, [
@@ -3118,6 +3131,10 @@ export default function DigitalEmployeePage({
   const effectiveMcpAgentId = effectiveMcpEmployee
     ? (REMOTE_AGENT_IDS[effectiveMcpEmployee.id] || "default")
     : "default";
+  const orderEmployee = useMemo(
+    () => employeesWithRuntimeStatus.find((item) => item.id === ORDER_OWNER_ID) || getEmployeeById(ORDER_OWNER_ID),
+    [employeesWithRuntimeStatus],
+  );
   const showPortalHomeHero = isPortalHomeChat && !portalHomeChatMode && safeMessages.length === 0;
   const mentionContext = useMemo(
     () => extractMentionQuery(inputMessage, inputCursor),
@@ -3268,7 +3285,7 @@ export default function DigitalEmployeePage({
     if (!nextSessionId) {
       nextSessionId = createAndActivateLocalSession(
         employee,
-        messages.length ? messages : [createWelcomeMessage(employee)],
+        messages.length ? messages : createInitialMessages(employee),
       );
     }
 
@@ -3746,6 +3763,11 @@ export default function DigitalEmployeePage({
       return;
     }
 
+    if (currentEmployee.id !== ORDER_OWNER_ID && orderEmployee && isOrderIntent(rawContent)) {
+      queueMentionDispatch(orderEmployee, rawContent, rawContent);
+      return;
+    }
+
     await dispatchActiveMessage(rawContent);
   }, [
     currentEmployee,
@@ -3755,6 +3777,7 @@ export default function DigitalEmployeePage({
     isRemoteEmployee,
     navigateToEmployeePage,
     openResourceImport,
+    orderEmployee,
     queueMentionDispatch,
     remoteAgentId,
     selectedEmployee,
@@ -3910,13 +3933,13 @@ export default function DigitalEmployeePage({
 
     if (isRemoteEmployee) {
       resetRemoteState({
-        initialMessages: isPortalHome ? [] : [createWelcomeMessage(currentEmployee)],
+        initialMessages: isPortalHome ? [] : createInitialMessages(currentEmployee),
       });
       setPortalHomeChatMode(false);
       return;
     }
 
-    const initialMessages = [createWelcomeMessage(currentEmployee)];
+    const initialMessages = createInitialMessages(currentEmployee);
     createAndActivateLocalSession(currentEmployee, initialMessages);
     setMessages(initialMessages);
     setPortalHomeChatMode(false);
@@ -4033,7 +4056,7 @@ export default function DigitalEmployeePage({
           setActivePortalResourceImportSessionId("");
           if (isRemoteEmployee) {
             resetRemoteState({
-              initialMessages: [createWelcomeMessage(currentEmployee)],
+              initialMessages: createInitialMessages(currentEmployee),
             });
           } else if (session.id === currentSessionId) {
             const nextActiveSession = nextSessions[0];
@@ -4042,7 +4065,7 @@ export default function DigitalEmployeePage({
               setMessages(nextActiveSession.messages || []);
             } else {
               setCurrentSessionId("");
-              setMessages([createWelcomeMessage(currentEmployee)]);
+              setMessages(createInitialMessages(currentEmployee));
             }
           }
         }
@@ -4062,7 +4085,7 @@ export default function DigitalEmployeePage({
         await deleteChat(remoteAgentId || undefined, session.id);
         if (deletingCurrentSession) {
           resetRemoteState({
-            initialMessages: [createWelcomeMessage(currentEmployee)],
+            initialMessages: createInitialMessages(currentEmployee),
             clearHistoryError: false,
           });
           setHistoryVisible(true);
@@ -4085,7 +4108,7 @@ export default function DigitalEmployeePage({
             setMessages(nextActiveSession.messages || []);
           } else {
             setCurrentSessionId("");
-            setMessages([createWelcomeMessage(currentEmployee)]);
+            setMessages(createInitialMessages(currentEmployee));
           }
         }
       }

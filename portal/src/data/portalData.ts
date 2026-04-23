@@ -88,8 +88,8 @@ export const portalAgents: PortalAgent[] = [
     id: "AG006",
     name: "工单调度员",
     type: "change",
-    status: "stopped",
-    color: "#909399",
+    status: "active",
+    color: "#e6a23c",
     icon: "fa-solid fa-pen-to-square",
     description: "工单处理与流程自动化",
     skills: ["变更审批", "任务执行", "过程监控", "结果验证"],
@@ -194,8 +194,7 @@ export const digitalEmployees: DigitalEmployee[] = [
     gradient: "linear-gradient(135deg, #F59E0B, #D97706)",
     capabilities: ["工单创建", "智能分派", "处理跟踪", "自动关闭", "统计报表"],
     quickCommands: ["创建紧急变更工单", "查看待处理工单", "批量处理工单", "导出工单统计"],
-    welcome:
-      "您好！我是工单调度员。工单处理与流程自动化。<br><br>我可以帮您完成以下工作：<br>• 工单创建 - 智能解析需求，自动创建标准化工单<br>• 智能分派 - 基于技能、负载自动分派最优处理人<br>• 处理跟踪 - 全流程可视化，实时跟踪处理进度<br>• 自动关闭 - 完成后自动验证并归档<br>• 统计报表 - 自动生成工单处理统计和分析报告<br><br>请直接输入您的工单需求，或选择下方的快捷命令。",
+    welcome: "",
   },
   {
     id: "knowledge",
