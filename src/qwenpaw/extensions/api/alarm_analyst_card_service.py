@@ -1,0 +1,440 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from typing import Any, Iterable
+
+from qwenpaw.extensions.api.alarm_analyst_card_models import (
+    AlarmAnalystCard,
+    AlarmAnalystCardEvidence,
+    AlarmAnalystCardImpact,
+    AlarmAnalystCardImpactEntity,
+    AlarmAnalystCardProcessBlock,
+    AlarmAnalystCardRecommendation,
+    AlarmAnalystCardRootCause,
+    AlarmAnalystCardSource,
+    AlarmAnalystCardSummary,
+    AlarmAnalystCardTopology,
+)
+
+SECTION_HEADING_RE = re.compile(r"^#{1,6}\s*(.+?)\s*$", re.MULTILINE)
+BULLET_LINE_RE = re.compile(r"^\s*(?:[-*+]\s+|\d+\.\s+)(.+?)\s*$", re.MULTILINE)
+RESOURCE_ID_RE = re.compile(
+    r"(?:资源\s*ID(?:（CI\s*ID）|\(CI\s*ID\))?|CI\s*ID|res[_\s-]*id)[:：]?\s*([0-9]+)",
+    re.IGNORECASE,
+)
+RESOURCE_ID_FALLBACK_RE = re.compile(r"(?:根资源|资源)\D{0,8}([0-9]{3,})")
+ROOT_RESOURCE_RE = re.compile(
+    r"(?:根资源|根因对象|根因资源|根资源为)[:：]?\s*([A-Za-z0-9_.\-\u4e00-\u9fa5]+)"
+)
+SEVERITY_KEYWORDS = (
+    ("critical", ("p0", "严重", "critical", "高危", "紧急")),
+    ("major", ("p1", "major", "高", "重要")),
+    ("minor", ("p2", "minor", "一般", "低")),
+)
+
+
+def is_alarm_analyst_card_candidate(
+    *,
+    employee_id: str,
+    report_markdown: str,
+    process_blocks: Iterable[dict[str, Any] | AlarmAnalystCardProcessBlock],
+) -> bool:
+    if str(employee_id or "").strip() != "fault":
+        return False
+
+    report_text = str(report_markdown or "").strip()
+    if len(report_text) < 20:
+        return False
+
+    marker_count = sum(
+        1
+        for marker in (
+            "完整故障分析报告",
+            "根因分析结论",
+            "根因结论",
+            "处置建议",
+            "影响范围",
+            "证据摘要",
+        )
+        if marker in report_text
+    )
+    has_recommendation_hint = "建议" in report_text
+    has_topology_signal = bool(_extract_topology_payload(process_blocks)[0])
+    return marker_count >= 2 and (has_recommendation_hint or has_topology_signal)
+
+
+def build_alarm_analyst_card(
+    *,
+    chat_id: str,
+    message_id: str,
+    employee_id: str,
+    report_markdown: str,
+    process_blocks: Iterable[dict[str, Any] | AlarmAnalystCardProcessBlock],
+) -> AlarmAnalystCard:
+    if str(employee_id or "").strip() != "fault":
+        raise ValueError("alarm analyst cards are only supported for employee_id='fault'")
+
+    report_text = str(report_markdown or "").strip()
+    root_section = _extract_named_section(report_text, ("根因分析结论", "根因结论", "根因分析", "根因"))
+    impact_section = _extract_named_section(report_text, ("影响范围", "影响分析", "影响面"))
+    recommendation_section = _extract_named_section(report_text, ("处置建议", "建议动作", "修复建议", "处置方案"))
+    evidence_section = _extract_named_section(report_text, ("证据摘要", "关键证据", "证据", "分析依据"))
+
+    title = _extract_title(report_text)
+    conclusion = _first_meaningful_item(root_section) or _first_meaningful_item(report_text)
+    resource_id = _extract_resource_id(root_section) or _extract_resource_id(report_text)
+    resource_name = _extract_root_resource_name(root_section) or _extract_root_resource_name(report_text)
+    severity = _detect_severity(report_text)
+    confidence, status = _detect_confidence_and_status(root_section or report_text)
+    applications, resources, blast_radius_text = _extract_impact_entities(impact_section or report_text)
+    nodes, edges = _extract_topology_payload(process_blocks)
+    highlighted_node_ids = [item for item in (resource_id, resource_name) if item]
+    recommendations = _extract_recommendations(recommendation_section or report_text)
+    evidence = _extract_evidence(
+        evidence_section=evidence_section,
+        conclusion=conclusion,
+        blast_radius_text=blast_radius_text,
+        topology_nodes=nodes,
+        topology_edges=edges,
+    )
+
+    return AlarmAnalystCard(
+        source=AlarmAnalystCardSource(
+            chat_id=str(chat_id or "").strip(),
+            message_id=str(message_id or "").strip(),
+            content_hash=_build_content_hash(report_text),
+        ),
+        summary=AlarmAnalystCardSummary(
+            title=title,
+            conclusion=conclusion,
+            severity=severity,
+            confidence=confidence,
+            status=status,
+        ),
+        root_cause=AlarmAnalystCardRootCause(
+            resource_id=resource_id or None,
+            resource_name=resource_name or None,
+            ci_id=resource_id or None,
+            reason=conclusion,
+        ),
+        impact=AlarmAnalystCardImpact(
+            affected_applications=applications,
+            affected_resources=resources,
+            blast_radius_text=blast_radius_text or None,
+        ),
+        topology=AlarmAnalystCardTopology(
+            nodes=nodes,
+            edges=edges,
+            highlighted_node_ids=highlighted_node_ids,
+        ),
+        recommendations=recommendations,
+        evidence=evidence,
+        raw_report_markdown=report_text,
+    )
+
+
+def _extract_title(report_markdown: str) -> str:
+    for line in str(report_markdown or "").splitlines():
+        text = line.strip()
+        if not text or text.startswith("#"):
+            continue
+        text = re.sub(r"^[\W_]+", "", text)
+        text = re.split(r"\s+[—-]\s+", text, maxsplit=1)[0].strip()
+        if text:
+            return text
+    return "故障根因分析"
+
+
+def _extract_named_section(report_markdown: str, names: tuple[str, ...]) -> str:
+    if not report_markdown:
+        return ""
+
+    headings = list(SECTION_HEADING_RE.finditer(report_markdown))
+    if not headings:
+        return ""
+
+    normalized_names = {_normalize_heading(name) for name in names}
+    for index, heading in enumerate(headings):
+        if _normalize_heading(heading.group(1)) not in normalized_names:
+            continue
+        start = heading.end()
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(report_markdown)
+        return report_markdown[start:end].strip()
+    return ""
+
+
+def _normalize_heading(value: str) -> str:
+    return re.sub(r"\s+", "", str(value or "").strip().lower())
+
+
+def _first_meaningful_item(text: str) -> str:
+    bullets = [
+        re.sub(r"\s+", " ", item).strip(" -")
+        for item in BULLET_LINE_RE.findall(str(text or ""))
+        if item.strip()
+    ]
+    if bullets:
+        return bullets[0]
+
+    for line in str(text or "").splitlines():
+        cleaned = line.strip().strip("-").strip()
+        if cleaned and not cleaned.startswith("#"):
+            return re.sub(r"\s+", " ", cleaned)
+    return "已完成故障根因分析。"
+
+
+def _extract_resource_id(text: str) -> str:
+    match = RESOURCE_ID_RE.search(str(text or ""))
+    if match:
+        return match.group(1)
+    fallback_match = RESOURCE_ID_FALLBACK_RE.search(str(text or ""))
+    return fallback_match.group(1) if fallback_match else ""
+
+
+def _extract_root_resource_name(text: str) -> str:
+    match = ROOT_RESOURCE_RE.search(str(text or ""))
+    return match.group(1).strip() if match else ""
+
+
+def _detect_severity(text: str) -> str | None:
+    normalized = str(text or "").lower()
+    for label, keywords in SEVERITY_KEYWORDS:
+        if any(keyword in normalized for keyword in keywords):
+            return label
+    return None
+
+
+def _detect_confidence_and_status(text: str) -> tuple[str, str]:
+    normalized = str(text or "")
+    if not normalized.strip():
+        return "low", "unknown"
+    if any(keyword in normalized for keyword in ("疑似", "可能", "待确认", "怀疑")):
+        return "medium", "suspected"
+    return "high", "identified"
+
+
+def _extract_impact_entities(
+    text: str,
+) -> tuple[list[AlarmAnalystCardImpactEntity], list[AlarmAnalystCardImpactEntity], str]:
+    applications: list[AlarmAnalystCardImpactEntity] = []
+    resources: list[AlarmAnalystCardImpactEntity] = []
+    blast_radius_text = ""
+
+    for line in str(text or "").splitlines():
+        cleaned = line.strip().strip("-").strip()
+        if not cleaned:
+            continue
+        if "应用" in cleaned:
+            values = _split_named_values(cleaned)
+            applications.extend(
+                AlarmAnalystCardImpactEntity(name=value)
+                for value in values
+                if value
+            )
+        if "资源" in cleaned or "CI ID" in cleaned:
+            values = _split_named_values(cleaned)
+            for value in values:
+                if not value:
+                    continue
+                resources.append(
+                    AlarmAnalystCardImpactEntity(
+                        id=value if value.isdigit() else None,
+                        name=value,
+                    )
+                )
+        if not blast_radius_text:
+            blast_radius_text = cleaned
+
+    return _dedupe_entities(applications), _dedupe_entities(resources), blast_radius_text
+
+
+def _split_named_values(line: str) -> list[str]:
+    tail = re.split(r"[:：]", line, maxsplit=1)
+    value_text = tail[1] if len(tail) > 1 else line
+    values = [
+        item.strip()
+        for item in re.split(r"[、,，/；;]+", value_text)
+        if item.strip()
+    ]
+    return values
+
+
+def _dedupe_entities(
+    entities: Iterable[AlarmAnalystCardImpactEntity],
+) -> list[AlarmAnalystCardImpactEntity]:
+    deduped: list[AlarmAnalystCardImpactEntity] = []
+    seen: set[tuple[str | None, str]] = set()
+    for entity in entities:
+        key = (entity.id, entity.name)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(entity)
+    return deduped
+
+
+def _extract_recommendations(text: str) -> list[AlarmAnalystCardRecommendation]:
+    recommendations: list[AlarmAnalystCardRecommendation] = []
+    items = BULLET_LINE_RE.findall(str(text or ""))
+
+    for index, item in enumerate(items):
+        content = re.sub(r"\s+", " ", item).strip()
+        if not content:
+            continue
+        priority = _detect_priority(content, fallback=index)
+        title = re.sub(r"^(P[0-2])[:：\s-]*", "", content, flags=re.IGNORECASE).strip()
+        recommendations.append(
+            AlarmAnalystCardRecommendation(
+                title=title[:36] or f"建议 {index + 1}",
+                priority=priority,
+                description=content,
+                risk=_extract_risk(content),
+                action_type=_detect_action_type(content),
+            )
+        )
+
+    return recommendations
+
+
+def _detect_priority(text: str, fallback: int = 0) -> str:
+    match = re.search(r"\b(P[0-2])\b", str(text or ""), flags=re.IGNORECASE)
+    if match:
+        return match.group(1).lower()
+    return "p0" if fallback == 0 else "p1" if fallback == 1 else "p2"
+
+
+def _extract_risk(text: str) -> str | None:
+    match = re.search(r"(?:风险|risk)[:：]?\s*([^。；;\n]+)", str(text or ""), flags=re.IGNORECASE)
+    return match.group(1).strip() if match else None
+
+
+def _detect_action_type(text: str) -> str:
+    normalized = str(text or "").lower()
+    if any(keyword in normalized for keyword in ("脚本", "sql", "命令", "执行")):
+        return "script"
+    if any(keyword in normalized for keyword in ("观察", "监控", "收敛", "确认恢复")):
+        return "observe"
+    return "manual"
+
+
+def _extract_evidence(
+    *,
+    evidence_section: str,
+    conclusion: str,
+    blast_radius_text: str,
+    topology_nodes: list[dict[str, Any]],
+    topology_edges: list[dict[str, Any]],
+) -> list[AlarmAnalystCardEvidence]:
+    evidence: list[AlarmAnalystCardEvidence] = []
+
+    for item in BULLET_LINE_RE.findall(str(evidence_section or "")):
+        cleaned = re.sub(r"\s+", " ", item).strip()
+        if not cleaned:
+            continue
+        evidence.append(
+            AlarmAnalystCardEvidence(
+                kind=_detect_evidence_kind(cleaned),
+                title=cleaned[:24],
+                summary=cleaned,
+            )
+        )
+
+    if not evidence and conclusion:
+        evidence.append(
+            AlarmAnalystCardEvidence(
+                kind="alarm",
+                title="根因结论",
+                summary=conclusion,
+            )
+        )
+    if not evidence and blast_radius_text:
+        evidence.append(
+            AlarmAnalystCardEvidence(
+                kind="cmdb",
+                title="影响范围",
+                summary=blast_radius_text,
+            )
+        )
+    if topology_nodes or topology_edges:
+        evidence.append(
+            AlarmAnalystCardEvidence(
+                kind="tool",
+                title="拓扑分析",
+                summary=f"识别 {len(topology_nodes)} 个节点、{len(topology_edges)} 条关系。",
+            )
+        )
+
+    return evidence[:4]
+
+
+def _detect_evidence_kind(text: str) -> str:
+    normalized = str(text or "").lower()
+    if "告警" in normalized:
+        return "alarm"
+    if "指标" in normalized or "metric" in normalized:
+        return "metric"
+    if "拓扑" in normalized or "cmdb" in normalized:
+        return "cmdb"
+    return "tool"
+
+
+def _extract_topology_payload(
+    process_blocks: Iterable[dict[str, Any] | AlarmAnalystCardProcessBlock],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    for block in process_blocks or []:
+        output_content = _get_block_value(block, "output_content", "outputContent") or ""
+        for payload in _iter_json_payloads(output_content):
+            series_list = payload.get("series")
+            if not isinstance(series_list, list):
+                continue
+            for series in series_list:
+                if not isinstance(series, dict):
+                    continue
+                if str(series.get("type") or "").lower() != "graph":
+                    continue
+                nodes = series.get("data") if isinstance(series.get("data"), list) else []
+                edges = series.get("links") if isinstance(series.get("links"), list) else []
+                return list(nodes), list(edges)
+    return [], []
+
+
+def _iter_json_payloads(text: str) -> Iterable[dict[str, Any]]:
+    stripped = str(text or "").strip()
+    if not stripped:
+        return []
+
+    candidates = []
+    candidates.extend(match.group(1).strip() for match in re.finditer(r"```(?:json)?\s*([\s\S]*?)```", stripped, flags=re.IGNORECASE))
+    candidates.append(stripped)
+
+    payloads: list[dict[str, Any]] = []
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            payloads.append(parsed)
+    return payloads
+
+
+def _get_block_value(
+    block: dict[str, Any] | AlarmAnalystCardProcessBlock,
+    *keys: str,
+) -> Any:
+    if isinstance(block, AlarmAnalystCardProcessBlock):
+        for key in keys:
+            if hasattr(block, key):
+                return getattr(block, key)
+        return None
+    if isinstance(block, dict):
+        for key in keys:
+            if key in block:
+                return block.get(key)
+    return None
+
+
+def _build_content_hash(text: str) -> str:
+    return hashlib.sha256(str(text or "").strip().encode("utf-8")).hexdigest()[:16]

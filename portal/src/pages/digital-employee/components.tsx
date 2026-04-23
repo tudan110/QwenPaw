@@ -12,6 +12,7 @@ import {
 } from "./helpers";
 import { ResourceImportConversationCard } from "./resourceImportConversationCard";
 import { FaultScenarioResultCard } from "./faultScenarioComponents";
+import { AlarmAnalystCardPanel } from "./alarmAnalystCardComponents";
 
 export function AlarmWorkorderBoard({
   workorders,
@@ -225,32 +226,54 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   const hasInterleavedResponses = allBlocks.some(
     (block: any) => block?.kind === "response" && block.content,
   );
+  const liveMessageContent = String(message.content || "");
+  const normalizedLiveMessageContent = liveMessageContent.trim();
 
   // Interleaved mode: response blocks exist in processBlocks (loaded history)
   // Legacy mode: no response blocks, text lives in message.content (streaming)
   const displayBlocks = hasInterleavedResponses
     ? condensedBlocks
     : condensedBlocks.filter((block: any) => block?.kind !== "response");
-
-  const renderedMessageContent = hasInterleavedResponses
-    ? (isStreamingMessage ? message.content : null)
-    : (message.content || [...allBlocks].reverse().find(
-        (block: any) => block?.kind === "response" && block.content,
-      )?.content || "");
-
-  // For copy button: collect all response text from interleaved blocks or use renderedMessageContent
-  const copyableContent = hasInterleavedResponses
-    ? allBlocks
-        .filter((block: any) => block?.kind === "response" && block.content)
-        .map((block: any) => block.content)
-        .join("\n\n")
-    : renderedMessageContent;
-
   const hasWorkorders =
     Boolean(message.workorders?.length) ||
     Boolean(message.workordersLoading) ||
     Boolean(message.workordersError);
   const hasResourceImportFlow = Boolean(message.resourceImportFlow);
+  const alarmAnalystCard = message.alarmAnalystCard;
+  const faultScenarioResult = message.faultScenarioResult;
+  const visibleDisplayBlocks = alarmAnalystCard
+    ? displayBlocks.filter((block: any) => block?.kind !== "response")
+    : displayBlocks;
+  const primaryResponseBlock = alarmAnalystCard
+    ? null
+    : [...displayBlocks].reverse().find((block: any) => block?.kind === "response" && block.content) || null;
+  const auxiliaryTraceBlocks = visibleDisplayBlocks.filter(
+    (block: any) => !(primaryResponseBlock && block?.kind === "response" && block.id === primaryResponseBlock.id),
+  );
+  const trailingResponseContent = [...displayBlocks].reverse().find(
+    (block: any) => block?.kind === "response" && block.id !== primaryResponseBlock?.id && block.content,
+  )?.content || "";
+  const liveContentDuplicatesTrace = Boolean(normalizedLiveMessageContent) && auxiliaryTraceBlocks.some(
+    (block: any) => {
+      const normalizedBlockContent = String(block?.content || "").trim();
+      return normalizedBlockContent && (
+        normalizedBlockContent === normalizedLiveMessageContent
+        || normalizedBlockContent.endsWith(normalizedLiveMessageContent)
+        || normalizedLiveMessageContent.endsWith(normalizedBlockContent)
+      );
+    },
+  );
+  const renderedMessageContent = primaryResponseBlock
+    ? (
+        isStreamingMessage
+          ? (liveMessageContent || primaryResponseBlock.content || "")
+          : String(primaryResponseBlock.content || liveMessageContent || "")
+      )
+    : (
+        liveContentDuplicatesTrace
+          ? trailingResponseContent
+          : (liveMessageContent || trailingResponseContent)
+      );
   const effectiveDisposalOperation =
     message.disposalOperation ||
     extractPortalActionPayload(renderedMessageContent || message.content || "");
@@ -258,7 +281,8 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     Boolean(effectiveDisposalOperation) &&
     effectiveDisposalOperation.status !== "success" &&
     !message.hideDisposalOperation;
-  const faultScenarioResult = message.faultScenarioResult;
+  const copyableContent = String(renderedMessageContent || "").trim();
+  const traceBundleSubtitle = buildTraceBundleSubtitle(auxiliaryTraceBlocks);
 
   return (
     <div
@@ -272,42 +296,27 @@ export const ChatMessageItem = memo(function ChatMessageItem({
         <i className={`fas ${message.type === "user" ? "fa-user" : message.icon}`} />
       </div>
       <div className="message-content">
-        {displayBlocks.length ? (
-          <div className="process-trace">
-            {displayBlocks.map((block: any) =>
-              block.kind === "response" ? (
-                <div
-                  key={block.id}
-                  className="message-bubble markdown-bubble interleaved-response-bubble"
-                >
-                  <MessageMarkdown content={block.content} />
-                </div>
-              ) : (
-                <details
-                  key={block.id}
-                  className={`trace-block ${block.kind}`}
-                  open={block.defaultOpen}
-                >
-                  <summary className="trace-summary">
-                    <span className="trace-label">
-                      <i className={`fas ${block.icon}`} />
-                      {block.title}
-                    </span>
-                    {block.subtitle ? (
-                      <span className="trace-subtitle">{block.subtitle}</span>
-                    ) : null}
-                  </summary>
-                  <div className="trace-body">
-                    {block.kind === "tool" ? (
-                      <ToolTraceBlock block={block} />
-                    ) : (
-                      <MessageMarkdown content={block.content} />
-                    )}
-                  </div>
-                </details>
-              )
-            )}
-          </div>
+        {auxiliaryTraceBlocks.length ? (
+          <details className="trace-block trace-bundle">
+            <summary className="trace-summary">
+              <span className="trace-label">
+                <i className="fas fa-layer-group" />
+                过程记录
+              </span>
+              {traceBundleSubtitle ? (
+                <span className="trace-subtitle">{traceBundleSubtitle}</span>
+              ) : null}
+            </summary>
+            <div className="trace-body trace-bundle-body">
+              {auxiliaryTraceBlocks.map((block: any, index: number) => (
+                <TraceEntry
+                  key={block.id || `${block.kind}-${index}`}
+                  block={block}
+                  isStreaming={isStreamingMessage}
+                />
+              ))}
+            </div>
+          </details>
         ) : null}
 
         {hasWorkorders ? (
@@ -348,6 +357,8 @@ export const ChatMessageItem = memo(function ChatMessageItem({
               resolveFiles={resolveResourceImportFiles}
             />
           </div>
+        ) : alarmAnalystCard ? (
+          <AlarmAnalystCardPanel card={alarmAnalystCard} />
         ) : renderedMessageContent ? (
           <div
             className={
@@ -364,7 +375,11 @@ export const ChatMessageItem = memo(function ChatMessageItem({
           </div>
         ) : null}
 
-        {message.type === "agent" && copyableContent && !hasWorkorders && !isStreamingMessage ? (
+        {message.type === "agent"
+        && copyableContent
+        && !hasWorkorders
+        && !isStreamingMessage
+        ? (
           <div className="message-copy-row">
             <CopyActionButton
               text={String(copyableContent || "").trim()}
@@ -571,6 +586,70 @@ function buildPollingSummaryBlock(toolBlocks: any[], waitingResponses: any[]) {
     content: summaryLines.join("\n"),
     defaultOpen: false,
   };
+}
+
+function buildTraceBundleSubtitle(blocks: any[] = []) {
+  if (!blocks.length) {
+    return "";
+  }
+
+  const thinkingCount = blocks.filter((block) => block?.kind === "thinking").length;
+  const toolCount = blocks.filter((block) => block?.kind === "tool").length;
+  const responseCount = blocks.filter((block) => block?.kind === "response").length;
+  const segments = [
+    thinkingCount ? `思考 ${thinkingCount}` : "",
+    toolCount ? `工具 ${toolCount}` : "",
+    responseCount ? `中间回复 ${responseCount}` : "",
+  ].filter(Boolean);
+
+  return segments.join(" · ") || `${blocks.length} 条记录`;
+}
+
+function TraceEntry({
+  block,
+  isStreaming = false,
+}: {
+  block: any;
+  isStreaming?: boolean;
+}) {
+  if (block?.kind === "response") {
+    return (
+      <section className="trace-entry response">
+        <div className="trace-entry-caption">
+          <span className="trace-label">
+            <i className="fas fa-comment-dots" />
+            中间回复
+          </span>
+          <span className="trace-subtitle">过程消息</span>
+        </div>
+        <ResponseTraceBlock block={block} isStreaming={isStreaming} />
+      </section>
+    );
+  }
+
+  return (
+    <details
+      className={`trace-block trace-entry ${block?.kind || "misc"}`}
+      open={block?.defaultOpen}
+    >
+      <summary className="trace-summary">
+        <span className="trace-label">
+          <i className={`fas ${block?.icon || "fa-bars-progress"}`} />
+          {block?.title || (block?.kind === "thinking" ? "Thinking" : "过程记录")}
+        </span>
+        {block?.subtitle ? (
+          <span className="trace-subtitle">{block.subtitle}</span>
+        ) : null}
+      </summary>
+      <div className="trace-body">
+        {block?.kind === "tool" ? (
+          <ToolTraceBlock block={block} />
+        ) : (
+          <MessageMarkdown content={block?.content || ""} isStreaming={isStreaming} />
+        )}
+      </div>
+    </details>
+  );
 }
 
 function CopyGlyph({

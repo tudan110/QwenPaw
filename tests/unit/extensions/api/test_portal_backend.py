@@ -292,6 +292,132 @@ def test_alarm_analyst_diagnose_route_shapes_partial_result_for_history_replay(
     assert history_store["alarm-analyst-1"][-1]["faultScenarioResult"]["logEntries"] == []
 
 
+def test_alarm_analyst_cards_route_persists_and_lists_cards(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    card_store: dict[str, dict[str, dict[str, dict]]] = {"fault-session-1": {}}
+
+    monkeypatch.setattr(portal_backend.app.state, "multi_agent_manager", object(), raising=False)
+
+    async def fake_load_cards(_request, *, session_id: str, user_id: str = "default") -> dict:
+        return dict(card_store.get(session_id, {}))
+
+    async def fake_save_cards(
+        _request,
+        *,
+        session_id: str,
+        records: dict[str, dict[str, dict]],
+        user_id: str = "default",
+    ) -> None:
+        card_store[session_id] = dict(records)
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_load_portal_alarm_analyst_cards",
+        fake_load_cards,
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_save_portal_alarm_analyst_cards",
+        fake_save_cards,
+    )
+
+    create_response = client.post(
+        "/api/portal/alarm-analyst/cards",
+        json={
+            "sessionId": "fault-session-1",
+            "chatId": "chat-1",
+            "messageId": "assistant-1",
+            "employeeId": "fault",
+            "reportMarkdown": (
+                "🔴 数据库锁异常 — 完整故障分析报告\n"
+                "## 根因分析结论\n"
+                "- 根资源 MySQL（CI ID 3094）出现锁等待放大\n"
+                "## 影响范围\n"
+                "- 受影响应用：CMDB\n"
+                "## 处置建议\n"
+                "- P0：终止异常慢 SQL 会话\n"
+            ),
+            "processBlocks": [
+                {
+                    "kind": "tool",
+                    "toolName": "read_file",
+                    "outputContent": (
+                        "```json\n"
+                        "{\"series\":[{\"type\":\"graph\",\"data\":[{\"id\":\"3094\",\"name\":\"MySQL\"}],"
+                        "\"links\":[{\"source\":\"3094\",\"target\":\"3092\"}]}]}\n"
+                        "```"
+                    ),
+                }
+            ],
+        },
+    )
+
+    assert create_response.status_code == 200
+    assert create_response.json()["matched"] is True
+    assert "chat-1" in card_store["fault-session-1"]
+    assert "assistant-1" in card_store["fault-session-1"]["chat-1"]
+
+    list_response = client.get(
+        "/api/portal/alarm-analyst/cards/chat-1",
+        params={"sessionId": "fault-session-1"},
+    )
+
+    assert list_response.status_code == 200
+    assert len(list_response.json()["cards"]) == 1
+    assert list_response.json()["cards"][0]["source"]["messageId"] == "assistant-1"
+    assert list_response.json()["cards"][0]["topology"]["nodes"][0]["id"] == "3094"
+
+
+def test_alarm_analyst_cards_route_returns_unmatched_without_persisting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    card_store: dict[str, dict[str, dict[str, dict]]] = {"fault-session-1": {}}
+
+    monkeypatch.setattr(portal_backend.app.state, "multi_agent_manager", object(), raising=False)
+
+    async def fake_load_cards(_request, *, session_id: str, user_id: str = "default") -> dict:
+        return dict(card_store.get(session_id, {}))
+
+    async def fake_save_cards(
+        _request,
+        *,
+        session_id: str,
+        records: dict[str, dict[str, dict]],
+        user_id: str = "default",
+    ) -> None:
+        card_store[session_id] = dict(records)
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_load_portal_alarm_analyst_cards",
+        fake_load_cards,
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_save_portal_alarm_analyst_cards",
+        fake_save_cards,
+    )
+
+    response = client.post(
+        "/api/portal/alarm-analyst/cards",
+        json={
+            "sessionId": "fault-session-1",
+            "chatId": "chat-1",
+            "messageId": "assistant-2",
+            "employeeId": "fault",
+            "reportMarkdown": "这是普通回复，没有结构化 RCA 段落。",
+            "processBlocks": [],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"matched": False, "card": None}
+    assert card_store["fault-session-1"] == {}
+
+
 def test_real_alarms_route_returns_backend_payload(monkeypatch) -> None:
     client = TestClient(portal_backend.app)
     received: dict[str, int] = {}

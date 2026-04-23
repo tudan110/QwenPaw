@@ -13,9 +13,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Body, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Body, FastAPI, File, HTTPException, Query, Request, UploadFile
 from pydantic import ValidationError
 
+from qwenpaw.extensions.api.alarm_analyst_card_models import (
+    AlarmAnalystCard,
+    AlarmAnalystCardCreateRequest,
+    AlarmAnalystCardCreateResponse,
+    AlarmAnalystCardListResponse,
+)
+from qwenpaw.extensions.api.alarm_analyst_card_service import (
+    build_alarm_analyst_card,
+    is_alarm_analyst_card_candidate,
+)
 from qwenpaw.config.utils import load_config
 from qwenpaw.extensions.api.fault_manual_workorder_models import (
     ManualWorkorderCloseNotificationRequest,
@@ -494,6 +504,34 @@ async def _save_portal_manual_workorders(
     )
 
 
+async def _load_portal_alarm_analyst_cards(
+    request: Request,
+    *,
+    session_id: str,
+    user_id: str = "default",
+) -> dict[str, dict[str, dict]]:
+    _workspace, session = await _get_workspace_and_session(request)
+    state = await session.get_session_state_dict(session_id, user_id)
+    records = state.get("portal_alarm_analyst_cards", {}).get("records", {})
+    return records if isinstance(records, dict) else {}
+
+
+async def _save_portal_alarm_analyst_cards(
+    request: Request,
+    *,
+    session_id: str,
+    records: dict[str, dict[str, dict]],
+    user_id: str = "default",
+) -> None:
+    _workspace, session = await _get_workspace_and_session(request)
+    await session.update_session_state(
+        session_id,
+        ["portal_alarm_analyst_cards", "records"],
+        records,
+        user_id=user_id,
+    )
+
+
 def _shape_fault_scenario_result(result: Any) -> dict | None:
     if result is None:
         return None
@@ -528,6 +566,30 @@ def _shape_fault_scenario_response(result: dict[str, Any]) -> dict[str, Any]:
 
 def _normalize_portal_fault_history_messages(messages: list[dict]) -> list[dict]:
     return [_compact_ui_message(message) for message in messages if isinstance(message, dict)]
+
+
+def _shape_alarm_analyst_card_payload(payload: Any) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    try:
+        return AlarmAnalystCard.model_validate(payload).model_dump(by_alias=True)
+    except ValidationError:
+        return None
+
+
+def _list_alarm_analyst_cards_for_chat(
+    records: dict[str, dict[str, dict]],
+    chat_id: str,
+) -> list[dict]:
+    chat_records = records.get(chat_id) if isinstance(records, dict) else {}
+    if not isinstance(chat_records, dict):
+        return []
+    cards: list[dict] = []
+    for payload in chat_records.values():
+        shaped = _shape_alarm_analyst_card_payload(payload)
+        if shaped:
+            cards.append(shaped)
+    return cards
 
 
 def _build_fault_context(payload: dict, *, source: str = "portal-chat"):
@@ -1149,6 +1211,84 @@ async def portal_alarm_analyst_diagnose(
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] portal_alarm_analyst_diagnose failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/alarm-analyst/cards")
+async def create_portal_alarm_analyst_card(
+    request: Request,
+    payload: dict = Body(default_factory=dict),
+):
+    try:
+        parsed = AlarmAnalystCardCreateRequest.model_validate(payload)
+        matched = is_alarm_analyst_card_candidate(
+            employee_id=parsed.employee_id,
+            report_markdown=parsed.report_markdown,
+            process_blocks=parsed.process_blocks,
+        )
+        if not matched:
+            return AlarmAnalystCardCreateResponse(matched=False).model_dump(by_alias=True)
+
+        card = build_alarm_analyst_card(
+            chat_id=parsed.chat_id,
+            message_id=parsed.message_id,
+            employee_id=parsed.employee_id,
+            report_markdown=parsed.report_markdown,
+            process_blocks=parsed.process_blocks,
+        )
+        if hasattr(request.app.state, "multi_agent_manager"):
+            records = await _load_portal_alarm_analyst_cards(
+                request,
+                session_id=parsed.session_id,
+            )
+            chat_records = dict(records.get(parsed.chat_id) or {})
+            chat_records[parsed.message_id] = card.model_dump(by_alias=True)
+            records = dict(records)
+            records[parsed.chat_id] = chat_records
+            await _save_portal_alarm_analyst_cards(
+                request,
+                session_id=parsed.session_id,
+                records=records,
+            )
+        return AlarmAnalystCardCreateResponse(
+            matched=True,
+            card=card,
+        ).model_dump(by_alias=True)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] create_portal_alarm_analyst_card failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/alarm-analyst/cards/{chat_id}")
+async def list_portal_alarm_analyst_cards(
+    request: Request,
+    chat_id: str,
+    session_id: str = Query(..., alias="sessionId"),
+):
+    try:
+        if not hasattr(request.app.state, "multi_agent_manager"):
+            return AlarmAnalystCardListResponse(cards=[]).model_dump(by_alias=True)
+        records = await _load_portal_alarm_analyst_cards(request, session_id=session_id)
+        cards = _list_alarm_analyst_cards_for_chat(records, chat_id)
+        return AlarmAnalystCardListResponse(
+            cards=[AlarmAnalystCard.model_validate(card) for card in cards],
+        ).model_dump(by_alias=True)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] list_portal_alarm_analyst_cards failed: {error_detail}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 

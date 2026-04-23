@@ -15,6 +15,10 @@ import {
 } from "../../api/copawChat";
 import { getFaultDisposalHistory } from "../../api/faultDisposalBridge";
 import {
+  buildAlarmAnalystCardRequest,
+  mergeAlarmAnalystCards,
+} from "../../alarm-analyst/shared";
+import {
   buildThinkingBlock,
   buildResponseBlock,
   buildToolBlock,
@@ -22,10 +26,16 @@ import {
   createRemoteSessionId,
   createUserMessage,
   extractCopawMessageText,
+  isCopawReasoningMessage,
   mergeProcessBlocks,
+  mergeStreamingText,
   normalizeRemoteHistoryMessages,
   normalizeRemoteSessions,
 } from "./helpers";
+import {
+  createAlarmAnalystCard,
+  listAlarmAnalystCards,
+} from "../../api/alarmAnalystCards";
 import {
   FAULT_SCENARIO_ANALYZING_PLACEHOLDER,
   maybeHandleFaultScenarioMessage,
@@ -40,6 +50,9 @@ type FaultDisposalHistoryMessage = {
   content?: string;
   processBlocks?: unknown[];
   disposalOperation?: unknown;
+  alarmAnalystCard?: unknown;
+  backendMessageId?: string;
+  enhancementSourceMessageId?: string;
   [key: string]: unknown;
 };
 
@@ -82,8 +95,12 @@ export function useRemoteChatSession({
   const streamAbortRef = useRef<AbortController | null>(null);
   const activeAssistantMessageIdRef = useRef<string | null>(null);
   const streamAssistantMapRef = useRef(new Map());
+  const streamMessageMetaRef = useRef(new Map());
+  const streamPendingTextRef = useRef(new Map());
+  const streamResponseTextRef = useRef(new Map());
   const remoteHistoryRequestIdRef = useRef(0);
   const pendingProcessBlocksRef = useRef(new Map());
+  const streamProcessBlocksRef = useRef(new Map());
   const flushTimerRef = useRef(0);
   const currentEmployeeRef = useRef(currentEmployee);
   const currentChatIdRef = useRef(currentChatId);
@@ -152,6 +169,8 @@ export function useRemoteChatSession({
         content: "",
       }),
     ]);
+    streamResponseTextRef.current.set(frontendMessageId, new Map());
+    streamProcessBlocksRef.current.set(frontendMessageId, []);
     return frontendMessageId;
   };
 
@@ -190,6 +209,11 @@ export function useRemoteChatSession({
       messageId,
       mergeProcessBlocks(queuedBlocks, [block]),
     );
+    const currentBlocks = streamProcessBlocksRef.current.get(messageId) || [];
+    streamProcessBlocksRef.current.set(
+      messageId,
+      mergeProcessBlocks(currentBlocks, [block]),
+    );
     scheduleStreamFlush();
   };
 
@@ -204,6 +228,17 @@ export function useRemoteChatSession({
       return;
     }
 
+    const responseTexts = streamResponseTextRef.current.get(messageId) || new Map();
+    const mergedText = replace
+      ? nextText
+      : mergeStreamingText(String(responseTexts.get(responseId) || ""), nextText);
+    responseTexts.set(responseId, mergedText);
+    streamResponseTextRef.current.set(messageId, responseTexts);
+    const combinedText = Array.from(responseTexts.values())
+      .map((value) => String(value || ""))
+      .filter(Boolean)
+      .join("\n\n");
+
     setMessages((prevMessages) =>
       prevMessages.map((message) => {
         if (message.id !== messageId) {
@@ -212,9 +247,12 @@ export function useRemoteChatSession({
 
         return {
           ...message,
+          content: combinedText,
+          backendMessageId: message.backendMessageId || responseId,
+          enhancementSourceMessageId: responseId,
           processBlocks: mergeProcessBlocks(message.processBlocks || [], [
             {
-              ...buildResponseBlock({ id: responseId }, nextText, { preserveWhitespace: true }),
+              ...buildResponseBlock({ id: responseId }, mergedText, { preserveWhitespace: true }),
               replaceContent: replace,
             },
           ]),
@@ -222,6 +260,78 @@ export function useRemoteChatSession({
       }),
     );
   }, [setMessages]);
+
+  const reclassifyAssistantResponseAsReasoning = useCallback((backendMessageId: string) => {
+    const assistantState = streamAssistantMapRef.current.get(backendMessageId);
+    const frontendMessageId = assistantState?.frontendId;
+    if (!frontendMessageId) {
+      return;
+    }
+
+    const responseTexts = streamResponseTextRef.current.get(frontendMessageId);
+    if (responseTexts?.has(backendMessageId)) {
+      responseTexts.delete(backendMessageId);
+      if (!responseTexts.size) {
+        streamResponseTextRef.current.delete(frontendMessageId);
+      }
+    }
+
+    const combinedText = Array.from(responseTexts?.values() || [])
+      .map((value) => String(value || ""))
+      .filter(Boolean)
+      .join("\n\n");
+
+    setMessages((prevMessages) =>
+      prevMessages.map((message) => {
+        if (message.id !== frontendMessageId) {
+          return message;
+        }
+
+        return {
+          ...message,
+          content: combinedText,
+          backendMessageId:
+            message.backendMessageId === backendMessageId ? "" : message.backendMessageId,
+          enhancementSourceMessageId:
+            message.enhancementSourceMessageId === backendMessageId
+              ? ""
+              : message.enhancementSourceMessageId,
+          processBlocks: (message.processBlocks || []).filter(
+            (block: any) => !(block?.kind === "response" && block.id === backendMessageId),
+          ),
+        };
+      }),
+    );
+  }, [setMessages]);
+
+  const flushPendingAssistantText = useCallback((messageId: string, employee: any) => {
+    const pendingText = String(streamPendingTextRef.current.get(messageId) || "");
+    if (!pendingText) {
+      return;
+    }
+
+    const streamMeta = streamMessageMetaRef.current.get(messageId);
+    if (streamMeta?.role === "assistant" && streamMeta?.type === "reasoning") {
+      const frontendMessageId = ensureAgentContainer(employee);
+      appendProcessBlock(
+        frontendMessageId,
+        buildThinkingBlock({
+          id: messageId,
+          role: "assistant",
+          type: "reasoning",
+          content: [{ type: "text", text: pendingText }],
+        }),
+      );
+      streamPendingTextRef.current.delete(messageId);
+      return;
+    }
+
+    if (streamMeta?.role === "assistant" && streamMeta?.type === "message") {
+      const assistantState = ensureAssistantMessage(messageId, employee);
+      appendAssistantResponseBlock(assistantState.frontendId, messageId, pendingText);
+      streamPendingTextRef.current.delete(messageId);
+    }
+  }, [appendAssistantResponseBlock]);
 
   const flushStreamUpdates = () => {
     if (flushTimerRef.current) {
@@ -297,13 +407,78 @@ export function useRemoteChatSession({
     streamAbortRef.current?.abort();
     streamAbortRef.current = null;
     streamAssistantMapRef.current = new Map();
+    streamMessageMetaRef.current = new Map();
+    streamPendingTextRef.current = new Map();
+    streamResponseTextRef.current = new Map();
     if (!silent && hadActiveStream) {
       finalizePendingResponse("本轮对话已停止。");
     }
     activeAssistantMessageIdRef.current = null;
+    streamProcessBlocksRef.current = new Map();
     setIsStreaming(false);
     setCurrentChatStatus("idle");
   }, [finalizePendingResponse]);
+
+  const maybeEnhanceAlarmAnalystMessage = useCallback(async ({
+    frontendMessageId,
+    backendMessageId,
+    finalText,
+  }: {
+    frontendMessageId: string;
+    backendMessageId: string;
+    finalText: string;
+  }) => {
+    if (
+      currentEmployeeRef.current?.id !== "fault" ||
+      !currentChatIdRef.current ||
+      !currentSessionIdRef.current ||
+      !backendMessageId ||
+      !finalText.trim()
+    ) {
+      return;
+    }
+
+    const payload = buildAlarmAnalystCardRequest({
+      chatId: currentChatIdRef.current,
+      sessionId: currentSessionIdRef.current,
+      employeeId: currentEmployeeRef.current.id,
+      message: {
+        id: frontendMessageId,
+        content: finalText,
+        processBlocks: streamProcessBlocksRef.current.get(frontendMessageId) || [],
+        backendMessageId,
+        enhancementSourceMessageId: backendMessageId,
+      },
+    });
+    if (!payload) {
+      return;
+    }
+
+    try {
+      const response = await createAlarmAnalystCard(payload, {
+        agentId: remoteAgentIdRef.current || undefined,
+      });
+      if (!response?.matched || !response.card) {
+        return;
+      }
+      setMessages((prevMessages) =>
+        mergeAlarmAnalystCards(
+          prevMessages.map((message) =>
+            message.id === frontendMessageId
+              ? {
+                  ...message,
+                  backendMessageId,
+                  enhancementSourceMessageId: backendMessageId,
+                }
+              : message,
+          ),
+          [response.card as any],
+        ),
+      );
+    } catch (error) {
+      console.warn("Failed to create alarm analyst card:", error);
+    }
+  }, [setMessages]);
 
   const refreshRemoteSessions = useCallback(async (showSpinner = true) => {
     const nextRemoteAgentId = remoteAgentIdRef.current;
@@ -381,6 +556,9 @@ export function useRemoteChatSession({
                     content: message.content || "",
                     processBlocks: message.processBlocks || [],
                     disposalOperation: message.disposalOperation,
+                    alarmAnalystCard: message.alarmAnalystCard,
+                    backendMessageId: message.backendMessageId || "",
+                    enhancementSourceMessageId: message.enhancementSourceMessageId || "",
                   })
                 : {
                     id: message.id || `user-${Date.now()}`,
@@ -401,6 +579,22 @@ export function useRemoteChatSession({
           nextEmployee,
           session,
         );
+        const enhancementSessionId =
+          session.sessionId ||
+          history.session_id ||
+          history.sessionId ||
+          "";
+        if (nextEmployee.id === "fault" && enhancementSessionId) {
+          try {
+            const cardResponse = await listAlarmAnalystCards(session.id, {
+              sessionId: enhancementSessionId,
+              agentId: nextRemoteAgentId,
+            });
+            nextMessages = mergeAlarmAnalystCards(nextMessages, (cardResponse.cards || []) as any);
+          } catch (error) {
+            console.warn("Failed to hydrate alarm analyst cards:", error);
+          }
+        }
       }
 
       setCurrentChatId(session.id);
@@ -416,6 +610,17 @@ export function useRemoteChatSession({
   }, [stopActiveStream]);
 
   const handleRemoteStreamEvent = (event: any, employee: any) => {
+    if (event.object === "message" && event.id) {
+      streamMessageMetaRef.current.set(event.id, {
+        role: event.role,
+        type: event.type,
+      });
+      flushPendingAssistantText(event.id, employee);
+      if (event.role === "assistant" && event.type === "reasoning") {
+        reclassifyAssistantResponseAsReasoning(event.id);
+      }
+    }
+
     if (event.object === "response" && event.status) {
       setCurrentChatStatus(
         event.status === "completed" ? "idle" : event.status,
@@ -424,9 +629,14 @@ export function useRemoteChatSession({
     }
 
     if (event.object === "message" && event.status === "completed") {
-      if (event.role === "assistant" && event.type === "reasoning") {
+      if (isCopawReasoningMessage(event)) {
+        streamPendingTextRef.current.delete(event.id);
+        reclassifyAssistantResponseAsReasoning(event.id);
         const frontendMessageId = ensureAgentContainer(employee);
-        appendProcessBlock(frontendMessageId, buildThinkingBlock(event));
+        appendProcessBlock(
+          frontendMessageId,
+          buildThinkingBlock(event, { replaceContent: true }),
+        );
         return;
       }
 
@@ -445,17 +655,49 @@ export function useRemoteChatSession({
       const assistantState = ensureAssistantMessage(event.id, employee);
       const finalText = extractCopawMessageText(event);
       if (event.status === "completed" && finalText) {
+        streamPendingTextRef.current.delete(event.id);
         appendAssistantResponseBlock(assistantState.frontendId, event.id, finalText, {
           replace: true,
+        });
+        void maybeEnhanceAlarmAnalystMessage({
+          frontendMessageId: assistantState.frontendId,
+          backendMessageId: event.id,
+          finalText,
         });
       }
       return;
     }
 
     if (event.object === "content" && event.type === "text" && event.msg_id) {
-      const assistantState = ensureAssistantMessage(event.msg_id, employee);
+      const streamMeta = streamMessageMetaRef.current.get(event.msg_id);
+      if (streamMeta?.role === "assistant" && streamMeta?.type === "reasoning") {
+        const frontendMessageId = ensureAgentContainer(employee);
+        appendProcessBlock(
+          frontendMessageId,
+          buildThinkingBlock({
+            id: event.msg_id,
+            role: "assistant",
+            type: "reasoning",
+            content: [{ type: "text", text: event.text || "" }],
+          }),
+        );
+        return;
+      }
+
+      if (streamMeta?.role === "assistant" && streamMeta?.type === "message") {
+        const assistantState = ensureAssistantMessage(event.msg_id, employee);
+        if (event.text) {
+          appendAssistantResponseBlock(assistantState.frontendId, event.msg_id, event.text);
+        }
+        return;
+      }
+
       if (event.text) {
-        appendAssistantResponseBlock(assistantState.frontendId, event.msg_id, event.text);
+        const currentPendingText = String(streamPendingTextRef.current.get(event.msg_id) || "");
+        streamPendingTextRef.current.set(
+          event.msg_id,
+          mergeStreamingText(currentPendingText, event.text),
+        );
       }
     }
   };
@@ -490,6 +732,9 @@ export function useRemoteChatSession({
     const normalizedVisibleContent = (visibleContent || content).trim();
     const userMessage = createUserMessage(normalizedVisibleContent);
     streamAssistantMapRef.current = new Map();
+    streamMessageMetaRef.current = new Map();
+    streamPendingTextRef.current = new Map();
+    streamResponseTextRef.current = new Map();
     activeAssistantMessageIdRef.current = null;
 
     const controller = new AbortController();
@@ -538,6 +783,8 @@ export function useRemoteChatSession({
 
       setCurrentChatId(ensuredChat.id);
       setCurrentSessionId(ensuredChat.session_id);
+      currentChatIdRef.current = ensuredChat.id;
+      currentSessionIdRef.current = ensuredChat.session_id;
 
       await streamChat(
         nextRemoteAgentId,
@@ -569,6 +816,7 @@ export function useRemoteChatSession({
       finalizePendingResponse("本轮对话未返回可展示内容。");
       setCurrentChatStatus("idle");
       streamSucceeded = true;
+      streamProcessBlocksRef.current = new Map();
     } catch (error: any) {
       if (controller.signal.aborted) {
         finalizePendingResponse("本轮对话已停止。");
@@ -582,6 +830,10 @@ export function useRemoteChatSession({
       }
       setIsCreatingChat(false);
       setIsStreaming(false);
+      streamMessageMetaRef.current = new Map();
+      streamPendingTextRef.current = new Map();
+      streamResponseTextRef.current = new Map();
+      streamProcessBlocksRef.current = new Map();
       await refreshRemoteSessions(false);
     }
 
@@ -605,6 +857,10 @@ export function useRemoteChatSession({
     setCurrentSessionId("");
     setCurrentChatId("");
     setIsCreatingChat(false);
+    streamMessageMetaRef.current = new Map();
+    streamPendingTextRef.current = new Map();
+    streamResponseTextRef.current = new Map();
+    streamProcessBlocksRef.current = new Map();
     setMessages(initialMessages);
   }, [setMessages, stopActiveStream]);
 

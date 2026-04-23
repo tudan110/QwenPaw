@@ -2441,8 +2441,13 @@
 }
 
 .portal-digital-employee.theme-dark .trace-block {
-  background: #182235;
-  border-color: #223049;
+  background: rgba(24, 34, 53, 0.92);
+  border-color: rgba(59, 130, 246, 0.18);
+}
+
+.portal-digital-employee.theme-dark .trace-bundle {
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.96) 0%, rgba(24, 34, 53, 0.92) 100%);
+  border-color: rgba(71, 85, 105, 0.42);
 }
 
 .portal-digital-employee.theme-dark .trace-summary {
@@ -2460,6 +2465,22 @@
 .portal-digital-employee.theme-dark .trace-body {
   border-top-color: #223049;
   color: #dbe7f5;
+}
+
+.portal-digital-employee.theme-dark .trace-bundle-body > .trace-entry.trace-block {
+  background: linear-gradient(180deg, rgba(24, 34, 53, 0.96) 0%, rgba(20, 27, 45, 0.9) 100%);
+  border-color: rgba(59, 130, 246, 0.14);
+}
+
+.portal-digital-employee.theme-dark .trace-entry + .trace-entry {
+  border-top-color: rgba(59, 130, 246, 0.16);
+}
+
+.portal-digital-employee.theme-dark .trace-bundle-body > .response-trace-rich .message-bubble,
+.portal-digital-employee.theme-dark .trace-bundle-body > .response-trace-inline {
+  background: linear-gradient(180deg, rgba(24, 34, 53, 0.98) 0%, rgba(20, 27, 45, 0.92) 100%);
+  border-color: rgba(59, 130, 246, 0.18);
+  box-shadow: 0 4px 14px rgba(2, 6, 23, 0.18);
 }
 
 .portal-digital-employee.theme-dark .tool-trace-panel {
@@ -5097,6 +5118,171 @@
   transform: none;
 }
 
+.portal-digital-employee .alarm-analyst-card-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.portal-digital-employee .alarm-analyst-card {
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+}
+
+.portal-digital-employee .alarm-analyst-summary-card {
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 36%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.02), rgba(59, 130, 246, 0.02)),
+    var(--bg-white);
+}
+
+.portal-digital-employee .alarm-analyst-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.portal-digital-employee .alarm-analyst-card-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin-bottom: 8px;
+}
+
+.portal-digital-employee .alarm-analyst-card h3,
+.portal-digital-employee .alarm-analyst-card h4,
+.portal-digital-employee .alarm-analyst-card p {
+  margin: 0;
+}
+
+.portal-digital-employee .alarm-analyst-summary-badges,
+.portal-digital-employee .alarm-analyst-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.portal-digital-employee .alarm-analyst-badge,
+.portal-digital-employee .alarm-analyst-chip,
+.portal-digital-employee .alarm-analyst-priority {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--bg-gray);
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .alarm-analyst-priority.p0 {
+  background: rgba(239, 68, 68, 0.14);
+  color: #dc2626;
+}
+
+.portal-digital-employee .alarm-analyst-priority.p1 {
+  background: rgba(245, 158, 11, 0.14);
+  color: #d97706;
+}
+
+.portal-digital-employee .alarm-analyst-priority.p2 {
+  background: rgba(59, 130, 246, 0.14);
+  color: #2563eb;
+}
+
+.portal-digital-employee .alarm-analyst-summary-text,
+.portal-digital-employee .alarm-analyst-impact-text,
+.portal-digital-employee .alarm-analyst-evidence-item p,
+.portal-digital-employee .alarm-analyst-recommendation p {
+  margin-top: 12px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.portal-digital-employee .alarm-analyst-root-cause {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--bg-gray);
+  color: var(--text-primary);
+  display: grid;
+  gap: 6px;
+}
+
+.portal-digital-employee .alarm-analyst-impact-groups,
+.portal-digital-employee .alarm-analyst-recommendations,
+.portal-digital-employee .alarm-analyst-evidence-list {
+  display: grid;
+  gap: 14px;
+}
+
+.portal-digital-employee .alarm-analyst-topology-panel {
+  margin-top: 12px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--bg-gray);
+  padding: 8px;
+}
+
+.portal-digital-employee .alarm-analyst-recommendation,
+.portal-digital-employee .alarm-analyst-evidence-item {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--bg-light);
+}
+
+.portal-digital-employee .alarm-analyst-recommendation-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.portal-digital-employee .alarm-analyst-risk {
+  margin-top: 10px;
+  color: var(--warning);
+  font-size: 13px;
+}
+
+.portal-digital-employee .alarm-analyst-evidence-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.portal-digital-employee .alarm-analyst-evidence-kind {
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--primary);
+}
+
+.portal-digital-employee .alarm-analyst-raw-report {
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: var(--bg-white);
+}
+
+.portal-digital-employee .alarm-analyst-raw-report summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .alarm-analyst-raw-report-body {
+  margin-top: 12px;
+}
+
 .portal-digital-employee .fault-scenario-card {
   margin-top: 12px;
   padding: 18px;
@@ -5700,10 +5886,16 @@
 }
 
 .portal-digital-employee .trace-block {
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 14px;
-  background: rgba(248, 250, 252, 0.86);
+  border: 1px solid rgba(191, 219, 254, 0.46);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
   overflow: hidden;
+}
+
+.portal-digital-employee .trace-bundle {
+  margin-bottom: 12px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(241, 245, 249, 0.96) 100%);
+  border-color: rgba(203, 213, 225, 0.72);
 }
 
 .portal-digital-employee .trace-summary {
@@ -5711,10 +5903,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: 10px;
+  padding: 10px 12px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
 }
 
@@ -5725,13 +5917,13 @@
 .portal-digital-employee .trace-label {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .portal-digital-employee .trace-subtitle {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
 }
 
@@ -5743,9 +5935,20 @@
   color: #06b6d4;
 }
 
+.portal-digital-employee .trace-bundle > .trace-summary .trace-label i {
+  color: #6366f1;
+}
+
 .portal-digital-employee .trace-body {
-  padding: 0 14px 14px;
-  border-top: 1px solid rgba(226, 232, 240, 0.9);
+  padding: 0 12px 10px;
+  border-top: 1px solid rgba(226, 232, 240, 0.72);
+}
+
+.portal-digital-employee .trace-bundle-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
 }
 
 .portal-digital-employee .trace-body .markdown-bubble,
@@ -5754,6 +5957,67 @@
   border: none;
   box-shadow: none;
   padding: 0;
+}
+
+.portal-digital-employee .trace-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.portal-digital-employee .trace-entry + .trace-entry {
+  padding-top: 6px;
+  border-top: 1px dashed rgba(191, 219, 254, 0.52);
+}
+
+.portal-digital-employee .trace-entry-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.portal-digital-employee .trace-bundle-body > .trace-entry.trace-block > .trace-summary {
+  padding: 7px 10px;
+}
+
+.portal-digital-employee .trace-bundle-body > .trace-entry.trace-block > .trace-body {
+  padding: 6px 10px 9px;
+}
+
+.portal-digital-employee .trace-bundle-body > .trace-entry.trace-block {
+  border-color: rgba(219, 234, 254, 0.88);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.84) 100%);
+}
+
+.portal-digital-employee .trace-bundle-body > .response-trace-rich .message-bubble {
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.96) 0%, rgba(241, 245, 249, 0.9) 100%);
+  border: 1px solid rgba(191, 219, 254, 0.72);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.035);
+  padding: 10px 14px;
+  border-radius: 14px;
+}
+
+.portal-digital-employee .trace-bundle-body > .response-trace-inline {
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(191, 219, 254, 0.72);
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.96) 0%, rgba(241, 245, 249, 0.9) 100%);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.035);
+}
+
+.portal-digital-employee .trace-entry.response .trace-label i {
+  color: #3b82f6;
+}
+
+.portal-digital-employee .trace-entry.thinking .trace-label i {
+  color: #8b5cf6;
+}
+
+.portal-digital-employee .trace-entry.tool .trace-label i {
+  color: #06b6d4;
 }
 
 .portal-digital-employee .message.agent .response-trace-inline {

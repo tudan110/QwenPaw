@@ -10,6 +10,7 @@ import {
   buildToolBlock,
   createRemoteSessionId,
   extractCopawMessageText,
+  isCopawReasoningMessage,
   mergeStreamingText,
 } from "./helpers";
 import { MessageMarkdown } from "./components";
@@ -190,7 +191,10 @@ export function CliTerminalPanel({
   const streamAbortRef = useRef<AbortController | null>(null);
   const employeeSessionsRef = useRef(new Map<string, EmployeeSession>());
   const assistantLineMapRef = useRef(new Map<string, string>());
+  const reasoningLineMapRef = useRef(new Map<string, string>());
   const lineContentMapRef = useRef(new Map<string, string>());
+  const streamMessageMetaRef = useRef(new Map<string, { role?: string; type?: string }>());
+  const streamPendingTextRef = useRef(new Map<string, string>());
   const activeStreamAgentIdRef = useRef("");
   const activeStreamChatIdRef = useRef("");
 
@@ -279,6 +283,11 @@ export function CliTerminalPanel({
     );
   }, []);
 
+  const removeLine = useCallback((lineId: string) => {
+    lineContentMapRef.current.delete(lineId);
+    setLines((current) => current.filter((line) => line.id !== lineId));
+  }, []);
+
   const appendEntries = useCallback((entries: CliOutputEntry[]) => {
     let elapsed = 0;
     entries.forEach((entry) => {
@@ -307,6 +316,52 @@ export function CliTerminalPanel({
     updateLine(lineId, nextText, { tone: "info", streaming: true });
   }, [appendLine, updateLine]);
 
+  const appendReasoningText = useCallback((messageId: string, incomingText: string) => {
+    if (!incomingText) {
+      return;
+    }
+
+    let lineId = reasoningLineMapRef.current.get(messageId);
+    if (!lineId) {
+      lineId = appendLine("> Thinking\n\n", "warn", { format: "markdown", streaming: true });
+      reasoningLineMapRef.current.set(messageId, lineId);
+      lineContentMapRef.current.set(lineId, "");
+    }
+
+    const currentText = lineContentMapRef.current.get(lineId) || "";
+    const nextText = mergeStreamingText(currentText, incomingText);
+    updateLine(lineId, `> Thinking\n\n${nextText}`, { tone: "warn", streaming: true });
+    lineContentMapRef.current.set(lineId, nextText);
+  }, [appendLine, updateLine]);
+
+  const reclassifyAssistantLineAsReasoning = useCallback((messageId: string) => {
+    const assistantLineId = assistantLineMapRef.current.get(messageId);
+    if (!assistantLineId) {
+      return;
+    }
+    assistantLineMapRef.current.delete(messageId);
+    removeLine(assistantLineId);
+  }, [removeLine]);
+
+  const flushPendingRemoteText = useCallback((messageId: string) => {
+    const pendingText = String(streamPendingTextRef.current.get(messageId) || "");
+    if (!pendingText) {
+      return;
+    }
+
+    const streamMeta = streamMessageMetaRef.current.get(messageId);
+    if (streamMeta?.role === "assistant" && streamMeta?.type === "reasoning") {
+      appendReasoningText(messageId, pendingText);
+      streamPendingTextRef.current.delete(messageId);
+      return;
+    }
+
+    if (streamMeta?.role === "assistant" && streamMeta?.type === "message") {
+      appendAssistantText(messageId, pendingText);
+      streamPendingTextRef.current.delete(messageId);
+    }
+  }, [appendAssistantText, appendReasoningText]);
+
   const stopStreaming = useCallback(async (withNotice = true) => {
     const controller = streamAbortRef.current;
     if (!controller) {
@@ -331,11 +386,37 @@ export function CliTerminalPanel({
   }, [appendLine]);
 
   const handleRemoteEvent = useCallback((event: any) => {
-    if (event.object === "message" && event.status === "completed") {
+    if (event.object === "message" && event.id) {
+      streamMessageMetaRef.current.set(event.id, {
+        role: event.role,
+        type: event.type,
+      });
+      flushPendingRemoteText(event.id);
       if (event.role === "assistant" && event.type === "reasoning") {
+        reclassifyAssistantLineAsReasoning(event.id);
+      }
+    }
+
+    if (event.object === "message" && event.status === "completed") {
+      if (isCopawReasoningMessage(event)) {
+        streamPendingTextRef.current.delete(event.id);
+        reclassifyAssistantLineAsReasoning(event.id);
         const block = buildThinkingBlock(event);
         if (block.content) {
-          appendLine(`> Thinking\n\n${block.content}`, "warn", { format: "markdown" });
+          const existingLineId = reasoningLineMapRef.current.get(event.id);
+          if (existingLineId) {
+            updateLine(existingLineId, `> Thinking\n\n${block.content}`, {
+              tone: "warn",
+              streaming: false,
+            });
+            lineContentMapRef.current.set(existingLineId, block.content);
+          } else {
+            const lineId = appendLine(`> Thinking\n\n${block.content}`, "warn", {
+              format: "markdown",
+            });
+            reasoningLineMapRef.current.set(event.id, lineId);
+            lineContentMapRef.current.set(lineId, block.content);
+          }
         }
         return;
       }
@@ -356,6 +437,7 @@ export function CliTerminalPanel({
     ) {
       const finalText = extractCopawMessageText(event);
       if (event.status === "completed" && finalText) {
+        streamPendingTextRef.current.delete(event.id);
         appendAssistantText(event.id, finalText);
         const lineId = assistantLineMapRef.current.get(event.id);
         if (lineId) {
@@ -369,9 +451,29 @@ export function CliTerminalPanel({
     }
 
     if (event.object === "content" && event.type === "text" && event.msg_id && event.text) {
-      appendAssistantText(event.msg_id, event.text);
+      const streamMeta = streamMessageMetaRef.current.get(event.msg_id);
+      if (streamMeta?.role === "assistant" && streamMeta?.type === "reasoning") {
+        appendReasoningText(event.msg_id, event.text);
+        return;
+      }
+      if (streamMeta?.role === "assistant" && streamMeta?.type === "message") {
+        appendAssistantText(event.msg_id, event.text);
+        return;
+      }
+      const currentPendingText = String(streamPendingTextRef.current.get(event.msg_id) || "");
+      streamPendingTextRef.current.set(
+        event.msg_id,
+        mergeStreamingText(currentPendingText, event.text),
+      );
     }
-  }, [appendAssistantText, appendLine]);
+  }, [
+    appendAssistantText,
+    appendLine,
+    appendReasoningText,
+    flushPendingRemoteText,
+    reclassifyAssistantLineAsReasoning,
+    updateLine,
+  ]);
 
   const runLocalConversation = useCallback((employee: EmployeeRecord, prompt: string) => {
     setIsStreaming(true);
@@ -403,7 +505,10 @@ export function CliTerminalPanel({
 
     clearScheduledTimers();
     assistantLineMapRef.current = new Map();
+    reasoningLineMapRef.current = new Map();
     lineContentMapRef.current = new Map();
+    streamMessageMetaRef.current = new Map();
+    streamPendingTextRef.current = new Map();
     setIsStreaming(true);
 
     const controller = new AbortController();
@@ -466,6 +571,8 @@ export function CliTerminalPanel({
       if (streamAbortRef.current === controller) {
         streamAbortRef.current = null;
       }
+      streamMessageMetaRef.current = new Map();
+      streamPendingTextRef.current = new Map();
       activeStreamAgentIdRef.current = "";
       activeStreamChatIdRef.current = "";
       setIsStreaming(false);

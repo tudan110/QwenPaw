@@ -243,6 +243,8 @@ export function createAgentMessage(employee: any, overrides: Record<string, any>
     gradient: "linear-gradient(135deg, var(--primary), var(--purple))",
     content: "",
     processBlocks: [],
+    backendMessageId: "",
+    enhancementSourceMessageId: "",
     ...overrides,
   };
 }
@@ -534,11 +536,12 @@ export function normalizeRemoteHistoryMessages(
         id: message.id || `agent-${normalizedMessages.length}`,
         content: "",
         processBlocks: [],
+        backendMessageId: message.id || "",
       });
       normalizedMessages.push(activeAgentMessage);
     }
 
-    if (message.role === "assistant" && message.type === "reasoning") {
+    if (isCopawReasoningMessage(message)) {
       const block = buildThinkingBlock(message);
       if (block.content) {
         activeAgentMessage.processBlocks = mergeProcessBlocks(
@@ -565,6 +568,8 @@ export function normalizeRemoteHistoryMessages(
       if (!textContent) {
         continue;
       }
+      activeAgentMessage.backendMessageId = activeAgentMessage.backendMessageId || message.id || "";
+      activeAgentMessage.enhancementSourceMessageId = message.id || "";
       const responseBlock = buildResponseBlock(message, textContent);
       activeAgentMessage.processBlocks = mergeProcessBlocks(
         activeAgentMessage.processBlocks,
@@ -585,14 +590,33 @@ export function extractCopawMessageText(message: any) {
   return normalizeContentToText(message?.content).trim();
 }
 
-export function buildThinkingBlock(message: any) {
+export function extractCopawReasoningText(message: any) {
+  if (message?.type === "reasoning") {
+    return extractCopawMessageText(message);
+  }
+  return normalizeContentToText(message?.content, "thinking").trim();
+}
+
+export function isCopawReasoningMessage(message: any) {
+  return message?.role === "assistant"
+    && (
+      message?.type === "reasoning"
+      || Boolean(extractCopawReasoningText(message))
+    );
+}
+
+export function buildThinkingBlock(
+  message: any,
+  options: { replaceContent?: boolean } = {},
+) {
   return {
     id: message.id || `thinking-${Date.now()}`,
     kind: "thinking",
     title: "Thinking",
     subtitle: "思考过程",
     icon: "fa-brain",
-    content: extractCopawMessageText(message),
+    content: extractCopawReasoningText(message),
+    replaceContent: options.replaceContent ?? false,
   };
 }
 
@@ -662,6 +686,22 @@ export function mergeProcessBlocks(existingBlocks: any[] = [], incomingBlocks: a
       return nextBlocks;
     }
 
+    if (incomingBlock.kind === "thinking") {
+      const existingIndex = mergedBlocks.findIndex(
+        (item) => item?.kind === "thinking" && item.id === incomingBlock.id,
+      );
+      if (existingIndex === -1) {
+        return [...mergedBlocks, incomingBlock];
+      }
+
+      const nextBlocks = [...mergedBlocks];
+      nextBlocks[existingIndex] = mergeThinkingTraceBlock(
+        nextBlocks[existingIndex],
+        incomingBlock,
+      );
+      return nextBlocks;
+    }
+
     if (incomingBlock.kind !== "tool") {
       return mergedBlocks.some((item) => item.id === incomingBlock.id)
         ? mergedBlocks
@@ -692,6 +732,22 @@ function mergeResponseTraceBlock(existingBlock: any, incomingBlock: any) {
 
   return {
     ...existingBlock,
+    content: mergeStreamingText(existingBlock.content || "", incomingBlock.content || ""),
+  };
+}
+
+function mergeThinkingTraceBlock(existingBlock: any, incomingBlock: any) {
+  if (incomingBlock.replaceContent) {
+    return {
+      ...existingBlock,
+      ...incomingBlock,
+      content: incomingBlock.content || "",
+    };
+  }
+
+  return {
+    ...existingBlock,
+    ...incomingBlock,
     content: mergeStreamingText(existingBlock.content || "", incomingBlock.content || ""),
   };
 }
@@ -781,28 +837,34 @@ function parseJsonSafely(rawValue: string) {
   }
 }
 
-function normalizeContentToText(content: any): string {
+function normalizeContentToText(
+  content: any,
+  target: "text" | "thinking" = "text",
+): string {
   if (!content) {
     return "";
   }
   if (typeof content === "string") {
-    return content;
+    return target === "text" ? content : "";
   }
   if (Array.isArray(content)) {
     return content
-      .map((item) => normalizeContentToText(item))
+      .map((item) => normalizeContentToText(item, target))
       .filter((item) => item !== "")
       .join("\n");
   }
   if (typeof content === "object") {
+    if (target === "thinking" && typeof content.thinking === "string") {
+      return content.thinking;
+    }
     if (typeof content.text === "string") {
-      return content.text;
+      return target === "text" ? content.text : "";
     }
     if (typeof content.content === "string") {
-      return content.content;
+      return target === "text" ? content.content : "";
     }
     if (Array.isArray(content.content)) {
-      return normalizeContentToText(content.content);
+      return normalizeContentToText(content.content, target);
     }
   }
   return "";

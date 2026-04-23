@@ -95,7 +95,8 @@ Portal 落地时，需要体现以下链路：
 优先级如下：
 
 1. 先实际调用可用能力：
-   - 使用 `list_agents` / `chat_with_agent` / `multi_agent_collaboration` 协作 query 数字员工查询 CMDB
+   - 如果需要跨智能体协作，**优先使用内置工具 `chat_with_agent`**；只有在 `chat_with_agent` 不可用或确实不适配当前任务时，才考虑 `list_agents` / `multi_agent_collaboration`
+   - 使用 `chat_with_agent` 协作 query 数字员工查询 CMDB
    - 使用 `execute_shell_command` 执行 `scripts/get_metric_definitions.py`
    - 已拿到 `resId/CI ID` 后，优先执行 `scripts/analyze_alarm_context.py` 聚合 CMDB 拓扑、关联告警和指标
 2. 再把执行结果整理成面向用户的阶段化输出
@@ -115,7 +116,7 @@ Portal 落地时，需要体现以下链路：
 只有以下情况才允许只展示计划而不执行：
 
 1. 当前工具里没有 `execute_shell_command`
-2. 当前工具里没有 `list_agents` / `chat_with_agent` / `multi_agent_collaboration`
+2. 当前工具里没有 `chat_with_agent`，且也没有其他可替代的跨智能体协作能力
 3. 缺少执行所需关键参数，且无法从当前上下文推断
 4. 用户明确要求“先不要执行，只给方案”
 

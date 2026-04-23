@@ -223,8 +223,17 @@ function sanitizeMessage(
   if (Array.isArray(message.processBlocks)) {
     next.processBlocks = cloneJsonSafe(message.processBlocks);
   }
+  if (typeof message.backendMessageId === "string") {
+    next.backendMessageId = message.backendMessageId;
+  }
+  if (typeof message.enhancementSourceMessageId === "string") {
+    next.enhancementSourceMessageId = message.enhancementSourceMessageId;
+  }
   if (message.disposalOperation && isPlainRecord(message.disposalOperation)) {
     next.disposalOperation = cloneJsonSafe(message.disposalOperation);
+  }
+  if (message.alarmAnalystCard && isPlainRecord(message.alarmAnalystCard)) {
+    next.alarmAnalystCard = cloneJsonSafe(message.alarmAnalystCard);
   }
   if (Array.isArray(message.workorders)) {
     next.workorders = cloneJsonSafe(message.workorders);
