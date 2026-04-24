@@ -570,6 +570,49 @@ def test_build_portal_real_alarm_payload_uses_runtime_text_content() -> None:
     assert "告警流水号：alarm-1" in payload["content_parts"][0].text
 
 
+def test_inspection_trigger_sessions_route_starts_session_when_runtime_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    monkeypatch.setattr(portal_backend.app.state, "multi_agent_manager", object(), raising=False)
+    called: dict[str, object] = {}
+
+    async def fake_ensure(request, *, inspection_object: str, session_id: str = ""):
+        called["request"] = request
+        called["inspection_object"] = inspection_object
+        called["session_id"] = session_id
+        return {
+            "inspectionObject": inspection_object,
+            "sessionId": "portal-inspection-target-db",
+            "created": 1,
+            "started": 1,
+            "skipped": 0,
+            "chatId": "chat-1",
+        }
+
+    monkeypatch.setattr(portal_backend, "_ensure_portal_inspection_session", fake_ensure)
+
+    response = client.post(
+        "/api/portal/inspection/trigger-sessions",
+        json={"inspectionObject": "数据库"},
+    )
+
+    assert response.status_code == 200
+    assert called["inspection_object"] == "数据库"
+    assert response.json()["started"] == 1
+    assert response.json()["sessionId"] == "portal-inspection-target-db"
+
+
+def test_build_portal_inspection_payload_uses_runtime_text_content() -> None:
+    payload = portal_backend._build_portal_inspection_payload(  # pylint: disable=protected-access
+        "portal-inspection-target-db",
+        "数据库",
+    )
+
+    assert payload["content_parts"][0].type == "text"
+    assert "请帮我巡检一下数据库" in payload["content_parts"][0].text
+
+
 def test_real_alarms_route_returns_500_when_backend_query_fails(monkeypatch) -> None:
     client = TestClient(portal_backend.app)
 

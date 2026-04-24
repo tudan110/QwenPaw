@@ -75,6 +75,11 @@ PORTAL_REAL_ALARM_CONSOLE_CHANNEL = "console"
 PORTAL_REAL_ALARM_USER_ID = "default"
 PORTAL_REAL_ALARM_NAME_LIMIT = 80
 PORTAL_REAL_ALARM_ENSURE_LOCK = asyncio.Lock()
+PORTAL_INSPECTION_SESSION_PREFIX = "portal-inspection-target-"
+PORTAL_INSPECTION_CONSOLE_CHANNEL = "console"
+PORTAL_INSPECTION_USER_ID = "default"
+PORTAL_INSPECTION_NAME_LIMIT = 80
+PORTAL_INSPECTION_ENSURE_LOCK = asyncio.Lock()
 
 def _load_fault_disposal_runtime():
     skill_root = (
@@ -217,12 +222,28 @@ def _build_portal_real_alarm_session_id(alarm: dict[str, Any]) -> str:
     return f"{PORTAL_REAL_ALARM_SESSION_PREFIX}{_sanitize_portal_real_alarm_key(alarm_id)}"
 
 
+def _build_portal_inspection_session_id(
+    inspection_object: str,
+    *,
+    session_id: str = "",
+) -> str:
+    normalized_session_id = str(session_id or "").strip()
+    if normalized_session_id:
+        return normalized_session_id
+    return f"{PORTAL_INSPECTION_SESSION_PREFIX}{_sanitize_portal_real_alarm_key(inspection_object)}"
+
+
 def _build_portal_real_alarm_chat_name(alarm: dict[str, Any]) -> str:
     title = str(alarm.get("title") or "未命名告警").strip() or "未命名告警"
     device_name = str(alarm.get("deviceName") or "").strip()
     if device_name and device_name != "--":
         return f"告警分析 · {title} · {device_name}"[:PORTAL_REAL_ALARM_NAME_LIMIT]
     return f"告警分析 · {title}"[:PORTAL_REAL_ALARM_NAME_LIMIT]
+
+
+def _build_portal_inspection_chat_name(inspection_object: str) -> str:
+    target = str(inspection_object or "").strip() or "未命名对象"
+    return f"巡检分析 · {target}"[:PORTAL_INSPECTION_NAME_LIMIT]
 
 
 def _build_portal_real_alarm_prompt(alarm: dict[str, Any]) -> str:
@@ -240,6 +261,20 @@ def _build_portal_real_alarm_prompt(alarm: dict[str, Any]) -> str:
     return "\n".join(line for line in lines if line and not line.endswith("："))
 
 
+def _build_portal_inspection_prompt(inspection_object: str) -> str:
+    target = str(inspection_object or "").strip() or "未命名对象"
+    lines = [
+        f"请帮我巡检一下{target}",
+        "要求：",
+        "1. 先协作 query 智能体使用 veops-cmdb 确认巡检对象的拓扑、资源名称、resId/CI ID 和 ciType。",
+        "2. 如果存在多个候选资源，先明确列出候选项，不要默认任选一个。",
+        "3. 一旦确认 resId 和 ciType，查询该资源类型的全部指标定义，提取全部指标编码。",
+        "4. 调用指标数据接口，使用 resId + 全部指标编码数组完成巡检。",
+        "5. 最后输出巡检结果、拓扑确认摘要和指标数据表。",
+    ]
+    return "\n".join(lines)
+
+
 def _build_portal_real_alarm_payload(session_id: str, alarm: dict[str, Any]) -> dict[str, Any]:
     return {
         "channel_id": PORTAL_REAL_ALARM_CONSOLE_CHANNEL,
@@ -253,6 +288,23 @@ def _build_portal_real_alarm_payload(session_id: str, alarm: dict[str, Any]) -> 
         "meta": {
             "session_id": session_id,
             "user_id": PORTAL_REAL_ALARM_USER_ID,
+        },
+    }
+
+
+def _build_portal_inspection_payload(session_id: str, inspection_object: str) -> dict[str, Any]:
+    return {
+        "channel_id": PORTAL_INSPECTION_CONSOLE_CHANNEL,
+        "sender_id": PORTAL_INSPECTION_USER_ID,
+        "content_parts": [
+            TextContent(
+                type=ContentType.TEXT,
+                text=_build_portal_inspection_prompt(inspection_object),
+            )
+        ],
+        "meta": {
+            "session_id": session_id,
+            "user_id": PORTAL_INSPECTION_USER_ID,
         },
     }
 
@@ -277,6 +329,95 @@ def _portal_real_alarm_has_history(state: dict[str, Any]) -> bool:
     agent_state = state.get("agent") or {}
     memory_state = agent_state.get("memory") or {}
     return bool(memory_state)
+
+
+async def _ensure_portal_inspection_session(
+    request: Request,
+    *,
+    inspection_object: str,
+    session_id: str = "",
+) -> dict[str, Any]:
+    normalized_object = str(inspection_object or "").strip()
+    if not normalized_object:
+        raise HTTPException(status_code=400, detail="inspectionObject is required")
+
+    workspace = await _get_portal_employee_workspace(request, "inspection")
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Inspection workspace not available")
+
+    console_channel = await workspace.channel_manager.get_channel(
+        PORTAL_INSPECTION_CONSOLE_CHANNEL
+    )
+    if console_channel is None:
+        raise HTTPException(status_code=503, detail="Inspection console channel not available")
+
+    final_session_id = _build_portal_inspection_session_id(
+        normalized_object,
+        session_id=session_id,
+    )
+    result = {
+        "inspectionObject": normalized_object,
+        "sessionId": final_session_id,
+        "created": 0,
+        "started": 0,
+        "skipped": 0,
+        "chatId": "",
+    }
+
+    async with PORTAL_INSPECTION_ENSURE_LOCK:
+        existing_chat = next(
+            (
+                item
+                for item in await workspace.chat_manager.list_chats()
+                if str(item.session_id or "") == final_session_id
+                and str(item.user_id or "") == PORTAL_INSPECTION_USER_ID
+                and str(item.channel or "") == PORTAL_INSPECTION_CONSOLE_CHANNEL
+            ),
+            None,
+        )
+        chat = await workspace.chat_manager.get_or_create_chat(
+            final_session_id,
+            PORTAL_INSPECTION_USER_ID,
+            PORTAL_INSPECTION_CONSOLE_CHANNEL,
+            name=_build_portal_inspection_chat_name(normalized_object),
+        )
+        result["chatId"] = chat.id
+
+        existing_state = await workspace.runner.session.get_session_state_dict(
+            chat.session_id,
+            chat.user_id,
+        )
+        has_history = _portal_real_alarm_has_history(existing_state)
+        if existing_chat is None:
+            result["created"] = 1
+
+        should_start = not has_history
+        if not should_start:
+            status = await workspace.task_tracker.get_status(chat.id)
+            should_start = status != "running" and not has_history
+
+        if not should_start:
+            result["skipped"] = 1
+            return result
+
+        queue, started = await workspace.task_tracker.attach_or_start(
+            chat.id,
+            _build_portal_inspection_payload(final_session_id, normalized_object),
+            console_channel.stream_one,
+        )
+        if started:
+            result["started"] = 1
+            asyncio.create_task(
+                _drain_portal_real_alarm_stream(
+                    workspace.task_tracker,
+                    queue,
+                    chat.id,
+                )
+            )
+        else:
+            result["skipped"] = 1
+
+    return result
 
 
 async def _ensure_portal_real_alarm_sessions(
@@ -1118,6 +1259,44 @@ async def trigger_real_alarm_sessions(
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] trigger_real_alarm_sessions failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/inspection/trigger-sessions")
+async def trigger_inspection_sessions(
+    request: Request,
+    payload: dict[str, Any] | None = Body(default=None),
+):
+    try:
+        if not hasattr(request.app.state, "multi_agent_manager"):
+            raise HTTPException(
+                status_code=503,
+                detail="MultiAgentManager not initialized",
+            )
+
+        body = payload or {}
+        inspection_object = str(
+            body.get("inspectionObject")
+            or body.get("inspection_object")
+            or body.get("target")
+            or ""
+        ).strip()
+        session_id = str(body.get("sessionId") or body.get("session_id") or "").strip()
+        summary = await _ensure_portal_inspection_session(
+            request,
+            inspection_object=inspection_object,
+            session_id=session_id,
+        )
+        return {
+            "ok": True,
+            **summary,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] trigger_inspection_sessions failed: {error_detail}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
