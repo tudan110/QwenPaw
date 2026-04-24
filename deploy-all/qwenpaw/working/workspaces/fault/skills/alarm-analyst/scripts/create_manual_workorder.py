@@ -435,18 +435,18 @@ def _format_notification_status(notification: dict[str, Any]) -> str:
     status = _safe_str(notification.get("status")).lower()
     reason = _safe_str(notification.get("reason"))
     if status == "sent":
-        return _format_notification_channels(notification, fallback="已发送")
+        return "✅ 已成功推送"
     if status == "partial":
-        return _format_notification_channels(notification, fallback="部分发送成功")
+        return "⚠️ 部分推送成功"
     if status == "failed":
-        return f"发送失败：{reason or '未知错误'}"
+        return f"❌ 推送失败：{reason or '未知错误'}"
     if status == "skipped":
         if reason == "webhook_not_configured":
-            return "未配置"
+            return "— 未配置"
         if reason == "missing_workorder_identifiers":
-            return "已跳过（缺少工单编号）"
-        return "已跳过"
-    return "未配置"
+            return "— 已跳过（缺少工单编号）"
+        return "— 已跳过"
+    return "— 未配置"
 
 
 def _normalize_suggestions(
@@ -649,7 +649,7 @@ def format_markdown_result(payload: dict[str, Any], response: dict[str, Any]) ->
         f"- 处置建议：{'；'.join(str(item) for item in suggestions) if suggestions else '-'}",
         f"- procInsId：`{data.get('procInsId') or ''}`",
         f"- taskId：`{data.get('taskId') or ''}`",
-        f"- 通知推送：**{_format_notification_status(notification)}**",
+        f"- 通知状态：**{_format_notification_status(notification)}**",
         "- 当前状态：已自动调用 4.2 接口创建工单（AI 创建）",
     ]
     return "\n".join(lines)

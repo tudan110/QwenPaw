@@ -495,4 +495,4 @@ def test_format_markdown_result_contains_ai_marker():
     assert "alarm-001" in markdown
     assert "portal-fault-disposal-ai" in markdown
     assert "排查长事务" in markdown
-    assert "通知推送：**应用、钉钉、飞书已发送**" in markdown
+    assert "通知状态：**✅ 已成功推送**" in markdown
