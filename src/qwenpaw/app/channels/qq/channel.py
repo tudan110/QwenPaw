@@ -44,7 +44,7 @@ from ..base import (
     OutgoingContentPart,
     ProcessHandler,
 )
-from ..utils import split_text
+from ..utils import file_url_to_local_path, split_text
 
 if TYPE_CHECKING:
     import concurrent.futures
@@ -646,6 +646,7 @@ class QQChannel(BaseChannel):
         filter_tool_messages: bool = False,
         filter_thinking: bool = False,
         media_dir: str = "",
+        workspace_dir: Path | None = None,
         max_reconnect_attempts: int = 100,
         ack_message: str = "",
     ):
@@ -661,9 +662,16 @@ class QQChannel(BaseChannel):
         self.client_secret = client_secret
         self.bot_prefix = bot_prefix
         self._markdown_enabled = markdown_enabled
-        self._media_dir = (
-            Path(media_dir).expanduser() if media_dir else _DEFAULT_MEDIA_DIR
+        self._workspace_dir = (
+            Path(workspace_dir).expanduser() if workspace_dir else None
         )
+        # Use workspace-specific media dir if workspace_dir is provided
+        if not media_dir and self._workspace_dir:
+            self._media_dir = self._workspace_dir / "media"
+        elif media_dir:
+            self._media_dir = Path(media_dir).expanduser()
+        else:
+            self._media_dir = _DEFAULT_MEDIA_DIR
         self._max_reconnect_attempts = max_reconnect_attempts
         self._ack_message = ack_message
 
@@ -784,6 +792,7 @@ class QQChannel(BaseChannel):
         show_tool_details: bool = True,
         filter_tool_messages: bool = False,
         filter_thinking: bool = False,
+        workspace_dir: Path | None = None,
     ) -> "QQChannel":
         return cls(
             process=process,
@@ -797,6 +806,7 @@ class QQChannel(BaseChannel):
             filter_tool_messages=filter_tool_messages,
             filter_thinking=filter_thinking,
             media_dir=getattr(config, "media_dir", ""),
+            workspace_dir=workspace_dir,
             max_reconnect_attempts=getattr(
                 config,
                 "max_reconnect_attempts",
@@ -1351,6 +1361,44 @@ class QQChannel(BaseChannel):
     # WebSocket: message event handling
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _find_quoted_element(
+        d: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Find the quoted msg_elements entry by matching ref_msg_idx."""
+        msg_elements = d.get("msg_elements")
+        if not msg_elements or not isinstance(msg_elements, list):
+            return None
+
+        scene_ext = (d.get("message_scene") or {}).get("ext") or []
+
+        ref_idx: str = ""
+        own_idx: str = ""
+        for entry in scene_ext:
+            if isinstance(entry, str):
+                if entry.startswith("ref_msg_idx="):
+                    ref_idx = entry[len("ref_msg_idx=") :]
+                elif entry.startswith("msg_idx="):
+                    own_idx = entry[len("msg_idx=") :]
+
+        if not ref_idx:
+            return None
+
+        for elem in msg_elements:
+            if not isinstance(elem, dict):
+                continue
+            if elem.get("msg_idx") == ref_idx:
+                return elem
+
+        for elem in msg_elements:
+            if not isinstance(elem, dict):
+                continue
+            elem_idx = elem.get("msg_idx", "")
+            if elem_idx and elem_idx != own_idx:
+                return elem
+
+        return None
+
     def _handle_msg_event(
         self,
         event_type: str,
@@ -1393,12 +1441,42 @@ class QQChannel(BaseChannel):
             channel_id=d.get("channel_id", ""),
         )
 
+        # Extract quoted message (text + attachments) from msg_elements.
+        text_parts: List[str] = []
+        content_parts: List[Any] = []
+        quoted_elem = self._find_quoted_element(d)
+        if quoted_elem is not None:
+            quoted_text = (quoted_elem.get("content") or "").strip()
+            quoted_attachments = quoted_elem.get("attachments") or []
+            if quoted_text:
+                text_parts.insert(0, f"[quoted message: {quoted_text}]")
+            if quoted_attachments:
+                quoted_media = self._parse_qq_attachments(quoted_attachments)
+                if quoted_media:
+                    content_parts.extend(quoted_media)
+                else:
+                    text_parts.insert(0, "[quoted media: download failed]")
+            if not quoted_text and not quoted_attachments:
+                text_parts.insert(0, "[quoted message]")
+            logger.info(
+                "qq quoted message detected, text=%r attachments=%d",
+                quoted_text[:100] if quoted_text else "",
+                len(quoted_attachments),
+            )
+        if text:
+            text_parts.append(text)
+        combined_text = "\n".join(text_parts).strip()
+
+        if combined_text:
+            content_parts.insert(
+                0,
+                TextContent(type=ContentType.TEXT, text=combined_text),
+            )
+
         native = {
             "channel_id": "qq",
             "sender_id": sender,
-            "content_parts": [
-                TextContent(type=ContentType.TEXT, text=text),
-            ],
+            "content_parts": content_parts,
             "meta": meta,
         }
         request = self.build_agent_request_from_native(native)
@@ -1414,7 +1492,7 @@ class QQChannel(BaseChannel):
             spec.message_type,
             sender,
             extra_str,
-            text[:100],
+            combined_text[:100],
         )
 
     # ------------------------------------------------------------------
@@ -1638,6 +1716,34 @@ class QQChannel(BaseChannel):
             self._stop_event.set()
             logger.info("qq ws thread stopped")
 
+    async def health_check(self) -> Dict[str, Any]:
+        """Check QQ WebSocket and HTTP session status."""
+        if not self.enabled:
+            return {
+                "channel": self.channel,
+                "status": "disabled",
+                "detail": "QQ channel is disabled.",
+            }
+        issues = []
+        ws_thread_alive = (
+            self._ws_thread is not None and self._ws_thread.is_alive()
+        )
+        if not ws_thread_alive:
+            issues.append("WebSocket thread is not running")
+        if self._http is None or self._http.closed:
+            issues.append("HTTP session not available")
+        if issues:
+            return {
+                "channel": self.channel,
+                "status": "unhealthy",
+                "detail": "; ".join(issues),
+            }
+        return {
+            "channel": self.channel,
+            "status": "healthy",
+            "detail": "QQ WebSocket and HTTP session are active.",
+        }
+
     async def start(self) -> None:
         if not self.enabled:
             logger.debug("qq channel disabled by QQ_CHANNEL_ENABLED=0")
@@ -1731,7 +1837,7 @@ class QQChannel(BaseChannel):
 
         # file:// protocol → treat as local file
         if raw.startswith("file://"):
-            resolved = raw[7:]  # strip "file://"
+            resolved = file_url_to_local_path(raw) or raw
             if os.path.isfile(resolved):
                 local_path = resolved
             else:
