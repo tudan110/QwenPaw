@@ -423,7 +423,8 @@
       "knowledge",
       "resource",
       "gateway",
-      "inspection"
+      "inspection",
+      "order"
     ],
     "profiles": {
       "default": {
@@ -454,6 +455,11 @@
       "resource": {
         "id": "resource",
         "workspace_dir": "~/.qwenpaw/workspaces/resource",
+        "enabled": true
+      },
+      "order": {
+        "id": "resource",
+        "workspace_dir": "~/.qwenpaw/workspaces/order",
         "enabled": true
       },
       "gateway": {
