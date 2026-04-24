@@ -8,6 +8,7 @@
       --chat-id 82bd7e8c-6940-414b-a59e-aede36f713ad \
       --res-id 3094 \
       --metric-type mysql \
+      --alarm-id alarm-001 \
       --alarm-title "数据库锁异常" \
       --visible-content "数据库锁异常（db_mysql_001 10.43.150.186）" \
       --device-name db_mysql_001 \
@@ -30,6 +31,7 @@ import argparse
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 import tempfile
@@ -134,9 +136,25 @@ def _default_ticket_title(alarm_title: str) -> str:
     return f"AI创建 · {title}人工处置"
 
 
+def _normalize_ai_alarm_title(alarm_title: str) -> str:
+    title = _safe_str(alarm_title) or "故障告警"
+    title = re.sub(r"^\s*AI\s*创建\s*[·:：-]?\s*", "", title)
+    title = re.sub(r"\s*[\(（]\s*AI\s*创建\s*[\)）]\s*$", "", title)
+    title = title.strip() or "故障告警"
+    return f"{title}（AI创建）"
+
+
+def _require_alarm_id(alarm_id: str) -> str:
+    normalized = _safe_str(alarm_id)
+    if not normalized:
+        raise ValueError("必须提供告警流水号，请通过 --alarm-id 传入并映射到 alarm.alarmId")
+    return normalized
+
+
 def build_workorder_payload(args: argparse.Namespace) -> dict[str, Any]:
     suggestions = _normalize_suggestions(args.suggestion, args.suggestions_json)
-    alarm_title = _safe_str(args.alarm_title)
+    alarm_id = _require_alarm_id(args.alarm_id)
+    alarm_title = _normalize_ai_alarm_title(_safe_str(args.alarm_title))
     analysis_summary = _safe_str(args.analysis_summary) or "AI 已完成根因分析，自动创建人工处置工单"
 
     return {
@@ -144,7 +162,7 @@ def build_workorder_payload(args: argparse.Namespace) -> dict[str, Any]:
         "resId": _safe_str(args.res_id),
         "metricType": _safe_str(args.metric_type) or "mysql",
         "alarm": {
-            "alarmId": _safe_str(args.alarm_id),
+            "alarmId": alarm_id,
             "title": alarm_title,
             "visibleContent": _safe_str(args.visible_content),
             "deviceName": _safe_str(args.device_name),
@@ -277,6 +295,7 @@ def format_markdown_result(payload: dict[str, Any], response: dict[str, Any]) ->
         "## AI 创建处置工单结果",
         f"- 工单标题：{ticket.get('title') or '-'}",
         f"- 工单来源：{ticket.get('source') or '-'}",
+        f"- 告警流水号：`{alarm.get('alarmId') or ''}`",
         f"- 告警标题：{alarm.get('title') or '-'}",
         f"- 资源 ID（CI ID）：`{payload.get('resId') or ''}`",
         f"- 分析摘要：{analysis.get('summary') or '-'}",
@@ -294,7 +313,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chat-id", required=True, help="当前故障会话 ID")
     parser.add_argument("--res-id", required=True, help="CMDB CI ID")
     parser.add_argument("--metric-type", default="mysql", help="资源类型，例如 mysql")
-    parser.add_argument("--alarm-id", default="", help="告警 ID")
+    parser.add_argument("--alarm-id", required=True, help="告警流水号，对应 alarm.alarmId")
     parser.add_argument("--alarm-title", required=True, help="告警标题")
     parser.add_argument("--visible-content", default="", help="告警可见摘要")
     parser.add_argument("--device-name", default="", help="设备名 / 资源名")

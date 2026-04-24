@@ -40,7 +40,8 @@ Portal 落地时，需要体现以下链路：
 4. RCA 完成后：
    - 自动创建处置工单
    - 工单中写明 AI 创建标识与处置建议
-   - 使用 `channel_message` 发送飞书通知
+   - 先执行 `qwenpaw chats list --agent-id fault --channel feishu` 查找飞书侧真实 `user_id` / `session_id`
+   - 再使用 `channel_message` 发送飞书通知
 5. AI 可闭环时：
    - 执行处置
    - 检测是否恢复正常
@@ -143,8 +144,8 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py --res-id <当
 4. 先读取聚合脚本结果，确认：
    - 当前告警根资源在 CMDB 中的关联拓扑
    - 拓扑中全部关联资源 ID
-   - 这些资源 ID 在当前窗口/环比窗口的告警 fan-out 结果
-5. 再根据根资源 `ciType` 和“拓扑 fan-out 告警”一起确定指标采集范围
+   - 这些资源 ID 在当前窗口/环比窗口的关联资源告警查询结果
+5. 再根据根资源 `ciType` 和“拓扑关联资源告警”一起确定指标采集范围
 6. 如果还需要针对根资源进一步拉取关键指标，或 `analyze_alarm_context.py` 已确认 `ciType = mysql`，继续执行：
 
 ```bash
@@ -308,7 +309,7 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py --res-id 3094
    - 拓扑关联资源的环比窗口告警
    - 根资源关键指标的指标值
 
-### 拓扑资源告警 fan-out（硬约束，不允许省略）
+### 拓扑关联资源告警查询（硬约束，不允许省略）
 
 下面这条规则不是建议，而是本 skill 的**完成条件**：
 
@@ -333,12 +334,12 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py --res-id 3094
 
 - 只查当前告警根资源自己的告警
 - 只查拓扑里某一个节点的告警
-- 只拿到拓扑图或拓扑摘要，但不把节点资源 ID 转成告警 fan-out 查询
+- 只拿到拓扑图或拓扑摘要，但不把节点资源 ID 转成关联资源告警查询
 - 明明已经拿到拓扑，却跳过“全部 `resourceIds` 的告警查询”直接去下结论
 
 如果没有完成这一步，就**不能**宣称已经完成根因分析，最多只能说：
 
-- 拓扑已拿到，但拓扑资源告警 fan-out 尚未完成
+- 拓扑已拿到，但拓扑关联资源告警查询尚未完成
 - 当前结果是 `partial`
 - 当前结果不能视为完整 RCA
 
@@ -855,7 +856,15 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 3. 工单创建成功后，必须立即使用内置技能 `channel_message` 发送飞书通知：
    - 这是工单创建后的固定动作，不能省略
    - 通知目标默认为当前故障处置相关的飞书会话 / 频道
-   - 发送前按 `channel_message` 的要求，先查询目标 session / channel，再推送消息
+   - 发送前按 `channel_message` 的要求，必须先执行 `qwenpaw chats list --agent-id fault --channel feishu`，查出飞书侧真实 `user_id` / `session_id`，再推送消息
+   - 严禁复用 console 频道里的 `default` 用户 ID、session ID 或任何非飞书渠道的会话标识；console 与 feishu 不能混用
+   - 如果 `qwenpaw chats list --agent-id fault --channel feishu` 没查到可用目标，必须明确写出“飞书会话未解析成功，暂未发送通知”
+   - 飞书通知正文允许使用**轻量 markdown**，但只能使用飞书里稳定、易读的那一小部分语法
+   - 直接写真实换行，不要把正文拼成包含字面量 `\n` 的单行字符串
+   - 推荐仅使用：标题文本、空行、列表、`**加粗**`、行内代码 `` `code` ``
+   - 不要依赖复杂 markdown，如表格、嵌套层级、引用块、HTML、过深缩进或需要严格渲染器兼容性的写法
+   - 飞书通知文案要尽量使用**自然语言描述**，不要把 shell 命令、SQL 命令或 `Kill` / `kill` 这类容易触发工具守卫的英文动作词直接塞进通知正文
+   - 如果需要表达处置动作，改写成“查看死锁记录”“确认后终止阻塞会话”“检查连接池配置”这类中文动作描述
    - 通知内容至少包含：
      - `AI 已创建处置工单`
      - 告警标题
@@ -864,11 +873,32 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
      - 处置建议
      - 工单接口返回的 `procInsId` / `taskId`（若已拿到）
    - 通知文案里必须明确这是 **AI 创建** 的工单，避免用户误解为人工手动创建
+   - 推荐通知模板：
+
+```md
+🚨 **AI已创建处置工单**
+
+- **告警标题**：数据库锁异常
+- **资源**：db_mysql_001（10.43.150.186，CI ID: 3094）
+- **根因方向**：InnoDB 行锁竞争阻塞链 -> 死锁 -> 连接异常
+- **处置建议**：
+  1. 查看死锁记录
+  2. 排查长事务和锁等待关系
+  3. 分析慢 SQL 日志确认热点写入
+  4. 检查连接池配置
+- **工单编号**：
+  - `procInsId=...`
+  - `taskId=...`
+
+此工单为 AI 自动创建，请尽快跟进处置。
+```
 4. 创建工单时必须满足：
+   - 必须提交**告警流水号**，映射到请求体 `alarm.alarmId`
    - 工单要有 **AI 创建标识**
    - 工单请求体里必须带 **处置建议**
    - `ticket.source` 默认使用 `portal-fault-disposal-ai`
    - 默认工单标题应体现 `AI创建`
+   - 传给工单接口的**告警标题**也应体现 `AI创建`，并放在标题末尾用括号包起来，例如 `数据库锁异常（AI创建）`
 5. 如果工单接口调用失败：
    - 必须明确写出失败原因
    - 不能谎称“已创建工单”
@@ -937,7 +967,8 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 - 涉及应用拓扑或资源关系拓扑时，优先输出或保留 `echarts` 树状图代码块
 - 需要闭环时，要把“清除告警 / 修改工单状态 / 恢复验证”明确写出来
 - RCA 结论形成后，必须明确体现“已自动调用 4.2 工单创建接口”或“工单创建失败原因”
-- 工单创建成功后，必须明确体现“已使用 `channel_message` 发送飞书通知”或“飞书通知失败原因”
+- 工单创建成功后，必须明确体现“已先通过 `qwenpaw chats list --agent-id fault --channel feishu` 解析飞书真实会话，再使用 `channel_message` 发送飞书通知”或“飞书通知失败原因”
+- 用户可见正文里不要出现 `fan-out` 这类内部术语；统一改成“关联资源告警查询”“拓扑关联资源告警查询”“已完成全部关联资源告警查询”这类用户能看懂的说法
 
 ### 最终必须给出总结
 
@@ -957,7 +988,7 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 - 故障性质：MySQL 数据库层锁竞争 / 死锁，伴随连接池受挤压
 - 根因方向：InnoDB 行锁竞争阻塞链 → 死锁 → 连接异常
 - 影响范围：局部（MySQL 实例），暂未扩散到拓扑上游，但天翼智观应用依赖 MySQL 的写入链路可能受影响
-- 优先动作：排查死锁详情 + 长事务 + Kill 阻塞源（需确认）
+- 优先动作：排查死锁详情 + 长事务 + 确认后终止阻塞会话
 - 关联资源告警查询状态：✅ 已完成全部关联资源告警查询
 ```
 
@@ -1134,6 +1165,8 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 - 如果 `ciType` 已经确认，必须优先执行 `scripts/get_metric_definitions.py`，不要只输出“计划调用指标定义接口”
 - RCA 结论形成后，必须优先执行 `scripts/create_manual_workorder.py` 创建工单，不要只输出“计划创建工单”
 - 工单创建成功后，必须优先调用内置技能 `channel_message` 发送飞书通知，不要只输出“计划通知飞书”
+- 调用 `channel_message` 之前，必须先执行 `qwenpaw chats list --agent-id fault --channel feishu`，拿到飞书渠道真实 `user_id` / `session_id`
+- 严禁把 console 频道的 `default` 用户 ID 或 session ID 当成飞书通知目标；如果只拿到了 console 默认会话，必须视为“飞书目标未解析成功”
 - 但必须把“告警 -> 智观 -> query/veops-cmdb -> `getMetricDefinitions` -> AI 挑关键指标 -> 指标值 -> 影响范围 -> 自动创建工单 -> 飞书通知 -> 处置 -> 恢复验证 -> 清除告警 -> 更新工单状态”这条链路完整写给用户
 - 查询 CMDB 时，默认体现为通过 query 数字员工下的 `veops-cmdb` 完成
 - 如果查询到拓扑，默认以 `echarts` 树状图展示，并保留 query 返回的图表代码块
@@ -1152,4 +1185,4 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 - 只要已经查到当前告警根资源在 CMDB 中的关联拓扑，**就必须继续执行“提取全部关联资源 ID -> 查询这些 ID 的告警信息”这一步**
 - 这一步是硬约束，不允许被“我已经看了拓扑”“我已经查了根资源告警”“我已经有一些伴随告警样本”替代
 - 如果拓扑中的全部关联资源 ID 告警没有查完，就不能说“分析完成”，只能明确标记为 `partial` / “未完成全部拓扑资源告警查询”
-- 模型在组织最终回答时，必须明确交代：本次是否已经完成“拓扑全部资源 ID 的告警 fan-out 查询”；如果没有完成，必须把它写成缺失步骤，而不是省略不提
+- 模型在组织最终回答时，必须明确交代：本次是否已经完成“拓扑全部资源 ID 的关联资源告警查询”；如果没有完成，必须把它写成缺失步骤，而不是省略不提

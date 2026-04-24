@@ -51,6 +51,8 @@ def test_build_workorder_payload_marks_ai_created_and_keeps_suggestions():
     payload = WORKORDER_MODULE.build_workorder_payload(args)
 
     assert payload["chatId"] == "chat-1"
+    assert payload["alarm"]["alarmId"] == "alarm-001"
+    assert payload["alarm"]["title"] == "数据库锁异常（AI创建）"
     assert payload["ticket"]["source"] == "portal-fault-disposal-ai"
     assert payload["ticket"]["title"].startswith("AI创建")
     assert payload["analysis"]["suggestions"] == [
@@ -58,6 +60,67 @@ def test_build_workorder_payload_marks_ai_created_and_keeps_suggestions():
         "检查阻塞链",
         "确认是否存在热点更新",
     ]
+
+
+def test_build_workorder_payload_normalizes_prefixed_ai_alarm_title_to_suffix():
+    args = SimpleNamespace(
+        chat_id="chat-1",
+        res_id="3094",
+        metric_type="mysql",
+        alarm_id="alarm-001",
+        alarm_title="AI创建 · 数据库锁异常",
+        visible_content="数据库锁异常（db_mysql_001 10.43.150.186）",
+        device_name="db_mysql_001",
+        manage_ip="10.43.150.186",
+        asset_id="db_mysql_001",
+        level="critical",
+        status="active",
+        event_time="2026-04-20 15:00:00",
+        analysis_summary="AI 已完成根因分析，自动创建人工处置工单",
+        root_cause="疑似 MySQL 锁等待 / 长事务 / 死锁",
+        suggestion=["排查长事务"],
+        suggestions_json="",
+        ticket_title="",
+        ticket_priority="P1",
+        ticket_category="database-lock",
+        ticket_source="portal-fault-disposal-ai",
+        ticket_external_system="manual-workorder",
+    )
+
+    payload = WORKORDER_MODULE.build_workorder_payload(args)
+
+    assert payload["alarm"]["alarmId"] == "alarm-001"
+    assert payload["alarm"]["title"] == "数据库锁异常（AI创建）"
+
+
+def test_build_workorder_payload_keeps_single_ai_alarm_title_suffix():
+    args = SimpleNamespace(
+        chat_id="chat-1",
+        res_id="3094",
+        metric_type="mysql",
+        alarm_id="alarm-001",
+        alarm_title="数据库锁异常（AI创建）",
+        visible_content="数据库锁异常（db_mysql_001 10.43.150.186）",
+        device_name="db_mysql_001",
+        manage_ip="10.43.150.186",
+        asset_id="db_mysql_001",
+        level="critical",
+        status="active",
+        event_time="2026-04-20 15:00:00",
+        analysis_summary="AI 已完成根因分析，自动创建人工处置工单",
+        root_cause="疑似 MySQL 锁等待 / 长事务 / 死锁",
+        suggestion=["排查长事务"],
+        suggestions_json="",
+        ticket_title="",
+        ticket_priority="P1",
+        ticket_category="database-lock",
+        ticket_source="portal-fault-disposal-ai",
+        ticket_external_system="manual-workorder",
+    )
+
+    payload = WORKORDER_MODULE.build_workorder_payload(args)
+
+    assert payload["alarm"]["title"] == "数据库锁异常（AI创建）"
 
 
 def test_build_workorder_payload_requires_suggestions():
@@ -89,6 +152,35 @@ def test_build_workorder_payload_requires_suggestions():
         WORKORDER_MODULE.build_workorder_payload(args)
 
 
+def test_build_workorder_payload_requires_alarm_id():
+    args = SimpleNamespace(
+        chat_id="chat-1",
+        res_id="3094",
+        metric_type="mysql",
+        alarm_id="",
+        alarm_title="数据库锁异常",
+        visible_content="",
+        device_name="",
+        manage_ip="",
+        asset_id="",
+        level="",
+        status="active",
+        event_time="",
+        analysis_summary="",
+        root_cause="",
+        suggestion=["排查长事务"],
+        suggestions_json="",
+        ticket_title="",
+        ticket_priority="P1",
+        ticket_category="database-lock",
+        ticket_source="portal-fault-disposal-ai",
+        ticket_external_system="manual-workorder",
+    )
+
+    with pytest.raises(ValueError, match="必须提供告警流水号"):
+        WORKORDER_MODULE.build_workorder_payload(args)
+
+
 @patch.dict(
     "os.environ",
     {
@@ -102,7 +194,7 @@ def test_create_manual_workorder_posts_expected_request():
         "chatId": "chat-1",
         "resId": "3094",
         "metricType": "mysql",
-        "alarm": {"title": "数据库锁异常"},
+        "alarm": {"alarmId": "alarm-001", "title": "AI创建 · 数据库锁异常"},
         "analysis": {"summary": "AI 已完成根因分析，自动创建人工处置工单", "suggestions": ["排查长事务"]},
         "ticket": {"title": "AI创建 · 数据库锁异常人工处置", "source": "portal-fault-disposal-ai"},
     }
@@ -130,7 +222,7 @@ def test_format_markdown_result_contains_ai_marker():
     markdown = WORKORDER_MODULE.format_markdown_result(
         {
             "resId": "3094",
-            "alarm": {"title": "数据库锁异常"},
+            "alarm": {"alarmId": "alarm-001", "title": "AI创建 · 数据库锁异常"},
             "analysis": {
                 "summary": "AI 已完成根因分析，自动创建人工处置工单",
                 "rootCause": "疑似 MySQL 锁等待 / 长事务 / 死锁",
@@ -142,5 +234,6 @@ def test_format_markdown_result_contains_ai_marker():
     )
 
     assert "AI 创建处置工单结果" in markdown
+    assert "alarm-001" in markdown
     assert "portal-fault-disposal-ai" in markdown
     assert "排查长事务" in markdown
