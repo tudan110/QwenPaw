@@ -54,6 +54,8 @@ class OrderWorkflowConfig:
     create_notify_dingtalk_webhook_url: str = ""
     create_notify_dingtalk_secret: str = ""
     create_notify_dingtalk_keyword: str = ""
+    create_notify_feishu_webhook_url: str = ""
+    create_notify_feishu_secret: str = ""
     create_notify_timeout_seconds: int = 8
     create_notify_mention_all: bool = False
 
@@ -108,6 +110,14 @@ class OrderWorkflowConfig:
             "ORDER_CREATE_NOTIFY_DINGTALK_KEYWORD",
             "",
         ).strip()
+        create_notify_feishu_webhook_url = os.getenv(
+            "ORDER_CREATE_NOTIFY_FEISHU_WEBHOOK_URL",
+            "",
+        ).strip()
+        create_notify_feishu_secret = os.getenv(
+            "ORDER_CREATE_NOTIFY_FEISHU_SECRET",
+            "",
+        ).strip()
         create_notify_timeout_seconds = int(
             os.getenv("ORDER_CREATE_NOTIFY_TIMEOUT_SECONDS", "8").strip() or "8"
         )
@@ -129,6 +139,8 @@ class OrderWorkflowConfig:
             create_notify_dingtalk_webhook_url=create_notify_dingtalk_webhook_url,
             create_notify_dingtalk_secret=create_notify_dingtalk_secret,
             create_notify_dingtalk_keyword=create_notify_dingtalk_keyword,
+            create_notify_feishu_webhook_url=create_notify_feishu_webhook_url,
+            create_notify_feishu_secret=create_notify_feishu_secret,
             create_notify_timeout_seconds=create_notify_timeout_seconds,
             create_notify_mention_all=create_notify_mention_all,
         )
@@ -657,7 +669,8 @@ class OrderWorkflowClient:
     ) -> dict[str, Any]:
         app_webhook_url = self.config.create_notify_webhook_url.strip()
         dingtalk_webhook_url = self.config.create_notify_dingtalk_webhook_url.strip()
-        if not app_webhook_url and not dingtalk_webhook_url:
+        feishu_webhook_url = self.config.create_notify_feishu_webhook_url.strip()
+        if not app_webhook_url and not dingtalk_webhook_url and not feishu_webhook_url:
             return {
                 "enabled": False,
                 "status": "skipped",
@@ -698,6 +711,16 @@ class OrderWorkflowClient:
                     webhook_url=self._build_dingtalk_signed_webhook_url(dingtalk_webhook_url),
                     payload=self._build_dingtalk_create_notify_payload(context),
                     success_predicate=lambda data: str(data.get("errcode", "")) == "0",
+                )
+            )
+        if feishu_webhook_url:
+            channels.append(
+                self._send_json_webhook(
+                    channel_name="feishu",
+                    webhook_url=feishu_webhook_url,
+                    payload=self._build_feishu_create_notify_payload(context),
+                    success_predicate=lambda data: str(data.get("StatusCode", "")) == "0"
+                    or str(data.get("code", "")) == "0",
                 )
             )
 
@@ -816,6 +839,39 @@ class OrderWorkflowClient:
         }
         if self.config.create_notify_mention_all:
             payload["at"] = {"isAtAll": True}
+        return payload
+
+    def _build_feishu_create_notify_payload(self, context: dict[str, str]) -> dict[str, Any]:
+        content_lines = [
+            "【工单创建通知】",
+            f"标题：{context['title']}",
+            f"摘要：{context['summary']}",
+            f"设备：{context['device_name']} / {context['manage_ip']}",
+            f"等级：{context['level']}",
+            f"taskId：{context['task_id']}",
+            f"procInsId：{context['proc_ins_id']}",
+            f"创建时间：{context['created_at']}",
+            "请相关同事关注并尽快处理。",
+        ]
+        payload: dict[str, Any] = {
+            "msg_type": "text",
+            "content": {
+                "text": "\n".join(content_lines),
+            },
+        }
+        secret = self.config.create_notify_feishu_secret.strip()
+        if secret:
+            timestamp = str(int(time.time()))
+            string_to_sign = f"{timestamp}\n{secret}"
+            sign = base64.b64encode(
+                hmac.new(
+                    string_to_sign.encode("utf-8"),
+                    b"",
+                    digestmod=hashlib.sha256,
+                ).digest()
+            ).decode("utf-8")
+            payload["timestamp"] = timestamp
+            payload["sign"] = sign
         return payload
 
     def _build_dingtalk_signed_webhook_url(self, webhook_url: str) -> str:

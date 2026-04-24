@@ -458,6 +458,32 @@ class OrderWorkflowTests(unittest.TestCase):
         self.assertEqual(query["timestamp"][0], "1700000000000")
         self.assertTrue(query["sign"][0])
 
+    def test_feishu_notification_payload_appends_timestamp_and_sign(self) -> None:
+        client = OrderWorkflowClient(
+            OrderWorkflowConfig(
+                base_url="http://example.com",
+                authorization="token",
+                create_notify_feishu_webhook_url="https://open.feishu.cn/open-apis/bot/v2/hook/test",
+                create_notify_feishu_secret="feishu-secret",
+            )
+        )
+        context = client._build_create_notify_context(
+            response_payload={"data": {"taskId": "task-1", "procInsId": "proc-1"}},
+            request_payload=OrderWorkflowClient._normalize_create_payload(
+                {
+                    "deviceName": "db_mysql_001",
+                    "manageIp": "10.43.150.186",
+                    "suggestions": "数据库锁异常，需要人工排查长事务和阻塞链",
+                }
+            ),
+        )
+        with mock.patch("runtime.client.time.time", return_value=1700000000.0):
+            payload = client._build_feishu_create_notify_payload(context)
+        self.assertEqual(payload["msg_type"], "text")
+        self.assertEqual(payload["timestamp"], "1700000000")
+        self.assertTrue(payload["sign"])
+        self.assertIn("摘要：", payload["content"]["text"])
+
     def test_create_notification_failure_does_not_break_create(self) -> None:
         client = OrderWorkflowClient(
             OrderWorkflowConfig(
@@ -492,6 +518,7 @@ class OrderWorkflowTests(unittest.TestCase):
                 authorization="token",
                 create_notify_webhook_url="http://notify.example.com/app",
                 create_notify_dingtalk_webhook_url="https://oapi.dingtalk.com/robot/send?access_token=test",
+                create_notify_feishu_webhook_url="https://open.feishu.cn/open-apis/bot/v2/hook/test",
                 create_notify_mention_all=True,
             )
         )
@@ -512,7 +539,11 @@ class OrderWorkflowTests(unittest.TestCase):
             return_value={"code": 200, "data": {"taskId": "task-1", "procInsId": "proc-1"}},
         ), mock.patch(
             "runtime.client.requests.post",
-            side_effect=[MockResponse({"ok": True, "code": 200}), MockResponse({"errcode": 0, "errmsg": "ok"})],
+            side_effect=[
+                MockResponse({"ok": True, "code": 200}),
+                MockResponse({"errcode": 0, "errmsg": "ok"}),
+                MockResponse({"StatusCode": 0, "StatusMessage": "success", "code": 0}),
+            ],
         ):
             payload = client.create_disposal_workorder(
                 {
@@ -522,16 +553,16 @@ class OrderWorkflowTests(unittest.TestCase):
                 }
             )
         self.assertEqual(payload["notification"]["status"], "sent")
-        self.assertEqual(len(payload["notification"]["channels"]), 2)
+        self.assertEqual(len(payload["notification"]["channels"]), 3)
 
     def test_create_markdown_renders_notification_status(self) -> None:
         markdown = format_create_markdown(
             {
                 "data": {"procInsId": "proc-1", "taskId": "task-1"},
-                "notification": {"status": "sent", "channels": [{"channel": "app", "status": "sent"}, {"channel": "dingtalk", "status": "sent"}]},
+                "notification": {"status": "sent", "channels": [{"channel": "app", "status": "sent"}, {"channel": "dingtalk", "status": "sent"}, {"channel": "feishu", "status": "sent"}]},
             }
         )
-        self.assertIn("通知推送：**应用、钉钉已发送**", markdown)
+        self.assertIn("通知推送：**应用、钉钉、飞书已发送**", markdown)
 
 
 if __name__ == "__main__":

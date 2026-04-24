@@ -116,6 +116,7 @@ def _format_notification_channels(notification: dict[str, Any], *, fallback: str
     label_map = {
         "app": "应用",
         "dingtalk": "钉钉",
+        "feishu": "飞书",
     }
     labels = [label_map.get(name, name) for name in sent_channels if name]
     return "、".join(labels) + "已发送"
