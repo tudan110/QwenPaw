@@ -90,6 +90,7 @@ const sidebarEmployeePriority = [
 const REMOTE_AGENT_IDS: Record<string, string> = {
   fault: "fault",
   resource: "resource",
+  inspection: "inspection",
   query: "query",
   order: "order",
   knowledge: "knowledge",

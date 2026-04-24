@@ -174,7 +174,7 @@ export const digitalEmployees: DigitalEmployee[] = [
     icon: "fa-clipboard-check",
     tasks: 3421,
     success: "100%",
-    status: "stopped",
+    status: "running",
     urgent: false,
     gradient: "linear-gradient(135deg, #10B981, #059669)",
     capabilities: ["系统巡检", "安全巡检", "健康检查", "报告生成", "异常闭环"],
