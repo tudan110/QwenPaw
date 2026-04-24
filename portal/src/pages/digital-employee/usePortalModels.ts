@@ -270,7 +270,9 @@ export function usePortalModels({
         }),
       ]);
 
-      const nextProviders = Array.isArray(providerList) ? providerList : [];
+      const nextProviders = (Array.isArray(providerList) ? providerList : []).filter(
+        (provider) => provider.is_custom,
+      );
       setProviders(buildDisplayProviders(nextProviders));
       providersRef.current = nextProviders;
       setActiveModels(active || null);
