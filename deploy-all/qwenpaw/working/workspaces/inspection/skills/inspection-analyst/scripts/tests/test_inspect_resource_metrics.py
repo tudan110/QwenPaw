@@ -156,9 +156,89 @@ def test_render_markdown_contains_metric_table():
                     }
                 ],
             },
+            "notification": {
+                "status": "sent",
+                "channels": [{"channel": "app", "status": "sent"}],
+            },
         }
     )
 
     assert "## 巡检结果" in markdown
     assert "db_mysql_001" in markdown
     assert "threads_running" in markdown
+    assert "通知状态" in markdown
+    assert "应用已发送" in markdown
+
+
+def test_inspect_resource_metrics_triggers_notification_by_default():
+    with patch.object(
+        INSPECTION_MODULE,
+        "fetch_all_metric_definitions",
+        return_value={
+            "metricsTotal": 1,
+            "source": "live",
+            "metrics": [{"code": "m1", "name": "指标1", "unit": ""}],
+        },
+    ), patch.object(
+        INSPECTION_MODULE,
+        "fetch_metric_data_batch",
+        return_value={
+            "source": "live",
+            "metricResults": [
+                {
+                    "metricName": "指标1",
+                    "metricCode": "m1",
+                    "latestValue": "1",
+                    "sampleTime": "2026-04-24 10:00:00",
+                    "minValue": "1",
+                    "avgValue": "1",
+                    "maxValue": "1",
+                    "unit": "",
+                    "source": "live",
+                }
+            ],
+        },
+    ), patch.object(
+        INSPECTION_MODULE,
+        "_notify_inspection_result",
+        return_value={"status": "sent", "channels": [{"channel": "app", "status": "sent"}]},
+    ) as mocked_notify:
+        result = INSPECTION_MODULE.inspect_resource_metrics(
+            metric_type="mysql",
+            res_id="3094",
+            inspection_object="数据库",
+            resource_name="db_mysql_001",
+        )
+
+    mocked_notify.assert_called_once()
+    assert result["notification"]["status"] == "sent"
+
+
+def test_inspect_resource_metrics_can_skip_notification():
+    with patch.object(
+        INSPECTION_MODULE,
+        "fetch_all_metric_definitions",
+        return_value={
+            "metricsTotal": 1,
+            "source": "live",
+            "metrics": [{"code": "m1", "name": "指标1", "unit": ""}],
+        },
+    ), patch.object(
+        INSPECTION_MODULE,
+        "fetch_metric_data_batch",
+        return_value={
+            "source": "live",
+            "metricResults": [],
+        },
+    ), patch.object(
+        INSPECTION_MODULE,
+        "_notify_inspection_result",
+    ) as mocked_notify:
+        result = INSPECTION_MODULE.inspect_resource_metrics(
+            metric_type="mysql",
+            res_id="3094",
+            notify=False,
+        )
+
+    mocked_notify.assert_not_called()
+    assert result["notification"]["reason"] == "notify_disabled"
