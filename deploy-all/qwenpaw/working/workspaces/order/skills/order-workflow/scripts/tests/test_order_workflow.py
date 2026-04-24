@@ -465,6 +465,7 @@ class OrderWorkflowTests(unittest.TestCase):
                 authorization="token",
                 create_notify_feishu_webhook_url="https://open.feishu.cn/open-apis/bot/v2/hook/test",
                 create_notify_feishu_secret="feishu-secret",
+                create_notify_mention_all=True,
             )
         )
         context = client._build_create_notify_context(
@@ -482,6 +483,7 @@ class OrderWorkflowTests(unittest.TestCase):
         self.assertEqual(payload["msg_type"], "text")
         self.assertEqual(payload["timestamp"], "1700000000")
         self.assertTrue(payload["sign"])
+        self.assertIn('<at user_id="all">所有人</at>', payload["content"]["text"])
         self.assertIn("摘要：", payload["content"]["text"])
 
     def test_create_notification_failure_does_not_break_create(self) -> None:

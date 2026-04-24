@@ -853,6 +853,8 @@ class OrderWorkflowClient:
             f"创建时间：{context['created_at']}",
             "请相关同事关注并尽快处理。",
         ]
+        if self.config.create_notify_mention_all:
+            content_lines.insert(0, '<at user_id="all">所有人</at>')
         payload: dict[str, Any] = {
             "msg_type": "text",
             "content": {
