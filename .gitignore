@@ -128,5 +128,7 @@ tmp/
 
 .codex
 .omx
+.github
+.specify
 
 ###### Custom ignore files end ######
