@@ -93,9 +93,11 @@ def _normalize_alarm_row(row: dict[str, Any]) -> dict[str, Any]:
     manage_ip = str(row.get("manageIp") or "").strip() or "--"
     title = str(row.get("alarmtitle") or "").strip() or "未命名告警"
     event_time = str(row.get("eventtime") or "")
+    alarm_id = str(row.get("alarmuniqueid") or title)
     res_id = str(row.get("devId") or "").strip()
     return {
-        "id": str(row.get("alarmuniqueid") or title),
+        "id": alarm_id,
+        "alarmId": alarm_id,
         "resId": res_id,
         "title": title,
         "level": SEVERITY_TO_LEVEL.get(severity, "info"),

@@ -430,6 +430,7 @@ def test_real_alarms_route_returns_backend_payload(monkeypatch) -> None:
             "items": [
                 {
                     "id": "mock-deadlock-1",
+                    "alarmId": "mock-deadlock-1",
                     "resId": "3094",
                     "title": "数据库锁异常",
                     "level": "critical",
@@ -454,6 +455,119 @@ def test_real_alarms_route_returns_backend_payload(monkeypatch) -> None:
     assert response.json()["source"] == "mock"
     assert response.json()["items"][0]["employeeId"] == "fault"
     assert response.json()["items"][0]["resId"] == "3094"
+
+
+def test_real_alarms_route_does_not_auto_create_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    payload = {
+        "total": 1,
+        "items": [
+            {
+                "id": "alarm-1",
+                "alarmId": "alarm-1",
+                "resId": "3094",
+                "title": "数据库锁异常",
+                "level": "critical",
+                "status": "active",
+                "eventTime": "2026-04-15 19:20:00",
+                "timeLabel": "2026-04-15 19:20:00",
+                "deviceName": "MySQL",
+                "manageIp": "10.43.150.186",
+                "employeeId": "fault",
+                "dispatchContent": "mysql/死锁 + cmdb/新增/插入",
+                "visibleContent": "数据库锁异常（MySQL 10.43.150.186）",
+            }
+        ],
+        "source": "live",
+    }
+    called: dict[str, object] = {}
+
+    monkeypatch.setattr(portal_backend, "query_portal_real_alarms", lambda limit: payload)
+
+    async def fake_ensure(request, alarms_payload):
+        called["request"] = request
+        called["payload"] = alarms_payload
+
+    monkeypatch.setattr(portal_backend, "_ensure_portal_real_alarm_sessions", fake_ensure)
+
+    response = client.get("/api/portal/real-alarms?limit=8")
+
+    assert response.status_code == 200
+    assert called == {}
+
+
+def test_real_alarms_trigger_sessions_route_starts_sessions_when_runtime_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    monkeypatch.setattr(portal_backend.app.state, "multi_agent_manager", object(), raising=False)
+
+    payload = {
+        "total": 1,
+        "items": [
+            {
+                "id": "alarm-1",
+                "alarmId": "alarm-1",
+                "resId": "3094",
+                "title": "数据库锁异常",
+                "level": "critical",
+                "status": "active",
+                "eventTime": "2026-04-15 19:20:00",
+                "timeLabel": "2026-04-15 19:20:00",
+                "deviceName": "MySQL",
+                "manageIp": "10.43.150.186",
+                "employeeId": "fault",
+                "dispatchContent": "mysql/死锁 + cmdb/新增/插入",
+                "visibleContent": "数据库锁异常（MySQL 10.43.150.186）",
+            }
+        ],
+        "source": "live",
+    }
+    called: dict[str, object] = {}
+
+    monkeypatch.setattr(portal_backend, "query_portal_real_alarms", lambda limit: payload)
+
+    async def fake_ensure(request, alarms_payload):
+        called["request"] = request
+        called["payload"] = alarms_payload
+        return {
+            "total": 1,
+            "eligible": 1,
+            "created": 1,
+            "started": 1,
+            "skipped": 0,
+            "sessions": ["portal-fault-alarm-alarm-1"],
+        }
+
+    monkeypatch.setattr(portal_backend, "_ensure_portal_real_alarm_sessions", fake_ensure)
+
+    response = client.post("/api/portal/real-alarms/trigger-sessions?limit=8")
+
+    assert response.status_code == 200
+    assert called["payload"] == payload
+    assert response.json()["started"] == 1
+    assert response.json()["alarmSource"] == "live"
+
+
+def test_build_portal_real_alarm_payload_uses_runtime_text_content() -> None:
+    payload = portal_backend._build_portal_real_alarm_payload(  # pylint: disable=protected-access
+        "portal-fault-alarm-alarm-1",
+        {
+            "id": "alarm-1",
+            "alarmId": "alarm-1",
+            "resId": "3094",
+            "title": "数据库锁异常",
+            "eventTime": "2026-04-15 19:20:00",
+            "deviceName": "MySQL",
+            "manageIp": "10.43.150.186",
+            "visibleContent": "数据库锁异常（MySQL 10.43.150.186）",
+        },
+    )
+
+    assert payload["content_parts"][0].type == "text"
+    assert "告警流水号：alarm-1" in payload["content_parts"][0].text
 
 
 def test_real_alarms_route_returns_500_when_backend_query_fails(monkeypatch) -> None:

@@ -44,6 +44,7 @@ from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders imp
 )
 from qwenpaw.extensions.integrations.portal_real_alarms import query_portal_real_alarms
 from qwenpaw.app.agent_context import get_agent_for_request
+from qwenpaw.app.channels.base import ContentType, TextContent
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 app = FastAPI(title="Portal Backend")
@@ -69,6 +70,11 @@ RESOURCE_IMPORT_SCRIPT_TIMEOUT_SECONDS = 600
 ALARM_ANALYST_SCRIPT_TIMEOUT_SECONDS = 180
 RESOURCE_IMPORT_PREVIEW_JOBS: dict[str, dict[str, Any]] = {}
 RESOURCE_IMPORT_PREVIEW_JOBS_LOCK = threading.Lock()
+PORTAL_REAL_ALARM_SESSION_PREFIX = "portal-fault-alarm-"
+PORTAL_REAL_ALARM_CONSOLE_CHANNEL = "console"
+PORTAL_REAL_ALARM_USER_ID = "default"
+PORTAL_REAL_ALARM_NAME_LIMIT = 80
+PORTAL_REAL_ALARM_ENSURE_LOCK = asyncio.Lock()
 
 def _load_fault_disposal_runtime():
     skill_root = (
@@ -198,6 +204,190 @@ def _resolve_request_agent_id(request: Request) -> str:
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _sanitize_portal_real_alarm_key(value: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(value or "").strip())
+    normalized = normalized.strip("-._")
+    return normalized or uuid.uuid4().hex
+
+
+def _build_portal_real_alarm_session_id(alarm: dict[str, Any]) -> str:
+    alarm_id = str(alarm.get("alarmId") or alarm.get("id") or "").strip()
+    return f"{PORTAL_REAL_ALARM_SESSION_PREFIX}{_sanitize_portal_real_alarm_key(alarm_id)}"
+
+
+def _build_portal_real_alarm_chat_name(alarm: dict[str, Any]) -> str:
+    title = str(alarm.get("title") or "未命名告警").strip() or "未命名告警"
+    device_name = str(alarm.get("deviceName") or "").strip()
+    if device_name and device_name != "--":
+        return f"告警分析 · {title} · {device_name}"[:PORTAL_REAL_ALARM_NAME_LIMIT]
+    return f"告警分析 · {title}"[:PORTAL_REAL_ALARM_NAME_LIMIT]
+
+
+def _build_portal_real_alarm_prompt(alarm: dict[str, Any]) -> str:
+    title = str(alarm.get("title") or "未命名告警").strip() or "未命名告警"
+    device_name = str(alarm.get("deviceName") or "").strip() or "--"
+    manage_ip = str(alarm.get("manageIp") or "").strip() or "--"
+    lines = [
+        f"{title}（{device_name} {manage_ip}）",
+        f"告警流水号：{str(alarm.get('alarmId') or alarm.get('id') or '').strip()}",
+        f"资源 ID（CI ID）：{str(alarm.get('resId') or '').strip()}",
+        f"告警时间：{str(alarm.get('eventTime') or '').strip()}",
+        f"告警摘要：{str(alarm.get('visibleContent') or '').strip()}",
+        "请分析这条活动告警，并继续完成根因分析、影响范围判断、处置建议、自动建单与通知。",
+    ]
+    return "\n".join(line for line in lines if line and not line.endswith("："))
+
+
+def _build_portal_real_alarm_payload(session_id: str, alarm: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "channel_id": PORTAL_REAL_ALARM_CONSOLE_CHANNEL,
+        "sender_id": PORTAL_REAL_ALARM_USER_ID,
+        "content_parts": [
+            TextContent(
+                type=ContentType.TEXT,
+                text=_build_portal_real_alarm_prompt(alarm),
+            )
+        ],
+        "meta": {
+            "session_id": session_id,
+            "user_id": PORTAL_REAL_ALARM_USER_ID,
+        },
+    }
+
+
+async def _drain_portal_real_alarm_stream(
+    task_tracker: Any,
+    queue: Any,
+    chat_id: str,
+) -> None:
+    stream_it = task_tracker.stream_from_queue(queue, chat_id)
+    try:
+        async for _ in stream_it:
+            pass
+    except Exception:
+        print(f"[WARN] drain portal real alarm stream failed for chat_id={chat_id}")
+        traceback.print_exc()
+    finally:
+        await stream_it.aclose()
+
+
+def _portal_real_alarm_has_history(state: dict[str, Any]) -> bool:
+    agent_state = state.get("agent") or {}
+    memory_state = agent_state.get("memory") or {}
+    return bool(memory_state)
+
+
+async def _ensure_portal_real_alarm_sessions(
+    request: Request,
+    alarms_payload: dict[str, Any],
+) -> dict[str, Any]:
+    items = alarms_payload.get("items") or []
+    result = {
+        "total": len(items) if isinstance(items, list) else 0,
+        "eligible": 0,
+        "created": 0,
+        "started": 0,
+        "skipped": 0,
+        "sessions": [],
+    }
+    if not isinstance(items, list) or not items:
+        return result
+
+    workspace = await _get_portal_employee_workspace(request, "fault")
+    if workspace is None:
+        return result
+
+    console_channel = await workspace.channel_manager.get_channel(
+        PORTAL_REAL_ALARM_CONSOLE_CHANNEL
+    )
+    if console_channel is None:
+        return result
+
+    async with PORTAL_REAL_ALARM_ENSURE_LOCK:
+        chats = await workspace.chat_manager.list_chats()
+        chats_by_session = {
+            str(chat.session_id): chat
+            for chat in chats
+            if str(chat.session_id or "").startswith(PORTAL_REAL_ALARM_SESSION_PREFIX)
+        }
+
+        for alarm in items:
+            if not isinstance(alarm, dict):
+                continue
+            if str(alarm.get("employeeId") or "").strip() not in {"", "fault"}:
+                continue
+
+            alarm_id = str(alarm.get("alarmId") or alarm.get("id") or "").strip()
+            if not alarm_id:
+                continue
+
+            result["eligible"] += 1
+            session_id = _build_portal_real_alarm_session_id(alarm)
+            result["sessions"].append(session_id)
+            chat = chats_by_session.get(session_id)
+            is_new_chat = False
+            if chat is None:
+                chat = await workspace.chat_manager.get_or_create_chat(
+                    session_id,
+                    PORTAL_REAL_ALARM_USER_ID,
+                    PORTAL_REAL_ALARM_CONSOLE_CHANNEL,
+                    name=_build_portal_real_alarm_chat_name(alarm),
+                )
+                chats_by_session[session_id] = chat
+                is_new_chat = True
+                result["created"] += 1
+
+            should_start = is_new_chat
+            if not should_start:
+                status = await workspace.task_tracker.get_status(chat.id)
+                if status == "idle":
+                    state = await workspace.runner.session.get_session_state_dict(
+                        chat.session_id,
+                        chat.user_id,
+                    )
+                    should_start = not _portal_real_alarm_has_history(state)
+
+            if not should_start:
+                result["skipped"] += 1
+                continue
+
+            queue, started = await workspace.task_tracker.attach_or_start(
+                chat.id,
+                _build_portal_real_alarm_payload(session_id, alarm),
+                console_channel.stream_one,
+            )
+            if started:
+                result["started"] += 1
+                asyncio.create_task(
+                    _drain_portal_real_alarm_stream(
+                        workspace.task_tracker,
+                        queue,
+                        chat.id,
+                    )
+                )
+            else:
+                result["skipped"] += 1
+
+    return result
+
+
+def _build_portal_real_alarm_trigger_payload(
+    limit: int,
+    trigger_body: dict[str, Any] | None,
+) -> dict[str, Any]:
+    body = trigger_body or {}
+    alarms = body.get("alarms")
+    if alarms is None:
+        return query_portal_real_alarms(limit)
+    if not isinstance(alarms, list):
+        raise HTTPException(status_code=400, detail="'alarms' must be a list")
+    return {
+        "total": len(alarms),
+        "items": alarms,
+        "source": "request",
+    }
 
 
 def _read_preview_progress(progress_file: Path) -> list[dict[str, Any]]:
@@ -890,12 +1080,44 @@ async def get_alarm_workorders(limit: int = 5):
 
 
 @router.get("/real-alarms")
-async def get_real_alarms(limit: int = 10):
+async def get_real_alarms(
+    limit: int = 10,
+):
     try:
         return query_portal_real_alarms(limit)
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] get_real_alarms failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/real-alarms/trigger-sessions")
+async def trigger_real_alarm_sessions(
+    request: Request,
+    payload: dict[str, Any] | None = Body(default=None),
+    limit: int = Query(10),
+):
+    try:
+        if not hasattr(request.app.state, "multi_agent_manager"):
+            raise HTTPException(
+                status_code=503,
+                detail="MultiAgentManager not initialized",
+            )
+
+        alarms_payload = _build_portal_real_alarm_trigger_payload(limit, payload)
+        summary = await _ensure_portal_real_alarm_sessions(request, alarms_payload)
+        return {
+            "ok": True,
+            "alarmSource": alarms_payload.get("source") or "unknown",
+            "alarmTotal": int(alarms_payload.get("total") or len(alarms_payload.get("items") or [])),
+            **summary,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] trigger_real_alarm_sessions failed: {error_detail}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail) from exc
 

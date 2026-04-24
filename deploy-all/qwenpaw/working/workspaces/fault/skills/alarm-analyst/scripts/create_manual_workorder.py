@@ -28,6 +28,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
+import hmac
 import json
 import os
 import random
@@ -35,9 +38,11 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote_plus
 
 import requests
 
@@ -50,6 +55,7 @@ except ImportError:
 
 
 DEFAULT_TIMEOUT_SECONDS = 30
+DEFAULT_NOTIFY_TIMEOUT_SECONDS = 8
 DEFAULT_TICKET_PRIORITY = "P1"
 DEFAULT_TICKET_CATEGORY = "database-lock"
 DEFAULT_TICKET_SOURCE = "portal-fault-disposal-ai"
@@ -99,10 +105,348 @@ def _get_timeout(timeout_seconds: int | None) -> int:
     return int(raw) if raw else DEFAULT_TIMEOUT_SECONDS
 
 
+def _get_notify_env(name: str) -> str:
+    return _safe_str(
+        os.getenv(f"ORDER_CREATE_NOTIFY_{name}")
+        or os.getenv(f"ALARM_ANALYST_CREATE_NOTIFY_{name}")
+    )
+
+
+def _get_notify_timeout() -> int:
+    raw = _get_notify_env("TIMEOUT_SECONDS")
+    return int(raw) if raw else DEFAULT_NOTIFY_TIMEOUT_SECONDS
+
+
+def _get_notify_mention_all() -> bool:
+    return (_get_notify_env("MENTION_ALL") or "false").lower() in {"1", "true", "yes"}
+
+
 def _build_serial_no() -> str:
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")[:-3]
     suffix = f"{random.randint(0, 99999):05d}"
     return f"{timestamp}{suffix}"
+
+
+def _join_suggestions(value: Any) -> str:
+    if isinstance(value, list):
+        normalized = [_safe_str(item) for item in value if _safe_str(item)]
+        return "；".join(normalized)
+    return _safe_str(value)
+
+
+def _build_notification_summary(*, visible_content: str, analysis_summary: str, root_cause: str) -> str:
+    parts: list[str] = []
+    for text in [visible_content, analysis_summary, root_cause]:
+        compact = re.sub(r"\s+", " ", _safe_str(text)).strip("，,；;。 ")
+        if compact and compact not in parts:
+            parts.append(compact)
+    return "；".join(parts) or "-"
+
+
+def _build_notification_context(
+    payload: dict[str, Any],
+    response_payload: dict[str, Any],
+) -> dict[str, str]:
+    ticket = payload.get("ticket") or {}
+    analysis = payload.get("analysis") or {}
+    alarm = payload.get("alarm") or {}
+    response_data = response_payload.get("data") or {}
+
+    title = _safe_str(ticket.get("title") or alarm.get("title")) or "AI创建处置工单"
+    visible_content = _safe_str(alarm.get("visibleContent"))
+    analysis_summary = _safe_str(analysis.get("summary"))
+    root_cause = _safe_str(analysis.get("rootCause")) or "-"
+    suggestions = _join_suggestions(analysis.get("suggestions")) or "-"
+
+    return {
+        "title": title,
+        "summary": _build_notification_summary(
+            visible_content=visible_content,
+            analysis_summary=analysis_summary,
+            root_cause=root_cause,
+        ),
+        "device_name": _safe_str(alarm.get("deviceName")) or "-",
+        "manage_ip": _safe_str(alarm.get("manageIp")) or "-",
+        "res_id": _safe_str(payload.get("resId")) or "-",
+        "level": _safe_str(alarm.get("level")) or "-",
+        "root_cause": root_cause,
+        "suggestions": suggestions,
+        "task_id": _safe_str(response_data.get("taskId")) or "-",
+        "proc_ins_id": _safe_str(response_data.get("procInsId")) or "-",
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+def _build_app_notify_payload(context: dict[str, str]) -> dict[str, Any]:
+    content_lines = [
+        "【AI创建处置工单】",
+        f"标题：{context['title']}",
+        f"摘要：{context['summary']}",
+        f"资源：{context['device_name']} / {context['manage_ip']} / CI ID: {context['res_id']}",
+        f"等级：{context['level']}",
+        f"根因方向：{context['root_cause']}",
+        f"处置建议：{context['suggestions']}",
+        f"taskId：{context['task_id']}",
+        f"procInsId：{context['proc_ins_id']}",
+        f"创建时间：{context['created_at']}",
+        "此工单为 AI 自动创建，请尽快跟进处置。",
+    ]
+    text_msg: dict[str, Any] = {
+        "content": "\n".join(content_lines),
+    }
+    if _get_notify_mention_all():
+        text_msg.update(
+            {
+                "isMentioned": True,
+                "mentionType": 1,
+            }
+        )
+    return {
+        "type": "text",
+        "textMsg": text_msg,
+    }
+
+
+def _build_dingtalk_notify_payload(context: dict[str, str]) -> dict[str, Any]:
+    content_lines = [
+        "【AI创建处置工单】",
+        f"标题：{context['title']}",
+        f"摘要：{context['summary']}",
+        f"资源：{context['device_name']} / {context['manage_ip']} / CI ID: {context['res_id']}",
+        f"等级：{context['level']}",
+        f"根因方向：{context['root_cause']}",
+        f"处置建议：{context['suggestions']}",
+        f"taskId：{context['task_id']}",
+        f"procInsId：{context['proc_ins_id']}",
+        f"创建时间：{context['created_at']}",
+        "此工单为 AI 自动创建，请尽快跟进处置。",
+    ]
+    keyword = _get_notify_env("DINGTALK_KEYWORD")
+    if keyword:
+        content_lines.insert(0, keyword)
+    payload: dict[str, Any] = {
+        "msgtype": "text",
+        "text": {
+            "content": "\n".join(content_lines),
+        },
+    }
+    if _get_notify_mention_all():
+        payload["at"] = {"isAtAll": True}
+    return payload
+
+
+def _build_feishu_notify_payload(context: dict[str, str]) -> dict[str, Any]:
+    content_lines = [
+        "【AI创建处置工单】",
+        f"标题：{context['title']}",
+        f"摘要：{context['summary']}",
+        f"资源：{context['device_name']} / {context['manage_ip']} / CI ID: {context['res_id']}",
+        f"等级：{context['level']}",
+        f"根因方向：{context['root_cause']}",
+        f"处置建议：{context['suggestions']}",
+        f"taskId：{context['task_id']}",
+        f"procInsId：{context['proc_ins_id']}",
+        f"创建时间：{context['created_at']}",
+        "此工单为 AI 自动创建，请尽快跟进处置。",
+    ]
+    if _get_notify_mention_all():
+        content_lines.insert(0, '<at user_id="all">所有人</at>')
+    payload: dict[str, Any] = {
+        "msg_type": "text",
+        "content": {
+            "text": "\n".join(content_lines),
+        },
+    }
+    secret = _get_notify_env("FEISHU_SECRET")
+    if secret:
+        timestamp = str(int(time.time()))
+        string_to_sign = f"{timestamp}\n{secret}"
+        sign = base64.b64encode(
+            hmac.new(
+                string_to_sign.encode("utf-8"),
+                b"",
+                digestmod=hashlib.sha256,
+            ).digest()
+        ).decode("utf-8")
+        payload["timestamp"] = timestamp
+        payload["sign"] = sign
+    return payload
+
+
+def _build_dingtalk_signed_webhook_url(webhook_url: str) -> str:
+    secret = _get_notify_env("DINGTALK_SECRET")
+    if not secret:
+        return webhook_url
+    timestamp = str(int(time.time() * 1000))
+    string_to_sign = f"{timestamp}\n{secret}"
+    sign = hmac.new(
+        secret.encode("utf-8"),
+        string_to_sign.encode("utf-8"),
+        digestmod=hashlib.sha256,
+    ).digest()
+    encoded_sign = quote_plus(base64.b64encode(sign))
+    separator = "&" if "?" in webhook_url else "?"
+    return f"{webhook_url}{separator}timestamp={timestamp}&sign={encoded_sign}"
+
+
+def _send_json_webhook(
+    *,
+    channel_name: str,
+    webhook_url: str,
+    payload: dict[str, Any],
+    success_predicate: Any,
+) -> dict[str, Any]:
+    try:
+        response = requests.post(
+            webhook_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=_get_notify_timeout(),
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        return {
+            "channel": channel_name,
+            "status": "failed",
+            "reason": str(exc),
+        }
+
+    try:
+        response_json = response.json()
+    except ValueError as exc:
+        return {
+            "channel": channel_name,
+            "status": "failed",
+            "reason": f"invalid_json_response: {exc}",
+        }
+
+    if success_predicate(response_json):
+        return {
+            "channel": channel_name,
+            "status": "sent",
+            "reason": "",
+        }
+    return {
+        "channel": channel_name,
+        "status": "failed",
+        "reason": response_json.get("errmsg")
+        or response_json.get("message")
+        or "webhook_rejected",
+    }
+
+
+def _notify_workorder_created(
+    payload: dict[str, Any],
+    response_payload: dict[str, Any],
+) -> dict[str, Any]:
+    app_webhook_url = _get_notify_env("WEBHOOK_URL")
+    dingtalk_webhook_url = _get_notify_env("DINGTALK_WEBHOOK_URL")
+    feishu_webhook_url = _get_notify_env("FEISHU_WEBHOOK_URL")
+    if not app_webhook_url and not dingtalk_webhook_url and not feishu_webhook_url:
+        return {
+            "enabled": False,
+            "status": "skipped",
+            "reason": "webhook_not_configured",
+            "channels": [],
+        }
+
+    response_data = response_payload.get("data") or {}
+    task_id = _safe_str(response_data.get("taskId"))
+    proc_ins_id = _safe_str(response_data.get("procInsId"))
+    if not task_id and not proc_ins_id:
+        return {
+            "enabled": True,
+            "status": "skipped",
+            "reason": "missing_workorder_identifiers",
+            "channels": [],
+        }
+
+    context = _build_notification_context(payload, response_payload)
+    channels: list[dict[str, Any]] = []
+    if app_webhook_url:
+        channels.append(
+            _send_json_webhook(
+                channel_name="app",
+                webhook_url=app_webhook_url,
+                payload=_build_app_notify_payload(context),
+                success_predicate=lambda data: bool(data.get("ok"))
+                or str(data.get("code") or "") == "200",
+            )
+        )
+    if dingtalk_webhook_url:
+        channels.append(
+            _send_json_webhook(
+                channel_name="dingtalk",
+                webhook_url=_build_dingtalk_signed_webhook_url(dingtalk_webhook_url),
+                payload=_build_dingtalk_notify_payload(context),
+                success_predicate=lambda data: str(data.get("errcode", "")) == "0",
+            )
+        )
+    if feishu_webhook_url:
+        channels.append(
+            _send_json_webhook(
+                channel_name="feishu",
+                webhook_url=feishu_webhook_url,
+                payload=_build_feishu_notify_payload(context),
+                success_predicate=lambda data: str(data.get("StatusCode", "")) == "0"
+                or str(data.get("code", "")) == "0",
+            )
+        )
+
+    sent_count = sum(1 for item in channels if item.get("status") == "sent")
+    if sent_count == len(channels) and channels:
+        status = "sent"
+        reason = ""
+    elif sent_count > 0:
+        status = "partial"
+        reason = "partial_failure"
+    else:
+        status = "failed"
+        reason = "; ".join(
+            f"{item.get('channel')}:{item.get('reason') or 'unknown'}"
+            for item in channels
+        )
+    return {
+        "enabled": True,
+        "status": status,
+        "reason": reason,
+        "channels": channels,
+    }
+
+
+def _format_notification_channels(notification: dict[str, Any], *, fallback: str) -> str:
+    sent_channels = [
+        _safe_str(item.get("channel"))
+        for item in notification.get("channels") or []
+        if _safe_str(item.get("status")).lower() == "sent"
+    ]
+    if not sent_channels:
+        return fallback
+    label_map = {
+        "app": "应用",
+        "dingtalk": "钉钉",
+        "feishu": "飞书",
+    }
+    labels = [label_map.get(name, name) for name in sent_channels if name]
+    return "、".join(labels) + "已发送"
+
+
+def _format_notification_status(notification: dict[str, Any]) -> str:
+    status = _safe_str(notification.get("status")).lower()
+    reason = _safe_str(notification.get("reason"))
+    if status == "sent":
+        return _format_notification_channels(notification, fallback="已发送")
+    if status == "partial":
+        return _format_notification_channels(notification, fallback="部分发送成功")
+    if status == "failed":
+        return f"发送失败：{reason or '未知错误'}"
+    if status == "skipped":
+        if reason == "webhook_not_configured":
+            return "未配置"
+        if reason == "missing_workorder_identifiers":
+            return "已跳过（缺少工单编号）"
+        return "已跳过"
+    return "未配置"
 
 
 def _normalize_suggestions(
@@ -281,6 +625,7 @@ def create_manual_workorder(
         raise RuntimeError(
             f"工单创建失败: code={code}, msg={data.get('msg') or 'unknown'}"
         )
+    data["notification"] = _notify_workorder_created(payload, data)
     return data
 
 
@@ -289,6 +634,7 @@ def format_markdown_result(payload: dict[str, Any], response: dict[str, Any]) ->
     analysis = payload.get("analysis") or {}
     alarm = payload.get("alarm") or {}
     data = response.get("data") or {}
+    notification = response.get("notification") or {}
     suggestions = analysis.get("suggestions") or []
 
     lines = [
@@ -303,6 +649,7 @@ def format_markdown_result(payload: dict[str, Any], response: dict[str, Any]) ->
         f"- 处置建议：{'；'.join(str(item) for item in suggestions) if suggestions else '-'}",
         f"- procInsId：`{data.get('procInsId') or ''}`",
         f"- taskId：`{data.get('taskId') or ''}`",
+        f"- 通知推送：**{_format_notification_status(notification)}**",
         "- 当前状态：已自动调用 4.2 接口创建工单（AI 创建）",
     ]
     return "\n".join(lines)

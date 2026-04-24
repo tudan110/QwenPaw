@@ -40,8 +40,7 @@ Portal 落地时，需要体现以下链路：
 4. RCA 完成后：
    - 自动创建处置工单
    - 工单中写明 AI 创建标识与处置建议
-   - 先执行 `qwenpaw chats list --agent-id fault --channel feishu` 查找飞书侧真实 `user_id` / `session_id`
-   - 再使用 `channel_message` 发送飞书通知
+   - 根据 webhook 配置自动推送通知到应用（可配置为量子密信）、钉钉、飞书
 5. AI 可闭环时：
    - 执行处置
    - 检测是否恢复正常
@@ -203,12 +202,23 @@ INOE_API_BASE_URL=http://192.168.130.51:30080
 INOE_API_TOKEN=your_jwt_token_here
 ALARM_ANALYST_METRIC_TIMEOUT_SECONDS=120
 ALARM_ANALYST_METRIC_PAGE_SIZE=20
+ORDER_CREATE_NOTIFY_WEBHOOK_URL=
+ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL=
+ORDER_CREATE_NOTIFY_DINGTALK_SECRET=
+ORDER_CREATE_NOTIFY_DINGTALK_KEYWORD=
+ORDER_CREATE_NOTIFY_FEISHU_WEBHOOK_URL=
+ORDER_CREATE_NOTIFY_FEISHU_SECRET=
+ORDER_CREATE_NOTIFY_TIMEOUT_SECONDS=8
+ORDER_CREATE_NOTIFY_MENTION_ALL=true
 ```
 
 ### 配置约定
 
 - `.env` 中至少要有 `INOE_API_BASE_URL` 和 `INOE_API_TOKEN`
 - `INOE_API_TOKEN` 沿用实时告警系统同类接口的 JWT 鉴权方式
+- 如果要在建单后自动推送通知，可继续配置 `ORDER_CREATE_NOTIFY_*` 这一组 webhook 变量
+- `ORDER_CREATE_NOTIFY_WEBHOOK_URL` 是通用应用 webhook，可对接量子密信
+- `ORDER_CREATE_NOTIFY_DINGTALK_SECRET` / `ORDER_CREATE_NOTIFY_FEISHU_SECRET` 用于机器人签名校验
 - 当需要调用 `veops-cmdb` 查询拓扑时，直接遵循 `veops-cmdb` 自己的配置与访问规则，不在当前 skill 内重复声明
 - 具体 API 路径、请求体和调用时机写在本 `SKILL.md` 中
 - 如果后续更换指标服务地址，优先只改 `.env`，不要在多个脚本或提示词里硬编码
@@ -853,18 +863,12 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
   --output markdown
 ```
 
-3. 工单创建成功后，必须立即使用内置技能 `channel_message` 发送飞书通知：
+3. 工单创建成功后，必须立即执行 webhook 通知：
    - 这是工单创建后的固定动作，不能省略
-   - 通知目标默认为当前故障处置相关的飞书会话 / 频道
-   - 发送前按 `channel_message` 的要求，必须先执行 `qwenpaw chats list --agent-id fault --channel feishu`，查出飞书侧真实 `user_id` / `session_id`，再推送消息
-   - 严禁复用 console 频道里的 `default` 用户 ID、session ID 或任何非飞书渠道的会话标识；console 与 feishu 不能混用
-   - 如果 `qwenpaw chats list --agent-id fault --channel feishu` 没查到可用目标，必须明确写出“飞书会话未解析成功，暂未发送通知”
-   - 飞书通知正文允许使用**轻量 markdown**，但只能使用飞书里稳定、易读的那一小部分语法
-   - 直接写真实换行，不要把正文拼成包含字面量 `\n` 的单行字符串
-   - 推荐仅使用：标题文本、空行、列表、`**加粗**`、行内代码 `` `code` ``
-   - 不要依赖复杂 markdown，如表格、嵌套层级、引用块、HTML、过深缩进或需要严格渲染器兼容性的写法
-   - 飞书通知文案要尽量使用**自然语言描述**，不要把 shell 命令、SQL 命令或 `Kill` / `kill` 这类容易触发工具守卫的英文动作词直接塞进通知正文
-   - 如果需要表达处置动作，改写成“查看死锁记录”“确认后终止阻塞会话”“检查连接池配置”这类中文动作描述
+   - 通知由 `scripts/create_manual_workorder.py` 内部自动完成
+   - 可按 `.env` 配置同时推送到：应用（可配置为量子密信）、钉钉、飞书
+   - 如果未配置任何 webhook，必须明确写出“通知未配置”
+   - 如果部分 webhook 发送失败，必须明确写出“工单已创建，但部分通知发送失败”
    - 通知内容至少包含：
      - `AI 已创建处置工单`
      - 告警标题
@@ -903,16 +907,16 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
    - 必须明确写出失败原因
    - 不能谎称“已创建工单”
    - 仍要保留本次 RCA 结论和处置建议，供人工补建工单
-6. 如果工单创建成功但飞书通知失败：
-   - 必须明确写出“工单已创建，但飞书通知失败”
+6. 如果工单创建成功但 webhook 通知失败：
+   - 必须明确写出“工单已创建，但通知失败”或“工单已创建，但部分通知发送失败”
    - 不能把通知失败和建单失败混为一谈
-   - 需要把通知失败原因写清楚，便于后续补发
+   - 需要把失败渠道和失败原因写清楚，便于后续补发
 
 #### 工单创建完成后的后续链路
 
 1. 给出处置建议
 2. 自动创建工单
-3. 使用 `channel_message` 发送飞书通知
+3. 使用 webhook 发送应用 / 钉钉 / 飞书通知
 4. 如果可自动处置，再继续执行处置
 5. 检测是否恢复正常
 6. 通知智观清除告警
@@ -954,7 +958,7 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 5. `指标采集计划`
 6. `关键指标与影响范围`
 7. `变更关联与根因判断`
-8. `处置建议、自动建单与飞书通知`
+8. `处置建议、自动建单与通知推送`
 9. `恢复验证与状态回写`
 
 ### 输出风格要求
@@ -967,14 +971,15 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 - 涉及应用拓扑或资源关系拓扑时，优先输出或保留 `echarts` 树状图代码块
 - 需要闭环时，要把“清除告警 / 修改工单状态 / 恢复验证”明确写出来
 - RCA 结论形成后，必须明确体现“已自动调用 4.2 工单创建接口”或“工单创建失败原因”
-- 工单创建成功后，必须明确体现“已先通过 `qwenpaw chats list --agent-id fault --channel feishu` 解析飞书真实会话，再使用 `channel_message` 发送飞书通知”或“飞书通知失败原因”
+- 工单创建成功后，必须明确体现“已通过 webhook 推送通知”或“通知失败原因”
+- 如果总结里要写推送结果，统一使用“通知状态”，不要写“飞书通知状态”“钉钉通知状态”这类单一渠道措辞
 - 用户可见正文里不要出现 `fan-out` 这类内部术语；统一改成“关联资源告警查询”“拓扑关联资源告警查询”“已完成全部关联资源告警查询”这类用户能看懂的说法
 
 ### 最终必须给出总结
 
 - 无论前面展示了多少分析过程，**最终都必须追加一个“📊 总结”小节**
 - 总结必须放在回复末尾，作为用户可快速阅读的最终结论
-- 总结里必须包含：`故障性质`、`根因方向`、`影响范围`、`优先动作`、`关联资源告警查询状态`、`置信度`
+- 总结里必须包含：`故障性质`、`根因方向`、`影响范围`、`优先动作`、`关联资源告警查询状态`、`通知状态`、`置信度`
 - `置信度` 必须放在总结的**第一行**
 - `置信度` 必须使用**百分比**表达，例如 `86%`
 - 如果当前结果还是 `partial`，要在总结里明确写出未完成项，并把置信度降为 `低` 或 `中`
@@ -990,6 +995,7 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 - 影响范围：局部（MySQL 实例），暂未扩散到拓扑上游，但天翼智观应用依赖 MySQL 的写入链路可能受影响
 - 优先动作：排查死锁详情 + 长事务 + 确认后终止阻塞会话
 - 关联资源告警查询状态：✅ 已完成全部关联资源告警查询
+- 通知状态：✅ 已成功推送
 ```
 
 如果未完成全部关联资源告警查询，必须改成类似：
@@ -1079,14 +1085,14 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 - 必须先自动创建工单，再进入后续闭环动作
 - 如果 AI 可以确认处置方案：
   1. 自动创建工单
-  2. 使用 `channel_message` 发送飞书通知
+  2. 使用 webhook 发送应用 / 钉钉 / 飞书通知
   3. 执行处置
   4. 检测指标是否恢复正常
   5. 通知智观清除告警
   6. 通知智观修改工单状态
 - 如果 AI 无法直接闭环：
   1. 自动创建工单
-  2. 使用 `channel_message` 发送飞书通知
+  2. 使用 webhook 发送应用 / 钉钉 / 飞书通知
   3. 等待恢复告警或人工处理完成反馈
   4. 再做恢复验证
 
@@ -1164,10 +1170,9 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 - 如果已经执行了 `execute_shell_command` 或协作 query 数字员工，回复中必须体现真实执行结果、失败原因或 mock 回退情况
 - 如果 `ciType` 已经确认，必须优先执行 `scripts/get_metric_definitions.py`，不要只输出“计划调用指标定义接口”
 - RCA 结论形成后，必须优先执行 `scripts/create_manual_workorder.py` 创建工单，不要只输出“计划创建工单”
-- 工单创建成功后，必须优先调用内置技能 `channel_message` 发送飞书通知，不要只输出“计划通知飞书”
-- 调用 `channel_message` 之前，必须先执行 `qwenpaw chats list --agent-id fault --channel feishu`，拿到飞书渠道真实 `user_id` / `session_id`
-- 严禁把 console 频道的 `default` 用户 ID 或 session ID 当成飞书通知目标；如果只拿到了 console 默认会话，必须视为“飞书目标未解析成功”
-- 但必须把“告警 -> 智观 -> query/veops-cmdb -> `getMetricDefinitions` -> AI 挑关键指标 -> 指标值 -> 影响范围 -> 自动创建工单 -> 飞书通知 -> 处置 -> 恢复验证 -> 清除告警 -> 更新工单状态”这条链路完整写给用户
+- 工单创建成功后，必须优先通过 webhook 推送通知，不要只输出“计划通知”
+- webhook 可按配置推送到应用（可配置为量子密信）、钉钉、飞书；如果未配置，也要明确说明“通知未配置”
+- 但必须把“告警 -> 智观 -> query/veops-cmdb -> `getMetricDefinitions` -> AI 挑关键指标 -> 指标值 -> 影响范围 -> 自动创建工单 -> webhook 通知 -> 处置 -> 恢复验证 -> 清除告警 -> 更新工单状态”这条链路完整写给用户
 - 查询 CMDB 时，默认体现为通过 query 数字员工下的 `veops-cmdb` 完成
 - 如果查询到拓扑，默认以 `echarts` 树状图展示，并保留 query 返回的图表代码块
 - 如果用户描述的是“应用动作失败”，默认先查应用拓扑，再查单个组件

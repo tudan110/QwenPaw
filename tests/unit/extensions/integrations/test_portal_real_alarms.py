@@ -41,6 +41,7 @@ def test_query_portal_real_alarms_normalizes_live_rows(monkeypatch) -> None:
     assert payload["source"] == "live"
     assert payload["total"] == 1
     assert payload["items"][0]["id"] == "COMMON__1776338881568_2044739586778116096"
+    assert payload["items"][0]["alarmId"] == "COMMON__1776338881568_2044739586778116096"
     assert payload["items"][0]["resId"] == "3094"
     assert payload["items"][0]["level"] == "critical"
     assert payload["items"][0]["employeeId"] == "fault"

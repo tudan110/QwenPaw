@@ -3,8 +3,10 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
+import requests
 
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
@@ -186,6 +188,12 @@ def test_build_workorder_payload_requires_alarm_id():
     {
         "INOE_API_BASE_URL": "http://example.com",
         "INOE_API_TOKEN": "token-123",
+        "ORDER_CREATE_NOTIFY_WEBHOOK_URL": "",
+        "ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL": "",
+        "ORDER_CREATE_NOTIFY_DINGTALK_SECRET": "",
+        "ORDER_CREATE_NOTIFY_FEISHU_WEBHOOK_URL": "",
+        "ORDER_CREATE_NOTIFY_FEISHU_SECRET": "",
+        "ORDER_CREATE_NOTIFY_MENTION_ALL": "false",
     },
     clear=False,
 )
@@ -216,6 +224,246 @@ def test_create_manual_workorder_posts_expected_request():
     assert kwargs["headers"]["Authorization"] == "token-123"
     assert kwargs["headers"]["Content-Type"] == "application/json;charset=utf-8"
     assert kwargs["headers"]["SerialNo"]
+    assert result["notification"]["status"] == "skipped"
+    assert result["notification"]["reason"] == "webhook_not_configured"
+
+
+@patch.dict(
+    "os.environ",
+    {
+        "ORDER_CREATE_NOTIFY_WEBHOOK_URL": "http://notify.example.com/webhook",
+        "ORDER_CREATE_NOTIFY_MENTION_ALL": "true",
+    },
+    clear=False,
+)
+def test_app_notification_payload_mentions_all_when_enabled():
+    context = WORKORDER_MODULE._build_notification_context(
+        {
+            "resId": "3094",
+            "alarm": {
+                "title": "数据库锁异常（AI创建）",
+                "visibleContent": "数据库锁异常（db_mysql_001 10.43.150.186）",
+                "deviceName": "db_mysql_001",
+                "manageIp": "10.43.150.186",
+                "level": "critical",
+            },
+            "analysis": {
+                "summary": "AI 已完成根因分析，自动创建人工处置工单",
+                "rootCause": "疑似长事务",
+                "suggestions": ["排查长事务", "检查阻塞链"],
+            },
+            "ticket": {"title": "AI创建 · 数据库锁异常人工处置"},
+        },
+        {"data": {"taskId": "task-1", "procInsId": "proc-1"}},
+    )
+
+    payload = WORKORDER_MODULE._build_app_notify_payload(context)
+
+    assert payload["type"] == "text"
+    assert payload["textMsg"]["isMentioned"] is True
+    assert payload["textMsg"]["mentionType"] == 1
+    assert "根因方向：疑似长事务" in payload["textMsg"]["content"]
+    assert "处置建议：排查长事务；检查阻塞链" in payload["textMsg"]["content"]
+
+
+@patch.dict(
+    "os.environ",
+    {
+        "ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL": "https://oapi.dingtalk.com/robot/send?access_token=test",
+        "ORDER_CREATE_NOTIFY_DINGTALK_KEYWORD": "工单",
+        "ORDER_CREATE_NOTIFY_MENTION_ALL": "true",
+    },
+    clear=False,
+)
+def test_dingtalk_notification_payload_mentions_all_when_enabled():
+    context = WORKORDER_MODULE._build_notification_context(
+        {
+            "resId": "3094",
+            "alarm": {
+                "title": "数据库锁异常（AI创建）",
+                "visibleContent": "数据库锁异常（db_mysql_001 10.43.150.186）",
+                "deviceName": "db_mysql_001",
+                "manageIp": "10.43.150.186",
+                "level": "critical",
+            },
+            "analysis": {
+                "summary": "AI 已完成根因分析，自动创建人工处置工单",
+                "rootCause": "疑似长事务",
+                "suggestions": ["排查长事务"],
+            },
+            "ticket": {"title": "AI创建 · 数据库锁异常人工处置"},
+        },
+        {"data": {"taskId": "task-1", "procInsId": "proc-1"}},
+    )
+
+    payload = WORKORDER_MODULE._build_dingtalk_notify_payload(context)
+
+    assert payload["msgtype"] == "text"
+    assert payload["at"]["isAtAll"] is True
+    assert payload["text"]["content"].startswith("工单\n")
+    assert "taskId：task-1" in payload["text"]["content"]
+
+
+@patch.dict(
+    "os.environ",
+    {
+        "ORDER_CREATE_NOTIFY_DINGTALK_SECRET": "SEC-secret",
+    },
+    clear=False,
+)
+def test_dingtalk_signed_webhook_url_appends_timestamp_and_sign():
+    with patch.object(WORKORDER_MODULE.time, "time", return_value=1700000000.0):
+        url = WORKORDER_MODULE._build_dingtalk_signed_webhook_url(
+            "https://oapi.dingtalk.com/robot/send?access_token=test"
+        )
+
+    query = parse_qs(urlparse(url).query)
+    assert query["access_token"][0] == "test"
+    assert query["timestamp"][0] == "1700000000000"
+    assert query["sign"][0]
+
+
+@patch.dict(
+    "os.environ",
+    {
+        "ORDER_CREATE_NOTIFY_FEISHU_WEBHOOK_URL": "https://open.feishu.cn/open-apis/bot/v2/hook/test",
+        "ORDER_CREATE_NOTIFY_FEISHU_SECRET": "feishu-secret",
+        "ORDER_CREATE_NOTIFY_MENTION_ALL": "true",
+    },
+    clear=False,
+)
+def test_feishu_notification_payload_appends_timestamp_and_sign():
+    context = WORKORDER_MODULE._build_notification_context(
+        {
+            "resId": "3094",
+            "alarm": {
+                "title": "数据库锁异常（AI创建）",
+                "visibleContent": "数据库锁异常（db_mysql_001 10.43.150.186）",
+                "deviceName": "db_mysql_001",
+                "manageIp": "10.43.150.186",
+                "level": "critical",
+            },
+            "analysis": {
+                "summary": "AI 已完成根因分析，自动创建人工处置工单",
+                "rootCause": "疑似长事务",
+                "suggestions": ["排查长事务"],
+            },
+            "ticket": {"title": "AI创建 · 数据库锁异常人工处置"},
+        },
+        {"data": {"taskId": "task-1", "procInsId": "proc-1"}},
+    )
+
+    with patch.object(WORKORDER_MODULE.time, "time", return_value=1700000000.0):
+        payload = WORKORDER_MODULE._build_feishu_notify_payload(context)
+
+    assert payload["msg_type"] == "text"
+    assert payload["timestamp"] == "1700000000"
+    assert payload["sign"]
+    assert '<at user_id="all">所有人</at>' in payload["content"]["text"]
+
+
+@patch.dict(
+    "os.environ",
+    {
+        "INOE_API_BASE_URL": "http://example.com",
+        "INOE_API_TOKEN": "token-123",
+        "ORDER_CREATE_NOTIFY_WEBHOOK_URL": "http://notify.example.com/webhook",
+        "ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL": "",
+        "ORDER_CREATE_NOTIFY_DINGTALK_SECRET": "",
+        "ORDER_CREATE_NOTIFY_FEISHU_WEBHOOK_URL": "",
+        "ORDER_CREATE_NOTIFY_FEISHU_SECRET": "",
+    },
+    clear=False,
+)
+def test_create_manual_workorder_notification_failure_does_not_break_create():
+    payload = {
+        "chatId": "chat-1",
+        "resId": "3094",
+        "metricType": "mysql",
+        "alarm": {"alarmId": "alarm-001", "title": "AI创建 · 数据库锁异常"},
+        "analysis": {
+            "summary": "AI 已完成根因分析，自动创建人工处置工单",
+            "rootCause": "疑似长事务",
+            "suggestions": ["排查长事务"],
+        },
+        "ticket": {"title": "AI创建 · 数据库锁异常人工处置", "source": "portal-fault-disposal-ai"},
+    }
+    workorder_response = Mock()
+    workorder_response.raise_for_status.return_value = None
+    workorder_response.json.return_value = {
+        "code": 200,
+        "msg": None,
+        "data": {"procInsId": "proc-1", "taskId": "task-1"},
+    }
+
+    with patch.object(
+        WORKORDER_MODULE.requests,
+        "post",
+        side_effect=[workorder_response, requests.RequestException("notify down")],
+    ):
+        result = WORKORDER_MODULE.create_manual_workorder(payload, timeout_seconds=12)
+
+    assert result["data"]["taskId"] == "task-1"
+    assert result["notification"]["status"] == "failed"
+    assert "notify down" in result["notification"]["reason"]
+
+
+@patch.dict(
+    "os.environ",
+    {
+        "INOE_API_BASE_URL": "http://example.com",
+        "INOE_API_TOKEN": "token-123",
+        "ORDER_CREATE_NOTIFY_WEBHOOK_URL": "http://notify.example.com/app",
+        "ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL": "https://oapi.dingtalk.com/robot/send?access_token=test",
+        "ORDER_CREATE_NOTIFY_FEISHU_WEBHOOK_URL": "https://open.feishu.cn/open-apis/bot/v2/hook/test",
+        "ORDER_CREATE_NOTIFY_MENTION_ALL": "true",
+    },
+    clear=False,
+)
+def test_create_manual_workorder_supports_multi_channel_success():
+    payload = {
+        "chatId": "chat-1",
+        "resId": "3094",
+        "metricType": "mysql",
+        "alarm": {
+            "alarmId": "alarm-001",
+            "title": "AI创建 · 数据库锁异常",
+            "deviceName": "db_mysql_001",
+            "manageIp": "10.43.150.186",
+            "level": "critical",
+        },
+        "analysis": {
+            "summary": "AI 已完成根因分析，自动创建人工处置工单",
+            "rootCause": "疑似长事务",
+            "suggestions": ["排查长事务"],
+        },
+        "ticket": {"title": "AI创建 · 数据库锁异常人工处置", "source": "portal-fault-disposal-ai"},
+    }
+
+    class MockResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    with patch.object(
+        WORKORDER_MODULE.requests,
+        "post",
+        side_effect=[
+            MockResponse({"code": 200, "msg": None, "data": {"procInsId": "proc-1", "taskId": "task-1"}}),
+            MockResponse({"ok": True, "code": 200}),
+            MockResponse({"errcode": 0, "errmsg": "ok"}),
+            MockResponse({"StatusCode": 0, "StatusMessage": "success", "code": 0}),
+        ],
+    ):
+        result = WORKORDER_MODULE.create_manual_workorder(payload)
+
+    assert result["notification"]["status"] == "sent"
+    assert len(result["notification"]["channels"]) == 3
 
 
 def test_format_markdown_result_contains_ai_marker():
@@ -230,10 +478,21 @@ def test_format_markdown_result_contains_ai_marker():
             },
             "ticket": {"title": "AI创建 · 数据库锁异常人工处置", "source": "portal-fault-disposal-ai"},
         },
-        {"data": {"procInsId": "proc-1", "taskId": "task-1"}},
+        {
+            "data": {"procInsId": "proc-1", "taskId": "task-1"},
+            "notification": {
+                "status": "sent",
+                "channels": [
+                    {"channel": "app", "status": "sent"},
+                    {"channel": "dingtalk", "status": "sent"},
+                    {"channel": "feishu", "status": "sent"},
+                ],
+            },
+        },
     )
 
     assert "AI 创建处置工单结果" in markdown
     assert "alarm-001" in markdown
     assert "portal-fault-disposal-ai" in markdown
     assert "排查长事务" in markdown
+    assert "通知推送：**应用、钉钉、飞书已发送**" in markdown
