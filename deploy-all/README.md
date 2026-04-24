@@ -75,6 +75,11 @@ helm install cnos-inoe-agent ./deploy-all/helm/cnos-inoe-agent \
   --set qwenpaw.service.nodePort=32088
 ```
 
+## 相关文档
+
+- [QwenPaw 镜像打包说明](./QWENPAW_IMAGE_BUILD.md)
+- [从本地用户目录同步到 deploy-all 指南](./SYNC_GUIDE.md)
+
 ## 访问地址
 
 部署完成后访问：

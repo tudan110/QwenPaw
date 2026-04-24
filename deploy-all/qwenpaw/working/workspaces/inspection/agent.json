@@ -1,4 +1,8 @@
 {
+  "id": "inspection",
+  "name": "巡检专员",
+  "description": "你是巡检专员。自动化巡检与报告生成。\n\n你可以帮您完成以下工作：\n• 系统巡检 - 对服务器、数据库、中间件执行自动化检查\n• 安全巡检 - 检查安全配置、漏洞、异常登录\n• 健康检查 - 评估系统资源、性能、可用性\n• 报告生成 - 自动生成巡检报告和健康评分\n• 异常闭环 - 巡检异常自动生成处置工单",
+  "workspace_dir": "/Users/tudan/.qwenpaw/workspaces/inspection",
   "channels": {
     "imessage": {
       "enabled": false,
@@ -12,7 +16,6 @@
       "require_mention": false,
       "db_path": "~/Library/Messages/chat.db",
       "poll_sec": 1.0,
-      "media_dir": null,
       "max_decoded_size": 10485760
     },
     "discord": {
@@ -46,7 +49,6 @@
       "card_template_id": "",
       "card_template_key": "content",
       "robot_code": "",
-      "media_dir": null,
       "card_auto_layout": false
     },
     "feishu": {
@@ -63,7 +65,6 @@
       "app_secret": "",
       "encrypt_key": "",
       "verification_token": "",
-      "media_dir": null,
       "domain": "feishu"
     },
     "qq": {
@@ -79,7 +80,8 @@
       "app_id": "",
       "client_secret": "",
       "markdown_enabled": true,
-      "max_reconnect_attempts": 100
+      "max_reconnect_attempts": 100,
+      "ack_message": ""
     },
     "telegram": {
       "enabled": false,
@@ -93,8 +95,7 @@
       "require_mention": false,
       "bot_token": "",
       "http_proxy": "",
-      "http_proxy_auth": "",
-      "show_typing": null
+      "http_proxy_auth": ""
     },
     "mattermost": {
       "enabled": false,
@@ -108,8 +109,6 @@
       "require_mention": false,
       "url": "",
       "bot_token": "",
-      "media_dir": null,
-      "show_typing": null,
       "thread_follow_without_mention": false
     },
     "mqtt": {
@@ -123,18 +122,12 @@
       "deny_message": "",
       "require_mention": false,
       "host": "",
-      "port": null,
       "transport": "",
       "clean_session": true,
       "qos": 2,
-      "username": null,
-      "password": null,
       "subscribe_topic": "",
       "publish_topic": "",
-      "tls_enabled": false,
-      "tls_ca_certs": null,
-      "tls_certfile": null,
-      "tls_keyfile": null
+      "tls_enabled": false
     },
     "console": {
       "enabled": true,
@@ -145,8 +138,7 @@
       "group_policy": "open",
       "allow_from": [],
       "deny_message": "",
-      "require_mention": false,
-      "media_dir": null
+      "require_mention": false
     },
     "matrix": {
       "enabled": false,
@@ -205,7 +197,6 @@
       "require_mention": false,
       "bot_id": "",
       "secret": "",
-      "media_dir": null,
       "welcome_text": "",
       "max_reconnect_attempts": -1
     },
@@ -237,8 +228,7 @@
       "require_mention": false,
       "bot_token": "",
       "bot_token_file": "",
-      "base_url": "",
-      "media_dir": null
+      "base_url": ""
     },
     "onebot": {
       "enabled": false,
@@ -277,6 +267,80 @@
       }
     }
   },
+  "heartbeat": {
+    "enabled": false,
+    "every": "6h",
+    "target": "main"
+  },
+  "running": {
+    "max_iters": 100,
+    "auto_continue_on_text_only": false,
+    "llm_retry_enabled": true,
+    "llm_max_retries": 3,
+    "llm_backoff_base": 1.0,
+    "llm_backoff_cap": 10.0,
+    "llm_max_concurrent": 10,
+    "llm_max_qpm": 600,
+    "llm_rate_limit_pause": 5.0,
+    "llm_rate_limit_jitter": 1.0,
+    "llm_acquire_timeout": 300.0,
+    "max_input_length": 131072,
+    "history_max_length": 10000,
+    "context_compact": {
+      "token_count_model": "default",
+      "token_count_use_mirror": false,
+      "token_count_estimate_divisor": 4,
+      "context_compact_enabled": true,
+      "memory_compact_ratio": 0.75,
+      "memory_reserve_ratio": 0.1,
+      "compact_with_thinking_block": true
+    },
+    "tool_result_compact": {
+      "enabled": true,
+      "recent_n": 2,
+      "old_max_bytes": 3000,
+      "recent_max_bytes": 50000,
+      "retention_days": 5
+    },
+    "memory_summary": {
+      "memory_summary_enabled": true,
+      "memory_prompt_enabled": true,
+      "dream_cron": "0 23 * * *",
+      "force_memory_search": false,
+      "force_max_results": 1,
+      "force_min_score": 0.3,
+      "force_memory_search_timeout": 10.0,
+      "rebuild_memory_index_on_start": false,
+      "recursive_file_watcher": false
+    },
+    "embedding_config": {
+      "backend": "openai",
+      "api_key": "",
+      "base_url": "",
+      "model_name": "",
+      "dimensions": 1024,
+      "enable_cache": true,
+      "use_dimensions": false,
+      "max_cache_size": 3000,
+      "max_input_length": 8192,
+      "max_batch_size": 10
+    },
+    "memory_manager_backend": "remelight"
+  },
+  "llm_routing": {
+    "enabled": false,
+    "mode": "local_first",
+    "local": {
+      "provider_id": "",
+      "model": ""
+    }
+  },
+  "language": "en",
+  "system_prompt_files": [
+    "AGENTS.md",
+    "SOUL.md",
+    "PROFILE.md"
+  ],
   "tools": {
     "builtin_tools": {
       "execute_shell_command": {
@@ -391,6 +455,14 @@
         "async_execution": false,
         "icon": "📊"
       },
+      "delegate_external_agent": {
+        "name": "delegate_external_agent",
+        "enabled": false,
+        "description": "Delegate work to an external ACP agent runner",
+        "display_to_user": true,
+        "async_execution": false,
+        "icon": "📡"
+      },
       "list_agents": {
         "name": "list_agents",
         "enabled": true,
@@ -402,172 +474,27 @@
       "chat_with_agent": {
         "name": "chat_with_agent",
         "enabled": true,
-        "description": "Send a message to another configured agent",
+        "description": "Send a message to another configured agent and wait for the response",
         "display_to_user": true,
         "async_execution": false,
         "icon": "💬"
-      }
-    }
-  },
-  "last_api": {
-    "host": "127.0.0.1",
-    "port": 8088
-  },
-  "agents": {
-    "active_agent": "default",
-    "agent_order": [
-      "default",
-      "QwenPaw_QA_Agent_0.2",
-      "query",
-      "fault",
-      "knowledge",
-      "resource",
-      "gateway",
-      "inspection"
-    ],
-    "profiles": {
-      "default": {
-        "id": "default",
-        "workspace_dir": "~/.qwenpaw/workspaces/default",
-        "enabled": true
       },
-      "QwenPaw_QA_Agent_0.2": {
-        "id": "QwenPaw_QA_Agent_0.2",
-        "workspace_dir": "~/.qwenpaw/workspaces/QwenPaw_QA_Agent_0.2",
-        "enabled": true
-      },
-      "query": {
-        "id": "query",
-        "workspace_dir": "~/.qwenpaw/workspaces/query",
-        "enabled": true
-      },
-      "fault": {
-        "id": "fault",
-        "workspace_dir": "~/.qwenpaw/workspaces/fault",
-        "enabled": true
-      },
-      "knowledge": {
-        "id": "knowledge",
-        "workspace_dir": "~/.qwenpaw/workspaces/knowledge",
-        "enabled": true
-      },
-      "resource": {
-        "id": "resource",
-        "workspace_dir": "~/.qwenpaw/workspaces/resource",
-        "enabled": true
-      },
-      "gateway": {
-        "id": "gateway",
-        "workspace_dir": "~/.qwenpaw/workspaces/gateway",
-        "enabled": true
-      },
-      "inspection": {
-        "id": "inspection",
-        "workspace_dir": "~/.qwenpaw/workspaces/inspection",
-        "enabled": true
-      }
-    },
-    "defaults": {
-      "heartbeat": {
-        "enabled": false,
-        "every": "6h",
-        "target": "main",
-        "activeHours": null
-      }
-    },
-    "running": {
-      "max_iters": 100,
-      "llm_retry_enabled": true,
-      "llm_max_retries": 3,
-      "llm_backoff_base": 1.0,
-      "llm_backoff_cap": 10.0,
-      "llm_max_concurrent": 10,
-      "llm_max_qpm": 600,
-      "llm_rate_limit_pause": 5.0,
-      "llm_rate_limit_jitter": 1.0,
-      "llm_acquire_timeout": 300.0,
-      "max_input_length": 131072,
-      "history_max_length": 10000,
-      "context_compact": {
-        "token_count_model": "default",
-        "token_count_use_mirror": false,
-        "token_count_estimate_divisor": 4.0,
-        "context_compact_enabled": true,
-        "memory_compact_ratio": 0.75,
-        "memory_reserve_ratio": 0.1,
-        "compact_with_thinking_block": true
-      },
-      "tool_result_compact": {
+      "submit_to_agent": {
+        "name": "submit_to_agent",
         "enabled": true,
-        "recent_n": 2,
-        "old_max_bytes": 3000,
-        "recent_max_bytes": 50000,
-        "retention_days": 5
+        "description": "Submit a background task to another configured agent",
+        "display_to_user": true,
+        "async_execution": false,
+        "icon": "📨"
       },
-      "memory_summary": {
-        "memory_summary_enabled": true,
-        "memory_prompt_enabled": true,
-        "force_memory_search": false,
-        "force_max_results": 1,
-        "force_min_score": 0.3,
-        "force_memory_search_timeout": 10.0,
-        "rebuild_memory_index_on_start": false
-      },
-      "embedding_config": {
-        "backend": "openai",
-        "api_key": "",
-        "base_url": "",
-        "model_name": "",
-        "dimensions": 1024,
-        "enable_cache": true,
-        "use_dimensions": false,
-        "max_cache_size": 3000,
-        "max_input_length": 8192,
-        "max_batch_size": 10
-      },
-      "memory_manager_backend": "remelight"
-    },
-    "llm_routing": {
-      "enabled": false,
-      "mode": "local_first",
-      "local": {
-        "provider_id": "",
-        "model": ""
-      },
-      "cloud": null
-    },
-    "language": "zh",
-    "installed_md_files_language": "zh",
-    "system_prompt_files": [
-      "AGENTS.md",
-      "SOUL.md",
-      "PROFILE.md"
-    ],
-    "audio_mode": "auto",
-    "transcription_provider_type": "disabled",
-    "transcription_provider_id": "",
-    "transcription_model": "whisper-1"
-  },
-  "last_dispatch": null,
-  "security": {
-    "tool_guard": {
-      "enabled": true,
-      "guarded_tools": null,
-      "denied_tools": [],
-      "custom_rules": [],
-      "disabled_rules": []
-    },
-    "file_guard": {
-      "enabled": true,
-      "sensitive_files": []
-    },
-    "skill_scanner": {
-      "mode": "warn",
-      "timeout": 30,
-      "whitelist": []
+      "check_agent_task": {
+        "name": "check_agent_task",
+        "enabled": true,
+        "description": "Check the status of a background agent task",
+        "display_to_user": true,
+        "async_execution": false,
+        "icon": "⏳"
+      }
     }
-  },
-  "show_tool_details": true,
-  "user_timezone": "Asia/Shanghai",
-  "plugins": {}
+  }
 }
