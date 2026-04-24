@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime
+import base64
+import hashlib
+import hmac
 import json
 import os
 import re
 import subprocess
 import tempfile
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import quote_plus, urlencode
 
 import requests
 
@@ -46,6 +50,12 @@ class OrderWorkflowConfig:
     verify_ssl: bool = True
     enable_curl_fallback: bool = False
     extra_headers: dict[str, str] | None = None
+    create_notify_webhook_url: str = ""
+    create_notify_dingtalk_webhook_url: str = ""
+    create_notify_dingtalk_secret: str = ""
+    create_notify_dingtalk_keyword: str = ""
+    create_notify_timeout_seconds: int = 8
+    create_notify_mention_all: bool = False
 
     @classmethod
     def from_env(cls) -> "OrderWorkflowConfig":
@@ -82,6 +92,30 @@ class OrderWorkflowConfig:
                     if value is not None
                 }
 
+        create_notify_webhook_url = os.getenv(
+            "ORDER_CREATE_NOTIFY_WEBHOOK_URL",
+            "",
+        ).strip()
+        create_notify_dingtalk_webhook_url = os.getenv(
+            "ORDER_CREATE_NOTIFY_DINGTALK_WEBHOOK_URL",
+            "",
+        ).strip()
+        create_notify_dingtalk_secret = os.getenv(
+            "ORDER_CREATE_NOTIFY_DINGTALK_SECRET",
+            "",
+        ).strip()
+        create_notify_dingtalk_keyword = os.getenv(
+            "ORDER_CREATE_NOTIFY_DINGTALK_KEYWORD",
+            "",
+        ).strip()
+        create_notify_timeout_seconds = int(
+            os.getenv("ORDER_CREATE_NOTIFY_TIMEOUT_SECONDS", "8").strip() or "8"
+        )
+        create_notify_mention_all = os.getenv(
+            "ORDER_CREATE_NOTIFY_MENTION_ALL",
+            "false",
+        ).strip().lower() in {"1", "true", "yes"}
+
         return cls(
             base_url=base_url.rstrip("/"),
             authorization=authorization,
@@ -91,6 +125,12 @@ class OrderWorkflowConfig:
             verify_ssl=verify_ssl,
             enable_curl_fallback=enable_curl_fallback,
             extra_headers=extra_headers,
+            create_notify_webhook_url=create_notify_webhook_url,
+            create_notify_dingtalk_webhook_url=create_notify_dingtalk_webhook_url,
+            create_notify_dingtalk_secret=create_notify_dingtalk_secret,
+            create_notify_dingtalk_keyword=create_notify_dingtalk_keyword,
+            create_notify_timeout_seconds=create_notify_timeout_seconds,
+            create_notify_mention_all=create_notify_mention_all,
         )
 
 
@@ -108,11 +148,16 @@ class OrderWorkflowClient:
 
     def create_disposal_workorder(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized_payload = self._normalize_create_payload(payload)
-        return self._request(
+        response_payload = self._request(
             "POST",
             "/flowable/workflow/workOrder/faultManualWorkorders",
             json_body=normalized_payload,
         )
+        response_payload["notification"] = self._notify_create_success(
+            response_payload=response_payload,
+            request_payload=normalized_payload,
+        )
+        return response_payload
 
     def list_todo_workorders(
         self,
@@ -603,6 +648,244 @@ class OrderWorkflowClient:
     @staticmethod
     def _generate_alarm_id() -> str:
         return f"alarm-{uuid.uuid4().hex[:12]}"
+
+    def _notify_create_success(
+        self,
+        *,
+        response_payload: dict[str, Any],
+        request_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        app_webhook_url = self.config.create_notify_webhook_url.strip()
+        dingtalk_webhook_url = self.config.create_notify_dingtalk_webhook_url.strip()
+        if not app_webhook_url and not dingtalk_webhook_url:
+            return {
+                "enabled": False,
+                "status": "skipped",
+                "reason": "webhook_not_configured",
+                "channels": [],
+            }
+
+        data = response_payload.get("data") or {}
+        task_id = str(data.get("taskId") or "").strip()
+        proc_ins_id = str(data.get("procInsId") or "").strip()
+        if not task_id and not proc_ins_id:
+            return {
+                "enabled": True,
+                "status": "skipped",
+                "reason": "missing_workorder_identifiers",
+                "channels": [],
+            }
+
+        context = self._build_create_notify_context(
+            response_payload=response_payload,
+            request_payload=request_payload,
+        )
+        channels: list[dict[str, Any]] = []
+        if app_webhook_url:
+            channels.append(
+                self._send_json_webhook(
+                    channel_name="app",
+                    webhook_url=app_webhook_url,
+                    payload=self._build_create_notify_payload(context),
+                    success_predicate=lambda data: bool(data.get("ok"))
+                    or str(data.get("code") or "") == "200",
+                )
+            )
+        if dingtalk_webhook_url:
+            channels.append(
+                self._send_json_webhook(
+                    channel_name="dingtalk",
+                    webhook_url=self._build_dingtalk_signed_webhook_url(dingtalk_webhook_url),
+                    payload=self._build_dingtalk_create_notify_payload(context),
+                    success_predicate=lambda data: str(data.get("errcode", "")) == "0",
+                )
+            )
+
+        sent_count = sum(1 for item in channels if item.get("status") == "sent")
+        if sent_count == len(channels) and channels:
+            status = "sent"
+            reason = ""
+        elif sent_count > 0:
+            status = "partial"
+            reason = "partial_failure"
+        else:
+            status = "failed"
+            reason = "; ".join(
+                f"{item.get('channel')}:{item.get('reason') or 'unknown'}"
+                for item in channels
+            )
+
+        return {
+            "enabled": True,
+            "status": status,
+            "reason": reason,
+            "channels": channels,
+        }
+
+    def _build_create_notify_context(
+        self,
+        *,
+        response_payload: dict[str, Any],
+        request_payload: dict[str, Any],
+    ) -> dict[str, str]:
+        data = response_payload.get("data") or {}
+        alarm_payload = request_payload.get("alarm") or {}
+        analysis_payload = request_payload.get("analysis") or {}
+        ticket_payload = request_payload.get("ticket") or {}
+
+        title = str(
+            ticket_payload.get("title")
+            or alarm_payload.get("title")
+            or "处置工单"
+        ).strip()
+        device_name = str(alarm_payload.get("deviceName") or "-").strip()
+        manage_ip = str(alarm_payload.get("manageIp") or "-").strip()
+        level = str(alarm_payload.get("level") or "-").strip()
+        visible_content = str(alarm_payload.get("visibleContent") or "-").strip()
+        suggestions = self._join_suggestions(analysis_payload.get("suggestions")) or str(
+            analysis_payload.get("summary") or "-"
+        ).strip()
+        task_id = str(data.get("taskId") or "-").strip()
+        proc_ins_id = str(data.get("procInsId") or "-").strip()
+        created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        summary = self._build_create_summary(
+            title=title,
+            visible_content=visible_content,
+            suggestions=suggestions,
+        )
+
+        return {
+            "title": title,
+            "summary": summary,
+            "device_name": device_name,
+            "manage_ip": manage_ip,
+            "level": level,
+            "task_id": task_id,
+            "proc_ins_id": proc_ins_id,
+            "created_at": created_at,
+        }
+
+    def _build_create_notify_payload(self, context: dict[str, str]) -> dict[str, Any]:
+        content_lines = [
+            "【工单创建通知】",
+            f"标题：{context['title']}",
+            f"摘要：{context['summary']}",
+            f"设备：{context['device_name']} / {context['manage_ip']}",
+            f"等级：{context['level']}",
+            f"taskId：{context['task_id']}",
+            f"procInsId：{context['proc_ins_id']}",
+            f"创建时间：{context['created_at']}",
+            "请相关同事关注并尽快处理。",
+        ]
+        text_msg: dict[str, Any] = {
+            "content": "\n".join(content_lines),
+        }
+        if self.config.create_notify_mention_all:
+            text_msg.update(
+                {
+                    "isMentioned": True,
+                    "mentionType": 1,
+                }
+            )
+
+        return {
+            "type": "text",
+            "textMsg": text_msg,
+        }
+
+    def _build_dingtalk_create_notify_payload(self, context: dict[str, str]) -> dict[str, Any]:
+        content_lines = [
+            "【工单创建通知】",
+            f"标题：{context['title']}",
+            f"摘要：{context['summary']}",
+            f"设备：{context['device_name']} / {context['manage_ip']}",
+            f"等级：{context['level']}",
+            f"taskId：{context['task_id']}",
+            f"procInsId：{context['proc_ins_id']}",
+            f"创建时间：{context['created_at']}",
+            "请相关同事关注并尽快处理。",
+        ]
+        keyword = self.config.create_notify_dingtalk_keyword.strip()
+        if keyword:
+            content_lines.insert(0, keyword)
+        payload: dict[str, Any] = {
+            "msgtype": "text",
+            "text": {
+                "content": "\n".join(content_lines),
+            },
+        }
+        if self.config.create_notify_mention_all:
+            payload["at"] = {"isAtAll": True}
+        return payload
+
+    def _build_dingtalk_signed_webhook_url(self, webhook_url: str) -> str:
+        secret = self.config.create_notify_dingtalk_secret.strip()
+        if not secret:
+            return webhook_url
+        timestamp = str(int(time.time() * 1000))
+        string_to_sign = f"{timestamp}\n{secret}"
+        sign = hmac.new(
+            secret.encode("utf-8"),
+            string_to_sign.encode("utf-8"),
+            digestmod=hashlib.sha256,
+        ).digest()
+        encoded_sign = quote_plus(base64.b64encode(sign))
+        separator = "&" if "?" in webhook_url else "?"
+        return f"{webhook_url}{separator}timestamp={timestamp}&sign={encoded_sign}"
+
+    def _send_json_webhook(
+        self,
+        *,
+        channel_name: str,
+        webhook_url: str,
+        payload: dict[str, Any],
+        success_predicate: Any,
+    ) -> dict[str, Any]:
+        try:
+            response = requests.post(
+                webhook_url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=self.config.create_notify_timeout_seconds,
+                verify=self.config.verify_ssl,
+            )
+            response.raise_for_status()
+            response_json = response.json()
+            if success_predicate(response_json):
+                return {
+                    "channel": channel_name,
+                    "status": "sent",
+                    "reason": "",
+                }
+            return {
+                "channel": channel_name,
+                "status": "failed",
+                "reason": response_json.get("errmsg")
+                or response_json.get("message")
+                or "webhook_rejected",
+            }
+        except Exception as exc:
+            return {
+                "channel": channel_name,
+                "status": "failed",
+                "reason": str(exc),
+            }
+
+    @staticmethod
+    def _build_create_summary(*, title: str, visible_content: str, suggestions: str) -> str:
+        parts: list[str] = []
+        for text in [visible_content, suggestions]:
+            compact = re.sub(r"\s+", " ", str(text or "")).strip("，,；;。 ")
+            if not compact:
+                continue
+            if compact not in parts:
+                parts.append(compact)
+        if not parts and title:
+            parts.append(title)
+        summary = "；".join(parts)
+        if len(summary) > 80:
+            summary = f"{summary[:80].rstrip()}..."
+        return summary or "人工处置工单已创建"
 
     @staticmethod
     def _format_request_error(exc: requests.exceptions.RequestException) -> str:

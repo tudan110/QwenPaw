@@ -73,14 +73,52 @@ def format_detail_markdown(payload: dict[str, Any], *, lightweight: bool = True)
 
 def format_create_markdown(payload: dict[str, Any]) -> str:
     data = payload.get("data") or {}
+    notification = payload.get("notification") or {}
+    notification_status = _format_notification_status(notification)
     return "\n".join(
         [
             "## 处置工单创建结果",
             "",
             f"- `procInsId`: `{data.get('procInsId', '-')}`",
             f"- `taskId`: `{data.get('taskId', '-')}`",
+            f"- 通知推送：**{notification_status}**",
         ]
     ).strip()
+
+
+def _format_notification_status(notification: dict[str, Any]) -> str:
+    status = str(notification.get("status") or "").strip().lower()
+    reason = str(notification.get("reason") or "").strip()
+    if status == "sent":
+        return _format_notification_channels(notification, fallback="已发送")
+    if status == "partial":
+        return _format_notification_channels(notification, fallback="部分发送成功")
+    if status == "failed":
+        return f"发送失败：{reason or '未知错误'}"
+    if status == "skipped":
+        if reason == "webhook_not_configured":
+            return "未配置"
+        if reason == "missing_workorder_identifiers":
+            return "已跳过（缺少工单编号）"
+        return "已跳过"
+    return "未配置"
+
+
+def _format_notification_channels(notification: dict[str, Any], *, fallback: str) -> str:
+    channels = notification.get("channels") or []
+    sent_channels = [
+        str(item.get("channel") or "").strip()
+        for item in channels
+        if str(item.get("status") or "").strip().lower() == "sent"
+    ]
+    if not sent_channels:
+        return fallback
+    label_map = {
+        "app": "应用",
+        "dingtalk": "钉钉",
+    }
+    labels = [label_map.get(name, name) for name in sent_channels if name]
+    return "、".join(labels) + "已发送"
 
 
 def _format_list_table(rows: list[dict[str, Any]], *, title: str, start_index: int = 1) -> str:

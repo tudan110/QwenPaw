@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 import sys
+from urllib.parse import parse_qs, urlparse
 from unittest import mock
 
 
@@ -14,6 +15,7 @@ if str(SKILL_ROOT) not in sys.path:
 
 from runtime.client import OrderWorkflowClient, OrderWorkflowConfig
 from runtime.formatters import (
+    format_create_markdown,
     format_detail_markdown,
     format_list_markdown,
     format_stats_markdown,
@@ -382,6 +384,154 @@ class OrderWorkflowTests(unittest.TestCase):
         self.assertEqual(payload["analysis"]["rootCause"], "疑似长事务")
         self.assertEqual(payload["analysis"]["suggestions"], ["排查长事务", "检查阻塞链"])
         self.assertEqual(payload["ticket"]["priority"], "P1")
+
+    def test_create_notification_payload_mentions_all_when_enabled(self) -> None:
+        client = OrderWorkflowClient(
+            OrderWorkflowConfig(
+                base_url="http://example.com",
+                authorization="token",
+                create_notify_webhook_url="http://notify.example.com/webhook",
+                create_notify_mention_all=True,
+            )
+        )
+        context = client._build_create_notify_context(
+            response_payload={"data": {"taskId": "task-1", "procInsId": "proc-1"}},
+            request_payload=OrderWorkflowClient._normalize_create_payload(
+                {
+                    "deviceName": "db_mysql_001",
+                    "manageIp": "10.43.150.186",
+                    "suggestions": "数据库锁异常，需要人工排查长事务和阻塞链",
+                }
+            ),
+        )
+        payload = client._build_create_notify_payload(context)
+        self.assertEqual(payload["type"], "text")
+        self.assertTrue(payload["textMsg"]["isMentioned"])
+        self.assertEqual(payload["textMsg"]["mentionType"], 1)
+        self.assertIn("摘要：", payload["textMsg"]["content"])
+        self.assertIn("设备：db_mysql_001 / 10.43.150.186", payload["textMsg"]["content"])
+        self.assertIn("taskId：task-1", payload["textMsg"]["content"])
+        self.assertIn("procInsId：proc-1", payload["textMsg"]["content"])
+
+    def test_dingtalk_notification_payload_mentions_all_when_enabled(self) -> None:
+        client = OrderWorkflowClient(
+            OrderWorkflowConfig(
+                base_url="http://example.com",
+                authorization="token",
+                create_notify_dingtalk_webhook_url="https://oapi.dingtalk.com/robot/send?access_token=test",
+                create_notify_dingtalk_keyword="工单",
+                create_notify_mention_all=True,
+            )
+        )
+        context = client._build_create_notify_context(
+            response_payload={"data": {"taskId": "task-1", "procInsId": "proc-1"}},
+            request_payload=OrderWorkflowClient._normalize_create_payload(
+                {
+                    "deviceName": "db_mysql_001",
+                    "manageIp": "10.43.150.186",
+                    "suggestions": "数据库锁异常，需要人工排查长事务和阻塞链",
+                }
+            ),
+        )
+        payload = client._build_dingtalk_create_notify_payload(context)
+        self.assertEqual(payload["msgtype"], "text")
+        self.assertTrue(payload["at"]["isAtAll"])
+        self.assertTrue(payload["text"]["content"].startswith("工单\n"))
+        self.assertIn("摘要：", payload["text"]["content"])
+        self.assertIn("taskId：task-1", payload["text"]["content"])
+
+    def test_dingtalk_signed_webhook_url_appends_timestamp_and_sign(self) -> None:
+        client = OrderWorkflowClient(
+            OrderWorkflowConfig(
+                base_url="http://example.com",
+                authorization="token",
+                create_notify_dingtalk_webhook_url="https://oapi.dingtalk.com/robot/send?access_token=test",
+                create_notify_dingtalk_secret="SEC-secret",
+            )
+        )
+        with mock.patch("runtime.client.time.time", return_value=1700000000.0):
+            url = client._build_dingtalk_signed_webhook_url(
+                "https://oapi.dingtalk.com/robot/send?access_token=test"
+            )
+        query = parse_qs(urlparse(url).query)
+        self.assertEqual(query["access_token"][0], "test")
+        self.assertEqual(query["timestamp"][0], "1700000000000")
+        self.assertTrue(query["sign"][0])
+
+    def test_create_notification_failure_does_not_break_create(self) -> None:
+        client = OrderWorkflowClient(
+            OrderWorkflowConfig(
+                base_url="http://example.com",
+                authorization="token",
+                create_notify_webhook_url="http://notify.example.com/webhook",
+            )
+        )
+        with mock.patch.object(
+            client,
+            "_request",
+            return_value={"code": 200, "data": {"taskId": "task-1", "procInsId": "proc-1"}},
+        ), mock.patch(
+            "runtime.client.requests.post",
+            side_effect=RuntimeError("notify down"),
+        ):
+            payload = client.create_disposal_workorder(
+                {
+                    "deviceName": "db_mysql_001",
+                    "manageIp": "10.43.150.186",
+                    "suggestions": "数据库锁异常，需要人工排查长事务和阻塞链",
+                }
+            )
+        self.assertEqual(payload["data"]["taskId"], "task-1")
+        self.assertEqual(payload["notification"]["status"], "failed")
+        self.assertIn("notify down", payload["notification"]["reason"])
+
+    def test_create_notification_supports_multi_channel_success(self) -> None:
+        client = OrderWorkflowClient(
+            OrderWorkflowConfig(
+                base_url="http://example.com",
+                authorization="token",
+                create_notify_webhook_url="http://notify.example.com/app",
+                create_notify_dingtalk_webhook_url="https://oapi.dingtalk.com/robot/send?access_token=test",
+                create_notify_mention_all=True,
+            )
+        )
+
+        class MockResponse:
+            def __init__(self, payload):
+                self._payload = payload
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return self._payload
+
+        with mock.patch.object(
+            client,
+            "_request",
+            return_value={"code": 200, "data": {"taskId": "task-1", "procInsId": "proc-1"}},
+        ), mock.patch(
+            "runtime.client.requests.post",
+            side_effect=[MockResponse({"ok": True, "code": 200}), MockResponse({"errcode": 0, "errmsg": "ok"})],
+        ):
+            payload = client.create_disposal_workorder(
+                {
+                    "deviceName": "db_mysql_001",
+                    "manageIp": "10.43.150.186",
+                    "suggestions": "数据库锁异常，需要人工排查长事务和阻塞链",
+                }
+            )
+        self.assertEqual(payload["notification"]["status"], "sent")
+        self.assertEqual(len(payload["notification"]["channels"]), 2)
+
+    def test_create_markdown_renders_notification_status(self) -> None:
+        markdown = format_create_markdown(
+            {
+                "data": {"procInsId": "proc-1", "taskId": "task-1"},
+                "notification": {"status": "sent", "channels": [{"channel": "app", "status": "sent"}, {"channel": "dingtalk", "status": "sent"}]},
+            }
+        )
+        self.assertIn("通知推送：**应用、钉钉已发送**", markdown)
 
 
 if __name__ == "__main__":

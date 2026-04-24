@@ -893,12 +893,13 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   const normalizedContent = stripFrontmatter(normalizeMarkdownDisplayContent(content, {
     isStreaming,
   }));
+  const streamingContent = String(content || "");
 
   if (isStreaming) {
     return (
       <PortalQwenPawMarkdown
         className={`portal-x-markdown ${markdownThemeClass}`}
-        content={normalizedContent}
+        content={streamingContent}
         isStreaming={isStreaming}
       />
     );
