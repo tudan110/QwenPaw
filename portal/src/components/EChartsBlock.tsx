@@ -219,6 +219,99 @@ function decodeQuotedString(raw: string) {
   return decoded;
 }
 
+function isIdentifierStart(char?: string) {
+  return Boolean(char) && /[A-Za-z_$]/.test(char);
+}
+
+function isIdentifierPart(char?: string) {
+  return Boolean(char) && /[A-Za-z0-9_$]/.test(char);
+}
+
+function findNextSignificantIndex(source: string, start: number) {
+  let index = start;
+  while (index < source.length) {
+    const char = source[index];
+    if (/\s/.test(char)) {
+      index += 1;
+      continue;
+    }
+    if (char === "/" && (source[index + 1] === "/" || source[index + 1] === "*")) {
+      index = skipComment(source, index);
+      if (index === -1) {
+        return -1;
+      }
+      continue;
+    }
+    return index;
+  }
+  return -1;
+}
+
+function findPreviousSignificantChar(source: string) {
+  for (let index = source.length - 1; index >= 0; index -= 1) {
+    const char = source[index];
+    if (/\s/.test(char)) {
+      continue;
+    }
+    return char;
+  }
+  return "";
+}
+
+function normalizeLooseJsonLikeSource(source: string) {
+  let index = 0;
+  let normalized = "";
+
+  while (index < source.length) {
+    const char = source[index];
+    if (char === "/" && (source[index + 1] === "/" || source[index + 1] === "*")) {
+      index = skipComment(source, index);
+      if (index === -1) {
+        return null;
+      }
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      const end = skipQuotedString(source, index);
+      if (end === -1) {
+        return null;
+      }
+      const raw = source.slice(index, end);
+      normalized += char === "\"" ? raw : JSON.stringify(decodeQuotedString(raw));
+      index = end;
+      continue;
+    }
+    if (char === "`") {
+      return null;
+    }
+    if (isIdentifierStart(char)) {
+      let end = index + 1;
+      while (isIdentifierPart(source[end])) {
+        end += 1;
+      }
+      const identifier = source.slice(index, end);
+      const nextSignificantIndex = findNextSignificantIndex(source, end);
+      const previousSignificantChar = findPreviousSignificantChar(normalized);
+      if (
+        nextSignificantIndex !== -1
+        && source[nextSignificantIndex] === ":"
+        && (previousSignificantChar === "{" || previousSignificantChar === ",")
+      ) {
+        normalized += JSON.stringify(identifier);
+        index = end;
+        continue;
+      }
+      normalized += identifier === "undefined" ? "null" : identifier;
+      index = end;
+      continue;
+    }
+    normalized += char;
+    index += 1;
+  }
+
+  return normalized.replace(/,\s*([}\]])/g, "$1");
+}
+
 function splitTopLevelConcats(expression: string) {
   const parts: string[] = [];
   let current = "";
@@ -401,59 +494,18 @@ function parseEChartsConfig(chart: string) {
     echartsRenderCache.set(trimmedChart, config);
     return config;
   } catch (e) {
-    try {
-      if (
-        trimmedChart.startsWith("{")
-        && trimmedChart.endsWith("}")
-        && !/\b(?:window|document|globalThis|self|top|parent|frames|fetch|XMLHttpRequest|WebSocket|Worker|SharedWorker|import|export|eval|Function|constructor|prototype|__proto__|localStorage|sessionStorage|navigator|location|history|alert|confirm|prompt|setTimeout|setInterval|requestAnimationFrame|new)\b/.test(trimmedChart)
-      ) {
-        const factory = new Function(`
-          "use strict";
-          const window = undefined;
-          const document = undefined;
-          const globalThis = undefined;
-          const self = undefined;
-          const top = undefined;
-          const parent = undefined;
-          const frames = undefined;
-          const fetch = undefined;
-          const XMLHttpRequest = undefined;
-          const WebSocket = undefined;
-          const Worker = undefined;
-          const SharedWorker = undefined;
-          const importScripts = undefined;
-          const localStorage = undefined;
-          const sessionStorage = undefined;
-          const navigator = undefined;
-          const location = undefined;
-          const history = undefined;
-          const alert = undefined;
-          const confirm = undefined;
-          const prompt = undefined;
-          const eval = undefined;
-          const Function = undefined;
-          const setTimeout = undefined;
-          const setInterval = undefined;
-          const requestAnimationFrame = undefined;
-          return (${trimmedChart});
-        `);
-        const config = factory();
-        if (config && typeof config === "object") {
-          echartsRenderCache.set(trimmedChart, config);
-          return config;
-        }
-      }
-    } catch (objectLiteralError) {
-      console.error("Failed to parse ECharts object literal:", objectLiteralError);
-    }
-
     const functionLiterals = replaceFunctionLiterals(trimmedChart);
     if (!functionLiterals) {
       console.error("Failed to parse ECharts config:", e);
       return null;
     }
+    const normalizedSource = normalizeLooseJsonLikeSource(functionLiterals.normalized);
+    if (!normalizedSource) {
+      console.error("Failed to normalize ECharts config:", e);
+      return null;
+    }
     try {
-      const parsed = JSON.parse(functionLiterals.normalized);
+      const parsed = JSON.parse(normalizedSource);
       const hydrated = hydrateFunctionPlaceholders(parsed, functionLiterals.functions);
       echartsRenderCache.set(trimmedChart, hydrated);
       return hydrated;

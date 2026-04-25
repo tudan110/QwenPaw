@@ -20,14 +20,8 @@ const ROLE_ASSISTANT = "assistant";
 const TYPE_PLUGIN_CALL_OUTPUT = "plugin_call_output";
 const CARD_RESPONSE = "AgentScopeRuntimeResponseCard";
 const STORAGE_PREFIX = "portal_runtime_pending_user_msg_";
-
-interface CustomWindow extends Window {
-  currentSessionId?: string;
-  currentUserId?: string;
-  currentChannel?: string;
-}
-
-declare const window: CustomWindow;
+const LOCAL_SESSION_REAL_ID_POLL_INTERVAL_MS = 100;
+const LOCAL_SESSION_REAL_ID_WAIT_TIMEOUT_MS = 10000;
 
 interface ContentItem {
   type: string;
@@ -45,6 +39,13 @@ interface ExtendedSession extends IAgentScopeRuntimeWebUISession {
   createdAt?: string | null;
   generating?: boolean;
   pinned?: boolean;
+}
+
+export interface PortalRuntimeSessionContext {
+  sessionId: string;
+  userId: string;
+  channel: string;
+  realId: string | null;
 }
 
 function generateId(): string {
@@ -235,10 +236,13 @@ function resolveRealId(
   if (!realSession) return { list: sessionList, realId: null };
 
   const realUUID = realSession.id;
-  (realSession as ExtendedSession).realId = realUUID;
-  realSession.id = tempSessionId;
+  const nextSession: ExtendedSession = {
+    ...(realSession as ExtendedSession),
+    id: tempSessionId,
+    realId: realUUID,
+  };
   return {
-    list: [realSession, ...sessionList.filter((session) => session !== realSession)],
+    list: [nextSession, ...sessionList.filter((session) => session !== realSession)],
     realId: realUUID,
   };
 }
@@ -261,11 +265,26 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
     savePendingUserMessage(sessionId, text);
   }
 
+  private findSession(sessionId: string): ExtendedSession | undefined {
+    return this.sessionList.find(
+      (item) =>
+        item.id === sessionId || (item as ExtendedSession).sessionId === sessionId,
+    ) as ExtendedSession | undefined;
+  }
+
   getRealIdForSession(sessionId: string): string | null {
-    const session = this.sessionList.find((item) => item.id === sessionId) as
-      | ExtendedSession
-      | undefined;
-    return session?.realId ?? null;
+    return this.findSession(sessionId)?.realId ?? null;
+  }
+
+  getSessionContext(sessionId?: string | null): PortalRuntimeSessionContext {
+    const normalizedSessionId = String(sessionId || "");
+    const session = normalizedSessionId ? this.findSession(normalizedSessionId) : undefined;
+    return {
+      sessionId: session?.sessionId || normalizedSessionId,
+      userId: session?.userId || DEFAULT_USER_ID,
+      channel: session?.channel || DEFAULT_CHANNEL,
+      realId: session?.realId ?? null,
+    };
   }
 
   private patchLastUserMessage(
@@ -304,9 +323,6 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
   }
 
   private createEmptySession(sessionId: string): ExtendedSession {
-    window.currentSessionId = sessionId;
-    window.currentUserId = DEFAULT_USER_ID;
-    window.currentChannel = DEFAULT_CHANNEL;
     return {
       id: sessionId,
       name: DEFAULT_SESSION_NAME,
@@ -318,19 +334,26 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
     } as ExtendedSession;
   }
 
-  private updateWindowVariables(session: ExtendedSession): void {
-    window.currentSessionId = session.sessionId || "";
-    window.currentUserId = session.userId || DEFAULT_USER_ID;
-    window.currentChannel = session.channel || DEFAULT_CHANNEL;
-  }
-
   private getLocalSession(sessionId: string): IAgentScopeRuntimeWebUISession {
-    const local = this.sessionList.find((session) => session.id === sessionId);
+    const local = this.findSession(sessionId);
     if (local) {
-      this.updateWindowVariables(local as ExtendedSession);
       return local;
     }
     return this.createEmptySession(sessionId);
+  }
+
+  private async waitForRealId(sessionId: string): Promise<ExtendedSession | undefined> {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < LOCAL_SESSION_REAL_ID_WAIT_TIMEOUT_MS) {
+      const target = this.findSession(sessionId);
+      if (target?.realId) {
+        return target;
+      }
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, LOCAL_SESSION_REAL_ID_POLL_INTERVAL_MS),
+      );
+    }
+    return this.findSession(sessionId);
   }
 
   private applyChatsToSessionList(chats: any[]): IAgentScopeRuntimeWebUISession[] {
@@ -428,27 +451,10 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
           realId: fromList.realId,
           generating,
         };
-        this.updateWindowVariables(session);
         return session;
       }
 
-      await new Promise<void>((resolve) => {
-        const check = () => {
-          const target = this.sessionList.find((item) => item.id === sessionId) as
-            | ExtendedSession
-            | undefined;
-          if (target?.realId) {
-            resolve();
-            return;
-          }
-          window.setTimeout(check, 100);
-        };
-        window.setTimeout(check, 100);
-      });
-
-      const refreshed = this.sessionList.find((session) => session.id === sessionId) as
-        | ExtendedSession
-        | undefined;
+      const refreshed = await this.waitForRealId(sessionId);
       if (refreshed?.realId) {
         const chatHistory = await getChatHistory(this.agentId, refreshed.realId);
         const generating = isGenerating(chatHistory);
@@ -465,7 +471,6 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
           realId: refreshed.realId,
           generating,
         };
-        this.updateWindowVariables(session);
         return session;
       }
 
@@ -494,7 +499,6 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
       meta: fromList?.meta || {},
       generating,
     };
-    this.updateWindowVariables(session);
     return session;
   }
 
@@ -538,7 +542,6 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
       channel: DEFAULT_CHANNEL,
     } as ExtendedSession;
 
-    this.updateWindowVariables(extended);
     this.sessionList = [extended, ...this.sessionList];
     return [...this.sessionList];
   }

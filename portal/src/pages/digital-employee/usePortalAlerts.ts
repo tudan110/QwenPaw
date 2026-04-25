@@ -1,0 +1,271 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getEmployeeById } from "../../data/portalData";
+import { listPortalRealAlarms } from "../../api/portalRealAlarms";
+import { normalizePortalBellAlerts, PORTAL_REAL_ALARM_POLL_INTERVAL_MS } from "./realAlarms";
+import { buildPortalAlertDispatchText } from "./pageHelpers";
+import type {
+  PortalAlertToastState,
+  PortalLocationState,
+  PortalOpsAlert,
+} from "./pageHelpers";
+
+type NavigateToEmployeePage = (
+  employee: any,
+  options?: {
+    entry?: string | null;
+    view?: "overview" | "dashboard" | "tasks" | "chat";
+    panel?: string | null;
+    replace?: boolean;
+    state?: PortalLocationState;
+  },
+) => void;
+
+export function usePortalAlerts({
+  employeesWithRuntimeStatus,
+  navigateToEmployeePage,
+  locationPathname,
+  locationSearch,
+}: {
+  employeesWithRuntimeStatus: any[];
+  navigateToEmployeePage: NavigateToEmployeePage;
+  locationPathname: string;
+  locationSearch: string;
+}) {
+  const [opsAlerts, setOpsAlerts] = useState<PortalOpsAlert[]>([]);
+  const [alertToast, setAlertToast] = useState<PortalAlertToastState | null>(null);
+  const [alertPopupOpen, setAlertPopupOpen] = useState(false);
+  const [alertPopupPosition, setAlertPopupPosition] = useState<{ top: number; left: number } | null>(null);
+  const alertPopupRef = useRef<HTMLDivElement | null>(null);
+  const activeAlertTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const alertToastTimerRef = useRef<number | null>(null);
+  const alertPollTimerRef = useRef<number | null>(null);
+  const knownAlertIdsRef = useRef<string[]>([]);
+
+  const sortedOpsAlerts = useMemo(() => {
+    const order: Record<string, number> = {
+      critical: 0,
+      urgent: 1,
+      warning: 2,
+      info: 3,
+    };
+
+    return [...opsAlerts].sort((left, right) => order[left.level] - order[right.level]);
+  }, [opsAlerts]);
+
+  const loadOpsAlerts = useCallback(async () => {
+    try {
+      const response = await listPortalRealAlarms({ limit: 10 });
+      setOpsAlerts(normalizePortalBellAlerts(response));
+    } catch (error) {
+      console.error("Failed to load portal real alarms", error);
+    }
+  }, []);
+
+  const handleClearOpsAlerts = useCallback(() => {
+    if (alertToastTimerRef.current) {
+      window.clearTimeout(alertToastTimerRef.current);
+      alertToastTimerRef.current = null;
+    }
+    knownAlertIdsRef.current = [];
+    setOpsAlerts([]);
+    setAlertToast(null);
+    setAlertPopupOpen(false);
+  }, []);
+
+  const handlePortalAlertAction = useCallback((alert: PortalOpsAlert) => {
+    if (alertToastTimerRef.current) {
+      window.clearTimeout(alertToastTimerRef.current);
+      alertToastTimerRef.current = null;
+    }
+    setAlertPopupOpen(false);
+    setAlertToast((current) =>
+      current?.alert.id === alert.id ? null : current,
+    );
+    setOpsAlerts((currentAlerts) => currentAlerts.filter((item) => item.id !== alert.id));
+
+    const employee =
+      employeesWithRuntimeStatus.find((item) => item.id === alert.employeeId) ||
+      getEmployeeById(alert.employeeId);
+    if (!employee) {
+      return;
+    }
+
+    if (alert.dispatchContent) {
+      const normalizedVisibleContent = buildPortalAlertDispatchText(
+        alert.visibleContent || alert.dispatchContent,
+        alert.resId,
+        alert.timeLabel,
+      );
+      navigateToEmployeePage(employee, {
+        entry: alert.routeEntry ?? null,
+        view: "chat",
+        panel: null,
+        state: {
+          pendingPortalDispatch: {
+            token: `alert-dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            targetEmployeeId: employee.id,
+            content: normalizedVisibleContent,
+            visibleContent: normalizedVisibleContent,
+          },
+        } satisfies PortalLocationState,
+      });
+      return;
+    }
+
+    navigateToEmployeePage(employee, {
+      entry: alert.routeEntry ?? null,
+      view: "chat",
+      panel: null,
+    });
+  }, [employeesWithRuntimeStatus, navigateToEmployeePage]);
+
+  const handleToggleAlertPopup = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+
+    const trigger = event.currentTarget;
+    const isSameTrigger = activeAlertTriggerRef.current === trigger;
+    const popupWidth = Math.min(400, window.innerWidth - 32);
+    const rect = trigger.getBoundingClientRect();
+    const left = Math.min(
+      Math.max(16, rect.right - popupWidth),
+      window.innerWidth - popupWidth - 16,
+    );
+
+    activeAlertTriggerRef.current = trigger;
+    setAlertPopupPosition({
+      top: Math.min(rect.bottom + 8, window.innerHeight - 24),
+      left,
+    });
+    setAlertPopupOpen((current) => (isSameTrigger ? !current : true));
+  }, []);
+
+  useEffect(() => {
+    if (!alertPopupOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (activeAlertTriggerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      if (alertPopupRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setAlertPopupOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [alertPopupOpen]);
+
+  useEffect(() => {
+    setAlertPopupOpen(false);
+  }, [locationPathname, locationSearch]);
+
+  useEffect(
+    () => () => {
+      if (alertToastTimerRef.current) {
+        window.clearTimeout(alertToastTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    void loadOpsAlerts();
+    alertPollTimerRef.current = window.setInterval(() => {
+      void loadOpsAlerts();
+    }, PORTAL_REAL_ALARM_POLL_INTERVAL_MS);
+
+    return () => {
+      if (alertPollTimerRef.current) {
+        window.clearInterval(alertPollTimerRef.current);
+        alertPollTimerRef.current = null;
+      }
+    };
+  }, [loadOpsAlerts]);
+
+  useEffect(() => {
+    const nextAlertIds = opsAlerts.map((alert) => alert.id);
+    const previousAlertIds = knownAlertIdsRef.current;
+    const incomingAlerts = opsAlerts.filter((alert) => !previousAlertIds.includes(alert.id));
+
+    knownAlertIdsRef.current = nextAlertIds;
+
+    if (!incomingAlerts.length) {
+      if (opsAlerts.length === 0) {
+        setAlertToast(null);
+      }
+      return;
+    }
+
+    const latestAlert = incomingAlerts[incomingAlerts.length - 1];
+    if (alertToastTimerRef.current) {
+      window.clearTimeout(alertToastTimerRef.current);
+    }
+    setAlertToast({
+      alert: latestAlert,
+      visible: true,
+    });
+    alertToastTimerRef.current = window.setTimeout(() => {
+      setAlertToast((current) =>
+        current?.alert.id === latestAlert.id
+          ? null
+          : current,
+      );
+      alertToastTimerRef.current = null;
+    }, 6000);
+  }, [opsAlerts]);
+
+  useEffect(() => {
+    if (!alertPopupOpen) {
+      return;
+    }
+
+    const updateAlertPopupPosition = () => {
+      const trigger = activeAlertTriggerRef.current;
+      if (!trigger) {
+        return;
+      }
+
+      const rect = trigger.getBoundingClientRect();
+      const popupWidth = Math.min(400, window.innerWidth - 32);
+      const left = Math.min(
+        Math.max(16, rect.right - popupWidth),
+        window.innerWidth - popupWidth - 16,
+      );
+      const top = Math.min(rect.bottom + 8, window.innerHeight - 24);
+
+      setAlertPopupPosition({ top, left });
+    };
+
+    updateAlertPopupPosition();
+    window.addEventListener("resize", updateAlertPopupPosition);
+    const handleScroll = (event: Event) => {
+      if (alertPopupRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      updateAlertPopupPosition();
+    };
+    window.addEventListener("scroll", handleScroll, true);
+
+    return () => {
+      window.removeEventListener("resize", updateAlertPopupPosition);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [alertPopupOpen]);
+
+  return {
+    sortedOpsAlerts,
+    alertToast,
+    alertPopupOpen,
+    alertPopupPosition,
+    alertPopupRef,
+    activeAlertTriggerRef,
+    handleClearOpsAlerts,
+    handlePortalAlertAction,
+    handleToggleAlertPopup,
+  };
+}

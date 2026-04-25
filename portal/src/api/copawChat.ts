@@ -1,5 +1,7 @@
 const DEFAULT_API_BASE_URL = "/copaw-api/api";
 const DEFAULT_FALLBACK_AGENT_ID = "default";
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
+const DEFAULT_STREAM_CONNECT_TIMEOUT_MS = 30000;
 
 const API_BASE_URL = (import.meta.env.VITE_COPAW_API_BASE_URL || DEFAULT_API_BASE_URL).replace(
   /\/$/,
@@ -92,6 +94,24 @@ function isMissingAgentResponse(status: number, errorText?: string) {
   return status === 404 && /Agent\s+['"].+['"]\s+not\s+found/i.test(errorText || "");
 }
 
+function bindAbortSignal(
+  controller: AbortController,
+  signal?: AbortSignal,
+): () => void {
+  if (!signal) {
+    return () => {};
+  }
+
+  const abort = () => controller.abort(signal.reason);
+  if (signal.aborted) {
+    abort();
+    return () => {};
+  }
+
+  signal.addEventListener("abort", abort, { once: true });
+  return () => signal.removeEventListener("abort", abort);
+}
+
 async function requestCopaw<T = any>(
   path: string,
   { agentId, method = "GET", body, signal }: CopawRequestOptions = {},
@@ -101,15 +121,34 @@ async function requestCopaw<T = any>(
   let lastStatus = 0;
 
   for (const candidateAgentId of agentCandidates) {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
-      method,
-      signal,
-      headers: {
-        ...(body ? { "Content-Type": "application/json" } : {}),
-        ...(candidateAgentId ? { "X-Agent-Id": candidateAgentId } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    const controller = new AbortController();
+    const unbindAbort = bindAbortSignal(controller, signal);
+    let timedOut = false;
+    const timerId = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, DEFAULT_REQUEST_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE_URL}${path}`, {
+        method,
+        signal: controller.signal,
+        headers: {
+          ...(body ? { "Content-Type": "application/json" } : {}),
+          ...(candidateAgentId ? { "X-Agent-Id": candidateAgentId } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch (error: any) {
+      if (error?.name === "AbortError" && timedOut) {
+        throw new Error("CoPAW 请求超时，请稍后重试");
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timerId);
+      unbindAbort();
+    }
 
     if (response.ok) {
       if (response.status === 204) {
@@ -190,23 +229,48 @@ export async function streamChat(
   { signal, onEvent }: StreamChatOptions = {},
 ) {
   const agentCandidates = getAgentCandidates(agentId);
-  let response = null;
+  let response: Response | null = null;
+  let releaseStreamAbort: (() => void) | null = null;
   let lastErrorText = "";
   let lastStatus = 0;
 
   for (const candidateAgentId of agentCandidates) {
-    const candidateResponse = await fetch(`${API_BASE_URL}/console/chat`, {
-      method: "POST",
-      signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...(candidateAgentId ? { "X-Agent-Id": candidateAgentId } : {}),
-      },
-      body: JSON.stringify(payload),
-    });
+    const controller = new AbortController();
+    const unbindAbort = bindAbortSignal(controller, signal);
+    let connectTimedOut = false;
+    const timerId = window.setTimeout(() => {
+      connectTimedOut = true;
+      controller.abort();
+    }, DEFAULT_STREAM_CONNECT_TIMEOUT_MS);
+
+    let candidateResponse: Response;
+    let keepAbortBound = false;
+    try {
+      candidateResponse = await fetch(`${API_BASE_URL}/console/chat`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...(candidateAgentId ? { "X-Agent-Id": candidateAgentId } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      keepAbortBound = candidateResponse.ok;
+    } catch (error: any) {
+      if (error?.name === "AbortError" && connectTimedOut) {
+        throw new Error("CoPAW 流式连接超时，请稍后重试");
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timerId);
+      if (!keepAbortBound) {
+        unbindAbort();
+      }
+    }
 
     if (candidateResponse.ok) {
       response = candidateResponse;
+      releaseStreamAbort = unbindAbort;
       break;
     }
 
@@ -234,38 +298,47 @@ export async function streamChat(
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() || "";
+
+      for (const chunk of chunks) {
+        const event = parseSseChunk(chunk);
+        if (!event) {
+          continue;
+        }
+        if (event.error) {
+          throw new Error(
+            extractErrorMessage(event.error) || "CoPAW 流式请求失败",
+          );
+        }
+        onEvent?.(event);
+      }
     }
 
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split("\n\n");
-    buffer = chunks.pop() || "";
-
-    for (const chunk of chunks) {
-      const event = parseSseChunk(chunk);
-      if (!event) {
-        continue;
-      }
-      if (event.error) {
+    const finalEvent = parseSseChunk(buffer);
+    if (finalEvent) {
+      if (finalEvent.error) {
         throw new Error(
-          extractErrorMessage(event.error) || "CoPAW 流式请求失败",
+          extractErrorMessage(finalEvent.error) || "CoPAW 流式请求失败",
         );
       }
-      onEvent?.(event);
+      onEvent?.(finalEvent);
     }
-  }
-
-  const finalEvent = parseSseChunk(buffer);
-  if (finalEvent) {
-    if (finalEvent.error) {
-      throw new Error(
-        extractErrorMessage(finalEvent.error) || "CoPAW 流式请求失败",
-      );
+  } finally {
+    releaseStreamAbort?.();
+    try {
+      reader.releaseLock();
+    } catch {
+      // ignore
     }
-    onEvent?.(finalEvent);
   }
 }
 

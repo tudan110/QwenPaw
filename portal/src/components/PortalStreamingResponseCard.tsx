@@ -117,16 +117,17 @@ const StreamingMessage = memo(function StreamingMessage({
 export default function PortalStreamingResponseCard(
   props: ResponseCardProps,
 ): ReactNode {
-  if (!isGeneratingStatus(props.data.status)) {
-    return <DefaultResponseCard {...props} />;
-  }
-
+  const isGenerating = isGeneratingStatus(props.data.status);
   const avatar = useChatAnywhereOptions((value) => value.welcome.avatar);
   const nick = useChatAnywhereOptions((value) => value.welcome.nick);
   const messages = useMemo(
     () => AgentScopeRuntimeResponseBuilder.mergeToolMessages(props.data.output),
     [props.data.output],
   );
+
+  if (!isGenerating) {
+    return <DefaultResponseCard {...props} />;
+  }
 
   if (!messages?.length && AgentScopeRuntimeResponseBuilder.maybeGenerating(props.data)) {
     return <Bubble.Spin />;

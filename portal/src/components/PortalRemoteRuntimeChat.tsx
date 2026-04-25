@@ -18,14 +18,6 @@ const API_BASE_URL = (import.meta.env.VITE_COPAW_API_BASE_URL || DEFAULT_API_BAS
 const DEFAULT_USER_ID = "default";
 const DEFAULT_CHANNEL = "console";
 
-interface CustomWindow extends Window {
-  currentSessionId?: string;
-  currentUserId?: string;
-  currentChannel?: string;
-}
-
-declare const window: CustomWindow;
-
 function extractUserMessageText(message: any): string {
   const content = Array.isArray(message?.content) ? message.content : [];
   return content
@@ -53,19 +45,22 @@ export function PortalRemoteRuntimeChat({
       signal?: AbortSignal;
     }): Promise<Response> => {
       const { input = [], biz_params } = data;
-      const session: Record<string, any> = (input[input.length - 1]?.session || {}) as Record<string, any>;
+      const lastMessage = input[input.length - 1] as Record<string, any> | undefined;
+      const session: Record<string, any> = (lastMessage?.session || {}) as Record<string, any>;
       const lastInput = input.slice(-1);
+      const sessionContext = sessionApi.getSessionContext(String(session?.session_id || ""));
+      const requestSessionId = sessionContext.sessionId || String(session?.session_id || "");
       const requestBody = {
         input: lastInput,
-        session_id: window.currentSessionId || session?.session_id || "",
-        user_id: window.currentUserId || session?.user_id || DEFAULT_USER_ID,
-        channel: window.currentChannel || session?.channel || DEFAULT_CHANNEL,
+        session_id: requestSessionId,
+        user_id: sessionContext.userId || session?.user_id || DEFAULT_USER_ID,
+        channel: sessionContext.channel || session?.channel || DEFAULT_CHANNEL,
         stream: true,
         ...biz_params,
       };
 
       const backendChatId =
-        sessionApi.getRealIdForSession(requestBody.session_id) ||
+        sessionContext.realId ||
         requestBody.session_id;
 
       if (backendChatId) {
@@ -131,6 +126,7 @@ export function PortalRemoteRuntimeChat({
             }
           },
           async reconnect(data: { session_id: string; signal?: AbortSignal }) {
+            const sessionContext = sessionApi.getSessionContext(data.session_id);
             return fetch(`${API_BASE_URL}/console/chat`, {
               method: "POST",
               headers: {
@@ -139,9 +135,9 @@ export function PortalRemoteRuntimeChat({
               },
               body: JSON.stringify({
                 reconnect: true,
-                session_id: window.currentSessionId || data.session_id,
-                user_id: window.currentUserId || DEFAULT_USER_ID,
-                channel: window.currentChannel || DEFAULT_CHANNEL,
+                session_id: sessionContext.sessionId || data.session_id,
+                user_id: sessionContext.userId || DEFAULT_USER_ID,
+                channel: sessionContext.channel || DEFAULT_CHANNEL,
               }),
               signal: data.signal,
             });
