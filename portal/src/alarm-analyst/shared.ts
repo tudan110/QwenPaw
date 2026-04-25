@@ -71,6 +71,19 @@ function getAlarmAnalystSessionMeta(value: any) {
   return null;
 }
 
+function looksLikeAlarmAnalystHistorySession(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return false;
+  }
+
+  return (
+    /资源\s*ID（CI\s*ID）[:：]/u.test(text) ||
+    /告警时间[:：]/u.test(text) ||
+    ((/告警|异常|故障/u.test(text) || /数据库锁/u.test(text)) && /CI\s*ID|资源\s*ID/u.test(text))
+  );
+}
+
 export function shouldEnableAlarmAnalystCards({
   employeeId,
   session,
@@ -94,9 +107,15 @@ export function shouldEnableAlarmAnalystCards({
   if (/^故障处置\s*[·\-]/.test(title)) {
     return true;
   }
+  if (looksLikeAlarmAnalystHistorySession(title)) {
+    return true;
+  }
 
   const detail = String(session?.detail || "").trim();
   if (/工单[:：]/.test(detail)) {
+    return true;
+  }
+  if (looksLikeAlarmAnalystHistorySession(detail)) {
     return true;
   }
 

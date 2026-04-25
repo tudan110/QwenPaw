@@ -17,6 +17,10 @@ const ResourceImportConversationCard = lazyNamed(
   () => import("./resourceImportConversationCard"),
   "ResourceImportConversationCard",
 );
+const AlarmAnalystCardPanel = lazyNamed(
+  () => import("./alarmAnalystCardComponents"),
+  "AlarmAnalystCardPanel",
+);
 
 const deferredMessageCardFallback = (
   <div className="history-empty" style={{ minHeight: 180 }}>
@@ -250,6 +254,8 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     Boolean(message.workordersLoading) ||
     Boolean(message.workordersError);
   const hasResourceImportFlow = Boolean(message.resourceImportFlow);
+  const alarmAnalystCard = message.type === "agent" ? message.alarmAnalystCard : null;
+  const hasAlarmAnalystCard = Boolean(alarmAnalystCard);
   const faultScenarioResult = message.faultScenarioResult;
   const primaryResponseBlock =
     [...displayBlocks].reverse().find((block: any) => block?.kind === "response" && block.content) || null;
@@ -287,7 +293,9 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     Boolean(effectiveDisposalOperation) &&
     effectiveDisposalOperation.status !== "success" &&
     !message.hideDisposalOperation;
-  const copyableContent = String(renderedMessageContent || "").trim();
+  const copyableContent = String(
+    renderedMessageContent || alarmAnalystCard?.rawReportMarkdown || "",
+  ).trim();
   const traceBundleSubtitle = buildTraceBundleSubtitle(auxiliaryTraceBlocks);
   const [isTraceBundleOpen, setIsTraceBundleOpen] = useState(false);
   const wasStreamingTraceBundleRef = useRef(false);
@@ -390,6 +398,12 @@ export const ChatMessageItem = memo(function ChatMessageItem({
                 releaseFiles={releaseResourceImportFiles}
                 resolveFiles={resolveResourceImportFiles}
               />
+            </Suspense>
+          </div>
+        ) : hasAlarmAnalystCard ? (
+          <div className="message-bubble markdown-bubble alarm-analyst-card-bubble">
+            <Suspense fallback={deferredMessageCardFallback}>
+              <AlarmAnalystCardPanel card={alarmAnalystCard} />
             </Suspense>
           </div>
         ) : renderedMessageContent ? (

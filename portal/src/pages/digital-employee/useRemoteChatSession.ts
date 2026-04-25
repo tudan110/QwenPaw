@@ -490,6 +490,92 @@ export function useRemoteChatSession({
     }
   }, [setMessages]);
 
+  const hydrateAlarmAnalystCardsForHistory = useCallback(async ({
+    messages,
+    chatId,
+    sessionId,
+    session,
+    employeeId,
+    agentId,
+  }: {
+    messages: any[];
+    chatId: string;
+    sessionId: string;
+    session: any;
+    employeeId: string;
+    agentId?: string;
+  }) => {
+    if (
+      !shouldEnableAlarmAnalystCards({
+        employeeId,
+        session,
+      }) ||
+      !chatId ||
+      !sessionId
+    ) {
+      return messages;
+    }
+
+    let nextMessages = messages;
+
+    try {
+      const cardResponse = await listAlarmAnalystCards(chatId, {
+        sessionId,
+        agentId,
+      });
+      nextMessages = mergeAlarmAnalystCards(
+        nextMessages || [],
+        (cardResponse.cards || []) as any,
+      );
+    } catch (error) {
+      console.warn("Failed to hydrate alarm analyst cards:", error);
+    }
+
+    const payloadsByMessageId = new Map<
+      string,
+      NonNullable<ReturnType<typeof buildAlarmAnalystCardRequest>>
+    >();
+    for (const message of nextMessages || []) {
+      if (message?.type !== "agent" || message?.alarmAnalystCard) {
+        continue;
+      }
+      const payload = buildAlarmAnalystCardRequest({
+        chatId,
+        sessionId,
+        employeeId,
+        message,
+      });
+      if (!payload || payloadsByMessageId.has(payload.messageId)) {
+        continue;
+      }
+      payloadsByMessageId.set(payload.messageId, payload);
+    }
+
+    if (!payloadsByMessageId.size) {
+      return nextMessages;
+    }
+
+    const createdCards = (
+      await Promise.all(
+        [...payloadsByMessageId.values()].map(async (payload) => {
+          try {
+            const response = await createAlarmAnalystCard(payload, { agentId });
+            return response?.matched && response.card ? (response.card as any) : null;
+          } catch (error) {
+            console.warn("Failed to backfill alarm analyst card:", error);
+            return null;
+          }
+        }),
+      )
+    ).filter(Boolean);
+
+    if (!createdCards.length) {
+      return nextMessages;
+    }
+
+    return mergeAlarmAnalystCards(nextMessages || [], createdCards);
+  }, []);
+
   const refreshRemoteSessions = useCallback(async (showSpinner = true) => {
     const nextRemoteAgentId = remoteAgentIdRef.current;
     const nextEmployee = currentEmployeeRef.current;
@@ -598,22 +684,15 @@ export function useRemoteChatSession({
         ).trim();
       }
 
-      if (
-        shouldEnableAlarmAnalystCards({
-          employeeId: nextEmployee.id,
+      if (enhancementSessionId) {
+        nextMessages = await hydrateAlarmAnalystCardsForHistory({
+          messages: nextMessages || [],
+          chatId: session.id,
+          sessionId: enhancementSessionId,
           session,
-        })
-        && enhancementSessionId
-      ) {
-        try {
-          const cardResponse = await listAlarmAnalystCards(session.id, {
-            sessionId: enhancementSessionId,
-            agentId: nextRemoteAgentId,
-          });
-          nextMessages = mergeAlarmAnalystCards(nextMessages || [], (cardResponse.cards || []) as any);
-        } catch (error) {
-          console.warn("Failed to hydrate alarm analyst cards:", error);
-        }
+          employeeId: nextEmployee.id,
+          agentId: nextRemoteAgentId,
+        });
       }
 
       setCurrentChatId(session.id);
@@ -627,7 +706,7 @@ export function useRemoteChatSession({
     } finally {
       setHistoryLoading(false);
     }
-  }, [stopActiveStream]);
+  }, [hydrateAlarmAnalystCardsForHistory, stopActiveStream]);
 
   const handleRemoteStreamEvent = (event: any, employee: any) => {
     if (event.object === "message" && event.id) {
