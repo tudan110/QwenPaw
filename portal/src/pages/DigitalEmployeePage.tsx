@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -27,15 +29,6 @@ import {
   ChatModelSelector,
   ModelConfigModal,
 } from "./digital-employee/modelControls";
-import { CronJobsPanel } from "./digital-employee/cronJobsPanel";
-import { CliTerminalPanel } from "./digital-employee/cliTerminalPanel";
-import { InspirationPanel } from "./digital-employee/inspirationPanel";
-import { McpPanel } from "./digital-employee/mcpPanel";
-import { OverviewPanel } from "./digital-employee/overviewPanel";
-import { ResourceImportPanel } from "./digital-employee/resourceImportPanel";
-import { SkillPoolPanel } from "./digital-employee/skillPoolPanel";
-import { TokenUsagePanel } from "./digital-employee/tokenUsagePanel";
-import { OpsExpertPanel } from "./digital-employee/opsExpertPanel";
 import {
   DashboardPanel,
   DashboardHistoryModal,
@@ -98,6 +91,52 @@ import {
   ensureObjectArray,
   ensureStringArray,
 } from "./digital-employee/pageHelpers";
+import { lazyNamed } from "../utils/lazyNamed";
+
+const CronJobsPanel = lazyNamed(
+  () => import("./digital-employee/cronJobsPanel"),
+  "CronJobsPanel",
+);
+const CliTerminalPanel = lazyNamed(
+  () => import("./digital-employee/cliTerminalPanel"),
+  "CliTerminalPanel",
+);
+const InspirationPanel = lazyNamed(
+  () => import("./digital-employee/inspirationPanel"),
+  "InspirationPanel",
+);
+const McpPanel = lazyNamed(() => import("./digital-employee/mcpPanel"), "McpPanel");
+const OverviewPanel = lazyNamed(
+  () => import("./digital-employee/overviewPanel"),
+  "OverviewPanel",
+);
+const ResourceImportPanel = lazyNamed(
+  () => import("./digital-employee/resourceImportPanel"),
+  "ResourceImportPanel",
+);
+const SkillPoolPanel = lazyNamed(
+  () => import("./digital-employee/skillPoolPanel"),
+  "SkillPoolPanel",
+);
+const TokenUsagePanel = lazyNamed(
+  () => import("./digital-employee/tokenUsagePanel"),
+  "TokenUsagePanel",
+);
+const OpsExpertPanel = lazyNamed(
+  () => import("./digital-employee/opsExpertPanel"),
+  "OpsExpertPanel",
+);
+
+const panelLoadingFallback = (
+  <div className="history-empty" style={{ minHeight: 280 }}>
+    <i className="fas fa-spinner fa-spin" />
+    <p>正在加载页面内容...</p>
+  </div>
+);
+
+function renderDeferredPanel(node: ReactNode) {
+  return <Suspense fallback={panelLoadingFallback}>{node}</Suspense>;
+}
 import type {
   PortalLocationState,
   ChatSidebarSectionKey,
@@ -1217,44 +1256,52 @@ export default function DigitalEmployeePage({
                 onDiscoverModels={handleDiscoverModels}
               />
           ) : isTokenUsageMode ? (
-            <TokenUsagePanel
-              pageTheme={pageTheme}
-              currentEmployeeName={selectedEmployee ? currentEmployee.name : "全局"}
-            />
+            renderDeferredPanel(
+              <TokenUsagePanel
+                pageTheme={pageTheme}
+                currentEmployeeName={selectedEmployee ? currentEmployee.name : "全局"}
+              />,
+            )
           ) : isOpsExpertMode ? (
-            <OpsExpertPanel />
+            renderDeferredPanel(<OpsExpertPanel />)
           ) : isMcpMode ? (
-            <McpPanel
-              agentId={effectiveMcpAgentId}
-              currentEmployeeId={effectiveMcpEmployee?.id || null}
-              currentEmployeeName={effectiveMcpEmployee?.name || currentEmployee.name}
-              onSwitchEmployee={switchMcpEmployee}
-            />
+            renderDeferredPanel(
+              <McpPanel
+                agentId={effectiveMcpAgentId}
+                currentEmployeeId={effectiveMcpEmployee?.id || null}
+                currentEmployeeName={effectiveMcpEmployee?.name || currentEmployee.name}
+                onSwitchEmployee={switchMcpEmployee}
+              />,
+            )
           ) : isSkillPoolMode ? (
-            <SkillPoolPanel />
+            renderDeferredPanel(<SkillPoolPanel />)
           ) : isInspirationMode ? (
-            <InspirationPanel
-              onOpenEmployeeChat={openEmployeeChat}
-              onOpenView={(view) =>
-                updateCurrentEmployeeRoute({
-                  view,
-                  panel: null,
-                })
-              }
-              onOpenPanel={(panel) =>
-                updateCurrentEmployeeRoute({
-                  panel,
-                })
-              }
-            />
+            renderDeferredPanel(
+              <InspirationPanel
+                onOpenEmployeeChat={openEmployeeChat}
+                onOpenView={(view) =>
+                  updateCurrentEmployeeRoute({
+                    view,
+                    panel: null,
+                  })
+                }
+                onOpenPanel={(panel) =>
+                  updateCurrentEmployeeRoute({
+                    panel,
+                  })
+                }
+              />,
+            )
           ) : isCliMode ? (
-            <CliTerminalPanel
-              employees={sidebarEmployees}
-              activeEmployeeId={selectedEmployee?.id || currentSidebarEmployee?.id || null}
-              onOpenEmployeeChat={openEmployeeChat}
-            />
+            renderDeferredPanel(
+              <CliTerminalPanel
+                employees={sidebarEmployees}
+                activeEmployeeId={selectedEmployee?.id || currentSidebarEmployee?.id || null}
+                onOpenEmployeeChat={openEmployeeChat}
+              />,
+            )
           ) : isResourceImportMode ? (
-            <ResourceImportPanel />
+            renderDeferredPanel(<ResourceImportPanel />)
           ) : (
             <>
           {!showPortalHomeHero ? (
@@ -1301,11 +1348,13 @@ export default function DigitalEmployeePage({
           ) : null}
 
           {currentView === "overview" ? (
-            <OverviewPanel
-              pageTheme={pageTheme}
-              onOpenEmployeeChat={handleOpenTaskEmployeeChat}
-              employees={employeesWithRuntimeStatus}
-            />
+            renderDeferredPanel(
+              <OverviewPanel
+                pageTheme={pageTheme}
+                onOpenEmployeeChat={handleOpenTaskEmployeeChat}
+                employees={employeesWithRuntimeStatus}
+              />,
+            )
           ) : null}
 
           {currentView === "dashboard" ? (
@@ -1328,7 +1377,7 @@ export default function DigitalEmployeePage({
           ) : null}
 
           {currentView === "tasks" ? (
-            <CronJobsPanel />
+            renderDeferredPanel(<CronJobsPanel />)
           ) : null}
 
           {currentView === "chat" ? (

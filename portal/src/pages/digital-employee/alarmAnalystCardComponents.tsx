@@ -1,8 +1,8 @@
 import { memo, useMemo } from "react";
 
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
+import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
 import type { AlarmAnalystCardV1 } from "../../alarm-analyst/shared";
-import { EChartsBlock } from "../../components/EChartsBlock";
 import { normalizeMarkdownDisplayContent } from "./helpers";
 
 function buildTopologyChart(card: AlarmAnalystCardV1) {
@@ -143,7 +143,11 @@ export const AlarmAnalystCardPanel = memo(function AlarmAnalystCardPanel({
         <section className="alarm-analyst-card">
           <div className="alarm-analyst-card-eyebrow">应用 / 资源拓扑</div>
           <div className="alarm-analyst-topology-panel">
-            <EChartsBlock chart={topologyChart} style={{ height: 360 }} />
+            <DeferredEChartsBlock
+              chart={topologyChart}
+              style={{ height: 360 }}
+              fallbackMinHeight={360}
+            />
           </div>
         </section>
       ) : null}

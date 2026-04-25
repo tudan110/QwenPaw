@@ -1,25 +1,73 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import AgentCenterPage from "./pages/AgentCenterPage";
-import DigitalEmployeePage from "./pages/DigitalEmployeePage";
+
+const AgentCenterPage = lazy(() => import("./pages/AgentCenterPage"));
+const DigitalEmployeePage = lazy(() => import("./pages/DigitalEmployeePage"));
+
+const routeFallback = (
+  <div
+    style={{
+      minHeight: "100vh",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: "#64748b",
+      background: "#f8fafc",
+    }}
+  >
+    正在加载页面...
+  </div>
+);
+
+function renderDeferredPage(node: React.ReactNode) {
+  return <Suspense fallback={routeFallback}>{node}</Suspense>;
+}
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<DigitalEmployeePage />} />
-      <Route path="/agent-center" element={<AgentCenterPage />} />
-      <Route path="/ops-expert" element={<DigitalEmployeePage forcedSection="ops-expert" />} />
-      <Route path="/mcp" element={<DigitalEmployeePage forcedSection="mcp" />} />
-      <Route path="/skill-pool" element={<DigitalEmployeePage forcedSection="skill-pool" />} />
-      <Route path="/inspiration" element={<DigitalEmployeePage forcedSection="inspiration" />} />
-      <Route path="/cli" element={<DigitalEmployeePage forcedSection="cli" />} />
-      <Route path="/resource-import" element={<DigitalEmployeePage forcedSection="resource-import" />} />
-      <Route path="/overview" element={<DigitalEmployeePage forcedSection="overview" />} />
-      <Route path="/dashboard" element={<DigitalEmployeePage forcedSection="dashboard" />} />
-      <Route path="/tasks" element={<DigitalEmployeePage forcedSection="tasks" />} />
-      <Route path="/cron-jobs" element={<DigitalEmployeePage forcedSection="tasks" />} />
-      <Route path="/model-config" element={<DigitalEmployeePage forcedSection="model-config" />} />
-      <Route path="/token-usage" element={<DigitalEmployeePage forcedSection="token-usage" />} />
-      <Route path="/employee/:employeeId" element={<DigitalEmployeePage />} />
+      <Route path="/" element={renderDeferredPage(<DigitalEmployeePage />)} />
+      <Route path="/agent-center" element={renderDeferredPage(<AgentCenterPage />)} />
+      <Route
+        path="/ops-expert"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="ops-expert" />)}
+      />
+      <Route path="/mcp" element={renderDeferredPage(<DigitalEmployeePage forcedSection="mcp" />)} />
+      <Route
+        path="/skill-pool"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="skill-pool" />)}
+      />
+      <Route
+        path="/inspiration"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="inspiration" />)}
+      />
+      <Route path="/cli" element={renderDeferredPage(<DigitalEmployeePage forcedSection="cli" />)} />
+      <Route
+        path="/resource-import"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="resource-import" />)}
+      />
+      <Route
+        path="/overview"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="overview" />)}
+      />
+      <Route
+        path="/dashboard"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="dashboard" />)}
+      />
+      <Route path="/tasks" element={renderDeferredPage(<DigitalEmployeePage forcedSection="tasks" />)} />
+      <Route
+        path="/cron-jobs"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="tasks" />)}
+      />
+      <Route
+        path="/model-config"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="model-config" />)}
+      />
+      <Route
+        path="/token-usage"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="token-usage" />)}
+      />
+      <Route path="/employee/:employeeId" element={renderDeferredPage(<DigitalEmployeePage />)} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -1,6 +1,8 @@
 import { useMemo } from "react";
-import { EChartsBlock } from "./EChartsBlock";
-import { MermaidBlock } from "./MermaidBlock";
+import {
+  DeferredEChartsBlock,
+  DeferredMermaidBlock,
+} from "./DeferredVisualizationBlocks";
 
 interface VisualizationChart {
   id?: string;
@@ -55,7 +57,7 @@ export function PortalVisualizationBlock({ raw }: PortalVisualizationBlockProps)
       {payload.charts.map((chart, index) => {
         if (chart.kind === "mermaid") {
           return (
-            <MermaidBlock
+            <DeferredMermaidBlock
               key={chart.id || `mermaid-${index}`}
               chart={String(chart.chart || "")}
             />
@@ -63,7 +65,7 @@ export function PortalVisualizationBlock({ raw }: PortalVisualizationBlockProps)
         }
 
         return (
-          <EChartsBlock
+          <DeferredEChartsBlock
             key={chart.id || `echarts-${index}`}
             chart={JSON.stringify(chart.option || {})}
           />

@@ -1,8 +1,9 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, Suspense, useEffect, useRef, useState } from "react";
 import { employeeStepDescriptions } from "../../data/portalData";
-import { EChartsBlock } from "../../components/EChartsBlock";
+import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
 import { PortalVisualizationBlock } from "../../components/PortalVisualizationBlock";
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
+import { lazyNamed } from "../../utils/lazyNamed";
 import {
   extractVisualBlocks,
   extractRenderableContentSegments,
@@ -10,8 +11,19 @@ import {
   getSeverityClassName,
   normalizeMarkdownDisplayContent,
 } from "./helpers";
-import { ResourceImportConversationCard } from "./resourceImportConversationCard";
 import { FaultScenarioResultCard } from "./faultScenarioComponents";
+
+const ResourceImportConversationCard = lazyNamed(
+  () => import("./resourceImportConversationCard"),
+  "ResourceImportConversationCard",
+);
+
+const deferredMessageCardFallback = (
+  <div className="history-empty" style={{ minHeight: 180 }}>
+    <i className="fas fa-spinner fa-spin" />
+    <p>正在加载内容...</p>
+  </div>
+);
 
 export function AlarmWorkorderBoard({
   workorders,
@@ -359,24 +371,26 @@ export const ChatMessageItem = memo(function ChatMessageItem({
           </div>
         ) : hasResourceImportFlow ? (
           <div className="message-bubble markdown-bubble resource-import-flow-bubble">
-            <ResourceImportConversationCard
-              agentId={agentId}
-              message={message}
-              onBackToConfirm={onResourceImportBackToConfirm}
-              onBuildTopology={onResourceImportBuildTopology}
-              onConfirmStructure={onResourceImportConfirmStructure}
-              onContinueImport={onResourceImportContinue}
-              onOpenSystemTopology={onResourceImportOpenSystemTopology}
-              onParseFailed={onResourceImportParseFailed}
-              onParseResolved={onResourceImportParseResolved}
-              onReturnToUpload={onResourceImportReturnToUpload}
-              onStartParse={onResourceImportStartParse}
-              onScrollToStage={onResourceImportScrollToStage}
-              onSubmitImport={onResourceImportSubmitImport}
-              onUploadFiles={onResourceImportUploadFiles}
-              releaseFiles={releaseResourceImportFiles}
-              resolveFiles={resolveResourceImportFiles}
-            />
+            <Suspense fallback={deferredMessageCardFallback}>
+              <ResourceImportConversationCard
+                agentId={agentId}
+                message={message}
+                onBackToConfirm={onResourceImportBackToConfirm}
+                onBuildTopology={onResourceImportBuildTopology}
+                onConfirmStructure={onResourceImportConfirmStructure}
+                onContinueImport={onResourceImportContinue}
+                onOpenSystemTopology={onResourceImportOpenSystemTopology}
+                onParseFailed={onResourceImportParseFailed}
+                onParseResolved={onResourceImportParseResolved}
+                onReturnToUpload={onResourceImportReturnToUpload}
+                onStartParse={onResourceImportStartParse}
+                onScrollToStage={onResourceImportScrollToStage}
+                onSubmitImport={onResourceImportSubmitImport}
+                onUploadFiles={onResourceImportUploadFiles}
+                releaseFiles={releaseResourceImportFiles}
+                resolveFiles={resolveResourceImportFiles}
+              />
+            </Suspense>
           </div>
         ) : renderedMessageContent ? (
           <div
@@ -945,7 +959,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
             style={{ display: "grid", gap: 16, margin: "16px 0" }}
           >
             {segment.type === "echarts" ? (
-              <EChartsBlock chart={segment.raw} />
+              <DeferredEChartsBlock chart={segment.raw} />
             ) : (
               <PortalVisualizationBlock raw={segment.raw} />
             )}
