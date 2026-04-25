@@ -8,6 +8,7 @@ import { ConfigProvider, bailianTheme } from "@agentscope-ai/design";
 import { theme as antdTheme } from "antd";
 import { createPortalRuntimeSessionApi } from "../lib/portalRuntimeSessionApi";
 import { stopChat } from "../api/copawChat";
+import PortalStreamingResponseCard from "./PortalStreamingResponseCard";
 
 const DEFAULT_API_BASE_URL = "/copaw-api/api";
 const API_BASE_URL = (import.meta.env.VITE_COPAW_API_BASE_URL || DEFAULT_API_BASE_URL).replace(
@@ -116,6 +117,9 @@ export function PortalRemoteRuntimeChat({
           multiple: true,
           hideBuiltInSessionList: false,
           api: sessionApi,
+        },
+        cards: {
+          AgentScopeRuntimeResponseCard: PortalStreamingResponseCard,
         },
         api: {
           fetch: customFetch,
