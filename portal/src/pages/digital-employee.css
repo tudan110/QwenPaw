@@ -5397,6 +5397,284 @@
   font-weight: 600;
 }
 
+.portal-digital-employee .inspection-analyst-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.portal-digital-employee .inspection-analyst-card {
+  border: 1px solid rgba(16, 185, 129, 0.14);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(236, 253, 245, 0.82) 100%);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+  padding: 22px;
+}
+
+.portal-digital-employee .inspection-analyst-summary-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.portal-digital-employee .inspection-analyst-summary-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, #10b981 0%, #14b8a6 100%);
+}
+
+.portal-digital-employee .inspection-analyst-card-header,
+.portal-digital-employee .inspection-analyst-section-header,
+.portal-digital-employee .inspection-analyst-topology-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.portal-digital-employee .inspection-analyst-card-eyebrow {
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #059669;
+}
+
+.portal-digital-employee .inspection-analyst-card h3,
+.portal-digital-employee .inspection-analyst-card h4,
+.portal-digital-employee .inspection-analyst-card p {
+  margin: 0;
+}
+
+.portal-digital-employee .inspection-analyst-card h3 {
+  font-size: 22px;
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .inspection-analyst-summary-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.portal-digital-employee .inspection-analyst-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.14);
+  color: #047857;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.portal-digital-employee .inspection-analyst-summary-lead {
+  margin-top: 16px !important;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+
+.portal-digital-employee .inspection-analyst-target {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.portal-digital-employee .inspection-analyst-target span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.portal-digital-employee .inspection-analyst-target strong {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .inspection-analyst-stat-grid,
+.portal-digital-employee .inspection-analyst-metric-grid,
+.portal-digital-employee .inspection-analyst-recommendation-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.portal-digital-employee .inspection-analyst-finding-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.portal-digital-employee .inspection-analyst-stat-card,
+.portal-digital-employee .inspection-analyst-metric-card,
+.portal-digital-employee .inspection-analyst-recommendation-card,
+.portal-digital-employee .inspection-analyst-finding-card {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.portal-digital-employee .inspection-analyst-stat-card span,
+.portal-digital-employee .inspection-analyst-metric-card span,
+.portal-digital-employee .inspection-analyst-recommendation-card span,
+.portal-digital-employee .inspection-analyst-finding-item span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.portal-digital-employee .inspection-analyst-stat-card strong,
+.portal-digital-employee .inspection-analyst-metric-card strong,
+.portal-digital-employee .inspection-analyst-recommendation-card strong,
+.portal-digital-employee .inspection-analyst-finding-item strong {
+  display: block;
+  font-size: 18px;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .inspection-analyst-metric-card p,
+.portal-digital-employee .inspection-analyst-recommendation-card p,
+.portal-digital-employee .inspection-analyst-finding-item p,
+.portal-digital-employee .inspection-analyst-topology-hint {
+  margin-top: 8px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.portal-digital-employee .inspection-analyst-stat-card.good strong,
+.portal-digital-employee .inspection-analyst-metric-card.good strong,
+.portal-digital-employee .inspection-analyst-finding-card.good h4 {
+  color: #16a34a;
+}
+
+.portal-digital-employee .inspection-analyst-stat-card.warning strong,
+.portal-digital-employee .inspection-analyst-metric-card.warning strong,
+.portal-digital-employee .inspection-analyst-finding-card.warning h4 {
+  color: #d97706;
+}
+
+.portal-digital-employee .inspection-analyst-stat-card.danger strong,
+.portal-digital-employee .inspection-analyst-metric-card.danger strong,
+.portal-digital-employee .inspection-analyst-finding-card.danger h4 {
+  color: #dc2626;
+}
+
+.portal-digital-employee .inspection-analyst-finding-card h4 {
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+
+.portal-digital-employee .inspection-analyst-finding-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.portal-digital-employee .inspection-analyst-finding-item + .inspection-analyst-finding-item {
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.portal-digital-employee .inspection-analyst-topology-panel {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.portal-digital-employee .inspection-analyst-raw-report {
+  border: 1px solid rgba(16, 185, 129, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.9);
+  overflow: hidden;
+}
+
+.portal-digital-employee .inspection-analyst-raw-report summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  list-style: none;
+}
+
+.portal-digital-employee .inspection-analyst-raw-report summary::-webkit-details-marker {
+  display: none;
+}
+
+.portal-digital-employee .inspection-analyst-raw-report summary small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.portal-digital-employee .inspection-analyst-raw-report-body {
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.portal-digital-employee.theme-dark .inspection-analyst-card {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(15, 23, 42, 0.88) 100%);
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.portal-digital-employee.theme-dark .inspection-analyst-target,
+.portal-digital-employee.theme-dark .inspection-analyst-stat-card,
+.portal-digital-employee.theme-dark .inspection-analyst-metric-card,
+.portal-digital-employee.theme-dark .inspection-analyst-recommendation-card,
+.portal-digital-employee.theme-dark .inspection-analyst-finding-card,
+.portal-digital-employee.theme-dark .inspection-analyst-topology-panel,
+.portal-digital-employee.theme-dark .inspection-analyst-raw-report {
+  background: rgba(15, 23, 42, 0.82);
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+@media (max-width: 960px) {
+  .portal-digital-employee .inspection-analyst-stat-grid,
+  .portal-digital-employee .inspection-analyst-metric-grid,
+  .portal-digital-employee .inspection-analyst-recommendation-grid,
+  .portal-digital-employee .inspection-analyst-finding-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .portal-digital-employee .inspection-analyst-card-header,
+  .portal-digital-employee .inspection-analyst-section-header,
+  .portal-digital-employee .inspection-analyst-topology-header,
+  .portal-digital-employee .inspection-analyst-raw-report summary {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .portal-digital-employee .inspection-analyst-stat-grid,
+  .portal-digital-employee .inspection-analyst-metric-grid,
+  .portal-digital-employee .inspection-analyst-recommendation-grid,
+  .portal-digital-employee .inspection-analyst-finding-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .portal-digital-employee .alarm-analyst-status-board {
   margin-top: 18px;
   display: grid;

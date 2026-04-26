@@ -21,6 +21,10 @@ const AlarmAnalystCardPanel = lazyNamed(
   () => import("./alarmAnalystCardComponents"),
   "AlarmAnalystCardPanel",
 );
+const InspectionAnalystCardPanel = lazyNamed(
+  () => import("./inspectionAnalystCardComponents"),
+  "InspectionAnalystCardPanel",
+);
 
 const deferredMessageCardFallback = (
   <div className="history-empty" style={{ minHeight: 180 }}>
@@ -293,6 +297,11 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     Boolean(effectiveDisposalOperation) &&
     effectiveDisposalOperation.status !== "success" &&
     !message.hideDisposalOperation;
+  const isInspectionAnalystCardCandidate =
+    message.type === "agent"
+    && currentEmployee?.id === "inspection"
+    && !isStreamingMessage
+    && /(?:巡检结果|健康状态评估)/u.test(renderedMessageContent);
   const copyableContent = String(
     renderedMessageContent || alarmAnalystCard?.rawReportMarkdown || "",
   ).trim();
@@ -404,6 +413,12 @@ export const ChatMessageItem = memo(function ChatMessageItem({
           <div className="message-bubble markdown-bubble alarm-analyst-card-bubble">
             <Suspense fallback={deferredMessageCardFallback}>
               <AlarmAnalystCardPanel card={alarmAnalystCard} />
+            </Suspense>
+          </div>
+        ) : isInspectionAnalystCardCandidate ? (
+          <div className="message-bubble markdown-bubble inspection-analyst-card-bubble">
+            <Suspense fallback={deferredMessageCardFallback}>
+              <InspectionAnalystCardPanel content={renderedMessageContent} />
             </Suspense>
           </div>
         ) : renderedMessageContent ? (
