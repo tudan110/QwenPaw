@@ -5223,6 +5223,306 @@
   gap: 14px;
 }
 
+.portal-digital-employee .alarm-analyst-summary-lead {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .alarm-analyst-summary-anchor {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.portal-digital-employee .alarm-analyst-summary-anchor span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.portal-digital-employee .alarm-analyst-summary-anchor strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.portal-digital-employee .alarm-analyst-affected-strip {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.04);
+  display: grid;
+  gap: 10px;
+}
+
+.portal-digital-employee .alarm-analyst-affected-label {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.portal-digital-employee .alarm-analyst-affected-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.portal-digital-employee .alarm-analyst-affected-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.portal-digital-employee .alarm-analyst-spotlight-grid {
+  margin-top: 18px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.portal-digital-employee .alarm-analyst-automation-grid {
+  margin-top: 18px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.portal-digital-employee .alarm-analyst-spotlight-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+}
+
+.portal-digital-employee .alarm-analyst-spotlight-card.primary {
+  grid-column: span 2;
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 34%),
+    linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(255, 255, 255, 0.92));
+}
+
+.portal-digital-employee .alarm-analyst-spotlight-card.action {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(255, 255, 255, 0.96));
+}
+
+.portal-digital-employee .alarm-analyst-spotlight-card.status {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.08), rgba(255, 255, 255, 0.96));
+}
+
+.portal-digital-employee .alarm-analyst-spotlight-card.warning {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(255, 255, 255, 0.96));
+}
+
+.portal-digital-employee .alarm-analyst-spotlight-label {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.portal-digital-employee .alarm-analyst-spotlight-value {
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .alarm-analyst-automation-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.portal-digital-employee .alarm-analyst-automation-card.workorder {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(255, 255, 255, 0.96));
+}
+
+.portal-digital-employee .alarm-analyst-automation-card.notification {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.08), rgba(255, 255, 255, 0.96));
+}
+
+.portal-digital-employee .alarm-analyst-automation-label {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.portal-digital-employee .alarm-analyst-automation-card h4 {
+  font-size: 16px;
+}
+
+.portal-digital-employee .alarm-analyst-automation-card p {
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.portal-digital-employee .alarm-analyst-automation-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.portal-digital-employee .alarm-analyst-automation-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.portal-digital-employee .alarm-analyst-status-board {
+  margin-top: 18px;
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.portal-digital-employee .alarm-analyst-status-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.portal-digital-employee .alarm-analyst-status-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+
+.portal-digital-employee .alarm-analyst-status-item.success .alarm-analyst-status-icon {
+  background: rgba(34, 197, 94, 0.14);
+  color: #16a34a;
+}
+
+.portal-digital-employee .alarm-analyst-status-item.alert .alarm-analyst-status-icon {
+  background: rgba(239, 68, 68, 0.14);
+  color: #dc2626;
+}
+
+.portal-digital-employee .alarm-analyst-status-content {
+  display: grid;
+  gap: 4px;
+}
+
+.portal-digital-employee .alarm-analyst-status-content strong {
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.portal-digital-employee .alarm-analyst-status-content span {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.portal-digital-employee .alarm-analyst-topology-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.portal-digital-employee .alarm-analyst-topology-hint {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.portal-digital-employee .alarm-analyst-topology-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.portal-digital-employee .alarm-analyst-topology-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+}
+
+.portal-digital-employee .alarm-analyst-decision-card {
+  background: linear-gradient(180deg, rgba(255, 247, 237, 0.96), rgba(255, 255, 255, 0.98));
+  border-color: rgba(251, 146, 60, 0.24);
+}
+
+.portal-digital-employee .alarm-analyst-decision-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.portal-digital-employee .alarm-analyst-decision-item {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(251, 146, 60, 0.18);
+}
+
+.portal-digital-employee .alarm-analyst-decision-item span {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.portal-digital-employee .alarm-analyst-decision-item strong {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .alarm-analyst-decision-item.accent strong {
+  color: #ea580c;
+}
+
 .portal-digital-employee .alarm-analyst-topology-panel {
   margin-top: 12px;
   border-radius: 16px;
@@ -5273,14 +5573,51 @@
   background: var(--bg-white);
 }
 
+.portal-digital-employee .alarm-analyst-raw-report-priority {
+  order: -1;
+}
+
 .portal-digital-employee .alarm-analyst-raw-report summary {
   cursor: pointer;
   font-weight: 700;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.portal-digital-employee .alarm-analyst-raw-report summary small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .portal-digital-employee .alarm-analyst-raw-report-body {
   margin-top: 12px;
+}
+
+@media (max-width: 768px) {
+  .portal-digital-employee .alarm-analyst-spotlight-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-digital-employee .alarm-analyst-automation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-digital-employee .alarm-analyst-spotlight-card.primary {
+    grid-column: auto;
+  }
+
+  .portal-digital-employee .alarm-analyst-topology-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .portal-digital-employee .alarm-analyst-decision-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .portal-digital-employee .fault-scenario-card {

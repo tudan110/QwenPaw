@@ -5,7 +5,91 @@ import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBloc
 import type { AlarmAnalystCardV1 } from "../../alarm-analyst/shared";
 import { normalizeMarkdownDisplayContent } from "./helpers";
 
-function buildTopologyChart(card: AlarmAnalystCardV1) {
+type AlarmAnalystSummaryRowTone = "accent" | "success" | "warning" | "neutral";
+
+type AlarmAnalystSummaryRow = {
+  label: string;
+  value: string;
+  tone?: AlarmAnalystSummaryRowTone;
+};
+
+type AlarmAnalystSpotlight = AlarmAnalystSummaryRow & {
+  variant: "primary" | "secondary" | "action" | "status" | "warning";
+};
+
+type AlarmAnalystAutomationCard = {
+  label: string;
+  title: string;
+  detail: string;
+  items?: string[];
+  variant: "workorder" | "notification";
+};
+
+type AlarmAnalystStatusItem = {
+  label: string;
+  detail?: string;
+  state: "success" | "alert";
+};
+
+type AlarmAnalystDecisionCard = {
+  label: string;
+  value: string;
+  accent?: boolean;
+};
+
+const SUMMARY_LABEL_ORDER = [
+  "置信度",
+  "故障性质",
+  "根因方向",
+  "影响范围",
+  "优先动作",
+  "关联资源告警查询状态",
+  "关键提醒",
+] as const;
+
+const SUMMARY_LABEL_ALIASES: Record<string, string> = {
+  影响面: "影响范围",
+  根因结论: "根因方向",
+  优先建议: "优先动作",
+  关键问题: "关键提醒",
+};
+
+function normalizeChartToken(value: unknown) {
+  return String(value || "")
+    .replace(/[*_~`>#]/g, "")
+    .replace(/\s+/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function buildHighlightTokens(card: AlarmAnalystCardV1) {
+  return [
+    card.rootCause.resourceId,
+    card.rootCause.resourceName,
+    card.rootCause.ciId,
+    ...card.impact.affectedApplications.map((item) => item.id || item.name || ""),
+    ...card.impact.affectedResources.map((item) => item.id || item.name || ""),
+  ]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+}
+
+function shouldHighlightNode(candidate: unknown, highlightTokens: string[]) {
+  const normalizedCandidate = normalizeChartToken(candidate);
+  if (!normalizedCandidate) {
+    return false;
+  }
+  return highlightTokens.some((token) => {
+    const normalizedToken = normalizeChartToken(token);
+    return normalizedToken
+      && (
+        normalizedCandidate.includes(normalizedToken)
+        || normalizedToken.includes(normalizedCandidate)
+      );
+  });
+}
+
+function buildStructuredTopologyChart(card: AlarmAnalystCardV1, highlightTokens: string[]) {
   const nodes = Array.isArray(card.topology?.nodes) ? card.topology.nodes : [];
   const edges = Array.isArray(card.topology?.edges) ? card.topology.edges : [];
   if (!nodes.length) {
@@ -32,8 +116,10 @@ function buildTopologyChart(card: AlarmAnalystCardV1) {
           value: node?.value || 1,
           category: node?.category || 0,
           symbolSize: node?.symbolSize || 42,
-          itemStyle: card.topology.highlightedNodeIds?.includes(String(node?.id || node?.name || ""))
-            ? { color: "#ef4444" }
+          itemStyle:
+            card.topology.highlightedNodeIds?.includes(String(node?.id || node?.name || ""))
+            || shouldHighlightNode(node?.id || node?.name || "", highlightTokens)
+            ? { color: "#ef4444", borderColor: "#991b1b", borderWidth: 2 }
             : node?.itemStyle,
         })),
         links: edges.map((edge: any) => ({
@@ -43,6 +129,72 @@ function buildTopologyChart(card: AlarmAnalystCardV1) {
       },
     ],
   });
+}
+
+function extractRawTopologyChart(content: string) {
+  const match = String(content || "").match(/```echarts\s*([\s\S]*?)```/i);
+  return match?.[1]?.trim() || "";
+}
+
+function markTreeNodes(node: any, highlightTokens: string[]) {
+  if (!node || typeof node !== "object") {
+    return node;
+  }
+
+  const isHighlighted = shouldHighlightNode(node.name || node.id || "", highlightTokens);
+  const children = Array.isArray(node.children)
+    ? node.children.map((child) => markTreeNodes(child, highlightTokens))
+    : node.children;
+
+  return {
+    ...node,
+    children,
+    itemStyle: isHighlighted
+      ? {
+          ...(node.itemStyle || {}),
+          color: "#ef4444",
+          borderColor: "#991b1b",
+          borderWidth: 2,
+        }
+      : node.itemStyle,
+    label: isHighlighted
+      ? {
+          ...(node.label || {}),
+          color: "#991b1b",
+          fontWeight: 700,
+        }
+      : node.label,
+  };
+}
+
+function buildReportTopologyChart(card: AlarmAnalystCardV1, highlightTokens: string[]) {
+  const rawChart = extractRawTopologyChart(card.rawReportMarkdown);
+  if (!rawChart) {
+    return "";
+  }
+
+  try {
+    const config = JSON.parse(rawChart) as Record<string, any>;
+    const series = Array.isArray(config.series) ? config.series : [];
+    const nextSeries = series.map((item: any) => ({
+      ...item,
+      data: Array.isArray(item?.data)
+        ? item.data.map((node: any) => markTreeNodes(node, highlightTokens))
+        : item?.data,
+    }));
+    return JSON.stringify({
+      ...config,
+      series: nextSeries,
+    });
+  } catch {
+    return rawChart;
+  }
+}
+
+function buildTopologyChart(card: AlarmAnalystCardV1) {
+  const highlightTokens = buildHighlightTokens(card);
+  return buildStructuredTopologyChart(card, highlightTokens)
+    || buildReportTopologyChart(card, highlightTokens);
 }
 
 function AlarmAnalystMarkdown({ content }: { content: string }) {
@@ -61,87 +213,594 @@ function AlarmAnalystMarkdown({ content }: { content: string }) {
   );
 }
 
+function stripMarkdownInline(value: string) {
+  return String(value || "")
+    .replace(/[*_~`>#]/g, "")
+    .replace(/\[(.*?)\]\((.*?)\)/g, "$1")
+    .replace(/^\p{Extended_Pictographic}+\s*/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeLabel(value: string) {
+  const stripped = stripMarkdownInline(value).replace(/[：:]/g, "").trim();
+  return SUMMARY_LABEL_ALIASES[stripped] || stripped;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractMarkdownSection(content: string, titles: string[]) {
+  const normalized = String(content || "").replace(/\r\n/g, "\n");
+  if (!normalized.trim()) {
+    return "";
+  }
+
+  const headingMatches = [...normalized.matchAll(/^#{1,6}\s*(.+?)\s*$/gm)];
+  if (!headingMatches.length) {
+    return "";
+  }
+
+  const targetIndex = headingMatches.findIndex((match) => {
+    const heading = stripMarkdownInline(match[1]);
+    return titles.some((title) => heading.includes(title));
+  });
+  if (targetIndex === -1) {
+    return "";
+  }
+
+  const startMatch = headingMatches[targetIndex];
+  const start = (startMatch.index || 0) + startMatch[0].length;
+  const end = targetIndex + 1 < headingMatches.length
+    ? (headingMatches[targetIndex + 1].index || normalized.length)
+    : normalized.length;
+  return normalized.slice(start, end).trim();
+}
+
+function extractBulletEntries(content: string) {
+  const rows: string[] = [];
+  let current = "";
+
+  for (const line of String(content || "").split("\n")) {
+    const bulletMatch = line.match(/^\s*[-*•]\s+(.+)\s*$/u);
+    if (bulletMatch) {
+      if (current) {
+        rows.push(current.trim());
+      }
+      current = bulletMatch[1].trim();
+      continue;
+    }
+
+    const trimmed = line.trim();
+    if (!trimmed || /^[-]{3,}$/.test(trimmed)) {
+      continue;
+    }
+    if (!current) {
+      continue;
+    }
+    current = `${current} ${trimmed}`.trim();
+  }
+
+  if (current) {
+    rows.push(current.trim());
+  }
+
+  return rows.map((row) => stripMarkdownInline(row)).filter(Boolean);
+}
+
+function buildSummaryRowsFromReport(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
+  const summarySection = extractMarkdownSection(card.rawReportMarkdown, ["总结"]);
+  if (!summarySection) {
+    return [];
+  }
+
+  const rowsByLabel = new Map<string, AlarmAnalystSummaryRow>();
+  for (const entry of extractBulletEntries(summarySection)) {
+    const match = entry.match(/^([^：:]{1,24})[：:]\s*(.+)$/u);
+    if (!match) {
+      continue;
+    }
+    const label = normalizeLabel(match[1]);
+    const value = stripMarkdownInline(match[2]);
+    if (!label || !value) {
+      continue;
+    }
+    rowsByLabel.set(label, {
+      label,
+      value,
+      tone:
+        label === "优先动作"
+          ? "accent"
+          : label === "关联资源告警查询状态"
+          ? "success"
+          : label === "关键提醒"
+          ? "warning"
+          : "neutral",
+    });
+  }
+
+  return SUMMARY_LABEL_ORDER
+    .map((label) => rowsByLabel.get(label))
+    .filter((row): row is AlarmAnalystSummaryRow => Boolean(row));
+}
+
+function joinUnique(items: string[] = []) {
+  return [...new Set(items.map((item) => item.trim()).filter(Boolean))].join("、");
+}
+
+function mapConfidenceLabel(value: string) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.includes("%")) {
+    return normalized.toUpperCase();
+  }
+  if (normalized === "high") {
+    return "高";
+  }
+  if (normalized === "medium") {
+    return "中";
+  }
+  if (normalized === "low") {
+    return "低";
+  }
+  return String(value).trim();
+}
+
+function mapStatusLabel(value: string) {
+  if (value === "identified") {
+    return "已定位";
+  }
+  if (value === "suspected") {
+    return "待确认";
+  }
+  if (value === "unknown") {
+    return "待分析";
+  }
+  return String(value || "").trim();
+}
+
+function mapSeverityLabel(value: string) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+  if (normalized === "critical" || normalized === "p0") {
+    return "严重";
+  }
+  if (normalized === "major" || normalized === "p1") {
+    return "高";
+  }
+  if (normalized === "minor" || normalized === "p2") {
+    return "中";
+  }
+  return String(value).trim();
+}
+
+function extractReportTitle(card: AlarmAnalystCardV1) {
+  const normalized = String(card.rawReportMarkdown || "").replace(/\r\n/g, "\n");
+  const match = normalized.match(/^##+\s*.*?告警分析报告[：:]\s*(.+?)\s*$/m);
+  if (match?.[1]) {
+    return stripMarkdownInline(match[1]);
+  }
+  return stripMarkdownInline(card.summary.title || "故障根因分析");
+}
+
+function extractReportField(content: string, labels: string[]) {
+  const normalized = String(content || "").replace(/\r\n/g, "\n");
+  for (const label of labels) {
+    const escaped = escapeRegExp(label);
+    const tablePattern = new RegExp(
+      `\\|\\s*(?:\\*\\*)?${escaped}(?:\\*\\*)?\\s*\\|\\s*([^|\\n]+?)\\s*\\|`,
+      "iu",
+    );
+    const linePattern = new RegExp(`(?:^|\\n)${escaped}\\s*[：:]\\s*([^\\n]+)`, "iu");
+    const match = normalized.match(tablePattern) || normalized.match(linePattern);
+    const value = stripMarkdownInline(match?.[1] || "").replace(/^自身$/u, "").trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "";
+}
+
+function extractReportLine(content: string, labels: string[]) {
+  const normalized = String(content || "").replace(/\r\n/g, "\n");
+  for (const label of labels) {
+    const escaped = escapeRegExp(label);
+    const pattern = new RegExp(`(?:^|\\n)\\s*(?:[-*•]\\s*)?${escaped}\\s*[：:]\\s*([^\\n]+)`, "iu");
+    const match = normalized.match(pattern);
+    const value = stripMarkdownInline(match?.[1] || "").trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "";
+}
+
+function removeKnownLabelPrefixes(value: string, labels: string[]) {
+  let next = String(value || "").trim();
+  for (const label of labels) {
+    const pattern = new RegExp(`^${escapeRegExp(label)}\\s*[：:]\\s*`, "iu");
+    next = next.replace(pattern, "").trim();
+  }
+  return next;
+}
+
+function buildNotificationAutomationCard(reportText: string, notificationStatus: boolean, notificationPayload: string) {
+  const notificationSection = extractMarkdownSection(reportText, ["飞书通知", "消息通知"]);
+  const userId = extractReportLine(notificationSection, ["飞书用户 ID", "用户 ID", "通知对象"]);
+  const conversationId = extractReportLine(notificationSection, ["飞书会话 ID", "会话 ID"]);
+  const notificationTargets = joinUnique([
+    userId ? `通知对象：${userId}` : "",
+    conversationId ? `会话：${conversationId}` : "",
+  ].filter(Boolean));
+
+  const contentItems = (
+    notificationPayload
+      ? notificationPayload.split(/[、，,]/u)
+      : extractBulletEntries(notificationSection)
+          .filter((entry) => /通知内容包含|通知内容|发送内容/u.test(entry))
+          .map((entry) =>
+            removeKnownLabelPrefixes(entry, ["通知内容包含", "通知内容", "发送内容"]),
+          )
+          .flatMap((entry) => entry.split(/[、，,]/u))
+  )
+    .map((item) => stripMarkdownInline(item))
+    .filter(Boolean);
+
+  if (!notificationStatus && !notificationTargets && !contentItems.length) {
+    return null;
+  }
+
+  return {
+    label: "AI 自动通知",
+    title: notificationStatus ? "已自动发送飞书通知" : "已准备通知内容",
+    detail: notificationTargets || "通知内容已由 AI 自动整理并发送。",
+    items: contentItems.length
+      ? contentItems.map((item) => `通知包含：${item}`)
+      : undefined,
+    variant: "notification" as const,
+  };
+}
+
+function buildAnchorText(card: AlarmAnalystCardV1) {
+  const reportText = String(card.rawReportMarkdown || "");
+  const resourceName = (
+    card.rootCause.resourceName && card.rootCause.resourceName !== "自身"
+      ? card.rootCause.resourceName
+      : extractReportField(reportText, ["资产编号", "资源名称", "实例", "根因资源"])
+  );
+  const manageIp = extractReportField(reportText, ["管理 IP", "设备 IP", "IP"]);
+
+  return [resourceName, manageIp]
+    .map((item) => stripMarkdownInline(item))
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
+  const rows: AlarmAnalystSummaryRow[] = [];
+  const confidence = mapConfidenceLabel(card.summary.confidence || "");
+  if (confidence) {
+    rows.push({ label: "置信度", value: confidence, tone: "neutral" });
+  }
+
+  const severity = mapSeverityLabel(card.summary.severity || "");
+  const faultNature = joinUnique([severity, stripMarkdownInline(card.summary.conclusion || "")]);
+  if (faultNature) {
+    rows.push({ label: "故障性质", value: faultNature, tone: "neutral" });
+  }
+
+  const rootCause = joinUnique([
+    stripMarkdownInline(card.rootCause.reason || ""),
+    stripMarkdownInline(
+      [card.rootCause.resourceName || card.rootCause.resourceId]
+        .filter(Boolean)
+        .join(" · "),
+    ),
+  ]);
+  if (rootCause) {
+    rows.push({ label: "根因方向", value: rootCause, tone: "neutral" });
+  }
+
+  const impactSegments = [
+    stripMarkdownInline(card.impact.blastRadiusText || ""),
+    card.impact.affectedApplications.length
+      ? `受影响应用：${joinUnique(card.impact.affectedApplications.map((item) => item.name || ""))}`
+      : "",
+    card.impact.affectedResources.length
+      ? `受影响资源：${joinUnique(card.impact.affectedResources.map((item) => item.name || ""))}`
+      : "",
+  ].filter(Boolean);
+  if (impactSegments.length) {
+    rows.push({ label: "影响范围", value: impactSegments.join("；"), tone: "neutral" });
+  }
+
+  const primaryRecommendation = card.recommendations[0];
+  if (primaryRecommendation) {
+    rows.push({
+      label: "优先动作",
+      value: stripMarkdownInline(primaryRecommendation.description || primaryRecommendation.title || ""),
+      tone: "accent",
+    });
+  }
+
+  const evidenceSummary = joinUnique(card.evidence.slice(0, 2).map((item) => item.summary || item.title || ""));
+  if (evidenceSummary) {
+    rows.push({
+      label: "关键提醒",
+      value: stripMarkdownInline(evidenceSummary),
+      tone: "warning",
+    });
+  }
+
+  return rows;
+}
+
+function buildDisplayModel(card: AlarmAnalystCardV1) {
+  const reportText = String(card.rawReportMarkdown || "");
+  const reportSummaryRows = buildSummaryRowsFromReport(card);
+  const summaryRows = reportSummaryRows.length ? reportSummaryRows : buildFallbackRows(card);
+  const rowsByLabel = new Map(summaryRows.map((row) => [row.label, row]));
+
+  const lead = (
+    rowsByLabel.get("故障性质")?.value ||
+    rowsByLabel.get("根因方向")?.value ||
+    stripMarkdownInline(card.summary.conclusion || "")
+  );
+
+  const confidenceLabel = rowsByLabel.get("置信度")?.value || mapConfidenceLabel(card.summary.confidence || "");
+  const badges = [
+    confidenceLabel ? `置信度 ${confidenceLabel}` : "",
+    !reportSummaryRows.length ? mapStatusLabel(card.summary.status || "") : "",
+    !reportSummaryRows.length ? mapSeverityLabel(card.summary.severity || "") : "",
+  ].filter(Boolean);
+
+  const anchorText = buildAnchorText(card);
+  const workorderTitle = extractReportField(reportText, ["工单标题"]);
+  const procInsId = extractReportField(reportText, ["procInsId"]);
+  const notificationPayload = extractReportLine(reportText, ["通知内容包含"]);
+  const notificationStatus = /飞书通知已发送成功|通知已发送成功/iu.test(reportText);
+
+  const affectedEntities = [
+    ...card.impact.affectedApplications.map((item) => item.name || item.id || ""),
+    ...card.impact.affectedResources.map((item) => item.name || item.id || ""),
+  ]
+    .map((item) => stripMarkdownInline(item))
+    .filter(Boolean);
+
+  const spotlightSections: AlarmAnalystSpotlight[] = [
+    rowsByLabel.get("故障性质")
+      ? { ...rowsByLabel.get("故障性质")!, variant: "primary" }
+      : null,
+    rowsByLabel.get("根因方向")
+      ? { ...rowsByLabel.get("根因方向")!, variant: "secondary" }
+      : null,
+    rowsByLabel.get("影响范围")
+      ? { ...rowsByLabel.get("影响范围")!, variant: "secondary" }
+      : null,
+    rowsByLabel.get("优先动作")
+      ? { ...rowsByLabel.get("优先动作")!, variant: "action" }
+      : null,
+    rowsByLabel.get("关联资源告警查询状态")
+      ? { ...rowsByLabel.get("关联资源告警查询状态")!, variant: "status" }
+      : null,
+    rowsByLabel.get("关键提醒")
+      ? { ...rowsByLabel.get("关键提醒")!, variant: "warning" }
+      : null,
+  ].filter((item): item is AlarmAnalystSpotlight => Boolean(item));
+
+  const automationCards: AlarmAnalystAutomationCard[] = [
+    workorderTitle || procInsId
+      ? {
+          label: "AI 自动建单",
+          title: "已自动创建处置工单",
+          detail: joinUnique([
+            workorderTitle ? `工单：${workorderTitle}` : "",
+            procInsId ? `流程号：${procInsId}` : "",
+          ].filter(Boolean)),
+          variant: "workorder",
+        }
+      : null,
+    buildNotificationAutomationCard(reportText, notificationStatus, notificationPayload),
+  ].filter((item): item is AlarmAnalystAutomationCard => Boolean(item));
+
+  const statusChecklist: AlarmAnalystStatusItem[] = [
+    rowsByLabel.get("关联资源告警查询状态")
+      ? {
+          label: rowsByLabel.get("关联资源告警查询状态")!.value,
+          state: /完成|成功|正常|已清除/u.test(rowsByLabel.get("关联资源告警查询状态")!.value)
+            ? "success"
+            : "alert",
+        }
+      : null,
+    automationCards.find((item) => item.variant === "workorder")
+      ? {
+          label: "AI 自动建单已完成",
+          detail: automationCards.find((item) => item.variant === "workorder")!.title,
+          state: "success",
+        }
+      : null,
+    automationCards.find((item) => item.variant === "notification")
+      ? {
+          label: "AI 自动通知已完成",
+          detail: automationCards.find((item) => item.variant === "notification")!.title,
+          state: "success",
+        }
+      : null,
+    rowsByLabel.get("关键提醒")
+      ? {
+          label: "关键提醒需优先处理",
+          detail: rowsByLabel.get("关键提醒")!.value,
+          state: "alert",
+        }
+      : null,
+  ].filter((item): item is AlarmAnalystStatusItem => Boolean(item));
+
+  const decisionCards: AlarmAnalystDecisionCard[] = [
+    rowsByLabel.get("故障性质")?.value
+      ? { label: "根因类型", value: rowsByLabel.get("故障性质")!.value }
+      : null,
+    anchorText
+      ? { label: "根因对象", value: anchorText }
+      : null,
+    rowsByLabel.get("根因方向")?.value
+      ? { label: "故障原因", value: rowsByLabel.get("根因方向")!.value }
+      : null,
+    confidenceLabel
+      ? { label: "定位置信度", value: confidenceLabel, accent: true }
+      : null,
+  ].filter((item): item is AlarmAnalystDecisionCard => Boolean(item));
+
+  return {
+    title: extractReportTitle(card),
+    lead,
+    summaryRows,
+    badges,
+    anchorText,
+    affectedEntities,
+    spotlightSections,
+    automationCards,
+    statusChecklist,
+    decisionCards,
+  };
+}
+
 export const AlarmAnalystCardPanel = memo(function AlarmAnalystCardPanel({
   card,
 }: {
   card: AlarmAnalystCardV1;
 }) {
   const topologyChart = useMemo(() => buildTopologyChart(card), [card]);
+  const display = useMemo(() => buildDisplayModel(card), [card]);
 
   return (
     <div className="alarm-analyst-card-stack">
+      {card.rawReportMarkdown ? (
+        <details className="alarm-analyst-raw-report alarm-analyst-raw-report-priority">
+          <summary>
+            <span>查看完整分析</span>
+            <small>展开最后一次完整回复</small>
+          </summary>
+          <div className="message-bubble markdown-bubble alarm-analyst-raw-report-body">
+            <AlarmAnalystMarkdown content={card.rawReportMarkdown} />
+          </div>
+        </details>
+      ) : null}
+
       <section className="alarm-analyst-card alarm-analyst-summary-card">
         <div className="alarm-analyst-card-header">
           <div>
-            <div className="alarm-analyst-card-eyebrow">根因分析结论</div>
-            <h3>{card.summary.title || "故障根因分析"}</h3>
+            <div className="alarm-analyst-card-eyebrow">根因分析总结</div>
+            <h3>{display.title}</h3>
           </div>
-          <div className="alarm-analyst-summary-badges">
-            {card.summary.status ? (
-              <span className={`alarm-analyst-badge status-${card.summary.status}`}>
-                {card.summary.status}
-              </span>
-            ) : null}
-            {card.summary.confidence ? (
-              <span className="alarm-analyst-badge">{card.summary.confidence}</span>
-            ) : null}
-            {card.summary.severity ? (
-              <span className="alarm-analyst-badge">{card.summary.severity}</span>
-            ) : null}
-          </div>
+          {display.badges.length ? (
+            <div className="alarm-analyst-summary-badges">
+              {display.badges.map((badge) => (
+                <span key={badge} className="alarm-analyst-badge">
+                  {badge}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
-        <p className="alarm-analyst-summary-text">{card.summary.conclusion}</p>
-        {card.rootCause?.reason ? (
-          <div className="alarm-analyst-root-cause">
-            <strong>根因锚点：</strong>
-            <span>
-              {card.rootCause.resourceName || card.rootCause.resourceId || "未识别资源"}
-              {card.rootCause.ciId ? `（CI ID ${card.rootCause.ciId}）` : ""}
-              {" · "}
-              {card.rootCause.reason}
-            </span>
+
+        {display.lead ? (
+          <p className="alarm-analyst-summary-text alarm-analyst-summary-lead">
+            {display.lead}
+          </p>
+        ) : null}
+
+        {display.anchorText ? (
+          <div className="alarm-analyst-summary-anchor">
+            <span>定位对象</span>
+            <strong>{display.anchorText}</strong>
+          </div>
+        ) : null}
+
+        {display.affectedEntities.length ? (
+          <div className="alarm-analyst-affected-strip">
+            <span className="alarm-analyst-affected-label">受影响对象</span>
+            <div className="alarm-analyst-affected-list">
+              {display.affectedEntities.map((item) => (
+                <span key={item} className="alarm-analyst-affected-chip">
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {display.spotlightSections.length ? (
+          <div className="alarm-analyst-spotlight-grid">
+            {display.spotlightSections.map((item) => (
+              <article
+                key={item.label}
+                className={`alarm-analyst-spotlight-card ${item.variant} ${item.tone || "neutral"}`}
+              >
+                <div className="alarm-analyst-spotlight-label">{item.label}</div>
+                <div className="alarm-analyst-spotlight-value">{item.value}</div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+
+        {display.automationCards.length ? (
+          <div className="alarm-analyst-automation-grid">
+            {display.automationCards.map((item) => (
+              <article
+                key={item.label}
+                className={`alarm-analyst-automation-card ${item.variant}`}
+              >
+                <div className="alarm-analyst-automation-label">{item.label}</div>
+                <h4>{item.title}</h4>
+                <p>{item.detail}</p>
+                {item.variant !== "notification" && item.items?.length ? (
+                  <div className="alarm-analyst-automation-list">
+                    {item.items.map((detail) => (
+                      <span key={detail} className="alarm-analyst-automation-pill">
+                        {detail}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        ) : null}
+
+        {display.statusChecklist.length ? (
+          <div className="alarm-analyst-status-board">
+            {display.statusChecklist.map((item) => (
+              <div key={item.label} className={`alarm-analyst-status-item ${item.state}`}>
+                <span className="alarm-analyst-status-icon">
+                  {item.state === "success" ? "✓" : "✕"}
+                </span>
+                <div className="alarm-analyst-status-content">
+                  <strong>{item.label}</strong>
+                  {item.detail ? <span>{item.detail}</span> : null}
+                </div>
+              </div>
+            ))}
           </div>
         ) : null}
       </section>
 
-      {(card.impact.affectedApplications.length || card.impact.affectedResources.length || card.impact.blastRadiusText) ? (
-        <section className="alarm-analyst-card">
-          <div className="alarm-analyst-card-eyebrow">影响范围</div>
-          {card.impact.blastRadiusText ? (
-            <p className="alarm-analyst-impact-text">{card.impact.blastRadiusText}</p>
-          ) : null}
-          <div className="alarm-analyst-impact-groups">
-            {card.impact.affectedApplications.length ? (
-              <div>
-                <h4>受影响应用</h4>
-                <div className="alarm-analyst-chip-list">
-                  {card.impact.affectedApplications.map((item, index) => (
-                    <span key={`${item.id || item.name}-${index}`} className="alarm-analyst-chip">
-                      {item.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            {card.impact.affectedResources.length ? (
-              <div>
-                <h4>受影响资源</h4>
-                <div className="alarm-analyst-chip-list">
-                  {card.impact.affectedResources.map((item, index) => (
-                    <span key={`${item.id || item.name}-${index}`} className="alarm-analyst-chip">
-                      {item.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
-
       {topologyChart ? (
         <section className="alarm-analyst-card">
-          <div className="alarm-analyst-card-eyebrow">应用 / 资源拓扑</div>
+          <div className="alarm-analyst-topology-header">
+            <div>
+              <div className="alarm-analyst-card-eyebrow">应用 / 资源拓扑</div>
+              <p className="alarm-analyst-topology-hint">红色节点表示根因资源或已识别的受影响节点</p>
+            </div>
+            <span className="alarm-analyst-topology-legend">
+              <span className="alarm-analyst-topology-legend-dot" />
+              受影响节点
+            </span>
+          </div>
           <div className="alarm-analyst-topology-panel">
             <DeferredEChartsBlock
               chart={topologyChart}
@@ -152,48 +811,23 @@ export const AlarmAnalystCardPanel = memo(function AlarmAnalystCardPanel({
         </section>
       ) : null}
 
-      {card.recommendations.length ? (
-        <section className="alarm-analyst-card">
-          <div className="alarm-analyst-card-eyebrow">处置建议</div>
-          <div className="alarm-analyst-recommendations">
-            {card.recommendations.map((item, index) => (
-              <article key={`${item.title}-${index}`} className="alarm-analyst-recommendation">
-                <div className="alarm-analyst-recommendation-header">
-                  <span className={`alarm-analyst-priority ${item.priority}`}>{item.priority}</span>
-                  <h4>{item.title}</h4>
-                </div>
-                <p>{item.description}</p>
-                {item.risk ? <div className="alarm-analyst-risk">风险：{item.risk}</div> : null}
+      {display.decisionCards.length ? (
+        <section className="alarm-analyst-card alarm-analyst-decision-card">
+          <div className="alarm-analyst-decision-header">
+            <div className="alarm-analyst-card-eyebrow">根因确定</div>
+          </div>
+          <div className="alarm-analyst-decision-grid">
+            {display.decisionCards.map((item) => (
+              <article
+                key={item.label}
+                className={`alarm-analyst-decision-item ${item.accent ? "accent" : ""}`}
+              >
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
               </article>
             ))}
           </div>
         </section>
-      ) : null}
-
-      {card.evidence.length ? (
-        <section className="alarm-analyst-card">
-          <div className="alarm-analyst-card-eyebrow">证据摘要</div>
-          <div className="alarm-analyst-evidence-list">
-            {card.evidence.map((item, index) => (
-              <article key={`${item.title}-${index}`} className="alarm-analyst-evidence-item">
-                <span className="alarm-analyst-evidence-kind">{item.kind}</span>
-                <div>
-                  <h4>{item.title}</h4>
-                  <p>{item.summary}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {card.rawReportMarkdown ? (
-        <details className="alarm-analyst-raw-report">
-          <summary>查看完整分析</summary>
-          <div className="message-bubble markdown-bubble alarm-analyst-raw-report-body">
-            <AlarmAnalystMarkdown content={card.rawReportMarkdown} />
-          </div>
-        </details>
       ) : null}
     </div>
   );
