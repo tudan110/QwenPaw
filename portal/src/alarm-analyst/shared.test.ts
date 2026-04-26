@@ -129,6 +129,20 @@ test("only enables alarm analyst cards for fault workorder sessions", () => {
   assert.equal(
     shouldEnableAlarmAnalystCards({
       employeeId: "fault",
+      session: { title: "告警分析 · 数据库锁异常 · db_mysql_001" },
+    }),
+    true,
+  );
+  assert.equal(
+    shouldEnableAlarmAnalystCards({
+      employeeId: "fault",
+      session: { sessionId: "portal-fault-alarm-COMMON__1776338881568_2044739586778116096" },
+    }),
+    true,
+  );
+  assert.equal(
+    shouldEnableAlarmAnalystCards({
+      employeeId: "fault",
       session: {
         title:
           "数据库锁异常（db_mysql_001 10.43.150.186）\n资源 ID（CI ID）：3094\n告警时间：2026-04-15 19:20:00",

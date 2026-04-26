@@ -78,6 +78,7 @@ function looksLikeAlarmAnalystHistorySession(value: unknown) {
   }
 
   return (
+    /^告警分析\s*[·\-]/u.test(text) ||
     /资源\s*ID（CI\s*ID）[:：]/u.test(text) ||
     /告警时间[:：]/u.test(text) ||
     ((/告警|异常|故障/u.test(text) || /数据库锁/u.test(text)) && /CI\s*ID|资源\s*ID/u.test(text))
@@ -100,6 +101,9 @@ export function shouldEnableAlarmAnalystCards({
     return true;
   }
   if (String(meta?.workorderNo || "").trim()) {
+    return true;
+  }
+  if (/^portal-fault-alarm-/u.test(String(session?.sessionId || session?.session_id || "").trim())) {
     return true;
   }
 
