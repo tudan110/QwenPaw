@@ -7,6 +7,7 @@ import {
   createInitialMessages,
 } from "./helpers";
 import {
+  RESOURCE_IMPORT_OWNER_ID,
   ensureObjectArray,
   ensureSessionRecords,
   isPortalResourceImportSession,
@@ -95,6 +96,9 @@ export function usePortalSessionHistory({
   const [historyDraftTitle, setHistoryDraftTitle] = useState("");
   const [historyActionSessionId, setHistoryActionSessionId] = useState("");
   const [historyActionError, setHistoryActionError] = useState("");
+  const scopedRemoteSessions = isRemoteEmployee && currentEmployee?.id === RESOURCE_IMPORT_OWNER_ID
+    ? mergeSessionRecords(remoteSessions, portalResourceImportSessions)
+    : remoteSessions;
 
   const persistLocalSessions = useCallback((employeeId: string, nextSessions: SessionRecord[]) => {
     const nextStore: ConversationStoreState = {
@@ -171,7 +175,7 @@ export function usePortalSessionHistory({
 
     const openKey = `${openSession.employeeId}:${openSession.sessionId}`;
     const availableSessions = isRemoteEmployee
-      ? mergeSessionRecords(remoteSessions, portalResourceImportSessions)
+      ? scopedRemoteSessions
       : ensureSessionRecords(conversationStore[currentEmployee.id]);
     const targetSession = availableSessions.find((session) => session.id === openSession.sessionId);
 
@@ -199,9 +203,8 @@ export function usePortalSessionHistory({
     locationSearch,
     locationState,
     navigate,
-    portalResourceImportSessions,
     refreshRemoteSessions,
-    remoteSessions,
+    scopedRemoteSessions,
   ]);
 
   const handleStartNewConversation = useCallback(() => {

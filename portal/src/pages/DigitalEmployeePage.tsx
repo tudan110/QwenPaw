@@ -862,9 +862,12 @@ export default function DigitalEmployeePage({
   const effectiveMcpAgentId = effectiveMcpEmployee
     ? (REMOTE_AGENT_IDS[effectiveMcpEmployee.id] || "default")
     : "default";
+  const scopedRemoteSessions = currentEmployee?.id === RESOURCE_IMPORT_OWNER_ID
+    ? mergeSessionRecords(remoteSessions, portalResourceImportSessions)
+    : remoteSessions;
   const sessionList = (
     isRemoteEmployee
-      ? mergeSessionRecords(remoteSessions, portalResourceImportSessions)
+      ? scopedRemoteSessions
       : ensureSessionRecords(conversationStore[currentEmployee?.id || ""])
   ) as SessionRecord[];
 

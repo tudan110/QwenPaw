@@ -592,6 +592,7 @@ export function useRemoteChatSession({
 
     try {
       const chats = await listChats(nextRemoteAgentId, {
+        user_id: COPAW_USER_ID,
         channel: COPAW_CHANNEL,
       });
       if (remoteHistoryRequestIdRef.current !== requestId) {

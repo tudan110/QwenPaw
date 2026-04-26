@@ -20,6 +20,8 @@ import type {
   SessionRecord,
 } from "./pageHelpers";
 
+const DASHBOARD_USER_ID = "default";
+
 export function usePortalDashboard({
   employeesWithRuntimeStatus,
   employeeRuntimeStatusMap,
@@ -91,16 +93,16 @@ export function usePortalDashboard({
       remoteEntries.map(async ([employeeId, agentId]) => {
         try {
           const chats = await listChats(agentId, {
+            user_id: DASHBOARD_USER_ID,
             channel: DASHBOARD_CHAT_CHANNEL,
           });
           const chatList = Array.isArray(chats) ? chats : [];
+          const normalizedSessions = normalizeRemoteSessions(chatList, employeeId);
           return [
             employeeId,
             {
-              count: chatList.length,
-              sessions: normalizeRemoteSessions(chatList, employeeId, {
-                fallbackToAllChats: true,
-              }),
+              count: normalizedSessions.length,
+              sessions: normalizedSessions,
             },
           ] as const;
         } catch {
@@ -253,12 +255,12 @@ export function usePortalDashboard({
     setDashboardHistoryLoading(true);
     try {
       const chats = await listChats(REMOTE_AGENT_IDS[employee.id], {
+        user_id: DASHBOARD_USER_ID,
         channel: DASHBOARD_CHAT_CHANNEL,
       });
       const normalizedSessions = normalizeRemoteSessions(
         Array.isArray(chats) ? chats : [],
         employee.id,
-        { fallbackToAllChats: true },
       );
       setDashboardRemoteSessionsMap((prev) => ({
         ...prev,
