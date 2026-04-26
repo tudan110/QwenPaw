@@ -125,6 +125,10 @@ INSPECTION_NOTIFY_MENTION_ALL=true
 - 缺少 token 时，必须明确报错，不能假装查询成功
 - `INSPECTION_NOTIFY_WEBHOOK_URL` 是通用应用 webhook，可对接量子密信
 - 支持按配置同时推送到：应用（可配置为量子密信）、钉钉、飞书
+- 当前 webhook 推送展示约定：
+  - 飞书：优先发送 `interactive` 卡片，避免把 Markdown 标题/表格原样显示成普通字符
+  - 钉钉：发送 `markdown` 消息
+  - 通用应用 webhook（如量子密信）：保持通用 text 协议，但正文按 Markdown 风格组织，具体是否渲染样式取决于对端应用
 - 如果未配置任何 webhook，必须明确体现“通知未配置”
 
 ---

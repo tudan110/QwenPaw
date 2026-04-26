@@ -262,8 +262,9 @@ def test_app_notification_payload_mentions_all_when_enabled():
     assert payload["type"] == "text"
     assert payload["textMsg"]["isMentioned"] is True
     assert payload["textMsg"]["mentionType"] == 1
-    assert "根因方向：疑似长事务" in payload["textMsg"]["content"]
-    assert "处置建议：排查长事务；检查阻塞链" in payload["textMsg"]["content"]
+    assert "**AI创建处置工单**" in payload["textMsg"]["content"]
+    assert "- **根因方向**：疑似长事务" in payload["textMsg"]["content"]
+    assert "- **处置建议**：排查长事务；检查阻塞链" in payload["textMsg"]["content"]
 
 
 @patch.dict(
@@ -298,10 +299,10 @@ def test_dingtalk_notification_payload_mentions_all_when_enabled():
 
     payload = WORKORDER_MODULE._build_dingtalk_notify_payload(context)
 
-    assert payload["msgtype"] == "text"
+    assert payload["msgtype"] == "markdown"
     assert payload["at"]["isAtAll"] is True
-    assert payload["text"]["content"].startswith("工单\n")
-    assert "taskId：task-1" in payload["text"]["content"]
+    assert payload["markdown"]["text"].startswith("工单\n")
+    assert "- **taskId**：task-1" in payload["markdown"]["text"]
 
 
 @patch.dict(
@@ -356,10 +357,12 @@ def test_feishu_notification_payload_appends_timestamp_and_sign():
     with patch.object(WORKORDER_MODULE.time, "time", return_value=1700000000.0):
         payload = WORKORDER_MODULE._build_feishu_notify_payload(context)
 
-    assert payload["msg_type"] == "text"
+    assert payload["msg_type"] == "interactive"
     assert payload["timestamp"] == "1700000000"
     assert payload["sign"]
-    assert '<at user_id="all">所有人</at>' in payload["content"]["text"]
+    assert payload["card"]["header"]["title"]["content"] == "AI创建处置工单 — db_mysql_001"
+    assert payload["card"]["elements"][0]["text"]["content"] == "<at id=all></at>"
+    assert payload["card"]["elements"][1]["fields"][0]["text"]["content"] == "**告警标题**\nAI创建 · 数据库锁异常人工处置"
 
 
 @patch.dict(

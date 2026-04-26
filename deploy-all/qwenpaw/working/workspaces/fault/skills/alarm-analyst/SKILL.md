@@ -219,6 +219,10 @@ ORDER_CREATE_NOTIFY_MENTION_ALL=true
 - 如果要在建单后自动推送通知，可继续配置 `ORDER_CREATE_NOTIFY_*` 这一组 webhook 变量
 - `ORDER_CREATE_NOTIFY_WEBHOOK_URL` 是通用应用 webhook，可对接量子密信
 - `ORDER_CREATE_NOTIFY_DINGTALK_SECRET` / `ORDER_CREATE_NOTIFY_FEISHU_SECRET` 用于机器人签名校验
+- 当前 webhook 推送展示约定：
+  - 飞书：优先发送 `interactive` 卡片，不再依赖把 Markdown 原文塞进纯文本消息
+  - 钉钉：发送 `markdown` 消息
+  - 通用应用 webhook（如量子密信）：保持通用 text 协议，但正文按 Markdown 风格组织，具体是否渲染样式取决于对端应用
 - 当需要调用 `veops-cmdb` 查询拓扑时，直接遵循 `veops-cmdb` 自己的配置与访问规则，不在当前 skill 内重复声明
 - 具体 API 路径、请求体和调用时机写在本 `SKILL.md` 中
 - 如果后续更换指标服务地址，优先只改 `.env`，不要在多个脚本或提示词里硬编码

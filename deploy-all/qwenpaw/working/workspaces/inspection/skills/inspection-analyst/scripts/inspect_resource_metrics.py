@@ -327,21 +327,30 @@ def _build_notification_context(result: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def _build_app_notify_payload(context: dict[str, str]) -> dict[str, Any]:
-    content_lines = [
-        "【AI巡检结果】",
-        f"巡检对象：{context['inspection_object']}",
-        f"资源：{context['resource_name']} / CI ID: {context['res_id']}",
-        f"资源类型：{context['metric_type']}",
-        f"指标总数：{context['metrics_total']}",
-        f"指标定义来源：{context['definition_source']}",
-        f"指标数据来源：{context['data_source']}",
-        f"指标预览：{context['metric_preview']}",
-        f"巡检时间：{context['created_at']}",
-        "此结果由 AI 自动巡检生成，请及时关注。",
+def _build_notification_markdown_lines(context: dict[str, str]) -> list[str]:
+    return [
+        "**AI巡检结果**",
+        "",
+        f"- **巡检对象**：{context['inspection_object']}",
+        f"- **资源**：{context['resource_name']} / CI ID: {context['res_id']}",
+        f"- **资源类型**：{context['metric_type']}",
+        f"- **指标总数**：{context['metrics_total']}",
+        f"- **指标定义来源**：{context['definition_source']}",
+        f"- **指标数据来源**：{context['data_source']}",
+        f"- **指标预览**：{context['metric_preview']}",
+        f"- **巡检时间**：{context['created_at']}",
+        "",
+        "> 此结果由 AI 自动巡检生成，请及时关注。",
     ]
+
+
+def _build_notification_markdown_text(context: dict[str, str]) -> str:
+    return "\n".join(_build_notification_markdown_lines(context))
+
+
+def _build_app_notify_payload(context: dict[str, str]) -> dict[str, Any]:
     text_msg: dict[str, Any] = {
-        "content": "\n".join(content_lines),
+        "content": _build_notification_markdown_text(context),
     }
     if _get_notify_mention_all():
         text_msg.update(
@@ -357,25 +366,16 @@ def _build_app_notify_payload(context: dict[str, str]) -> dict[str, Any]:
 
 
 def _build_dingtalk_notify_payload(context: dict[str, str]) -> dict[str, Any]:
-    content_lines = [
-        "【AI巡检结果】",
-        f"巡检对象：{context['inspection_object']}",
-        f"资源：{context['resource_name']} / CI ID: {context['res_id']}",
-        f"资源类型：{context['metric_type']}",
-        f"指标总数：{context['metrics_total']}",
-        f"指标定义来源：{context['definition_source']}",
-        f"指标数据来源：{context['data_source']}",
-        f"指标预览：{context['metric_preview']}",
-        f"巡检时间：{context['created_at']}",
-        "此结果由 AI 自动巡检生成，请及时关注。",
-    ]
+    markdown_lines: list[str] = []
     keyword = _get_notify_env("DINGTALK_KEYWORD")
     if keyword:
-        content_lines.insert(0, keyword)
+        markdown_lines.extend([keyword, ""])
+    markdown_lines.extend(_build_notification_markdown_lines(context))
     payload: dict[str, Any] = {
-        "msgtype": "text",
-        "text": {
-            "content": "\n".join(content_lines),
+        "msgtype": "markdown",
+        "markdown": {
+            "title": _safe_str(context.get("inspection_object")) or "AI巡检结果",
+            "text": "\n".join(markdown_lines),
         },
     }
     if _get_notify_mention_all():
@@ -384,24 +384,108 @@ def _build_dingtalk_notify_payload(context: dict[str, str]) -> dict[str, Any]:
 
 
 def _build_feishu_notify_payload(context: dict[str, str]) -> dict[str, Any]:
-    content_lines = [
-        "【AI巡检结果】",
-        f"巡检对象：{context['inspection_object']}",
-        f"资源：{context['resource_name']} / CI ID: {context['res_id']}",
-        f"资源类型：{context['metric_type']}",
-        f"指标总数：{context['metrics_total']}",
-        f"指标定义来源：{context['definition_source']}",
-        f"指标数据来源：{context['data_source']}",
-        f"指标预览：{context['metric_preview']}",
-        f"巡检时间：{context['created_at']}",
-        "此结果由 AI 自动巡检生成，请及时关注。",
-    ]
+    metric_preview_lines = [
+        f"- {item.strip()}"
+        for item in context["metric_preview"].split("；")
+        if item.strip()
+    ] or ["- 暂无指标预览"]
+    elements: list[dict[str, Any]] = []
     if _get_notify_mention_all():
-        content_lines.insert(0, '<at user_id="all">所有人</at>')
+        elements.append(
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": "<at id=all></at>",
+                },
+            }
+        )
+    elements.extend(
+        [
+            {
+                "tag": "div",
+                "fields": [
+                    {
+                        "is_short": True,
+                        "text": {
+                            "tag": "lark_md",
+                            "content": f"**巡检对象**\n{context['inspection_object']}",
+                        },
+                    },
+                    {
+                        "is_short": True,
+                        "text": {
+                            "tag": "lark_md",
+                            "content": f"**资源 ID (CI ID)**\n{context['res_id']}",
+                        },
+                    },
+                    {
+                        "is_short": True,
+                        "text": {
+                            "tag": "lark_md",
+                            "content": f"**资源名称**\n{context['resource_name']}",
+                        },
+                    },
+                    {
+                        "is_short": True,
+                        "text": {
+                            "tag": "lark_md",
+                            "content": f"**资源类型**\n{context['metric_type']}",
+                        },
+                    },
+                ],
+            },
+            {"tag": "hr"},
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": (
+                        "**巡检摘要**\n"
+                        f"- 指标总数：{context['metrics_total']}\n"
+                        f"- 指标定义来源：{context['definition_source']}\n"
+                        f"- 指标数据来源：{context['data_source']}"
+                    ),
+                },
+            },
+            {"tag": "hr"},
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": "**指标预览**\n" + "\n".join(metric_preview_lines),
+                },
+            },
+            {
+                "tag": "note",
+                "elements": [
+                    {
+                        "tag": "plain_text",
+                        "content": f"巡检时间：{context['created_at']}",
+                    },
+                    {
+                        "tag": "plain_text",
+                        "content": "此结果由 AI 自动巡检生成，请及时关注。",
+                    },
+                ],
+            },
+        ]
+    )
     payload: dict[str, Any] = {
-        "msg_type": "text",
-        "content": {
-            "text": "\n".join(content_lines),
+        "msg_type": "interactive",
+        "card": {
+            "config": {
+                "wide_screen_mode": True,
+                "enable_forward": True,
+            },
+            "header": {
+                "template": "red",
+                "title": {
+                    "tag": "plain_text",
+                    "content": f"AI巡检报告 — {context['resource_name'] or context['inspection_object']}",
+                },
+            },
+            "elements": elements,
         },
     }
     secret = _get_notify_env("FEISHU_SECRET")

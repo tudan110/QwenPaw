@@ -242,3 +242,97 @@ def test_inspect_resource_metrics_can_skip_notification():
 
     mocked_notify.assert_not_called()
     assert result["notification"]["reason"] == "notify_disabled"
+
+
+@patch.dict(
+    "os.environ",
+    {
+        "INSPECTION_NOTIFY_WEBHOOK_URL": "http://notify.example.com/webhook",
+        "INSPECTION_NOTIFY_MENTION_ALL": "true",
+    },
+    clear=False,
+)
+def test_app_notification_payload_uses_markdown_style_content():
+    payload = INSPECTION_MODULE._build_app_notify_payload(
+        {
+            "inspection_object": "核心数据库",
+            "resource_name": "db_mysql_001",
+            "res_id": "3094",
+            "metric_type": "mysql",
+            "metrics_total": "12",
+            "definition_source": "live",
+            "data_source": "live",
+            "metric_preview": "活跃线程数=12；连接数=80",
+            "created_at": "2026-04-24 10:00:00",
+        }
+    )
+
+    assert payload["type"] == "text"
+    assert payload["textMsg"]["isMentioned"] is True
+    assert payload["textMsg"]["mentionType"] == 1
+    assert "**AI巡检结果**" in payload["textMsg"]["content"]
+    assert "- **巡检对象**：核心数据库" in payload["textMsg"]["content"]
+
+
+@patch.dict(
+    "os.environ",
+    {
+        "INSPECTION_NOTIFY_DINGTALK_WEBHOOK_URL": "https://oapi.dingtalk.com/robot/send?access_token=test",
+        "INSPECTION_NOTIFY_DINGTALK_KEYWORD": "巡检",
+        "INSPECTION_NOTIFY_MENTION_ALL": "true",
+    },
+    clear=False,
+)
+def test_dingtalk_notification_payload_uses_markdown_message():
+    payload = INSPECTION_MODULE._build_dingtalk_notify_payload(
+        {
+            "inspection_object": "核心数据库",
+            "resource_name": "db_mysql_001",
+            "res_id": "3094",
+            "metric_type": "mysql",
+            "metrics_total": "12",
+            "definition_source": "live",
+            "data_source": "live",
+            "metric_preview": "活跃线程数=12；连接数=80",
+            "created_at": "2026-04-24 10:00:00",
+        }
+    )
+
+    assert payload["msgtype"] == "markdown"
+    assert payload["at"]["isAtAll"] is True
+    assert payload["markdown"]["text"].startswith("巡检\n")
+    assert "- **巡检对象**：核心数据库" in payload["markdown"]["text"]
+
+
+@patch.dict(
+    "os.environ",
+    {
+        "INSPECTION_NOTIFY_FEISHU_WEBHOOK_URL": "https://open.feishu.cn/open-apis/bot/v2/hook/test",
+        "INSPECTION_NOTIFY_FEISHU_SECRET": "feishu-secret",
+        "INSPECTION_NOTIFY_MENTION_ALL": "true",
+    },
+    clear=False,
+)
+def test_feishu_notification_payload_uses_markdown_style_text_and_sign():
+    with patch.object(INSPECTION_MODULE.time, "time", return_value=1700000000.0):
+        payload = INSPECTION_MODULE._build_feishu_notify_payload(
+            {
+                "inspection_object": "核心数据库",
+                "resource_name": "db_mysql_001",
+                "res_id": "3094",
+                "metric_type": "mysql",
+                "metrics_total": "12",
+                "definition_source": "live",
+                "data_source": "live",
+                "metric_preview": "活跃线程数=12；连接数=80",
+                "created_at": "2026-04-24 10:00:00",
+            }
+        )
+
+    assert payload["msg_type"] == "interactive"
+    assert payload["timestamp"] == "1700000000"
+    assert payload["sign"]
+    assert payload["card"]["header"]["title"]["content"] == "AI巡检报告 — db_mysql_001"
+    assert payload["card"]["elements"][0]["text"]["content"] == "<at id=all></at>"
+    assert payload["card"]["elements"][1]["fields"][0]["text"]["content"] == "**巡检对象**\n核心数据库"
+    assert "活跃线程数=12" in payload["card"]["elements"][5]["text"]["content"]

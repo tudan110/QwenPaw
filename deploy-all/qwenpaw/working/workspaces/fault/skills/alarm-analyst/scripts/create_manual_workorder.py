@@ -177,22 +177,35 @@ def _build_notification_context(
     }
 
 
-def _build_app_notify_payload(context: dict[str, str]) -> dict[str, Any]:
-    content_lines = [
-        "【AI创建处置工单】",
-        f"标题：{context['title']}",
-        f"摘要：{context['summary']}",
-        f"资源：{context['device_name']} / {context['manage_ip']} / CI ID: {context['res_id']}",
-        f"等级：{context['level']}",
-        f"根因方向：{context['root_cause']}",
-        f"处置建议：{context['suggestions']}",
-        f"taskId：{context['task_id']}",
-        f"procInsId：{context['proc_ins_id']}",
-        f"创建时间：{context['created_at']}",
-        "此工单为 AI 自动创建，请尽快跟进处置。",
+def _build_notification_markdown_lines(context: dict[str, str]) -> list[str]:
+    return [
+        "**AI创建处置工单**",
+        "",
+        f"- **标题**：{context['title']}",
+        f"- **摘要**：{context['summary']}",
+        (
+            "- **资源**："
+            f"{context['device_name']} / {context['manage_ip']} / CI ID: "
+            f"{context['res_id']}"
+        ),
+        f"- **等级**：{context['level']}",
+        f"- **根因方向**：{context['root_cause']}",
+        f"- **处置建议**：{context['suggestions']}",
+        f"- **taskId**：{context['task_id']}",
+        f"- **procInsId**：{context['proc_ins_id']}",
+        f"- **创建时间**：{context['created_at']}",
+        "",
+        "> 此工单为 AI 自动创建，请尽快跟进处置。",
     ]
+
+
+def _build_notification_markdown_text(context: dict[str, str]) -> str:
+    return "\n".join(_build_notification_markdown_lines(context))
+
+
+def _build_app_notify_payload(context: dict[str, str]) -> dict[str, Any]:
     text_msg: dict[str, Any] = {
-        "content": "\n".join(content_lines),
+        "content": _build_notification_markdown_text(context),
     }
     if _get_notify_mention_all():
         text_msg.update(
@@ -208,26 +221,16 @@ def _build_app_notify_payload(context: dict[str, str]) -> dict[str, Any]:
 
 
 def _build_dingtalk_notify_payload(context: dict[str, str]) -> dict[str, Any]:
-    content_lines = [
-        "【AI创建处置工单】",
-        f"标题：{context['title']}",
-        f"摘要：{context['summary']}",
-        f"资源：{context['device_name']} / {context['manage_ip']} / CI ID: {context['res_id']}",
-        f"等级：{context['level']}",
-        f"根因方向：{context['root_cause']}",
-        f"处置建议：{context['suggestions']}",
-        f"taskId：{context['task_id']}",
-        f"procInsId：{context['proc_ins_id']}",
-        f"创建时间：{context['created_at']}",
-        "此工单为 AI 自动创建，请尽快跟进处置。",
-    ]
+    markdown_lines: list[str] = []
     keyword = _get_notify_env("DINGTALK_KEYWORD")
     if keyword:
-        content_lines.insert(0, keyword)
+        markdown_lines.extend([keyword, ""])
+    markdown_lines.extend(_build_notification_markdown_lines(context))
     payload: dict[str, Any] = {
-        "msgtype": "text",
-        "text": {
-            "content": "\n".join(content_lines),
+        "msgtype": "markdown",
+        "markdown": {
+            "title": _safe_str(context.get("title")) or "AI创建处置工单",
+            "text": "\n".join(markdown_lines),
         },
     }
     if _get_notify_mention_all():
@@ -236,25 +239,111 @@ def _build_dingtalk_notify_payload(context: dict[str, str]) -> dict[str, Any]:
 
 
 def _build_feishu_notify_payload(context: dict[str, str]) -> dict[str, Any]:
-    content_lines = [
-        "【AI创建处置工单】",
-        f"标题：{context['title']}",
-        f"摘要：{context['summary']}",
-        f"资源：{context['device_name']} / {context['manage_ip']} / CI ID: {context['res_id']}",
-        f"等级：{context['level']}",
-        f"根因方向：{context['root_cause']}",
-        f"处置建议：{context['suggestions']}",
-        f"taskId：{context['task_id']}",
-        f"procInsId：{context['proc_ins_id']}",
-        f"创建时间：{context['created_at']}",
-        "此工单为 AI 自动创建，请尽快跟进处置。",
-    ]
+    suggestion_lines = [
+        f"- {item.strip()}"
+        for item in context["suggestions"].split("；")
+        if item.strip()
+    ] or ["- 暂无处置建议"]
+    elements: list[dict[str, Any]] = []
     if _get_notify_mention_all():
-        content_lines.insert(0, '<at user_id="all">所有人</at>')
+        elements.append(
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": "<at id=all></at>",
+                },
+            }
+        )
+    elements.extend(
+        [
+            {
+                "tag": "div",
+                "fields": [
+                    {
+                        "is_short": True,
+                        "text": {
+                            "tag": "lark_md",
+                            "content": f"**告警标题**\n{context['title']}",
+                        },
+                    },
+                    {
+                        "is_short": True,
+                        "text": {
+                            "tag": "lark_md",
+                            "content": f"**告警等级**\n{context['level']}",
+                        },
+                    },
+                    {
+                        "is_short": True,
+                        "text": {
+                            "tag": "lark_md",
+                            "content": f"**设备名称**\n{context['device_name']}",
+                        },
+                    },
+                    {
+                        "is_short": True,
+                        "text": {
+                            "tag": "lark_md",
+                            "content": f"**管理 IP / CI ID**\n{context['manage_ip']} / {context['res_id']}",
+                        },
+                    },
+                ],
+            },
+            {"tag": "hr"},
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": (
+                        "**摘要**\n"
+                        f"{context['summary']}\n\n"
+                        f"**根因方向**\n{context['root_cause']}"
+                    ),
+                },
+            },
+            {"tag": "hr"},
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": "**处置建议**\n" + "\n".join(suggestion_lines),
+                },
+            },
+            {
+                "tag": "note",
+                "elements": [
+                    {
+                        "tag": "plain_text",
+                        "content": f"taskId：{context['task_id']}",
+                    },
+                    {
+                        "tag": "plain_text",
+                        "content": f"procInsId：{context['proc_ins_id']}",
+                    },
+                    {
+                        "tag": "plain_text",
+                        "content": f"创建时间：{context['created_at']}",
+                    },
+                ],
+            },
+        ]
+    )
     payload: dict[str, Any] = {
-        "msg_type": "text",
-        "content": {
-            "text": "\n".join(content_lines),
+        "msg_type": "interactive",
+        "card": {
+            "config": {
+                "wide_screen_mode": True,
+                "enable_forward": True,
+            },
+            "header": {
+                "template": "red",
+                "title": {
+                    "tag": "plain_text",
+                    "content": f"AI创建处置工单 — {context['device_name']}",
+                },
+            },
+            "elements": elements,
         },
     }
     secret = _get_notify_env("FEISHU_SECRET")
