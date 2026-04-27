@@ -46,6 +46,7 @@ import { InspirationPanel } from "./digital-employee/inspirationPanel";
 import { McpPanel } from "./digital-employee/mcpPanel";
 import { OverviewPanel } from "./digital-employee/overviewPanel";
 import { ResourceImportPanel } from "./digital-employee/resourceImportPanel";
+import { KnowledgeBasePanel } from "./digital-employee/knowledgeBasePanel";
 import { SkillPoolPanel } from "./digital-employee/skillPoolPanel";
 import { TokenUsagePanel } from "./digital-employee/tokenUsagePanel";
 import { OpsExpertPanel } from "./digital-employee/opsExpertPanel";
@@ -117,6 +118,8 @@ const PORTAL_CLOSE_DRAWER_MESSAGE = {
 } as const;
 const RESOURCE_IMPORT_OWNER_ID = "resource";
 const ORDER_OWNER_ID = "order";
+const KNOWLEDGE_OWNER_ID = "knowledge";
+const KNOWLEDGE_BASE_COMMAND = "管理知识库";
 const RESOURCE_IMPORT_COMMAND = "导入资源清单";
 const PORTAL_RESOURCE_IMPORT_SOURCE = "portal-resource-import";
 const RESOURCE_IMPORT_INTENT_PATTERN =
@@ -2272,6 +2275,10 @@ export default function DigitalEmployeePage({
     navigate(buildPortalSectionPath("mcp", { employeeId }));
   }, [navigate]);
 
+  const openKnowledgeBase = useCallback(() => {
+    navigate(buildPortalSectionPath("knowledge-base", { employeeId: KNOWLEDGE_OWNER_ID }));
+  }, [navigate]);
+
   const openEmployeeChat = useCallback((targetEmployeeId: string) => {
     const employee = employeesWithRuntimeStatus.find((item) => item.id === targetEmployeeId);
     if (!employee) {
@@ -3123,6 +3130,7 @@ export default function DigitalEmployeePage({
   const isInspirationMode = activeAdvancedPanel === "inspiration";
   const isCliMode = activeAdvancedPanel === "cli";
   const isResourceImportMode = activeAdvancedPanel === "resource-import";
+  const isKnowledgeBaseMode = activeAdvancedPanel === "knowledge-base";
   const isGatewayPresentedChildView = Boolean(
     selectedEmployee?.id
     && locationState?.gatewayPresentationEmployeeId === selectedEmployee.id,
@@ -4402,7 +4410,7 @@ export default function DigitalEmployeePage({
 
         <div
           className={
-            isModelConfigMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isInspirationMode || isCliMode || isResourceImportMode
+            isModelConfigMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isInspirationMode || isCliMode || isResourceImportMode || isKnowledgeBaseMode
               ? "main-content advanced-page-mode"
               : currentView === "chat"
                 ? "main-content"
@@ -4487,6 +4495,8 @@ export default function DigitalEmployeePage({
             />
           ) : isResourceImportMode ? (
             <ResourceImportPanel />
+          ) : isKnowledgeBaseMode ? (
+            <KnowledgeBasePanel />
           ) : (
             <>
           {!showPortalHomeHero ? (
@@ -5122,6 +5132,10 @@ export default function DigitalEmployeePage({
                               onClick={() => {
                                 if (command === RESOURCE_IMPORT_COMMAND) {
                                   openResourceImport();
+                                  return;
+                                }
+                                if (command === KNOWLEDGE_BASE_COMMAND) {
+                                  openKnowledgeBase();
                                   return;
                                 }
                                 void handleSendMessage(command);

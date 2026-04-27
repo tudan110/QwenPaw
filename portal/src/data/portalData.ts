@@ -207,7 +207,7 @@ export const digitalEmployees: DigitalEmployee[] = [
     urgent: false,
     gradient: "linear-gradient(135deg, #06B6D4, #0891B2)",
     capabilities: ["知识问答", "方案推荐", "故障案例", "最佳实践", "智能培训"],
-    quickCommands: ["如何处理Oracle死锁", "Nginx性能优化建议", "Redis缓存穿透解决方案", "查看故障复盘"],
+    quickCommands: ["管理知识库", "如何处理Oracle死锁", "Nginx性能优化建议", "Redis缓存穿透解决方案", "查看故障复盘"],
     welcome:
       "您好！我是知识专员。运维知识问答。<br><br>我可以帮您完成以下工作：<br>• 知识问答 - 回答各类运维技术问题<br>• 方案推荐 - 基于历史案例推荐最佳处置方案<br>• 故障案例 - 检索相似故障的处理经验<br>• 最佳实践 - 提供各技术栈的最佳实践建议<br>• 智能培训 - 为新员工提供运维知识培训<br><br>请直接输入您的问题，或选择下方的快捷命令。",
   },
