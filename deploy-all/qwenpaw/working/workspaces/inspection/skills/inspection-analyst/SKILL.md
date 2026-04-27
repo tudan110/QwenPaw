@@ -3,7 +3,7 @@ name: inspection-analyst
 category: inspection
 tags: [inspection, health-check, cmdb, topology, metrics, database, middleware, resource]
 triggers: [巡检, 资源巡检, 健康检查, 数据库巡检, 帮我巡检一下数据库, 帮我巡检一下中间件]
-description: 面向 inspection 智能体的资源巡检技能。先协作 query 智能体使用 veops-cmdb 明确巡检对象的拓扑、resId/CI ID 与 ciType，再查询该资源类型的全部指标定义与指标值，最后向用户展示巡检结果。
+description: 面向 inspection 智能体的资源巡检技能。先协作 query 智能体使用 veops-cmdb 明确巡检对象的拓扑、resId/CI ID 与 ciType，再查询该资源类型的全部指标定义与指标值，最后向用户展示包含 CMDB 拓扑关系的巡检结果。
 ---
 
 # Inspection Analyst
@@ -16,7 +16,28 @@ description: 面向 inspection 智能体的资源巡检技能。先协作 query 
 2. 协作 query 智能体使用 `veops-cmdb` 确认拓扑、资源 ID（CI ID / resId）与资源类型（`ciType` / `metricType`）
 3. 调用指标定义接口，提取该资源类型的全部指标编码
 4. 调用指标数据接口，使用 `resId + 全部指标编码数组` 获取巡检指标数据
-5. 把拓扑确认结果与指标数据整理成用户可读的巡检结果
+5. 把拓扑确认结果与指标数据整理成用户可读的巡检结果，并明确展示被巡检对象的 CMDB 拓扑关系
+
+### 4. Portal 卡片展示约定
+
+如果最终回复用于 Portal 展示巡检卡片，必须遵守以下固定约定：
+
+1. 在完整巡检报告最前面输出标志行：`# PORTAL INSPECTION CARD MODE`
+2. 标志行后紧跟一个单独的分隔段：`---`
+3. 分隔线之后再输出用户可见的完整巡检报告正文
+4. 正文中必须包含以下固定章节名：
+   - `## 巡检结果`
+   - `## 基本信息`
+   - `## 指标数据`
+5. `## 基本信息` 章节必须使用两列表格，并至少包含以下字段名：
+   - `巡检对象`
+   - `资源名称`
+   - `资源类型`
+   - `状态`
+   - `指标总数`
+   - `数据来源`
+   - `巡检时间`
+6. 不要把通知结果、权限失败、渠道状态说明这类消息套用上述标志；只有完整巡检报告才允许输出该标志
 
 ---
 
@@ -73,7 +94,7 @@ cd skills/inspection-analyst && python scripts/inspect_resource_metrics.py --res
 
 1. 巡检对象
 2. CMDB 确认的资源信息（资源名、`resId/CI ID`、`ciType`）
-3. 拓扑确认摘要
+3. 被巡检对象的 CMDB 拓扑关系（不能只写“已确认拓扑”，要把根资源、关键上下游/关联资源展示出来）
 4. 指标定义数量 / 实际采集数量
 5. 指标数据表
 6. 巡检结论
@@ -126,9 +147,9 @@ INSPECTION_NOTIFY_MENTION_ALL=true
 - `INSPECTION_NOTIFY_WEBHOOK_URL` 是通用应用 webhook，可对接量子密信
 - 支持按配置同时推送到：应用（可配置为量子密信）、钉钉、飞书
 - 当前 webhook 推送展示约定：
-  - 飞书：优先发送 `interactive` 卡片，避免把 Markdown 标题/表格原样显示成普通字符
-  - 钉钉：发送 `markdown` 消息
-  - 通用应用 webhook（如量子密信）：保持通用 text 协议，但正文按 Markdown 风格组织，具体是否渲染样式取决于对端应用
+  - 飞书：优先发送 `interactive` 卡片，并明确展示整体状态、全量指标表格、巡检结论
+  - 钉钉：发送 `markdown` 消息；由于自定义机器人移动端不支持 Markdown 表格，指标值使用逐条列表展示，不依赖表格
+  - 通用应用 webhook（如量子密信）：保持通用 text 协议，正文使用纯文本列表，不发送 `**`、`>` 等 Markdown 控制符；至少要体现状态、全量指标值、巡检结论
 - 如果未配置任何 webhook，必须明确体现“通知未配置”
 
 ---
@@ -174,8 +195,10 @@ python scripts/inspect_resource_metrics.py \
 - 数据来源：...
 - 通知状态：...
 
-## 拓扑确认
-- ...
+## CMDB 拓扑关系
+- 根资源：...
+- 上游 / 下游 / 关联资源：...
+- 关键关系说明：...
 
 ## 指标数据
 | 指标名 | 指标编码 | 最近值 | 采样时间 | Min/Avg/Max | 数据来源 |
@@ -186,6 +209,8 @@ python scripts/inspect_resource_metrics.py \
 ```
 
 用户可见输出要直接解释资源状态，不要只贴原始 JSON。
+另外，最终输出中必须显式展示被巡检对象的 CMDB 拓扑关系，不能省略成一句“拓扑已确认”。
+如果需要 Portal 渲染巡检卡片，还必须遵守上面的 marker、章节名和字段名约定，否则前端无法稳定提取卡片信息。
 
 ---
 
@@ -200,11 +225,14 @@ python scripts/inspect_resource_metrics.py \
    - 飞书
 3. 推送内容必须体现这是 **AI 巡检结果**
 4. 至少包含：
-   - 巡检对象
-   - 资源名称
-   - 资源 ID（CI ID）
-   - 资源类型
-   - 指标总数
-   - 巡检时间
+    - 巡检对象
+    - 资源名称
+    - 资源 ID（CI ID）
+    - 资源类型
+    - 整体状态
+    - 指标总数
+    - 巡检时间
+    - 巡检结论
+    - 全量指标值（飞书 interactive 用表格；其它渠道按各自能力展示）
 5. 如果未配置任何 webhook，必须明确写出“通知未配置”
 6. 如果部分渠道推送失败，必须明确写出“部分通知发送失败”

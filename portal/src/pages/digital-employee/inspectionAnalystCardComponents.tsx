@@ -2,7 +2,10 @@ import { memo, useMemo } from "react";
 
 import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
-import { normalizeMarkdownDisplayContent } from "./helpers";
+import {
+  normalizeMarkdownDisplayContent,
+  unwrapPortalInspectionCardContent,
+} from "./helpers";
 
 type InspectionCardTone = "good" | "warning" | "danger" | "neutral";
 
@@ -57,6 +60,18 @@ function stripMarkdownInline(value: string) {
     .replace(/^\p{Extended_Pictographic}+\s*/u, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeCardFieldValue(value: string) {
+  const normalized = stripMarkdownInline(value);
+  return normalized === "-" || normalized === "--" ? "" : normalized;
+}
+
+function buildMetricDetail(row: string[]) {
+  const sampleTime = normalizeCardFieldValue(row[3] || "");
+  const source = normalizeCardFieldValue(row[5] || "");
+  const displaySource = source.toLowerCase() === "live" ? "" : source;
+  return [sampleTime, displaySource].filter(Boolean).join(" · ");
 }
 
 function extractMarkdownSection(content: string, titles: string[]) {
@@ -238,7 +253,7 @@ function selectMetricRows(rows: string[][]) {
     picked.push({
       label: row[0],
       value: row[2] || row[1] || "",
-      detail: [row[4], row[5]].filter(Boolean).join(" · "),
+      detail: buildMetricDetail(row),
       tone: getMetricTone(row[0], row[2] || row[1] || ""),
     });
   });
@@ -255,7 +270,7 @@ function selectMetricRows(rows: string[][]) {
     picked.push({
       label: row[0],
       value: row[2] || row[1] || "",
-      detail: [row[4], row[5]].filter(Boolean).join(" · "),
+      detail: buildMetricDetail(row),
       tone: getMetricTone(row[0], row[2] || row[1] || ""),
     });
   });
@@ -270,14 +285,14 @@ function buildInspectionReportModel(content: string): InspectionDisplayModel {
   const metrics = selectMetricRows(extractFirstTable(metricsSection).rows);
   const topologyChart = extractRawTopologyChart(content);
 
-  const resourceName = basicInfoMap.get("资源名称") || "";
-  const inspectionObject = basicInfoMap.get("巡检对象") || "";
-  const resourceType = basicInfoMap.get("资源类型") || "";
-  const manageIp = basicInfoMap.get("管理 IP") || "";
-  const status = basicInfoMap.get("状态") || "";
-  const metricsCount = basicInfoMap.get("指标总数") || "";
-  const dataSource = basicInfoMap.get("数据来源") || "";
-  const inspectionTime = basicInfoMap.get("巡检时间") || "";
+  const resourceName = normalizeCardFieldValue(basicInfoMap.get("资源名称") || "");
+  const inspectionObject = normalizeCardFieldValue(basicInfoMap.get("巡检对象") || "");
+  const resourceType = normalizeCardFieldValue(basicInfoMap.get("资源类型") || "");
+  const manageIp = normalizeCardFieldValue(basicInfoMap.get("管理 IP") || "");
+  const status = normalizeCardFieldValue(basicInfoMap.get("状态") || "");
+  const metricsCount = normalizeCardFieldValue(basicInfoMap.get("指标总数") || "");
+  const dataSource = normalizeCardFieldValue(basicInfoMap.get("数据来源") || "");
+  const inspectionTime = normalizeCardFieldValue(basicInfoMap.get("巡检时间") || "");
   const title = extractHeadingTitle(content, "巡检结果") || "巡检结果";
 
   return {
@@ -407,11 +422,12 @@ function buildHealthAssessmentModel(content: string): InspectionDisplayModel {
 }
 
 function buildInspectionDisplayModel(content: string): InspectionDisplayModel | null {
-  if (/健康状态评估/u.test(content)) {
-    return buildHealthAssessmentModel(content);
+  const normalizedContent = unwrapPortalInspectionCardContent(content);
+  if (/健康状态评估/u.test(normalizedContent)) {
+    return buildHealthAssessmentModel(normalizedContent);
   }
-  if (/巡检结果/u.test(content)) {
-    return buildInspectionReportModel(content);
+  if (/巡检结果/u.test(normalizedContent)) {
+    return buildInspectionReportModel(normalizedContent);
   }
   return null;
 }
@@ -421,7 +437,9 @@ function InspectionMarkdown({ content }: { content: string }) {
     typeof document !== "undefined"
     && document.querySelector(".portal-digital-employee")?.classList.contains("theme-dark");
   const markdownThemeClass = isDarkTheme ? "x-markdown-dark" : "x-markdown-light";
-  const normalizedContent = normalizeMarkdownDisplayContent(content);
+  const normalizedContent = unwrapPortalInspectionCardContent(
+    normalizeMarkdownDisplayContent(content),
+  );
 
   return (
     <PortalQwenPawMarkdown

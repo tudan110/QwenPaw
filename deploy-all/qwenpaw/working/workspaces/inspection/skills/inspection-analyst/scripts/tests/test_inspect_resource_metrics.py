@@ -163,9 +163,13 @@ def test_render_markdown_contains_metric_table():
         }
     )
 
+    assert "PORTAL INSPECTION CARD MODE" in markdown
     assert "## 巡检结果" in markdown
+    assert "## 基本信息" in markdown
     assert "db_mysql_001" in markdown
     assert "threads_running" in markdown
+    assert "| 巡检时间 | 2026-04-24 10:00:00 |" in markdown
+    assert "| 状态 | 正常 |" in markdown
     assert "通知状态" in markdown
     assert "应用已发送" in markdown
 
@@ -252,7 +256,7 @@ def test_inspect_resource_metrics_can_skip_notification():
     },
     clear=False,
 )
-def test_app_notification_payload_uses_markdown_style_content():
+def test_app_notification_payload_uses_plain_text_content():
     payload = INSPECTION_MODULE._build_app_notify_payload(
         {
             "inspection_object": "核心数据库",
@@ -263,6 +267,17 @@ def test_app_notification_payload_uses_markdown_style_content():
             "definition_source": "live",
             "data_source": "live",
             "metric_preview": "活跃线程数=12；连接数=80",
+            "metric_results": [
+                {
+                    "metricName": "活跃线程数",
+                    "metricCode": "mysql_active_threads",
+                    "latestValue": "12",
+                    "unit": "%",
+                }
+            ],
+            "inspection_status": "正常",
+            "inspection_time": "2026-04-24 10:00:00",
+            "inspection_conclusion": "各项指标均在正常范围，资源运行健康。",
             "created_at": "2026-04-24 10:00:00",
         }
     )
@@ -270,8 +285,14 @@ def test_app_notification_payload_uses_markdown_style_content():
     assert payload["type"] == "text"
     assert payload["textMsg"]["isMentioned"] is True
     assert payload["textMsg"]["mentionType"] == 1
-    assert "**AI巡检结果**" in payload["textMsg"]["content"]
-    assert "- **巡检对象**：核心数据库" in payload["textMsg"]["content"]
+    assert "AI巡检结果" in payload["textMsg"]["content"]
+    assert "- 巡检对象：核心数据库" in payload["textMsg"]["content"]
+    assert "- 整体状态：正常" in payload["textMsg"]["content"]
+    assert "活跃线程数（mysql_active_threads）：12" in payload["textMsg"]["content"]
+    assert "活跃线程数（mysql_active_threads）：12%" not in payload["textMsg"]["content"]
+    assert "巡检结论" in payload["textMsg"]["content"]
+    assert "**" not in payload["textMsg"]["content"]
+    assert ">" not in payload["textMsg"]["content"]
 
 
 @patch.dict(
@@ -294,6 +315,17 @@ def test_dingtalk_notification_payload_uses_markdown_message():
             "definition_source": "live",
             "data_source": "live",
             "metric_preview": "活跃线程数=12；连接数=80",
+            "metric_results": [
+                {
+                    "metricName": "活跃线程数",
+                    "metricCode": "mysql_active_threads",
+                    "latestValue": "12",
+                    "unit": "%",
+                }
+            ],
+            "inspection_status": "正常",
+            "inspection_time": "2026-04-24 10:00:00",
+            "inspection_conclusion": "各项指标均在正常范围，资源运行健康。",
             "created_at": "2026-04-24 10:00:00",
         }
     )
@@ -302,6 +334,10 @@ def test_dingtalk_notification_payload_uses_markdown_message():
     assert payload["at"]["isAtAll"] is True
     assert payload["markdown"]["text"].startswith("巡检\n")
     assert "- **巡检对象**：核心数据库" in payload["markdown"]["text"]
+    assert "- **整体状态**：正常" in payload["markdown"]["text"]
+    assert "活跃线程数（mysql_active_threads）：12" in payload["markdown"]["text"]
+    assert "活跃线程数（mysql_active_threads）：12%" not in payload["markdown"]["text"]
+    assert "**巡检结论**" in payload["markdown"]["text"]
 
 
 @patch.dict(
@@ -313,7 +349,7 @@ def test_dingtalk_notification_payload_uses_markdown_message():
     },
     clear=False,
 )
-def test_feishu_notification_payload_uses_markdown_style_text_and_sign():
+def test_feishu_notification_payload_uses_table_card_and_sign():
     with patch.object(INSPECTION_MODULE.time, "time", return_value=1700000000.0):
         payload = INSPECTION_MODULE._build_feishu_notify_payload(
             {
@@ -325,6 +361,23 @@ def test_feishu_notification_payload_uses_markdown_style_text_and_sign():
                 "definition_source": "live",
                 "data_source": "live",
                 "metric_preview": "活跃线程数=12；连接数=80",
+                "metric_results": [
+                    {
+                        "metricName": "活跃线程数",
+                        "metricCode": "mysql_active_threads",
+                        "latestValue": "12",
+                        "unit": "",
+                    },
+                    {
+                        "metricName": "CPU 使用率",
+                        "metricCode": "mysql_cpu_usage",
+                        "latestValue": "42.5",
+                        "unit": "%",
+                    },
+                ],
+                "inspection_status": "正常",
+                "inspection_time": "2026-04-24 10:00:00",
+                "inspection_conclusion": "各项指标均在正常范围，资源运行健康。",
                 "created_at": "2026-04-24 10:00:00",
             }
         )
@@ -332,7 +385,29 @@ def test_feishu_notification_payload_uses_markdown_style_text_and_sign():
     assert payload["msg_type"] == "interactive"
     assert payload["timestamp"] == "1700000000"
     assert payload["sign"]
+    assert payload["card"]["header"]["template"] == "green"
     assert payload["card"]["header"]["title"]["content"] == "AI巡检报告 — db_mysql_001"
     assert payload["card"]["elements"][0]["text"]["content"] == "<at id=all></at>"
     assert payload["card"]["elements"][1]["fields"][0]["text"]["content"] == "**巡检对象**\n核心数据库"
-    assert "活跃线程数=12" in payload["card"]["elements"][5]["text"]["content"]
+    detail_heading = next(
+        element
+        for element in payload["card"]["elements"]
+        if element.get("tag") == "div"
+        and element.get("text", {}).get("content") == "**指标值明细**"
+    )
+    assert detail_heading["text"]["content"] == "**指标值明细**"
+    table_element = next(
+        element
+        for element in payload["card"]["elements"]
+        if element.get("tag") == "table"
+    )
+    assert table_element["columns"][0]["display_name"] == "指标名"
+    assert table_element["rows"][0]["metric_name"] == "活跃线程数"
+    assert table_element["rows"][1]["latest_value"] == "42.5"
+    conclusion_element = next(
+        element
+        for element in payload["card"]["elements"]
+        if element.get("tag") == "div"
+        and "巡检结论" in element.get("text", {}).get("content", "")
+    )
+    assert "各项指标均在正常范围" in conclusion_element["text"]["content"]

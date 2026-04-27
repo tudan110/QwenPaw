@@ -10,6 +10,8 @@ import {
   extractPortalActionPayload,
   getSeverityClassName,
   normalizeMarkdownDisplayContent,
+  PORTAL_INSPECTION_CARD_MARKER,
+  unwrapPortalInspectionCardContent,
 } from "./helpers";
 import { FaultScenarioResultCard } from "./faultScenarioComponents";
 
@@ -32,6 +34,34 @@ const deferredMessageCardFallback = (
     <p>正在加载内容...</p>
   </div>
 );
+
+function looksLikeInspectionReportCardContent(content: string) {
+  const normalized = String(content || "").replace(/\r\n/g, "\n");
+  return (
+    (
+      normalized.includes(PORTAL_INSPECTION_CARD_MARKER)
+      || /(?:^|\n)##+\s*.*巡检结果/um.test(normalized)
+    )
+    && /(?:^|\n)##+\s*.*基本信息/um.test(normalized)
+    && /(?:^|\n)##+\s*.*指标数据/um.test(normalized)
+  );
+}
+
+function looksLikeInspectionHealthAssessmentCardContent(content: string) {
+  const normalized = String(content || "").replace(/\r\n/g, "\n");
+  return (
+    /(?:^|\n)##+\s*.*健康状态评估/um.test(normalized)
+    && /总体评分/u.test(normalized)
+    && /(健康项|亚健康项|病理项|建议优先级)/u.test(normalized)
+  );
+}
+
+function shouldRenderInspectionAnalystCard(content: string) {
+  return (
+    looksLikeInspectionReportCardContent(content)
+    || looksLikeInspectionHealthAssessmentCardContent(content)
+  );
+}
 
 export function AlarmWorkorderBoard({
   workorders,
@@ -301,7 +331,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     message.type === "agent"
     && currentEmployee?.id === "inspection"
     && !isStreamingMessage
-    && /(?:巡检结果|健康状态评估)/u.test(renderedMessageContent);
+    && shouldRenderInspectionAnalystCard(renderedMessageContent);
   const copyableContent = String(
     renderedMessageContent || alarmAnalystCard?.rawReportMarkdown || "",
   ).trim();
@@ -933,9 +963,9 @@ export const MessageMarkdown = memo(function MessageMarkdown({
     typeof document !== "undefined"
     && document.querySelector(".portal-digital-employee")?.classList.contains("theme-dark");
   const markdownThemeClass = isDarkTheme ? "x-markdown-dark" : "x-markdown-light";
-  const normalizedContent = stripFrontmatter(normalizeMarkdownDisplayContent(content, {
+  const normalizedContent = stripFrontmatter(unwrapPortalInspectionCardContent(normalizeMarkdownDisplayContent(content, {
     isStreaming,
-  }));
+  })));
   const streamingContent = String(content || "");
 
   if (isStreaming) {
@@ -965,9 +995,9 @@ export const MessageMarkdown = memo(function MessageMarkdown({
     <>
       {renderableSegments.map((segment, index) => {
         if (segment.type === "markdown") {
-          const segmentContent = stripFrontmatter(normalizeMarkdownDisplayContent(segment.content, {
+          const segmentContent = stripFrontmatter(unwrapPortalInspectionCardContent(normalizeMarkdownDisplayContent(segment.content, {
             isStreaming: false,
-          }));
+          })));
           if (!segmentContent.trim()) {
             return null;
           }

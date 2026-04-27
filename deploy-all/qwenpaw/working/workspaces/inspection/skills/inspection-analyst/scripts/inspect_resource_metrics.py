@@ -22,6 +22,7 @@ import hmac
 import importlib.util
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -42,6 +43,7 @@ ALLOWED_OUTPUTS = {"json", "markdown"}
 DEFAULT_PAGE_SIZE = 100
 DEFAULT_MAX_PAGES = 20
 DEFAULT_NOTIFY_TIMEOUT_SECONDS = 8
+PORTAL_INSPECTION_CARD_MARKER = "# PORTAL INSPECTION CARD MODE"
 
 
 def _load_skill_env() -> None:
@@ -302,18 +304,73 @@ def _notification_metric_preview(metric_results: list[dict[str, Any]], limit: in
     previews: list[str] = []
     for item in metric_results[:limit]:
         name = _safe_str(item.get("metricName") or item.get("metricCode")) or "指标"
-        value = _safe_str(item.get("latestValue") or item.get("avgValue")) or "-"
-        unit = _safe_str(item.get("unit"))
-        if unit and value != "-":
-            value = f"{value}{unit}"
+        value = _format_notification_metric_value(item)
         previews.append(f"{name}={value}")
     return "；".join(previews) or "-"
 
 
-def _build_notification_context(result: dict[str, Any]) -> dict[str, str]:
+def _format_notification_metric_value(item: dict[str, Any]) -> str:
+    return _safe_str(item.get("latestValue") or item.get("avgValue")) or "-"
+
+
+def _collect_inspection_findings(metric_results: list[dict[str, Any]]) -> list[str]:
+    findings: list[str] = []
+    for item in metric_results:
+        label = _safe_str(item.get("metricName") or item.get("metricCode"))
+        numeric = _parse_metric_numeric_value(
+            item.get("latestValue") or item.get("avgValue"),
+        )
+        if numeric is None:
+            continue
+        value = _format_notification_metric_value(item)
+        if "连接失败" in label and numeric > 0:
+            findings.append(f"{label}={value}")
+            continue
+        if ("慢查询" in label or "锁" in label) and numeric > 0:
+            findings.append(f"{label}={value}")
+            continue
+        if "使用率" in label and numeric >= 80:
+            findings.append(f"{label}={value}")
+    return findings
+
+
+def _build_inspection_conclusion(metric_results: list[dict[str, Any]]) -> str:
+    if not metric_results:
+        return "未获取到有效指标数据，请检查指标采集链路与权限配置。"
+
+    status = _derive_inspection_status(metric_results)
+    findings = _collect_inspection_findings(metric_results)
+    finding_text = "；".join(findings[:3])
+
+    if status == "异常":
+        if finding_text:
+            return f"发现异常指标：{finding_text}，建议立即排查资源连接与服务状态。"
+        return "存在异常指标，建议立即排查资源连接与服务状态。"
+    if status == "需关注":
+        if finding_text:
+            return f"发现需关注指标：{finding_text}，建议持续观察并进一步核查。"
+        return "存在需关注指标，建议持续观察并进一步核查。"
+    return "各项指标均在正常范围，资源运行健康。"
+
+
+def _build_notification_metric_lines(metric_results: list[dict[str, Any]]) -> list[str]:
+    if not metric_results:
+        return ["- 未获取到指标值"]
+
+    lines: list[str] = []
+    for item in metric_results:
+        metric_name = _safe_str(item.get("metricName") or item.get("metricCode")) or "指标"
+        metric_code = _safe_str(item.get("metricCode")) or "-"
+        metric_value = _format_notification_metric_value(item)
+        lines.append(f"- {metric_name}（{metric_code}）：{metric_value}")
+    return lines
+
+
+def _build_notification_context(result: dict[str, Any]) -> dict[str, Any]:
     definitions = result.get("definitions") or {}
     metric_batch = result.get("metricDataBatch") or {}
     metric_results = metric_batch.get("metricResults") or []
+    inspection_time = _extract_inspection_time(metric_results)
     return {
         "inspection_object": _safe_str(result.get("inspectionObject")) or "-",
         "resource_name": _safe_str(result.get("resourceName")) or "-",
@@ -323,34 +380,67 @@ def _build_notification_context(result: dict[str, Any]) -> dict[str, str]:
         "definition_source": _safe_str(definitions.get("source")) or "-",
         "data_source": _safe_str(metric_batch.get("source")) or "-",
         "metric_preview": _notification_metric_preview(metric_results),
+        "metric_results": metric_results,
+        "inspection_status": _derive_inspection_status(metric_results),
+        "inspection_time": inspection_time,
+        "inspection_conclusion": _build_inspection_conclusion(metric_results),
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
-def _build_notification_markdown_lines(context: dict[str, str]) -> list[str]:
+def _build_notification_markdown_lines(context: dict[str, Any]) -> list[str]:
     return [
         "**AI巡检结果**",
         "",
         f"- **巡检对象**：{context['inspection_object']}",
         f"- **资源**：{context['resource_name']} / CI ID: {context['res_id']}",
         f"- **资源类型**：{context['metric_type']}",
+        f"- **整体状态**：{context['inspection_status']}",
         f"- **指标总数**：{context['metrics_total']}",
         f"- **指标定义来源**：{context['definition_source']}",
         f"- **指标数据来源**：{context['data_source']}",
-        f"- **指标预览**：{context['metric_preview']}",
-        f"- **巡检时间**：{context['created_at']}",
+        f"- **巡检时间**：{context['inspection_time']}",
+        "",
+        "**全量指标值**",
+        *_build_notification_metric_lines(context["metric_results"]),
+        "",
+        "**巡检结论**",
+        f"- {context['inspection_conclusion']}",
         "",
         "> 此结果由 AI 自动巡检生成，请及时关注。",
     ]
 
 
-def _build_notification_markdown_text(context: dict[str, str]) -> str:
+def _build_notification_plain_text_lines(context: dict[str, Any]) -> list[str]:
+    return [
+        "AI巡检结果",
+        "",
+        f"- 巡检对象：{context['inspection_object']}",
+        f"- 资源：{context['resource_name']} / CI ID: {context['res_id']}",
+        f"- 资源类型：{context['metric_type']}",
+        f"- 整体状态：{context['inspection_status']}",
+        f"- 指标总数：{context['metrics_total']}",
+        f"- 指标定义来源：{context['definition_source']}",
+        f"- 指标数据来源：{context['data_source']}",
+        f"- 巡检时间：{context['inspection_time']}",
+        "",
+        "全量指标值",
+        *_build_notification_metric_lines(context["metric_results"]),
+        "",
+        "巡检结论",
+        f"- {context['inspection_conclusion']}",
+        "",
+        "此结果由 AI 自动巡检生成，请及时关注。",
+    ]
+
+
+def _build_notification_markdown_text(context: dict[str, Any]) -> str:
     return "\n".join(_build_notification_markdown_lines(context))
 
 
-def _build_app_notify_payload(context: dict[str, str]) -> dict[str, Any]:
+def _build_app_notify_payload(context: dict[str, Any]) -> dict[str, Any]:
     text_msg: dict[str, Any] = {
-        "content": _build_notification_markdown_text(context),
+        "content": "\n".join(_build_notification_plain_text_lines(context)),
     }
     if _get_notify_mention_all():
         text_msg.update(
@@ -365,7 +455,7 @@ def _build_app_notify_payload(context: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def _build_dingtalk_notify_payload(context: dict[str, str]) -> dict[str, Any]:
+def _build_dingtalk_notify_payload(context: dict[str, Any]) -> dict[str, Any]:
     markdown_lines: list[str] = []
     keyword = _get_notify_env("DINGTALK_KEYWORD")
     if keyword:
@@ -383,12 +473,65 @@ def _build_dingtalk_notify_payload(context: dict[str, str]) -> dict[str, Any]:
     return payload
 
 
-def _build_feishu_notify_payload(context: dict[str, str]) -> dict[str, Any]:
-    metric_preview_lines = [
-        f"- {item.strip()}"
-        for item in context["metric_preview"].split("；")
-        if item.strip()
-    ] or ["- 暂无指标预览"]
+def _build_feishu_status_text(status: str) -> str:
+    if status == "正常":
+        return "🟢 正常"
+    if status == "需关注":
+        return "🟠 需关注"
+    if status == "异常":
+        return "🔴 异常"
+    return "⚪ 未知"
+
+
+def _build_feishu_header_template(status: str) -> str:
+    if status == "正常":
+        return "green"
+    if status == "需关注":
+        return "orange"
+    if status == "异常":
+        return "red"
+    return "grey"
+
+
+def _build_feishu_metric_table(metric_results: list[dict[str, Any]]) -> dict[str, Any]:
+    rows: list[dict[str, str]] = []
+    for item in metric_results:
+        metric_name = _safe_str(item.get("metricName") or item.get("metricCode")) or "-"
+        rows.append(
+            {
+                "metric_name": metric_name,
+                "metric_code": _safe_str(item.get("metricCode")) or "-",
+                "latest_value": _format_notification_metric_value(item),
+            }
+        )
+    return {
+        "tag": "table",
+        "page_size": min(max(len(rows), 10), 50),
+        "columns": [
+            {
+                "name": "metric_name",
+                "display_name": "指标名",
+                "width": "auto",
+                "horizontal_align": "left",
+            },
+            {
+                "name": "metric_code",
+                "display_name": "指标编码",
+                "width": "auto",
+                "horizontal_align": "left",
+            },
+            {
+                "name": "latest_value",
+                "display_name": "最近值",
+                "width": "auto",
+                "horizontal_align": "left",
+            },
+        ],
+        "rows": rows or [{"metric_name": "未获取到指标值", "metric_code": "-", "latest_value": "-"}],
+    }
+
+
+def _build_feishu_notify_payload(context: dict[str, Any]) -> dict[str, Any]:
     elements: list[dict[str, Any]] = []
     if _get_notify_mention_all():
         elements.append(
@@ -441,10 +584,7 @@ def _build_feishu_notify_payload(context: dict[str, str]) -> dict[str, Any]:
                 "text": {
                     "tag": "lark_md",
                     "content": (
-                        "**巡检摘要**\n"
-                        f"- 指标总数：{context['metrics_total']}\n"
-                        f"- 指标定义来源：{context['definition_source']}\n"
-                        f"- 指标数据来源：{context['data_source']}"
+                        f"**整体状态**\n{_build_feishu_status_text(context['inspection_status'])}"
                     ),
                 },
             },
@@ -453,7 +593,31 @@ def _build_feishu_notify_payload(context: dict[str, str]) -> dict[str, Any]:
                 "tag": "div",
                 "text": {
                     "tag": "lark_md",
-                    "content": "**指标预览**\n" + "\n".join(metric_preview_lines),
+                    "content": (
+                        "**巡检摘要**\n"
+                        f"- 整体状态：{context['inspection_status']}\n"
+                        f"- 指标总数：{context['metrics_total']}\n"
+                        f"- 指标定义来源：{context['definition_source']}\n"
+                        f"- 指标数据来源：{context['data_source']}\n"
+                        f"- 巡检时间：{context['inspection_time']}"
+                    ),
+                },
+            },
+            {"tag": "hr"},
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": "**指标值明细**",
+                },
+            },
+            _build_feishu_metric_table(context["metric_results"]),
+            {"tag": "hr"},
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": f"**巡检结论**\n- {context['inspection_conclusion']}",
                 },
             },
             {
@@ -461,7 +625,7 @@ def _build_feishu_notify_payload(context: dict[str, str]) -> dict[str, Any]:
                 "elements": [
                     {
                         "tag": "plain_text",
-                        "content": f"巡检时间：{context['created_at']}",
+                        "content": f"巡检时间：{context['inspection_time']}",
                     },
                     {
                         "tag": "plain_text",
@@ -479,7 +643,7 @@ def _build_feishu_notify_payload(context: dict[str, str]) -> dict[str, Any]:
                 "enable_forward": True,
             },
             "header": {
-                "template": "red",
+                "template": _build_feishu_header_template(context["inspection_status"]),
                 "title": {
                     "tag": "plain_text",
                     "content": f"AI巡检报告 — {context['resource_name'] or context['inspection_object']}",
@@ -823,24 +987,94 @@ def _render_metric_data_table(metric_results: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _extract_inspection_time(metric_results: list[dict[str, Any]]) -> str:
+    for item in metric_results:
+        sample_time = _safe_str(item.get("sampleTime"))
+        if sample_time:
+            return sample_time
+    return "-"
+
+
+def _parse_metric_numeric_value(value: Any) -> float | None:
+    text = _safe_str(value)
+    if not text:
+        return None
+    match = re.search(r"-?\d+(?:\.\d+)?", text)
+    if not match:
+        return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+
+def _derive_inspection_status(metric_results: list[dict[str, Any]]) -> str:
+    if not metric_results:
+        return "未知"
+
+    has_warning = False
+    for item in metric_results:
+        label = _safe_str(item.get("metricName") or item.get("metricCode"))
+        numeric = _parse_metric_numeric_value(
+            item.get("latestValue") or item.get("avgValue"),
+        )
+
+        if numeric is None:
+            continue
+        if "连接失败" in label and numeric > 0:
+            return "异常"
+        if ("慢查询" in label or "锁" in label) and numeric > 0:
+            has_warning = True
+        if "使用率" in label and numeric >= 80:
+            has_warning = True
+
+    return "需关注" if has_warning else "正常"
+
+
 def render_markdown(result: dict[str, Any]) -> str:
     definitions = result.get("definitions") or {}
     metric_batch = result.get("metricDataBatch") or {}
+    metric_results = metric_batch.get("metricResults") or []
     notification = result.get("notification") or {}
+    inspection_object = _safe_str(result.get("inspectionObject")) or "-"
+    resource_name = _safe_str(result.get("resourceName")) or "-"
+    res_id = _safe_str(result.get("resId")) or "-"
+    metric_type = _safe_str(result.get("metricType")) or "-"
+    metrics_total = str(int(definitions.get("metricsTotal") or 0))
+    data_source = _safe_str(metric_batch.get("source")) or "-"
+    inspection_time = _extract_inspection_time(metric_results)
+    inspection_status = _derive_inspection_status(metric_results)
+    title_target = resource_name if resource_name != "-" else inspection_object
     lines = [
-        "## 巡检结果",
-        f"- 巡检对象：`{_safe_str(result.get('inspectionObject')) or '-'}`",
-        f"- 资源名称：`{_safe_str(result.get('resourceName')) or '-'}`",
-        f"- 资源 ID（CI ID）：`{_safe_str(result.get('resId')) or '-'}`",
-        f"- 资源类型：`{_safe_str(result.get('metricType')) or '-'}`",
-        f"- 指标总数：`{int(definitions.get('metricsTotal') or 0)}`",
+        PORTAL_INSPECTION_CARD_MARKER,
+        "",
+        "---",
+        f"## 巡检结果 — {title_target}",
+        f"- 巡检对象：`{inspection_object}`",
+        f"- 资源名称：`{resource_name}`",
+        f"- 资源 ID（CI ID）：`{res_id}`",
+        f"- 资源类型：`{metric_type}`",
+        f"- 指标总数：`{metrics_total}`",
         f"- 指标定义来源：`{_safe_str(definitions.get('source')) or '-'}`",
-        f"- 指标数据来源：`{_safe_str(metric_batch.get('source')) or '-'}`",
+        f"- 指标数据来源：`{data_source}`",
         f"- 通知状态：`{_format_notification_status(notification)}`",
         f"- 通知渠道：`{_format_notification_channels(notification, fallback='未发送')}`",
         "",
+        "## 基本信息",
+        "| 字段 | 值 |",
+        "|---|---|",
+        f"| 巡检对象 | {inspection_object} |",
+        f"| 资源名称 | {resource_name} |",
+        f"| 资源 ID（CI ID） | {res_id} |",
+        f"| 资源类型 | {metric_type} |",
+        "| 管理 IP | - |",
+        f"| 状态 | {inspection_status} |",
+        f"| 指标总数 | {metrics_total} |",
+        f"| 数据来源 | {data_source} |",
+        f"| 巡检时间 | {inspection_time} |",
+        "",
         "## 指标数据",
-        _render_metric_data_table(metric_batch.get("metricResults") or []),
+        _render_metric_data_table(metric_results),
     ]
     if definitions.get("fallbackReason"):
         lines.append("")
