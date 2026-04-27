@@ -1,6 +1,6 @@
 {
   "schema_version": "workspace-skill-manifest.v1",
-  "version": 1776168213704,
+  "version": 1777022966923,
   "skills": {
     "QA_source_index": {
       "enabled": true,
@@ -384,33 +384,6 @@
       },
       "updated_at": "2026-04-13T00:58:45.911864Z"
     },
-    "rag-skill": {
-      "enabled": true,
-      "channels": [
-        "all"
-      ],
-      "source": "builtin",
-      "config": {},
-      "metadata": {
-        "name": "rag-skill",
-        "description": "面向本地知识库目录的检索和问答助手。核心流程：(1)分层索引导航 (2)遇到PDF/Excel时必须先读取references学习处理方法 (3)处理文件后再检索。按文件类型组合使用 grep、Read、pdfplumber、pandas 进行渐进式检索，避免整文件加载。用户问题涉及\"从知识库目录回答问题/检索信息/查资料\"时使用。",
-        "version_text": "",
-        "commit_text": "",
-        "signature": "11d24c50d15f9f64c8cfd43c3ac8e36b4b10ddc05a922cf386f04eb6b8c028b7",
-        "source": "builtin",
-        "protected": false,
-        "requirements": {
-          "require_bins": [],
-          "require_envs": []
-        },
-        "updated_at": "2026-04-13T01:58:25.451554Z"
-      },
-      "requirements": {
-        "require_bins": [],
-        "require_envs": []
-      },
-      "updated_at": "2026-04-13T01:58:25.451554Z"
-    },
     "xlsx": {
       "enabled": true,
       "channels": [
@@ -437,6 +410,32 @@
         "require_envs": []
       },
       "updated_at": "2026-04-13T00:58:45.941304Z"
+    },
+    "kb-api-skill": {
+      "enabled": true,
+      "channels": [
+        "all"
+      ],
+      "source": "customized",
+      "metadata": {
+        "name": "kb-api-skill",
+        "description": "知识专员用来检索 qwenpaw 内置知识库子系统（/api/portal/knowledge/*）。命中证据时按 6 段契约整理 markdown 答复并附引用；未命中时明确\"知识库无相关资料\"，必要时再选择 LLM 兜底。回答必须基于检索结果，禁止凭空编造。",
+        "version_text": "",
+        "commit_text": "",
+        "signature": "",
+        "source": "customized",
+        "protected": false,
+        "requirements": {
+          "require_bins": [],
+          "require_envs": []
+        },
+        "updated_at": "2026-04-24T09:30:00.000000Z"
+      },
+      "requirements": {
+        "require_bins": [],
+        "require_envs": []
+      },
+      "updated_at": "2026-04-24T09:30:00.000000Z"
     }
   }
 }
