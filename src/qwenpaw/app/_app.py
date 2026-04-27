@@ -40,6 +40,10 @@ from .routers import router as api_router, create_agent_scoped_router
 from .routers.agent_scoped import AgentContextMiddleware
 from .routers.voice import voice_router
 from ..extensions.api.portal_backend import router as portal_router
+from ..extensions.knowledge_kb import (
+    router as knowledge_kb_router,
+    startup as knowledge_kb_startup,
+)
 from ..envs import load_envs_into_environ
 from ..providers.provider_manager import ProviderManager
 from ..local_models.manager import LocalModelManager
@@ -611,6 +615,13 @@ def get_doctor_runtime():
 app.include_router(api_router, prefix="/api")
 # Portal backend routes already include their own `/api/portal` prefix.
 app.include_router(portal_router)
+# knowledge_kb router includes its own `/api/portal/knowledge` prefix.
+app.include_router(knowledge_kb_router)
+
+
+@app.on_event("startup")
+async def _knowledge_kb_startup_hook() -> None:
+    knowledge_kb_startup()
 
 # Agent-scoped router: /api/agents/{agentId}/chats, etc.
 agent_scoped_router = create_agent_scoped_router()
