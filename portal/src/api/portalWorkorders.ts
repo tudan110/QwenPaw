@@ -1,11 +1,53 @@
 import type { AlarmWorkorder } from "../types/portal";
 
 const DEFAULT_PORTAL_API_BASE_URL = "/portal-api";
+const SAME_ORIGIN_PORTAL_API_BASE_URL = "/api/portal";
 const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 
 const PORTAL_API_BASE_URL = (
-  import.meta.env.VITE_PORTAL_API_BASE_URL || DEFAULT_PORTAL_API_BASE_URL
+  import.meta.env.VITE_PORTAL_API_BASE_URL ||
+  (typeof window !== "undefined"
+    ? window.__PORTAL_RUNTIME_CONFIG__?.portalApiBaseUrl
+    : "") ||
+  DEFAULT_PORTAL_API_BASE_URL
 ).replace(/\/$/, "");
+
+function shouldRetryWithSameOriginApi(status: number, errorText: string) {
+  if (
+    import.meta.env.DEV ||
+    PORTAL_API_BASE_URL === SAME_ORIGIN_PORTAL_API_BASE_URL ||
+    PORTAL_API_BASE_URL !== DEFAULT_PORTAL_API_BASE_URL ||
+    ![404, 405].includes(status)
+  ) {
+    return false;
+  }
+
+  try {
+    const payload = JSON.parse(errorText);
+    return ["Not Found", "Method Not Allowed"].includes(String(payload?.detail || ""));
+  } catch {
+    return !errorText.trim();
+  }
+}
+
+function extractPortalApiError(errorText: string) {
+  try {
+    const payload = JSON.parse(errorText);
+    if (payload?.detail) {
+      return String(payload.detail);
+    }
+  } catch {
+    // Keep the original server text when it is not JSON.
+  }
+  return errorText || "Portal 请求失败";
+}
+
+async function fetchPortalApi(baseUrl: string, path: string, init: RequestInit, signal: AbortSignal) {
+  return fetch(`${baseUrl}${path}`, {
+    ...init,
+    signal,
+  });
+}
 
 export interface AlarmWorkorderListResponse {
   total?: number;
@@ -22,14 +64,25 @@ export async function requestPortalApi<T = unknown>(
   const timerId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(`${PORTAL_API_BASE_URL}${path}`, {
-      ...init,
-      signal: controller.signal,
-    });
+    let response = await fetchPortalApi(PORTAL_API_BASE_URL, path, init, controller.signal);
+    let errorText = "";
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      throw new Error(errorText || "Portal 请求失败");
+      errorText = await response.text().catch(() => "");
+      if (shouldRetryWithSameOriginApi(response.status, errorText)) {
+        response = await fetchPortalApi(
+          SAME_ORIGIN_PORTAL_API_BASE_URL,
+          path,
+          init,
+          controller.signal,
+        );
+        errorText = "";
+      }
+    }
+
+    if (!response.ok) {
+      errorText = errorText || await response.text().catch(() => "");
+      throw new Error(extractPortalApiError(errorText));
     }
 
     return response.json();

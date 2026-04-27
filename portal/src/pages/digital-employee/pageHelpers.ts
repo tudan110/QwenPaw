@@ -49,11 +49,18 @@ export const PORTAL_CLOSE_DRAWER_MESSAGE = {
   reason: "switch-traditional-view",
 } as const;
 export const RESOURCE_IMPORT_OWNER_ID = "resource";
+export const KNOWLEDGE_BASE_OWNER_ID = "knowledge";
 export const ORDER_OWNER_ID = "order";
 export const RESOURCE_IMPORT_COMMAND = "导入资源清单";
+export const KNOWLEDGE_BASE_SEARCH_COMMAND = "知识库检索";
 export const PORTAL_RESOURCE_IMPORT_SOURCE = "portal-resource-import";
+export const PORTAL_KNOWLEDGE_BASE_SOURCE = "portal-knowledge-base";
 export const RESOURCE_IMPORT_INTENT_PATTERN =
   /(导入资源清单|资源清单导入|批量导入|资源纳管|导入资源|智能导入|上传台账导入)/;
+export const KNOWLEDGE_BASE_INTENT_PATTERN =
+  /(知识库检索|检索知识库|上传知识文档|导入知识文档|文档入库|资料入库|知识沉淀|手动沉淀知识|查看知识资料)/;
+export const KNOWLEDGE_BASE_CARD_INTENT_PATTERN =
+  /(上传知识|上传文档|上传资料|上传文件|上传附件|导入知识|导入文档|导入资料|导入文件|文档入库|资料入库|知识入库|知识沉淀|手动沉淀|手动录入|新增知识|保存经验|录入知识)/;
 export const ORDER_INTENT_PATTERN =
   /(工单|待办工单|已办工单|待处理工单|已处理工单|工单详情|查看详情|创建工单|处置工单|流转记录|流程跟踪|审批记录)/;
 export const CHAT_SCROLL_BOTTOM_THRESHOLD_PX = 48;
@@ -62,9 +69,23 @@ export function createResourceImportFlowId() {
   return `resource-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+export function createKnowledgeBaseFlowId() {
+  return `knowledge-base-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export function isResourceImportIntent(value: string) {
   const normalized = String(value || "").replace(/\s+/g, "");
   return RESOURCE_IMPORT_INTENT_PATTERN.test(normalized);
+}
+
+export function isKnowledgeBaseIntent(value: string) {
+  const normalized = String(value || "").replace(/\s+/g, "");
+  return KNOWLEDGE_BASE_INTENT_PATTERN.test(normalized);
+}
+
+export function isKnowledgeBaseCardIntent(value: string) {
+  const normalized = String(value || "").replace(/\s+/g, "");
+  return KNOWLEDGE_BASE_CARD_INTENT_PATTERN.test(normalized);
 }
 
 export function isOrderIntent(value: string) {
@@ -74,6 +95,10 @@ export function isOrderIntent(value: string) {
 
 export function isPortalResourceImportSession(session: SessionRecord | null | undefined) {
   return String(session?.meta?.source || "") === PORTAL_RESOURCE_IMPORT_SOURCE;
+}
+
+export function isPortalKnowledgeBaseSession(session: SessionRecord | null | undefined) {
+  return String(session?.meta?.source || "") === PORTAL_KNOWLEDGE_BASE_SOURCE;
 }
 
 export function resolveResourceImportApplicationName(flow: any): string {
@@ -196,6 +221,57 @@ export function buildResourceImportSessionRecord(
       ...(previous?.meta || {}),
       source: PORTAL_RESOURCE_IMPORT_SOURCE,
       visibleContent: visibleContent || previous?.meta?.visibleContent || RESOURCE_IMPORT_COMMAND,
+    },
+  };
+}
+
+export function buildKnowledgeBaseSessionRecord(
+  employee: { id: string; name: string },
+  messages: any[],
+  {
+    sessionId,
+    visibleContent,
+    previous,
+  }: {
+    sessionId?: string;
+    visibleContent?: string;
+    previous?: SessionRecord | null;
+  } = {},
+): SessionRecord {
+  const now = new Date().toISOString();
+  const latestFlow = [...messages]
+    .reverse()
+    .map((message) => message?.knowledgeBaseFlow)
+    .find(Boolean) as Record<string, any> | undefined;
+  const mode = String(latestFlow?.mode || latestFlow?.stage || "");
+  const status = latestFlow?.status === "error"
+    ? "error"
+    : latestFlow?.status === "completed"
+      ? "completed"
+      : latestFlow?.status === "running"
+        ? "running"
+        : "idle";
+  const detailMap: Record<string, string> = {
+    intro: "等待选择知识库操作",
+    search: "知识库检索",
+    upload: "文档导入",
+    manual: "手动沉淀知识",
+  };
+
+  return {
+    id: sessionId || previous?.id || `portal-knowledge-base-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    employeeId: employee.id,
+    title: previous?.title || `知识库 · ${new Date().toLocaleString("zh-CN")}`,
+    createdAt: previous?.createdAt || now,
+    updatedAt: now,
+    messages,
+    status,
+    detail: detailMap[mode] || "知识库处理中",
+    tag: "知识库",
+    meta: {
+      ...(previous?.meta || {}),
+      source: PORTAL_KNOWLEDGE_BASE_SOURCE,
+      visibleContent: visibleContent || previous?.meta?.visibleContent || KNOWLEDGE_BASE_SEARCH_COMMAND,
     },
   };
 }
@@ -755,7 +831,7 @@ export const PORTAL_HOME_EMPLOYEE: DigitalEmployee = {
   ],
   quickCommands: [
       RESOURCE_IMPORT_COMMAND,
-    "当前有哪些设备？",
+    "知识库检索",
     "数据库响应很慢，请帮我定位",
     "查看待办工单",
   ],
@@ -774,6 +850,16 @@ export type PortalLocationState = {
   gatewayPresentationEmployeeId?: string;
   pendingPortalDispatch?: PendingPortalDispatch;
   pendingResourceImport?: {
+    token: string;
+    targetEmployeeId: string;
+    visibleContent: string;
+  };
+  pendingKnowledgeBase?: {
+    token: string;
+    targetEmployeeId: string;
+    visibleContent: string;
+  };
+  pendingKnowledgeSearch?: {
     token: string;
     targetEmployeeId: string;
     visibleContent: string;

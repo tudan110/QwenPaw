@@ -38,6 +38,10 @@ export default function App() {
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="skill-pool" />)}
       />
       <Route
+        path="/knowledge-base"
+        element={renderDeferredPage(<DigitalEmployeePage forcedSection="knowledge-base" />)}
+      />
+      <Route
         path="/inspiration"
         element={renderDeferredPage(<DigitalEmployeePage forcedSection="inspiration" />)}
       />

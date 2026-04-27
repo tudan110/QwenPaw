@@ -124,6 +124,12 @@ export function usePortalNavigationSidebar({
     navigate(buildPortalSectionPath("skill-pool"));
   }, [navigate]);
 
+  const openKnowledgeBase = useCallback(() => {
+    navigate(buildPortalSectionPath("knowledge-base", {
+      employeeId: "knowledge",
+    }));
+  }, [navigate]);
+
   const openInspiration = useCallback(() => {
     navigate(buildPortalSectionPath("inspiration"));
   }, [navigate]);
@@ -225,6 +231,7 @@ export function usePortalNavigationSidebar({
     updateCurrentEmployeeRoute,
     handleSwitchTraditionalView,
     openSkillPool,
+    openKnowledgeBase,
     openInspiration,
     openCli,
     switchMcpEmployee,

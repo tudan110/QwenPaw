@@ -4,6 +4,13 @@ import type {
 } from "../../api/portalRealAlarms";
 
 export const PORTAL_REAL_ALARM_POLL_INTERVAL_MS = 15000;
+export const PORTAL_REAL_ALARM_POLL_ENABLED = (
+  import.meta.env.VITE_PORTAL_REAL_ALARM_POLL_ENABLED !== "false"
+  && (
+    typeof window === "undefined"
+    || window.__PORTAL_RUNTIME_CONFIG__?.realAlarmPollEnabled !== false
+  )
+);
 
 type PortalBellAlert = {
   id: string;

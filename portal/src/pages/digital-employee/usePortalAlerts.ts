@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getEmployeeById } from "../../data/portalData";
 import { listPortalRealAlarms } from "../../api/portalRealAlarms";
-import { normalizePortalBellAlerts, PORTAL_REAL_ALARM_POLL_INTERVAL_MS } from "./realAlarms";
+import {
+  normalizePortalBellAlerts,
+  PORTAL_REAL_ALARM_POLL_ENABLED,
+  PORTAL_REAL_ALARM_POLL_INTERVAL_MS,
+} from "./realAlarms";
 import { buildPortalAlertDispatchText } from "./pageHelpers";
 import type {
   PortalAlertToastState,
@@ -25,11 +29,13 @@ export function usePortalAlerts({
   navigateToEmployeePage,
   locationPathname,
   locationSearch,
+  suspended = false,
 }: {
   employeesWithRuntimeStatus: any[];
   navigateToEmployeePage: NavigateToEmployeePage;
   locationPathname: string;
   locationSearch: string;
+  suspended?: boolean;
 }) {
   const [opsAlerts, setOpsAlerts] = useState<PortalOpsAlert[]>([]);
   const [alertToast, setAlertToast] = useState<PortalAlertToastState | null>(null);
@@ -57,6 +63,11 @@ export function usePortalAlerts({
       const response = await listPortalRealAlarms({ limit: 10 });
       setOpsAlerts(normalizePortalBellAlerts(response));
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("请求超时")) {
+        console.warn("Portal real alarms polling timed out; will retry later.");
+        return;
+      }
       console.error("Failed to load portal real alarms", error);
     }
   }, []);
@@ -174,6 +185,17 @@ export function usePortalAlerts({
   );
 
   useEffect(() => {
+    if (!PORTAL_REAL_ALARM_POLL_ENABLED || suspended) {
+      if (alertPollTimerRef.current) {
+        window.clearInterval(alertPollTimerRef.current);
+        alertPollTimerRef.current = null;
+      }
+      setOpsAlerts([]);
+      setAlertToast(null);
+      setAlertPopupOpen(false);
+      return undefined;
+    }
+
     void loadOpsAlerts();
     alertPollTimerRef.current = window.setInterval(() => {
       void loadOpsAlerts();
@@ -185,7 +207,7 @@ export function usePortalAlerts({
         alertPollTimerRef.current = null;
       }
     };
-  }, [loadOpsAlerts]);
+  }, [loadOpsAlerts, suspended]);
 
   useEffect(() => {
     const nextAlertIds = opsAlerts.map((alert) => alert.id);

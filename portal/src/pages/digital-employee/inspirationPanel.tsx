@@ -3,7 +3,8 @@ import "../inspiration-panel.css";
 type InspirationAction =
   | { type: "employee"; value: string }
   | { type: "view"; value: "overview" | "dashboard" | "tasks" }
-  | { type: "panel"; value: "ops-expert" };
+  | { type: "panel"; value: "ops-expert" | "knowledge-base" }
+  | { type: "knowledge-flow"; value: string };
 
 type InspirationItem = {
   title: string;
@@ -61,12 +62,12 @@ const inspirationItems: InspirationItem[] = [
     icon: "🗈",
     bg: "linear-gradient(135deg, rgba(6, 182, 212, 0.18), rgba(59, 130, 246, 0.1))",
     steps: [
-      "与知识专员对话，获取标准处理方案和最佳实践。",
-      "上传故障复盘文档，自动归纳重点结论。",
-      "让新成员通过知识专员快速完成知识迁移。",
+      "进入知识专员对话上传 SOP、复盘文档和最佳实践。",
+      "在对话中检索验证资料是否能命中，并按需手动沉淀经验。",
+      "让知识专员基于已入库资料回答问题。",
     ],
     tryText: "探索知识库",
-    action: { type: "employee", value: "knowledge" },
+    action: { type: "knowledge-flow", value: "知识库检索" },
   },
   {
     title: "工单全流程自动化",
@@ -126,10 +127,12 @@ export function InspirationPanel({
   onOpenEmployeeChat,
   onOpenView,
   onOpenPanel,
+  onOpenKnowledgeBase,
 }: {
   onOpenEmployeeChat: (employeeId: string) => void;
   onOpenView: (view: "overview" | "dashboard" | "tasks") => void;
-  onOpenPanel: (panel: "ops-expert") => void;
+  onOpenPanel: (panel: "ops-expert" | "knowledge-base") => void;
+  onOpenKnowledgeBase: (visibleContent?: string) => void;
 }) {
   const handleAction = (action: InspirationAction) => {
     if (action.type === "employee") {
@@ -138,6 +141,10 @@ export function InspirationPanel({
     }
     if (action.type === "view") {
       onOpenView(action.value);
+      return;
+    }
+    if (action.type === "knowledge-flow") {
+      onOpenKnowledgeBase(action.value);
       return;
     }
     onOpenPanel(action.value);

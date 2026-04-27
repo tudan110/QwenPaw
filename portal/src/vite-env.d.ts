@@ -10,6 +10,7 @@ interface ImportMetaEnv {
   readonly VITE_PORTAL_GATEWAY_DEFAULT_MODEL_ID?: string;
   readonly VITE_PORTAL_API_BASE_URL?: string;
   readonly VITE_PORTAL_PROXY_TARGET?: string;
+  readonly VITE_PORTAL_REAL_ALARM_POLL_ENABLED?: string;
 }
 
 interface ImportMeta {
@@ -22,5 +23,7 @@ interface Window {
     gatewayAgentId?: string;
     gatewayDefaultProviderId?: string;
     gatewayDefaultModelId?: string;
+    portalApiBaseUrl?: string;
+    realAlarmPollEnabled?: boolean;
   };
 }

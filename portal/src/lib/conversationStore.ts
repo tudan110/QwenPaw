@@ -200,6 +200,102 @@ function sanitizeResourceImportFlow(flow: unknown): PlainRecord | undefined {
   };
 }
 
+function sanitizeKnowledgeBaseFlow(flow: unknown): PlainRecord | undefined {
+  if (!isPlainRecord(flow)) {
+    return undefined;
+  }
+  const result = isPlainRecord(flow.result) ? flow.result : null;
+  const job = isPlainRecord(flow.job) ? flow.job : null;
+  const evidence = result && Array.isArray(result.relevant_evidence)
+    ? result.relevant_evidence.slice(0, 8).map((item) => (
+      isPlainRecord(item)
+        ? {
+            evidence_id: typeof item.evidence_id === "string" ? item.evidence_id : undefined,
+            confidence_score: typeof item.confidence_score === "number" ? item.confidence_score : undefined,
+            confidence_level: typeof item.confidence_level === "string" ? item.confidence_level : undefined,
+            chunk_summary: typeof item.chunk_summary === "string" ? truncateText(item.chunk_summary, 220) : undefined,
+            chunk_text: typeof item.chunk_text === "string" ? truncateText(item.chunk_text, 360) : undefined,
+            citation: isPlainRecord(item.citation) ? cloneJsonSafe(item.citation) : undefined,
+          }
+        : null
+    )).filter(Boolean)
+    : undefined;
+
+  return {
+    flowId: typeof flow.flowId === "string" ? flow.flowId : undefined,
+    stage: typeof flow.stage === "string" ? flow.stage : undefined,
+    mode: typeof flow.mode === "string" ? flow.mode : undefined,
+    status: typeof flow.status === "string" ? flow.status : undefined,
+    autoRun: Boolean(flow.autoRun),
+    error: typeof flow.error === "string" ? truncateText(flow.error, 240) : undefined,
+    query: typeof flow.query === "string" ? truncateText(flow.query, 240) : undefined,
+    fileName: typeof flow.fileName === "string" ? truncateText(flow.fileName, 160) : undefined,
+    fileSize: typeof flow.fileSize === "number" ? flow.fileSize : undefined,
+    manualTitle: typeof flow.manualTitle === "string" ? truncateText(flow.manualTitle, 160) : undefined,
+    manualContent: typeof flow.manualContent === "string" ? truncateText(flow.manualContent, 400) : undefined,
+    result: result
+      ? {
+          query_id: typeof result.query_id === "string" ? result.query_id : undefined,
+          summary: typeof result.summary === "string" ? truncateText(result.summary, 900) : undefined,
+          evidence_boundary_statement: typeof result.evidence_boundary_statement === "string"
+            ? truncateText(result.evidence_boundary_statement, 220)
+            : undefined,
+          relevant_evidence: evidence,
+          flags: isPlainRecord(result.flags) ? cloneJsonSafe(result.flags) : undefined,
+        }
+      : undefined,
+    job: job
+      ? {
+          job_id: typeof job.job_id === "string" ? job.job_id : undefined,
+          id: typeof job.id === "string" ? job.id : undefined,
+          filename: typeof job.filename === "string" ? truncateText(job.filename, 160) : undefined,
+          status: typeof job.status === "string" ? job.status : undefined,
+          progress_pct: typeof job.progress_pct === "number" ? job.progress_pct : undefined,
+          current_stage: typeof job.current_stage === "string" ? job.current_stage : undefined,
+          unit_count: typeof job.unit_count === "number" ? job.unit_count : undefined,
+          note: typeof job.note === "string" ? truncateText(job.note, 240) : undefined,
+        }
+      : undefined,
+  };
+}
+
+function sanitizeKnowledgeAnswerPayload(payload: unknown): PlainRecord | undefined {
+  if (!isPlainRecord(payload)) {
+    return undefined;
+  }
+  const result = isPlainRecord(payload.result) ? payload.result : null;
+  const evidence = result && Array.isArray(result.relevant_evidence)
+    ? result.relevant_evidence.slice(0, 8).map((item) => (
+      isPlainRecord(item)
+        ? {
+            evidence_id: typeof item.evidence_id === "string" ? item.evidence_id : undefined,
+            confidence_score: typeof item.confidence_score === "number" ? item.confidence_score : undefined,
+            confidence_level: typeof item.confidence_level === "string" ? item.confidence_level : undefined,
+            chunk_summary: typeof item.chunk_summary === "string" ? truncateText(item.chunk_summary, 220) : undefined,
+            chunk_text: typeof item.chunk_text === "string" ? truncateText(item.chunk_text, 360) : undefined,
+            citation: isPlainRecord(item.citation) ? cloneJsonSafe(item.citation) : undefined,
+          }
+        : null
+    )).filter(Boolean)
+    : undefined;
+  return {
+    query: typeof payload.query === "string" ? truncateText(payload.query, 240) : undefined,
+    answer: typeof payload.answer === "string" ? truncateText(payload.answer, 2400) : undefined,
+    synthesis: isPlainRecord(payload.synthesis) ? cloneJsonSafe(payload.synthesis) : undefined,
+    result: result
+      ? {
+          query_id: typeof result.query_id === "string" ? result.query_id : undefined,
+          summary: typeof result.summary === "string" ? truncateText(result.summary, 900) : undefined,
+          evidence_boundary_statement: typeof result.evidence_boundary_statement === "string"
+            ? truncateText(result.evidence_boundary_statement, 220)
+            : undefined,
+          relevant_evidence: evidence,
+          flags: isPlainRecord(result.flags) ? cloneJsonSafe(result.flags) : undefined,
+        }
+      : undefined,
+  };
+}
+
 function sanitizeMessage(
   message: unknown,
   maxContentLength: number,
@@ -240,6 +336,15 @@ function sanitizeMessage(
   }
   if (isPlainRecord(message.resourceImportFlow)) {
     next.resourceImportFlow = sanitizeResourceImportFlow(message.resourceImportFlow);
+  }
+  if (isPlainRecord(message.knowledgeBaseFlow)) {
+    next.knowledgeBaseFlow = sanitizeKnowledgeBaseFlow(message.knowledgeBaseFlow);
+  }
+  if (message.knowledgeAnswer === true) {
+    next.knowledgeAnswer = true;
+  }
+  if (isPlainRecord(message.knowledgeAnswerPayload)) {
+    next.knowledgeAnswerPayload = sanitizeKnowledgeAnswerPayload(message.knowledgeAnswerPayload);
   }
 
   return next;
