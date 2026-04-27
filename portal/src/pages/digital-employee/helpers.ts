@@ -1,9 +1,10 @@
-import { digitalEmployees } from "../../data/portalData";
+import { digitalEmployees } from "../../data/portalData.ts";
 
 const TIMEOUT_ALARM_TITLE = "应用接口响应超时";
 export const ALARM_WORKORDER_ENTRY = "alarm-workorders";
 export const ALARM_WORKORDER_LIMIT = 5;
 export const PORTAL_FAULT_WORKORDER_MARKER = "# PORTAL FAULT WORKORDER MODE";
+export const PORTAL_ALARM_ANALYST_CARD_MARKER = "# PORTAL ALARM ANALYST CARD MODE";
 export const PORTAL_INSPECTION_CARD_MARKER = "# PORTAL INSPECTION CARD MODE";
 export const PORTAL_VIEW_OPTIONS = ["chat", "overview", "dashboard", "tasks"] as const;
 export const PORTAL_ADVANCED_PANEL_OPTIONS = ["model-config", "token-usage", "ops-expert", "mcp", "skill-pool", "inspiration", "cli", "resource-import"] as const;
@@ -886,6 +887,15 @@ function sanitizeRemoteUserText(content: string) {
     return candidate || normalized;
   }
 
+  if (
+    normalized.includes(PORTAL_ALARM_ANALYST_CARD_MARKER) &&
+    normalized.includes("\n---\n")
+  ) {
+    const segments = normalized.split(/\n---\n/);
+    const candidate = segments[segments.length - 1]?.trim();
+    return candidate || normalized;
+  }
+
   if (!normalized.includes("# BOOTSTRAP MODE") || !normalized.includes("\n---")) {
     return normalized;
   }
@@ -913,6 +923,19 @@ export function unwrapPortalInspectionCardContent(content: string) {
   const normalized = String(content || "");
   if (
     normalized.includes(PORTAL_INSPECTION_CARD_MARKER)
+    && normalized.includes("\n---\n")
+  ) {
+    const segments = normalized.split(/\n---\n/);
+    const candidate = segments[segments.length - 1]?.trim();
+    return candidate || normalized;
+  }
+  return normalized;
+}
+
+export function unwrapPortalAlarmAnalystCardContent(content: string) {
+  const normalized = String(content || "");
+  if (
+    normalized.includes(PORTAL_ALARM_ANALYST_CARD_MARKER)
     && normalized.includes("\n---\n")
   ) {
     const segments = normalized.split(/\n---\n/);

@@ -10,6 +10,7 @@ import {
   extractPortalActionPayload,
   getSeverityClassName,
   normalizeMarkdownDisplayContent,
+  unwrapPortalAlarmAnalystCardContent,
   PORTAL_INSPECTION_CARD_MARKER,
   unwrapPortalInspectionCardContent,
 } from "./helpers";
@@ -963,9 +964,15 @@ export const MessageMarkdown = memo(function MessageMarkdown({
     typeof document !== "undefined"
     && document.querySelector(".portal-digital-employee")?.classList.contains("theme-dark");
   const markdownThemeClass = isDarkTheme ? "x-markdown-dark" : "x-markdown-light";
-  const normalizedContent = stripFrontmatter(unwrapPortalInspectionCardContent(normalizeMarkdownDisplayContent(content, {
-    isStreaming,
-  })));
+  const normalizedContent = stripFrontmatter(
+    unwrapPortalInspectionCardContent(
+      unwrapPortalAlarmAnalystCardContent(
+        normalizeMarkdownDisplayContent(content, {
+          isStreaming,
+        }),
+      ),
+    ),
+  );
   const streamingContent = String(content || "");
 
   if (isStreaming) {
@@ -995,9 +1002,15 @@ export const MessageMarkdown = memo(function MessageMarkdown({
     <>
       {renderableSegments.map((segment, index) => {
         if (segment.type === "markdown") {
-          const segmentContent = stripFrontmatter(unwrapPortalInspectionCardContent(normalizeMarkdownDisplayContent(segment.content, {
-            isStreaming: false,
-          })));
+          const segmentContent = stripFrontmatter(
+            unwrapPortalInspectionCardContent(
+              unwrapPortalAlarmAnalystCardContent(
+                normalizeMarkdownDisplayContent(segment.content, {
+                  isStreaming: false,
+                }),
+              ),
+            ),
+          );
           if (!segmentContent.trim()) {
             return null;
           }

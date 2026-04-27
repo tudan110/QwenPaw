@@ -3,7 +3,10 @@ import { memo, useMemo } from "react";
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
 import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
 import type { AlarmAnalystCardV1 } from "../../alarm-analyst/shared";
-import { normalizeMarkdownDisplayContent } from "./helpers";
+import {
+  normalizeMarkdownDisplayContent,
+  unwrapPortalAlarmAnalystCardContent,
+} from "./helpers";
 
 type AlarmAnalystSummaryRowTone = "accent" | "success" | "warning" | "neutral";
 
@@ -168,7 +171,9 @@ function markTreeNodes(node: any, highlightTokens: string[]) {
 }
 
 function buildReportTopologyChart(card: AlarmAnalystCardV1, highlightTokens: string[]) {
-  const rawChart = extractRawTopologyChart(card.rawReportMarkdown);
+  const rawChart = extractRawTopologyChart(
+    unwrapPortalAlarmAnalystCardContent(card.rawReportMarkdown),
+  );
   if (!rawChart) {
     return "";
   }
@@ -202,7 +207,9 @@ function AlarmAnalystMarkdown({ content }: { content: string }) {
     typeof document !== "undefined"
     && document.querySelector(".portal-digital-employee")?.classList.contains("theme-dark");
   const markdownThemeClass = isDarkTheme ? "x-markdown-dark" : "x-markdown-light";
-  const normalizedContent = normalizeMarkdownDisplayContent(content);
+  const normalizedContent = unwrapPortalAlarmAnalystCardContent(
+    normalizeMarkdownDisplayContent(content),
+  );
 
   return (
     <PortalQwenPawMarkdown
@@ -252,9 +259,15 @@ function extractMarkdownSection(content: string, titles: string[]) {
 
   const startMatch = headingMatches[targetIndex];
   const start = (startMatch.index || 0) + startMatch[0].length;
-  const end = targetIndex + 1 < headingMatches.length
-    ? (headingMatches[targetIndex + 1].index || normalized.length)
-    : normalized.length;
+  const currentLevel = (startMatch[0].match(/^#+/)?.[0].length) || 1;
+  let end = normalized.length;
+  for (const nextMatch of headingMatches.slice(targetIndex + 1)) {
+    const nextLevel = (nextMatch[0].match(/^#+/)?.[0].length) || 1;
+    if (nextLevel <= currentLevel) {
+      end = nextMatch.index || normalized.length;
+      break;
+    }
+  }
   return normalized.slice(start, end).trim();
 }
 
@@ -290,7 +303,10 @@ function extractBulletEntries(content: string) {
 }
 
 function buildSummaryRowsFromReport(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
-  const summarySection = extractMarkdownSection(card.rawReportMarkdown, ["总结"]);
+  const summarySection = extractMarkdownSection(
+    unwrapPortalAlarmAnalystCardContent(card.rawReportMarkdown),
+    ["总结"],
+  );
   if (!summarySection) {
     return [];
   }
@@ -380,7 +396,8 @@ function mapSeverityLabel(value: string) {
 }
 
 function extractReportTitle(card: AlarmAnalystCardV1) {
-  const normalized = String(card.rawReportMarkdown || "").replace(/\r\n/g, "\n");
+  const normalized = unwrapPortalAlarmAnalystCardContent(card.rawReportMarkdown)
+    .replace(/\r\n/g, "\n");
   const match = normalized.match(/^##+\s*.*?告警分析报告[：:]\s*(.+?)\s*$/m);
   if (match?.[1]) {
     return stripMarkdownInline(match[1]);
@@ -467,7 +484,7 @@ function buildNotificationAutomationCard(reportText: string, notificationStatus:
 }
 
 function buildAnchorText(card: AlarmAnalystCardV1) {
-  const reportText = String(card.rawReportMarkdown || "");
+  const reportText = unwrapPortalAlarmAnalystCardContent(card.rawReportMarkdown);
   const resourceName = (
     card.rootCause.resourceName && card.rootCause.resourceName !== "自身"
       ? card.rootCause.resourceName
@@ -541,7 +558,7 @@ function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
 }
 
 function buildDisplayModel(card: AlarmAnalystCardV1) {
-  const reportText = String(card.rawReportMarkdown || "");
+  const reportText = unwrapPortalAlarmAnalystCardContent(card.rawReportMarkdown);
   const reportSummaryRows = buildSummaryRowsFromReport(card);
   const summaryRows = reportSummaryRows.length ? reportSummaryRows : buildFallbackRows(card);
   const rowsByLabel = new Map(summaryRows.map((row) => [row.label, row]));

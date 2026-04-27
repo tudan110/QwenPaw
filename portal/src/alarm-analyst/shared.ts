@@ -1,3 +1,8 @@
+import {
+  PORTAL_ALARM_ANALYST_CARD_MARKER,
+  unwrapPortalAlarmAnalystCardContent,
+} from "../pages/digital-employee/helpers.ts";
+
 export type AlarmAnalystCardPriority = "p0" | "p1" | "p2";
 export type AlarmAnalystCardEvidenceKind = "alarm" | "metric" | "cmdb" | "tool";
 
@@ -78,11 +83,17 @@ function looksLikeAlarmAnalystHistorySession(value: unknown) {
   }
 
   return (
+    text.includes(PORTAL_ALARM_ANALYST_CARD_MARKER) ||
     /^告警分析\s*[·\-]/u.test(text) ||
     /资源\s*ID（CI\s*ID）[:：]/u.test(text) ||
     /告警时间[:：]/u.test(text) ||
     ((/告警|异常|故障/u.test(text) || /数据库锁/u.test(text)) && /CI\s*ID|资源\s*ID/u.test(text))
   );
+}
+
+function normalizeAlarmAnalystReportKey(value: unknown) {
+  const text = String(value || "").trim();
+  return unwrapPortalAlarmAnalystCardContent(text).trim() || text;
 }
 
 export function shouldEnableAlarmAnalystCards({
@@ -207,7 +218,7 @@ export function mergeAlarmAnalystCards(messages: any[] = [], cards: AlarmAnalyst
   const cardsByReportMarkdown = new Map(
     cards
       .filter((card) => card?.rawReportMarkdown)
-      .map((card) => [String(card.rawReportMarkdown).trim(), card] as const),
+      .map((card) => [normalizeAlarmAnalystReportKey(card.rawReportMarkdown), card] as const),
   );
 
   return messages.map((message) => {
@@ -215,7 +226,7 @@ export function mergeAlarmAnalystCards(messages: any[] = [], cards: AlarmAnalyst
     const reportMarkdown = getAlarmAnalystReportMarkdown(message);
     const card = (
       (sourceMessageId ? cardsByMessageId.get(sourceMessageId) : null) ||
-      (reportMarkdown ? cardsByReportMarkdown.get(reportMarkdown) : null)
+      (reportMarkdown ? cardsByReportMarkdown.get(normalizeAlarmAnalystReportKey(reportMarkdown)) : null)
     );
     if (!card) {
       return message;

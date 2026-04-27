@@ -5,7 +5,7 @@ import type {
   PortalAgent,
   PortalStatSummary,
   TaskViewItem,
-} from "../types/portal";
+} from "../types/portal.ts";
 
 export const portalStats: PortalStatSummary = {
   total: 6,

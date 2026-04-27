@@ -38,6 +38,7 @@ SEVERITY_KEYWORDS = (
     ("major", ("p1", "major", "高", "重要")),
     ("minor", ("p2", "minor", "一般", "低")),
 )
+PORTAL_ALARM_ANALYST_CARD_MARKER = "# PORTAL ALARM ANALYST CARD MODE"
 
 
 def is_alarm_analyst_card_candidate(
@@ -49,9 +50,13 @@ def is_alarm_analyst_card_candidate(
     if str(employee_id or "").strip() != "fault":
         return False
 
-    report_text = str(report_markdown or "").strip()
+    raw_report_text = str(report_markdown or "").strip()
+    report_text = _unwrap_portal_alarm_analyst_card_content(raw_report_text)
     if len(report_text) < 20:
         return False
+
+    if _matches_portal_alarm_analyst_protocol(raw_report_text, report_text):
+        return True
 
     marker_count = sum(
         1
@@ -70,6 +75,26 @@ def is_alarm_analyst_card_candidate(
     return marker_count >= 2 and (has_recommendation_hint or has_topology_signal)
 
 
+def _matches_portal_alarm_analyst_protocol(raw_report_text: str, report_text: str) -> bool:
+    if PORTAL_ALARM_ANALYST_CARD_MARKER not in raw_report_text:
+        return False
+    if "\n---\n" not in raw_report_text:
+        return False
+    if not report_text.lstrip().startswith("## 告警分析报告"):
+        return False
+    return all(
+        marker in report_text
+        for marker in (
+            "告警分析报告",
+            "告警基础信息",
+            "根因判断",
+            "影响范围",
+            "处置建议",
+            "总结",
+        )
+    )
+
+
 def build_alarm_analyst_card(
     *,
     chat_id: str,
@@ -81,8 +106,12 @@ def build_alarm_analyst_card(
     if str(employee_id or "").strip() != "fault":
         raise ValueError("alarm analyst cards are only supported for employee_id='fault'")
 
-    report_text = str(report_markdown or "").strip()
-    root_section = _extract_named_section(report_text, ("根因分析结论", "根因结论", "根因分析", "根因"))
+    raw_report_text = str(report_markdown or "").strip()
+    report_text = _unwrap_portal_alarm_analyst_card_content(raw_report_text)
+    root_section = _extract_named_section(
+        report_text,
+        ("根因判断", "根因分析结论", "根因结论", "根因分析", "根因"),
+    )
     impact_section = _extract_named_section(report_text, ("影响范围", "影响分析", "影响面"))
     recommendation_section = _extract_named_section(report_text, ("处置建议", "建议动作", "修复建议", "处置方案"))
     evidence_section = _extract_named_section(report_text, ("证据摘要", "关键证据", "证据", "分析依据"))
@@ -136,11 +165,19 @@ def build_alarm_analyst_card(
         ),
         recommendations=recommendations,
         evidence=evidence,
-        raw_report_markdown=report_text,
+        raw_report_markdown=raw_report_text,
     )
 
 
 def _extract_title(report_markdown: str) -> str:
+    heading_match = re.search(
+        r"^##+\s*.*?告警分析报告[：:]\s*(.+?)\s*$",
+        str(report_markdown or ""),
+        flags=re.MULTILINE,
+    )
+    if heading_match:
+        return _sanitize_inline_text(heading_match.group(1)) or "故障根因分析"
+
     for line in str(report_markdown or "").splitlines():
         text = line.strip()
         if not text or text.startswith("#"):
@@ -150,6 +187,18 @@ def _extract_title(report_markdown: str) -> str:
         if text:
             return text
     return "故障根因分析"
+
+
+def _unwrap_portal_alarm_analyst_card_content(report_markdown: str) -> str:
+    normalized = str(report_markdown or "").replace("\r\n", "\n")
+    if (
+        PORTAL_ALARM_ANALYST_CARD_MARKER in normalized
+        and "\n---\n" in normalized
+    ):
+        segments = normalized.split("\n---\n")
+        candidate = segments[-1].strip()
+        return candidate or normalized.strip()
+    return normalized.strip()
 
 
 def _extract_named_section(report_markdown: str, names: tuple[str, ...]) -> str:
@@ -164,8 +213,14 @@ def _extract_named_section(report_markdown: str, names: tuple[str, ...]) -> str:
     for index, heading in enumerate(headings):
         if _normalize_heading(heading.group(1)) not in normalized_names:
             continue
+        current_level = len(heading.group(0)) - len(heading.group(0).lstrip("#"))
         start = heading.end()
-        end = headings[index + 1].start() if index + 1 < len(headings) else len(report_markdown)
+        end = len(report_markdown)
+        for next_heading in headings[index + 1 :]:
+            next_level = len(next_heading.group(0)) - len(next_heading.group(0).lstrip("#"))
+            if next_level <= current_level:
+                end = next_heading.start()
+                break
         return report_markdown[start:end].strip()
     return ""
 
@@ -191,6 +246,14 @@ def _first_meaningful_item(text: str) -> str:
 
 
 def _extract_resource_id(text: str) -> str:
+    labeled = _extract_labeled_value(
+        text,
+        ("资源 ID（CI ID）", "资源 ID(CI ID)", "资源ID（CI ID）", "资源 ID", "CI ID", "resId"),
+    )
+    if labeled:
+        digits = re.search(r"[0-9]{3,}", labeled)
+        if digits:
+            return digits.group(0)
     match = RESOURCE_ID_RE.search(str(text or ""))
     if match:
         return match.group(1)
@@ -199,8 +262,34 @@ def _extract_resource_id(text: str) -> str:
 
 
 def _extract_root_resource_name(text: str) -> str:
+    labeled = _extract_labeled_value(
+        text,
+        ("资源名称", "根因资源", "根资源", "实例", "资产编号"),
+    )
+    if labeled:
+        return labeled
     match = ROOT_RESOURCE_RE.search(str(text or ""))
     return match.group(1).strip() if match else ""
+
+
+def _extract_labeled_value(text: str, labels: tuple[str, ...]) -> str:
+    normalized = str(text or "")
+    for label in labels:
+        escaped = re.escape(label)
+        table_pattern = re.compile(
+            rf"\|\s*(?:\*\*)?{escaped}(?:\*\*)?\s*\|\s*([^|\n]+?)\s*\|",
+            re.IGNORECASE,
+        )
+        line_pattern = re.compile(
+            rf"(?:^|\n)\s*(?:[-*•]\s*)?{escaped}\s*[：:]\s*([^\n]+)",
+            re.IGNORECASE,
+        )
+        match = table_pattern.search(normalized) or line_pattern.search(normalized)
+        if match:
+            value = _sanitize_inline_text(match.group(1))
+            if value:
+                return value
+    return ""
 
 
 def _detect_severity(text: str) -> str | None:
@@ -243,6 +332,9 @@ def _extract_impact_entities(
         if normalized_label in {_normalize_heading(value) for value in SECTION_ONLY_RESOURCES}:
             current_group = "resource"
             continue
+        if raw_cleaned.startswith("#"):
+            current_group = None
+            continue
 
         if application_match:
             current_group = "application"
@@ -269,8 +361,11 @@ def _extract_impact_entities(
 
     deduped_applications = _dedupe_entities(applications)
     deduped_resources = _dedupe_entities(resources)
-    if not blast_radius_text:
-        blast_radius_text = _summarize_blast_radius(deduped_applications, deduped_resources)
+    summarized_blast_radius = _summarize_blast_radius(deduped_applications, deduped_resources)
+    if summarized_blast_radius and (
+        not blast_radius_text or not re.match(r"^(影响|波及|涉及)", blast_radius_text)
+    ):
+        blast_radius_text = summarized_blast_radius
     return deduped_applications, deduped_resources, blast_radius_text
 
 
@@ -466,6 +561,7 @@ def _build_content_hash(text: str) -> str:
 
 def _sanitize_inline_text(text: str) -> str:
     cleaned = str(text or "").strip()
+    cleaned = re.sub(r"^\s*#{1,6}\s*", "", cleaned)
     cleaned = re.sub(r"^\s*(?:[-*+]\s+|\d+\.\s+|\d+[、)]\s+)?", "", cleaned)
     cleaned = cleaned.replace("**", "").replace("`", "")
     cleaned = re.sub(r"\s+", " ", cleaned)
@@ -507,7 +603,11 @@ def _is_readable_summary_line(raw_line: str, cleaned_line: str) -> bool:
         return False
     if "|" in str(raw_line or ""):
         return False
+    if "完整故障分析报告" in cleaned_line or "告警分析报告" in cleaned_line:
+        return False
     if APPLICATION_VALUE_RE.match(cleaned_line) or RESOURCE_VALUE_RE.match(cleaned_line):
+        return False
+    if re.search(r"(query|拓扑|确认|链路|写入|调用)", cleaned_line, flags=re.IGNORECASE):
         return False
     normalized = _normalize_heading(cleaned_line)
     if normalized in {_normalize_heading(value) for value in SECTION_ONLY_APPLICATIONS | SECTION_ONLY_RESOURCES}:

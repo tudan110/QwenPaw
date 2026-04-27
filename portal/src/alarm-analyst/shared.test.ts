@@ -6,7 +6,7 @@ import {
   getAlarmAnalystReportMarkdown,
   mergeAlarmAnalystCards,
   shouldEnableAlarmAnalystCards,
-} from "./shared";
+} from "./shared.ts";
 
 test("builds alarm analyst card request from grouped response blocks", () => {
   const message = {
@@ -102,6 +102,49 @@ test("merges stored cards by raw report markdown when message id differs", () =>
   const merged = mergeAlarmAnalystCards(messages, cards);
 
   assert.equal(merged[0].alarmAnalystCard.summary.conclusion, "历史回放兜底匹配");
+});
+
+test("merges stored cards when report markdown differs only by alarm marker wrapper", () => {
+  const messages = [
+    {
+      id: "agent-3",
+      enhancementSourceMessageId: "history-assistant-2",
+      processBlocks: [
+        {
+          kind: "response",
+          content:
+            "# PORTAL ALARM ANALYST CARD MODE\n\n---\n## 告警分析报告：数据库锁异常\n## 根因判断\n- 锁等待放大",
+        },
+      ],
+    },
+  ];
+  const cards = [
+    {
+      type: "alarm-analyst-card",
+      version: "v1",
+      source: {
+        chatId: "chat-1",
+        messageId: "stream-assistant-2",
+        skillName: "alarm-analyst",
+        contentHash: "hash-2",
+      },
+      summary: {
+        title: "数据库锁异常",
+        conclusion: "锁等待放大",
+      },
+      rootCause: { reason: "锁等待放大" },
+      impact: { affectedApplications: [], affectedResources: [] },
+      topology: { nodes: [], edges: [] },
+      recommendations: [],
+      evidence: [],
+      rawReportMarkdown:
+        "## 告警分析报告：数据库锁异常\n## 根因判断\n- 锁等待放大",
+    },
+  ] as any;
+
+  const merged = mergeAlarmAnalystCards(messages, cards);
+
+  assert.equal(merged[0].alarmAnalystCard.summary.title, "数据库锁异常");
 });
 
 test("only enables alarm analyst cards for fault workorder sessions", () => {

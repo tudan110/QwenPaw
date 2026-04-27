@@ -435,15 +435,26 @@ export function useRemoteChatSession({
     backendMessageId: string;
     finalText: string;
   }) => {
+    const normalizedFinalText = String(finalText || "").trim();
+    const shouldAttemptByContent =
+      normalizedFinalText.includes("# PORTAL ALARM ANALYST CARD MODE")
+      || (
+        normalizedFinalText.includes("告警分析报告")
+        && normalizedFinalText.includes("影响范围")
+        && normalizedFinalText.includes("处置建议")
+      );
     if (
-      !shouldEnableAlarmAnalystCards({
-        employeeId: currentEmployeeRef.current?.id || "",
-        session: currentChatMetaRef.current,
-      }) ||
+      (
+        !shouldEnableAlarmAnalystCards({
+          employeeId: currentEmployeeRef.current?.id || "",
+          session: currentChatMetaRef.current,
+        })
+        && !shouldAttemptByContent
+      ) ||
       !currentChatIdRef.current ||
       !currentSessionIdRef.current ||
       !backendMessageId ||
-      !finalText.trim()
+      !normalizedFinalText
     ) {
       return;
     }
@@ -452,14 +463,14 @@ export function useRemoteChatSession({
       chatId: currentChatIdRef.current,
       sessionId: currentSessionIdRef.current,
       employeeId: currentEmployeeRef.current.id,
-      message: {
-        id: frontendMessageId,
-        content: finalText,
-        processBlocks: streamProcessBlocksRef.current.get(frontendMessageId) || [],
-        backendMessageId,
-        enhancementSourceMessageId: backendMessageId,
-      },
-    });
+        message: {
+          id: frontendMessageId,
+          content: normalizedFinalText,
+          processBlocks: streamProcessBlocksRef.current.get(frontendMessageId) || [],
+          backendMessageId,
+          enhancementSourceMessageId: backendMessageId,
+        },
+      });
     if (!payload) {
       return;
     }
@@ -754,16 +765,24 @@ export function useRemoteChatSession({
     ) {
       const assistantState = ensureAssistantMessage(event.id, employee);
       const finalText = extractCopawMessageText(event);
-      if (event.status === "completed" && finalText) {
+      if (event.status === "completed") {
+        const streamedText = String(
+          streamResponseTextRef.current.get(assistantState.frontendId)?.get(event.id) || "",
+        ).trim();
+        const resolvedFinalText = finalText || streamedText;
         streamPendingTextRef.current.delete(event.id);
-        appendAssistantResponseBlock(assistantState.frontendId, event.id, finalText, {
-          replace: true,
-        });
-        void maybeEnhanceAlarmAnalystMessage({
-          frontendMessageId: assistantState.frontendId,
-          backendMessageId: event.id,
-          finalText,
-        });
+        if (finalText) {
+          appendAssistantResponseBlock(assistantState.frontendId, event.id, finalText, {
+            replace: true,
+          });
+        }
+        if (resolvedFinalText) {
+          void maybeEnhanceAlarmAnalystMessage({
+            frontendMessageId: assistantState.frontendId,
+            backendMessageId: event.id,
+            finalText: resolvedFinalText,
+          });
+        }
       }
       return;
     }

@@ -6,6 +6,9 @@ from qwenpaw.extensions.api.alarm_analyst_card_service import (
 )
 
 
+PORTAL_ALARM_ANALYST_CARD_MARKER = "# PORTAL ALARM ANALYST CARD MODE"
+
+
 def test_is_alarm_analyst_card_candidate_matches_report_with_rca_markers() -> None:
     matched = is_alarm_analyst_card_candidate(
         employee_id="fault",
@@ -104,3 +107,86 @@ def test_build_alarm_analyst_card_filters_noisy_impact_and_sanitizes_titles() ->
     assert [item.name for item in card.impact.affected_resources] == ["3094", "Redis-01"]
     assert card.impact.blast_radius_text == "影响 1 个应用、2 个资源"
     assert card.recommendations[0].title == "数据库死锁 + 数据库锁异常 + 连接异常 三告警同一时间点出现"
+
+
+def test_alarm_analyst_card_protocol_marker_matches_and_preserves_raw_report() -> None:
+    report_markdown = (
+        f"{PORTAL_ALARM_ANALYST_CARD_MARKER}\n\n"
+        "---\n"
+        "## 告警分析报告：数据库锁异常\n"
+        "## 告警基础信息\n"
+        "| 字段 | 值 |\n"
+        "|---|---|\n"
+        "| 资源 ID（CI ID） | 3094 |\n"
+        "| 资源名称 | db_mysql_001 |\n"
+        "## 根因判断\n"
+        "- MySQL 锁等待放大，导致写入链路受阻。\n"
+        "## 影响范围\n"
+        "- 受影响应用：CMDB\n"
+        "- 受影响资源：3094\n"
+        "## 处置建议\n"
+        "- P0：终止异常慢 SQL 会话。\n"
+        "## 📊 总结\n"
+        "- 置信度：86%\n"
+    )
+
+    assert is_alarm_analyst_card_candidate(
+        employee_id="fault",
+        report_markdown=report_markdown,
+        process_blocks=[],
+    ) is True
+
+    card = build_alarm_analyst_card(
+        chat_id="chat-3",
+        message_id="assistant-3",
+        employee_id="fault",
+        report_markdown=report_markdown,
+        process_blocks=[],
+    )
+
+    assert card.summary.title == "数据库锁异常"
+    assert "锁等待放大" in card.summary.conclusion
+    assert card.root_cause.ci_id == "3094"
+    assert card.raw_report_markdown.startswith(PORTAL_ALARM_ANALYST_CARD_MARKER)
+
+
+def test_alarm_analyst_card_protocol_marker_matches_with_preface_text() -> None:
+    report_markdown = (
+        "工单已成功创建，通知状态为部分推送成功。现在我已拥有完整的分析数据，可以输出最终报告了。\n\n"
+        "---\n\n"
+        f"{PORTAL_ALARM_ANALYST_CARD_MARKER}\n\n"
+        "---\n\n"
+        "## 告警分析报告：数据库锁异常\n\n"
+        "## 告警基础信息\n\n"
+        "| 字段 | 值 |\n"
+        "|---|---|\n"
+        "| 资源 ID（CI ID） | 3094 |\n"
+        "| 资源名称 | db_mysql_001 |\n\n"
+        "## 根因判断\n\n"
+        "- MySQL 锁等待放大，导致写入链路受阻。\n\n"
+        "## 影响范围\n\n"
+        "- 受影响应用：CMDB\n"
+        "- 受影响资源：3094\n\n"
+        "## 处置建议\n\n"
+        "- P0：终止异常慢 SQL 会话。\n\n"
+        "## 📊 总结\n\n"
+        "- 置信度：86%\n"
+    )
+
+    assert is_alarm_analyst_card_candidate(
+        employee_id="fault",
+        report_markdown=report_markdown,
+        process_blocks=[],
+    ) is True
+
+    card = build_alarm_analyst_card(
+        chat_id="chat-4",
+        message_id="assistant-4",
+        employee_id="fault",
+        report_markdown=report_markdown,
+        process_blocks=[],
+    )
+
+    assert card.summary.title == "数据库锁异常"
+    assert card.root_cause.ci_id == "3094"
+    assert card.raw_report_markdown.startswith("工单已成功创建")
