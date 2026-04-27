@@ -165,7 +165,7 @@ export function PortalAlertBell({
   alertLevelLabels: Record<string, string>;
   onClearOpsAlerts: () => void;
   onPortalAlertAction: (alert: PortalOpsAlert) => void;
-  onToggleAlertPopup: () => void;
+  onToggleAlertPopup: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
   const alertCount = sortedOpsAlerts.length;
   const toastAlert = alertToast?.visible ? alertToast.alert : null;
@@ -844,6 +844,9 @@ export function EmployeeChatMainPanel({
   onResourceImportScrollToStage,
   onResourceImportSubmitImport,
   onResourceImportUploadFiles,
+  onKnowledgeBaseFlowUpdate,
+  onKnowledgeBaseUploadRequest,
+  onKnowledgeBaseManagementOpen,
   releaseResourceImportFiles,
   resolveResourceImportFiles,
   pageTheme,
@@ -894,6 +897,9 @@ export function EmployeeChatMainPanel({
   onResourceImportScrollToStage: AnyFn;
   onResourceImportSubmitImport: AnyFn;
   onResourceImportUploadFiles: AnyFn;
+  onKnowledgeBaseFlowUpdate: AnyFn;
+  onKnowledgeBaseUploadRequest: AnyFn;
+  onKnowledgeBaseManagementOpen: AnyFn;
   releaseResourceImportFiles: (flowId: string) => void;
   resolveResourceImportFiles: (flowId: string) => File[];
   pageTheme: "light" | "dark";
@@ -969,6 +975,9 @@ export function EmployeeChatMainPanel({
             onResourceImportScrollToStage={onResourceImportScrollToStage}
             onResourceImportSubmitImport={onResourceImportSubmitImport}
             onResourceImportUploadFiles={onResourceImportUploadFiles}
+            onKnowledgeBaseFlowUpdate={onKnowledgeBaseFlowUpdate}
+            onKnowledgeBaseUploadRequest={onKnowledgeBaseUploadRequest}
+            onKnowledgeBaseManagementOpen={onKnowledgeBaseManagementOpen}
             releaseResourceImportFiles={releaseResourceImportFiles}
             resolveResourceImportFiles={resolveResourceImportFiles}
             pageTheme={pageTheme}
@@ -1362,11 +1371,13 @@ export function SessionHistoryModal({
   historyEditingId,
   historyActionSessionId,
   activePortalResourceImportSessionId,
+  activePortalKnowledgeBaseSessionId,
   isRemoteEmployee,
   currentChatId,
   currentSessionId,
   isConversationRunning,
   isPortalResourceImportSession,
+  isPortalKnowledgeBaseSession,
   onClose,
   onSelectHistory,
   onDraftTitleChange,
@@ -1384,11 +1395,13 @@ export function SessionHistoryModal({
   historyEditingId: string;
   historyActionSessionId: string;
   activePortalResourceImportSessionId: string;
+  activePortalKnowledgeBaseSessionId: string;
   isRemoteEmployee: boolean;
   currentChatId: string;
   currentSessionId: string;
   isConversationRunning: boolean;
   isPortalResourceImportSession: (session: SessionRecord) => boolean;
+  isPortalKnowledgeBaseSession: (session: SessionRecord) => boolean;
   onClose: () => void;
   onSelectHistory: (session: SessionRecord) => void;
   onDraftTitleChange: (value: string) => void;
@@ -1435,7 +1448,9 @@ export function SessionHistoryModal({
                 const isActiveSession =
                   isPortalResourceImportSession(session)
                     ? session.id === activePortalResourceImportSessionId
-                    : session.id === (isRemoteEmployee ? currentChatId : currentSessionId);
+                    : isPortalKnowledgeBaseSession(session)
+                      ? session.id === activePortalKnowledgeBaseSessionId
+                      : session.id === (isRemoteEmployee ? currentChatId : currentSessionId);
                 const isEditingSession = historyEditingId === session.id;
                 const isBusySession = historyActionSessionId === session.id;
                 const isLockedRemoteSession =

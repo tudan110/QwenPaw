@@ -3,6 +3,11 @@ import { employeeStepDescriptions } from "../../data/portalData";
 import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
 import { PortalVisualizationBlock } from "../../components/PortalVisualizationBlock";
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
+import {
+  createKnowledgeManualEntry,
+  type KnowledgeEvidence,
+  type KnowledgeQueryResponse,
+} from "../../api/knowledgeBase";
 import { lazyNamed } from "../../utils/lazyNamed";
 import {
   extractVisualBlocks,
@@ -19,6 +24,10 @@ import { FaultScenarioResultCard } from "./faultScenarioComponents";
 const ResourceImportConversationCard = lazyNamed(
   () => import("./resourceImportConversationCard"),
   "ResourceImportConversationCard",
+);
+const KnowledgeBaseConversationCard = lazyNamed(
+  () => import("./knowledgeBaseConversationCard"),
+  "KnowledgeBaseConversationCard",
 );
 const AlarmAnalystCardPanel = lazyNamed(
   () => import("./alarmAnalystCardComponents"),
@@ -246,6 +255,215 @@ export function DisposalOperationCard({ action, onExecute }: any) {
   );
 }
 
+type KnowledgeAnswerPayload = {
+  query?: string;
+  result?: KnowledgeQueryResponse;
+  answer?: string;
+  synthesis?: Record<string, any>;
+};
+
+function normalizeKnowledgeText(value?: string | null) {
+  return String(value || "")
+    .replace(/\\\|/g, "|")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function clipKnowledgeText(value?: string | null, maxLength = 160) {
+  const text = normalizeKnowledgeText(value);
+  if (text.length <= maxLength) {
+    return text || "-";
+  }
+  return `${text.slice(0, maxLength - 1)}…`;
+}
+
+function formatKnowledgeConfidence(value?: number | string | null) {
+  if (typeof value === "number") {
+    return `${Math.round(value * 100)}%`;
+  }
+  const text = normalizeKnowledgeText(String(value || ""));
+  return text || "-";
+}
+
+function extractKnowledgeSection(content: string, title: string) {
+  const pattern = new RegExp(`####\\s*${title}\\s*\\n([\\s\\S]*?)(?=\\n####\\s|$)`, "u");
+  return normalizeKnowledgeText(pattern.exec(content)?.[1] || "");
+}
+
+function parseKnowledgeAnswerContent(content: string): KnowledgeAnswerPayload | null {
+  if (!/知识库检索|命中证据|结论摘要/u.test(content || "")) {
+    return null;
+  }
+
+  const query = normalizeKnowledgeText(
+    /\*\*问题[:：]\*\*\s*([^\n]+)/u.exec(content)?.[1]
+    || /问题[:：]\s*([^\n]+)/u.exec(content)?.[1]
+    || "",
+  );
+  const summary = extractKnowledgeSection(content, "结论摘要");
+  const boundary = extractKnowledgeSection(content, "证据边界");
+  const relevant_evidence = String(content || "")
+    .split(/\n/u)
+    .map((line) => line.trim())
+    .filter((line) => /^\d+\s*\|/u.test(line))
+    .map((line, index): KnowledgeEvidence => {
+      const cells = line.split(/\s+\|\s+/u);
+      return {
+        evidence_id: `parsed-${index + 1}`,
+        chunk_summary: normalizeKnowledgeText(cells[1] || `证据 ${index + 1}`),
+        chunk_text: normalizeKnowledgeText(cells.slice(4).join(" | ")),
+        confidence_level: normalizeKnowledgeText(cells[3] || ""),
+        citation: {
+          source_label: normalizeKnowledgeText(cells[1] || ""),
+          locator: normalizeKnowledgeText(cells[2] || ""),
+        },
+      };
+    });
+
+  return {
+    query,
+    result: {
+      summary,
+      relevant_evidence,
+      evidence_boundary_statement: boundary,
+    },
+  };
+}
+
+function KnowledgeAnswerReport({
+  content,
+  payload,
+  onUploadRequest,
+  onManagementOpen,
+}: {
+  content: string;
+  payload?: KnowledgeAnswerPayload | null;
+  onUploadRequest?: () => void;
+  onManagementOpen?: () => void;
+}) {
+  const parsedPayload = payload?.result ? payload : parseKnowledgeAnswerContent(content);
+  const result = parsedPayload?.result;
+  const evidence = result?.relevant_evidence || [];
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  if (!result) {
+    return <MessageMarkdown content={content} />;
+  }
+
+  const retrievalSummary = result.summary || result.evidence_boundary_statement || "当前没有在知识库中找到足够相关的资料。";
+  const aiAnswer = String(payload?.answer || "").trim();
+  const synthesisError = String(payload?.synthesis?.error || "").trim();
+  const query = parsedPayload?.query || "";
+
+  const handleSaveAnswer = async () => {
+    const contentToSave = aiAnswer || retrievalSummary;
+    if (!contentToSave || saveState === "saving") {
+      return;
+    }
+    setSaveState("saving");
+    try {
+      await createKnowledgeManualEntry({
+        title: `AI总结：${query || "知识库问答"}`.slice(0, 120),
+        content: contentToSave,
+        tags: ["AI总结", "运行时沉淀"],
+      });
+      setSaveState("saved");
+    } catch {
+      setSaveState("error");
+    }
+  };
+
+  return (
+    <div className="knowledge-answer-report">
+      <header className="knowledge-answer-header">
+        <div>
+          <span className="knowledge-answer-kicker">知识库检索</span>
+          <h3>{query || "检索结果"}</h3>
+        </div>
+        <span className={result.flags?.insufficient_evidence ? "knowledge-answer-badge warning" : "knowledge-answer-badge"}>
+          {result.flags?.insufficient_evidence ? "证据不足" : `${evidence.length} 条证据`}
+        </span>
+      </header>
+
+      <section className="knowledge-answer-section">
+        <h4>检索结论</h4>
+        <p>{retrievalSummary}</p>
+      </section>
+
+      {evidence.length ? (
+        <section className="knowledge-answer-section">
+          <h4>命中证据</h4>
+          <div className="knowledge-evidence-table" role="table" aria-label="知识库命中证据">
+            <div className="knowledge-evidence-row head" role="row">
+              <span role="columnheader">来源</span>
+              <span role="columnheader">位置</span>
+              <span role="columnheader">置信度</span>
+              <span role="columnheader">命中片段</span>
+            </div>
+            {evidence.slice(0, 8).map((item, index) => (
+              <div key={item.evidence_id || `${item.citation?.source_label || "evidence"}-${index}`} className="knowledge-evidence-row" role="row">
+                <span role="cell">
+                  <strong>{clipKnowledgeText(item.citation?.source_label || item.chunk_summary || item.evidence_id, 72)}</strong>
+                  {item.citation?.source_scope_label ? <small>{item.citation.source_scope_label}</small> : null}
+                </span>
+                <span role="cell">{clipKnowledgeText(item.citation?.locator || item.source_type || "-", 72)}</span>
+                <span role="cell">
+                  <mark>{formatKnowledgeConfidence(item.confidence_score ?? item.confidence_level)}</mark>
+                </span>
+                <span role="cell">{clipKnowledgeText(item.chunk_text || item.chunk_summary, 220)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {result.evidence_boundary_statement ? (
+        <aside className="knowledge-answer-boundary">
+          <strong>证据边界</strong>
+          <span>{result.evidence_boundary_statement}</span>
+        </aside>
+      ) : null}
+
+      <section className="knowledge-answer-ai">
+        <div className="knowledge-answer-ai-title">
+          <span>
+            <i className="fas fa-magic" />
+            AI 总结
+          </span>
+          <small>使用当前 QwenPaw 模型</small>
+        </div>
+        {aiAnswer ? (
+          <MessageMarkdown content={aiAnswer} />
+        ) : synthesisError ? (
+          <p className="knowledge-answer-ai-error">{synthesisError}</p>
+        ) : (
+          <p className="knowledge-answer-ai-loading">
+            <i className="fas fa-spinner fa-spin" />
+            正在生成总结...
+          </p>
+        )}
+        <div className="knowledge-answer-actions">
+          <button type="button" onClick={() => void handleSaveAnswer()} disabled={saveState === "saving" || !aiAnswer}>
+            <i className={`fas ${saveState === "saved" ? "fa-check" : saveState === "saving" ? "fa-spinner fa-spin" : "fa-cloud-arrow-up"}`} />
+            {saveState === "saved" ? "已上传知识库" : saveState === "saving" ? "上传中" : "将回答上传知识库"}
+          </button>
+          <button type="button" className="secondary" onClick={onUploadRequest}>
+            <i className="fas fa-file-arrow-up" />
+            不满意，手动上传文档
+          </button>
+          {saveState === "saved" && onManagementOpen ? (
+            <button type="button" className="secondary" onClick={onManagementOpen}>
+              <i className="fas fa-table-list" />
+              去知识库管理查看
+            </button>
+          ) : null}
+        </div>
+        {saveState === "error" ? <p className="knowledge-answer-action-error">上传失败，请稍后重试。</p> : null}
+      </section>
+    </div>
+  );
+}
+
 export const ChatMessageItem = memo(function ChatMessageItem({
   agentId,
   currentEmployee,
@@ -264,6 +482,9 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   onResourceImportScrollToStage,
   onResourceImportSubmitImport,
   onResourceImportUploadFiles,
+  onKnowledgeBaseFlowUpdate,
+  onKnowledgeBaseUploadRequest,
+  onKnowledgeBaseManagementOpen,
   releaseResourceImportFiles,
   resolveResourceImportFiles,
   pageTheme,
@@ -289,6 +510,8 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     Boolean(message.workordersLoading) ||
     Boolean(message.workordersError);
   const hasResourceImportFlow = Boolean(message.resourceImportFlow);
+  const hasKnowledgeBaseFlow = Boolean(message.knowledgeBaseFlow);
+  const hasKnowledgeAnswer = Boolean(message.knowledgeAnswer);
   const alarmAnalystCard = message.type === "agent" ? message.alarmAnalystCard : null;
   const hasAlarmAnalystCard = Boolean(alarmAnalystCard);
   const faultScenarioResult = message.faultScenarioResult;
@@ -440,6 +663,16 @@ export const ChatMessageItem = memo(function ChatMessageItem({
               />
             </Suspense>
           </div>
+        ) : hasKnowledgeBaseFlow ? (
+          <div className="message-bubble markdown-bubble knowledge-base-flow-bubble">
+            <Suspense fallback={deferredMessageCardFallback}>
+              <KnowledgeBaseConversationCard
+                message={message}
+                onFlowUpdate={onKnowledgeBaseFlowUpdate}
+                onManagementOpen={onKnowledgeBaseManagementOpen}
+              />
+            </Suspense>
+          </div>
         ) : hasAlarmAnalystCard ? (
           <div className="message-bubble markdown-bubble alarm-analyst-card-bubble">
             <Suspense fallback={deferredMessageCardFallback}>
@@ -456,14 +689,23 @@ export const ChatMessageItem = memo(function ChatMessageItem({
           <div
             className={
               isStreamingMessage
-                ? "message-bubble streaming-bubble markdown-bubble"
-                : "message-bubble markdown-bubble"
+                ? `message-bubble streaming-bubble markdown-bubble${hasKnowledgeAnswer ? " knowledge-answer-bubble" : ""}`
+                : `message-bubble markdown-bubble${hasKnowledgeAnswer ? " knowledge-answer-bubble" : ""}`
             }
           >
-            <MessageMarkdown
-              content={renderedMessageContent}
-              isStreaming={isStreamingMessage}
-            />
+            {hasKnowledgeAnswer && !isStreamingMessage ? (
+              <KnowledgeAnswerReport
+                content={renderedMessageContent}
+                payload={message.knowledgeAnswerPayload}
+                onUploadRequest={onKnowledgeBaseUploadRequest}
+                onManagementOpen={onKnowledgeBaseManagementOpen}
+              />
+            ) : (
+              <MessageMarkdown
+                content={renderedMessageContent}
+                isStreaming={isStreamingMessage}
+              />
+            )}
             {isStreamingMessage ? <span className="streaming-cursor" /> : null}
           </div>
         ) : null}

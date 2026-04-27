@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import traceback
 import uuid
 from datetime import datetime, timezone
@@ -43,6 +45,7 @@ from qwenpaw.extensions.integrations.alarm_workorders.query_alarm_workorders imp
     query_alarm_workorders,
 )
 from qwenpaw.extensions.integrations.portal_real_alarms import query_portal_real_alarms
+from qwenpaw.extensions.integrations import knowledge_base
 from qwenpaw.app.agent_context import get_agent_for_request
 from qwenpaw.app.channels.base import ContentType, TextContent
 
@@ -66,6 +69,26 @@ PORTAL_EMPLOYEE_STATUS_NAMES = {
     "order": "工单调度员",
 }
 PORTAL_FAULT_ALERT_LIMIT = 20
+PORTAL_EMPLOYEE_STATUS_ALERT_COUNT_ENABLED = (
+    os.getenv("QWENPAW_PORTAL_EMPLOYEE_STATUS_ALERT_COUNT_ENABLED", "true")
+    .strip()
+    .lower()
+    not in {"0", "false", "off", "no"}
+)
+PORTAL_STATUS_ALERT_TIMEOUT_SECONDS = float(
+    os.getenv("QWENPAW_PORTAL_STATUS_ALERT_TIMEOUT", "4").strip() or "4"
+)
+PORTAL_STATUS_ALERT_FAST_TIMEOUT_SECONDS = float(
+    os.getenv("QWENPAW_PORTAL_STATUS_ALERT_FAST_TIMEOUT", "0.4").strip() or "0.4"
+)
+PORTAL_STATUS_ALERT_CACHE_TTL_SECONDS = float(
+    os.getenv("QWENPAW_PORTAL_STATUS_ALERT_CACHE_TTL", "30").strip() or "30"
+)
+PORTAL_STATUS_ALERT_COUNT_CACHE: dict[str, Any] = {
+    "value": 0,
+    "updated_at": 0.0,
+}
+PORTAL_STATUS_ALERT_COUNT_REFRESH_TASK: asyncio.Task | None = None
 RESOURCE_IMPORT_SCRIPT_TIMEOUT_SECONDS = 600
 ALARM_ANALYST_SCRIPT_TIMEOUT_SECONDS = 180
 RESOURCE_IMPORT_PREVIEW_JOBS: dict[str, dict[str, Any]] = {}
@@ -716,30 +739,129 @@ async def _get_portal_employee_workspace(
         return None
 
 
-async def _get_employee_alert_count(employee_id: str) -> int:
-    if employee_id != "fault":
+def _get_loaded_portal_employee_workspace_for_status(
+    request: Request,
+    employee_id: str,
+):
+    config = load_config()
+    profile = config.agents.profiles.get(employee_id)
+    if profile is None or not getattr(profile, "enabled", True):
+        return False, None
+
+    manager = getattr(request.app.state, "multi_agent_manager", None)
+    if manager is None:
+        raise HTTPException(
+            status_code=500,
+            detail="MultiAgentManager not initialized",
+        )
+
+    return True, manager.agents.get(employee_id)
+
+
+def _get_cached_fault_alert_count(*, require_fresh: bool) -> int | None:
+    updated_at = float(PORTAL_STATUS_ALERT_COUNT_CACHE.get("updated_at") or 0.0)
+    if updated_at <= 0:
+        return None
+    if require_fresh and time.monotonic() - updated_at > PORTAL_STATUS_ALERT_CACHE_TTL_SECONDS:
+        return None
+    return int(PORTAL_STATUS_ALERT_COUNT_CACHE.get("value") or 0)
+
+
+async def _refresh_fault_alert_count_cache() -> int:
+    try:
+        result = await asyncio.wait_for(
+            asyncio.to_thread(query_alarm_workorders, PORTAL_FAULT_ALERT_LIMIT),
+            timeout=PORTAL_STATUS_ALERT_TIMEOUT_SECONDS,
+        )
+        items = result.get("items") or []
+        count = int(result.get("total") or len(items))
+        PORTAL_STATUS_ALERT_COUNT_CACHE.update(
+            {
+                "value": count,
+                "updated_at": time.monotonic(),
+            }
+        )
+        return count
+    except Exception as exc:
+        print(
+            "[WARN] portal employee status alert count unavailable: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        return int(PORTAL_STATUS_ALERT_COUNT_CACHE.get("value") or 0)
+
+
+def _ensure_fault_alert_count_refresh() -> asyncio.Task:
+    global PORTAL_STATUS_ALERT_COUNT_REFRESH_TASK
+
+    task = PORTAL_STATUS_ALERT_COUNT_REFRESH_TASK
+    if task is not None and not task.done():
+        return task
+
+    task = asyncio.create_task(_refresh_fault_alert_count_cache())
+    PORTAL_STATUS_ALERT_COUNT_REFRESH_TASK = task
+    return task
+
+
+async def _get_employee_alert_count(employee_id: str, *, include_alert_count: bool = True) -> int:
+    if (
+        employee_id != "fault"
+        or not include_alert_count
+        or not PORTAL_EMPLOYEE_STATUS_ALERT_COUNT_ENABLED
+    ):
         return 0
 
-    result = query_alarm_workorders(PORTAL_FAULT_ALERT_LIMIT)
-    items = result.get("items") or []
-    return int(result.get("total") or len(items))
+    cached_count = _get_cached_fault_alert_count(require_fresh=True)
+    if cached_count is not None:
+        return cached_count
+
+    task = _ensure_fault_alert_count_refresh()
+    stale_count = _get_cached_fault_alert_count(require_fresh=False)
+    if stale_count is not None:
+        return stale_count
+
+    try:
+        return await asyncio.wait_for(
+            asyncio.shield(task),
+            timeout=PORTAL_STATUS_ALERT_FAST_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        return 0
 
 
 async def collect_portal_employee_statuses(
     request: Request,
     *,
     employee_ids: tuple[str, ...] = PORTAL_EMPLOYEE_STATUS_IDS,
+    include_alert_count: bool = True,
 ) -> list[dict[str, Any]]:
     statuses: list[dict[str, Any]] = []
     now_iso = datetime.now(timezone.utc).isoformat()
 
     for employee_id in employee_ids:
-        workspace = await _get_portal_employee_workspace(request, employee_id)
-        if workspace is None:
+        is_configured, workspace = _get_loaded_portal_employee_workspace_for_status(
+            request,
+            employee_id,
+        )
+        if not is_configured:
             statuses.append(
                 _build_portal_employee_status_payload(
                     employee_id,
                     available=False,
+                    total_chat_count=0,
+                    active_task_count=0,
+                    active_chat_count=0,
+                    alert_count=0,
+                    latest_session_title="",
+                    updated_at=now_iso,
+                )
+            )
+            continue
+
+        if workspace is None:
+            statuses.append(
+                _build_portal_employee_status_payload(
+                    employee_id,
+                    available=True,
                     total_chat_count=0,
                     active_task_count=0,
                     active_chat_count=0,
@@ -762,7 +884,10 @@ async def collect_portal_employee_statuses(
         updated_at = _datetime_to_iso(
             latest_chat.updated_at if latest_chat else now_iso,
         )
-        alert_count = await _get_employee_alert_count(employee_id)
+        alert_count = await _get_employee_alert_count(
+            employee_id,
+            include_alert_count=include_alert_count,
+        )
         statuses.append(
             _build_portal_employee_status_payload(
                 employee_id,
@@ -1212,7 +1337,7 @@ async def import_resource_import_flow(
 @router.get("/alarm-workorders")
 async def get_alarm_workorders(limit: int = 5):
     try:
-        return query_alarm_workorders(max(1, limit))
+        return await asyncio.to_thread(query_alarm_workorders, max(1, limit))
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] get_alarm_workorders failed: {error_detail}")
@@ -1304,9 +1429,13 @@ async def trigger_inspection_sessions(
 @router.get("/employee-status")
 async def get_portal_employee_statuses(
     request: Request,
+    include_alert_count: bool = Query(True),
 ):
     try:
-        employees = await collect_portal_employee_statuses(request)
+        employees = await collect_portal_employee_statuses(
+            request,
+            include_alert_count=include_alert_count,
+        )
         return {
             "employees": employees,
             "updatedAt": datetime.now(timezone.utc).isoformat(),
@@ -1712,8 +1841,285 @@ async def fault_disposal_history(
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
+@router.get("/knowledge-base/health")
+def get_knowledge_base_health():
+    try:
+        return knowledge_base.health()
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] get_knowledge_base_health failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/knowledge-base/query")
+def query_knowledge_base(payload: dict[str, Any] | None = Body(default=None)):
+    try:
+        return knowledge_base.query_knowledge(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] query_knowledge_base failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/knowledge-base/rag-synthesize")
+async def synthesize_knowledge_base_answer(
+    request: Request,
+    payload: dict[str, Any] | None = Body(default=None),
+):
+    try:
+        return await knowledge_base.synthesize_answer(
+            payload,
+            agent_id=request.headers.get("X-Agent-Id") or "knowledge",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] synthesize_knowledge_base_answer failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/knowledge-base/sources")
+def list_knowledge_base_sources(
+    limit: int = Query(50),
+    offset: int = Query(0),
+    include_archived: bool = Query(False),
+    source_scope: str = "",
+    source_type: str = "",
+    builtin_pack_id: str = "",
+    filename: str = "",
+):
+    try:
+        return knowledge_base.list_sources(
+            limit=limit,
+            offset=offset,
+            include_archived=include_archived,
+            filters={
+                "source_scope": source_scope,
+                "source_type": source_type,
+                "builtin_pack_id": builtin_pack_id,
+                "filename": filename,
+            },
+        )
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] list_knowledge_base_sources failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/knowledge-base/sources/{source_record_id}")
+def get_knowledge_base_source_detail(
+    source_record_id: int,
+    include_archived: bool = Query(False),
+):
+    try:
+        return knowledge_base.source_detail(
+            source_record_id,
+            include_archived=include_archived,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] get_knowledge_base_source_detail failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/knowledge-base/manual-entry")
+def create_knowledge_base_manual_entry(payload: dict[str, Any] | None = Body(default=None)):
+    try:
+        return knowledge_base.manual_entry(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] create_knowledge_base_manual_entry failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/knowledge-base/sources/update")
+def update_knowledge_base_source(payload: dict[str, Any] | None = Body(default=None)):
+    try:
+        return knowledge_base.update_source(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] update_knowledge_base_source failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/knowledge-base/sources/archive")
+def archive_knowledge_base_sources(payload: dict[str, Any] | None = Body(default=None)):
+    try:
+        return knowledge_base.archive_sources(payload)
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] archive_knowledge_base_sources failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/knowledge-base/sources/unarchive")
+def unarchive_knowledge_base_sources(payload: dict[str, Any] | None = Body(default=None)):
+    try:
+        return knowledge_base.unarchive_sources(payload)
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] unarchive_knowledge_base_sources failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/knowledge-base/embedding/toggle")
+def toggle_knowledge_base_embedding(payload: dict[str, Any] | None = Body(default=None)):
+    try:
+        return knowledge_base.set_embedding_enabled(payload)
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] toggle_knowledge_base_embedding failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/knowledge-base/embeddings/reindex")
+def reindex_knowledge_base_embeddings(force: bool = Query(False)):
+    try:
+        return knowledge_base.reindex_embeddings(force=force)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] reindex_knowledge_base_embeddings failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/knowledge-base/ingest")
+async def ingest_knowledge_base_file(file: UploadFile = File(...)):
+    try:
+        raw = await file.read()
+        return knowledge_base.create_ingest_job(
+            file.filename or "",
+            raw,
+            file.content_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] ingest_knowledge_base_file failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/knowledge-base/ingestion-jobs")
+def list_knowledge_base_ingestion_jobs(limit: int = Query(20)):
+    try:
+        return knowledge_base.ingestion_jobs(limit=limit)
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] list_knowledge_base_ingestion_jobs failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/knowledge-base/ingestion-jobs/{job_id}/progress")
+def get_knowledge_base_ingestion_progress(job_id: str):
+    try:
+        return knowledge_base.ingestion_progress(job_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] get_knowledge_base_ingestion_progress failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/knowledge-base/source-summary")
+def get_knowledge_base_source_summary():
+    try:
+        return knowledge_base.source_summary()
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] get_knowledge_base_source_summary failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/knowledge-base/units")
+def list_knowledge_base_units(
+    limit: int = Query(50),
+    include_archived: bool = Query(False),
+    source_scope: str = "",
+    source_type: str = "",
+    builtin_pack_id: str = "",
+    filename: str = "",
+):
+    try:
+        return knowledge_base.units(
+            limit=limit,
+            include_archived=include_archived,
+            filters={
+                "source_scope": source_scope,
+                "source_type": source_type,
+                "builtin_pack_id": builtin_pack_id,
+                "filename": filename,
+            },
+        )
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] list_knowledge_base_units failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.get("/knowledge-base/builtin-packs")
+def list_knowledge_base_builtin_packs():
+    try:
+        return knowledge_base.builtin_packs()
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] list_knowledge_base_builtin_packs failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
+@router.post("/knowledge-base/builtin-packs/reload")
+def reload_knowledge_base_builtin_packs(payload: dict[str, Any] | None = Body(default=None)):
+    try:
+        return knowledge_base.reload_builtin_pack(payload)
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {str(exc)}"
+        print(f"[ERROR] reload_knowledge_base_builtin_packs failed: {error_detail}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+
 def register_app_routes(fastapi_app) -> None:
     """Register portal routes on the main QwenPaw FastAPI app."""
+    if not getattr(fastapi_app.state, "portal_api_compat_installed", False):
+        @fastapi_app.middleware("http")
+        async def portal_api_compat_middleware(request: Request, call_next):
+            path = request.scope.get("path", "")
+            if isinstance(path, str) and path.startswith("/portal-api/"):
+                request.scope["path"] = f"/api/portal{path[len('/portal-api'):]}"
+            return await call_next(request)
+
+        fastapi_app.state.portal_api_compat_installed = True
+
     fastapi_app.include_router(router)
 
 

@@ -58,6 +58,7 @@ import { usePortalChatOrchestration } from "./digital-employee/usePortalChatOrch
 import { usePortalDashboard } from "./digital-employee/usePortalDashboard";
 import { usePortalNavigationSidebar } from "./digital-employee/usePortalNavigationSidebar";
 import { usePortalModels } from "./digital-employee/usePortalModels";
+import { usePortalKnowledgeBase } from "./digital-employee/usePortalKnowledgeBase";
 import { usePortalResourceImport } from "./digital-employee/usePortalResourceImport";
 import { usePortalSessionHistory } from "./digital-employee/usePortalSessionHistory";
 import { useRemoteChatSession } from "./digital-employee/useRemoteChatSession";
@@ -70,7 +71,9 @@ import {
   PORTAL_HOME_AGENT_ID,
   PORTAL_HOME_ID,
   RESOURCE_IMPORT_OWNER_ID,
+  KNOWLEDGE_BASE_OWNER_ID,
   RESOURCE_IMPORT_COMMAND,
+  KNOWLEDGE_BASE_SEARCH_COMMAND,
   CHAT_SCROLL_BOTTOM_THRESHOLD_PX,
   isPortalResourceImportSession,
   mergeSessionRecords,
@@ -90,6 +93,8 @@ import {
   ensureSessionRecords,
   ensureObjectArray,
   ensureStringArray,
+  isPortalKnowledgeBaseSession,
+  isKnowledgeBaseCardIntent,
 } from "./digital-employee/pageHelpers";
 import { lazyNamed } from "../utils/lazyNamed";
 
@@ -117,6 +122,10 @@ const ResourceImportPanel = lazyNamed(
 const SkillPoolPanel = lazyNamed(
   () => import("./digital-employee/skillPoolPanel"),
   "SkillPoolPanel",
+);
+const KnowledgeBasePanel = lazyNamed(
+  () => import("./digital-employee/knowledgeBasePanel"),
+  "KnowledgeBasePanel",
 );
 const TokenUsagePanel = lazyNamed(
   () => import("./digital-employee/tokenUsagePanel"),
@@ -182,6 +191,7 @@ export default function DigitalEmployeePage({
   const isOpsExpertMode = activeAdvancedPanel === "ops-expert";
   const isMcpMode = activeAdvancedPanel === "mcp";
   const isSkillPoolMode = activeAdvancedPanel === "skill-pool";
+  const isKnowledgeBaseMode = activeAdvancedPanel === "knowledge-base";
   const isInspirationMode = activeAdvancedPanel === "inspiration";
   const isCliMode = activeAdvancedPanel === "cli";
   const isResourceImportMode = activeAdvancedPanel === "resource-import";
@@ -454,6 +464,7 @@ export default function DigitalEmployeePage({
     updateCurrentEmployeeRoute,
     handleSwitchTraditionalView,
     openSkillPool,
+    openKnowledgeBase,
     openInspiration,
     openCli,
     switchMcpEmployee,
@@ -512,6 +523,26 @@ export default function DigitalEmployeePage({
     createAgentMessage,
     createUserMessage,
   });
+
+  const {
+    openKnowledgeBaseConversation,
+    searchKnowledgeBaseConversation,
+    updateKnowledgeBaseFlowMessage,
+    portalKnowledgeBaseSessions,
+    activePortalKnowledgeBaseSessionId,
+    setActivePortalKnowledgeBaseSessionId,
+  } = usePortalKnowledgeBase({
+    conversationStore,
+    setConversationStore,
+    messages,
+    setMessages,
+    selectedEmployeeId: selectedEmployee?.id,
+    navigateToEmployeePage,
+    setCurrentChatId,
+    createAgentMessage,
+    createUserMessage,
+  });
+
   const {
     inputMessage,
     setInputMessage,
@@ -545,6 +576,8 @@ export default function DigitalEmployeePage({
     isInteractionLocked,
     setActivePortalResourceImportSessionId,
     openResourceImport,
+    openKnowledgeBaseConversation,
+    searchKnowledgeBaseConversation,
     findResourceImportFlowById,
     navigate,
     navigateToEmployeePage,
@@ -555,6 +588,19 @@ export default function DigitalEmployeePage({
     locationPathname: location.pathname,
     locationSearch: location.search,
   });
+
+  const handleQuickCommand = useCallback((command?: string) => {
+    const normalizedCommand = String(command || "").trim();
+    if (/知识库|知识检索|文档导入|资料入库|知识沉淀/.test(normalizedCommand)) {
+      if (isKnowledgeBaseCardIntent(normalizedCommand)) {
+        openKnowledgeBaseConversation(normalizedCommand || KNOWLEDGE_BASE_SEARCH_COMMAND);
+        return;
+      }
+      searchKnowledgeBaseConversation(normalizedCommand || KNOWLEDGE_BASE_SEARCH_COMMAND);
+      return;
+    }
+    void handleSendMessage(command);
+  }, [handleSendMessage, openKnowledgeBaseConversation, searchKnowledgeBaseConversation]);
 
   const {
     sortedOpsAlerts,
@@ -571,6 +617,7 @@ export default function DigitalEmployeePage({
     navigateToEmployeePage,
     locationPathname: location.pathname,
     locationSearch: location.search,
+    suspended: isKnowledgeBaseMode,
   });
 
   function renderAlertBell() {
@@ -814,7 +861,9 @@ export default function DigitalEmployeePage({
 
       loading = true;
       try {
-        const response = await getPortalEmployeeStatuses();
+        const response = await getPortalEmployeeStatuses({
+          includeAlertCount: !isKnowledgeBaseMode,
+        });
         if (cancelled) {
           return;
         }
@@ -844,10 +893,10 @@ export default function DigitalEmployeePage({
       cancelled = true;
       window.clearInterval(timerId);
     };
-  }, [isInteractionLocked]);
+  }, [isInteractionLocked, isKnowledgeBaseMode]);
 
   const safeMessages = useMemo(
-    () => ensureObjectArray(messages),
+    () => ensureObjectArray<any>(messages),
     [messages],
   );
   const safeExecutionList = ensureObjectArray<ExecutionRecord>(executionList);
@@ -864,12 +913,15 @@ export default function DigitalEmployeePage({
     : "default";
   const scopedRemoteSessions = currentEmployee?.id === RESOURCE_IMPORT_OWNER_ID
     ? mergeSessionRecords(remoteSessions, portalResourceImportSessions)
+    : currentEmployee?.id === KNOWLEDGE_BASE_OWNER_ID
+      ? mergeSessionRecords(remoteSessions, portalKnowledgeBaseSessions)
     : remoteSessions;
   const sessionList = (
     isRemoteEmployee
       ? scopedRemoteSessions
       : ensureSessionRecords(conversationStore[currentEmployee?.id || ""])
   ) as SessionRecord[];
+  const isKnowledgeBaseEmployee = currentEmployee?.id === KNOWLEDGE_BASE_OWNER_ID;
 
   const {
     historyEditingId,
@@ -893,10 +945,12 @@ export default function DigitalEmployeePage({
     currentChatId,
     currentSessionId,
     activePortalResourceImportSessionId,
+    activePortalKnowledgeBaseSessionId,
     conversationStore,
     setConversationStore,
     remoteSessions,
     portalResourceImportSessions,
+    portalKnowledgeBaseSessions,
     historyVisible,
     setHistoryVisible,
     locationState,
@@ -910,6 +964,7 @@ export default function DigitalEmployeePage({
     setExecutionVisible,
     setPortalHomeChatMode,
     setActivePortalResourceImportSessionId,
+    setActivePortalKnowledgeBaseSessionId,
     stopActiveStream,
     refreshRemoteSessions,
     handleSelectRemoteHistory,
@@ -1180,6 +1235,7 @@ export default function DigitalEmployeePage({
             isOpsExpertActive={isOpsExpertMode}
             isMcpActive={isMcpMode}
             isSkillPoolActive={isSkillPoolMode}
+            isKnowledgeBaseActive={isKnowledgeBaseMode}
             isInspirationActive={isInspirationMode}
             isCliActive={isCliMode}
             onOpenConfig={openModelConfig}
@@ -1205,6 +1261,7 @@ export default function DigitalEmployeePage({
               })
             }
             onOpenSkillPool={openSkillPool}
+            onOpenKnowledgeBase={openKnowledgeBase}
             onOpenInspiration={openInspiration}
             onOpenCli={openCli}
           />
@@ -1212,8 +1269,8 @@ export default function DigitalEmployeePage({
 
         <div
           className={
-            isModelConfigMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isInspirationMode || isCliMode || isResourceImportMode
-              ? "main-content advanced-page-mode"
+            isModelConfigMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode
+              ? `main-content advanced-page-mode${isKnowledgeBaseMode ? " knowledge-base-page-mode" : ""}`
               : currentView === "chat"
                 ? "main-content"
                 : currentView === "tasks"
@@ -1278,10 +1335,15 @@ export default function DigitalEmployeePage({
             )
           ) : isSkillPoolMode ? (
             renderDeferredPanel(<SkillPoolPanel />)
+          ) : isKnowledgeBaseMode ? (
+            renderDeferredPanel(
+              <KnowledgeBasePanel />,
+            )
           ) : isInspirationMode ? (
             renderDeferredPanel(
               <InspirationPanel
                 onOpenEmployeeChat={openEmployeeChat}
+                onOpenKnowledgeBase={searchKnowledgeBaseConversation}
                 onOpenView={(view) =>
                   updateCurrentEmployeeRoute({
                     view,
@@ -1415,9 +1477,7 @@ export default function DigitalEmployeePage({
                   onComposerKeyDown={handleHomeComposerKeyDown}
                   onApplyMentionSuggestion={applyMentionSuggestion}
                   onOpenResourceImport={() => openResourceImport()}
-                  onSendPreset={(command) => {
-                    void handleSendMessage(command);
-                  }}
+                  onSendPreset={handleQuickCommand}
                   onPrimaryAction={() => {
                     if (isConversationRunning) {
                       stopActiveStream(true);
@@ -1454,6 +1514,9 @@ export default function DigitalEmployeePage({
                     onResourceImportScrollToStage={handleResourceImportScrollToStage}
                     onResourceImportSubmitImport={handleResourceImportSubmitImport}
                     onResourceImportUploadFiles={handleResourceImportUploadFiles}
+                    onKnowledgeBaseFlowUpdate={updateKnowledgeBaseFlowMessage}
+                    onKnowledgeBaseUploadRequest={() => openKnowledgeBaseConversation("上传知识文档")}
+                    onKnowledgeBaseManagementOpen={openKnowledgeBase}
                     releaseResourceImportFiles={releaseResourceImportFiles}
                     resolveResourceImportFiles={resolveResourceImportFiles}
                     pageTheme={pageTheme}
@@ -1465,9 +1528,7 @@ export default function DigitalEmployeePage({
                     resourceImportCommand={RESOURCE_IMPORT_COMMAND}
                     isInteractionLocked={isInteractionLocked}
                     openResourceImport={() => openResourceImport()}
-                    onSendPreset={(command) => {
-                      void handleSendMessage(command);
-                    }}
+                    onSendPreset={handleQuickCommand}
                     inputMessage={inputMessage}
                     chatInputRef={chatInputRef}
                     onComposerBlur={handleComposerBlur}
@@ -1526,18 +1587,20 @@ export default function DigitalEmployeePage({
       <SessionHistoryModal
         open={historyVisible}
         actionError={historyActionError}
-        loading={historyLoading}
-        error={historyError}
+        loading={isKnowledgeBaseEmployee ? false : historyLoading}
+        error={isKnowledgeBaseEmployee ? "" : historyError}
         sessions={sessionList}
         historyDraftTitle={historyDraftTitle}
         historyEditingId={historyEditingId}
         historyActionSessionId={historyActionSessionId}
         activePortalResourceImportSessionId={activePortalResourceImportSessionId}
+        activePortalKnowledgeBaseSessionId={activePortalKnowledgeBaseSessionId}
         isRemoteEmployee={isRemoteEmployee}
         currentChatId={currentChatId}
         currentSessionId={currentSessionId}
         isConversationRunning={isConversationRunning}
         isPortalResourceImportSession={isPortalResourceImportSession}
+        isPortalKnowledgeBaseSession={isPortalKnowledgeBaseSession}
         onClose={() => setHistoryVisible(false)}
         onSelectHistory={(session) => {
           void handleSelectHistory(session);

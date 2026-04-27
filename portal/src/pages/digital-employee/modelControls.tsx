@@ -180,6 +180,7 @@ export function AdvancedModelEntry({
   isOpsExpertActive,
   isMcpActive,
   isSkillPoolActive,
+  isKnowledgeBaseActive,
   isInspirationActive,
   isCliActive,
   onOpenConfig,
@@ -188,6 +189,7 @@ export function AdvancedModelEntry({
   onOpenOpsExpert,
   onOpenMcp,
   onOpenSkillPool,
+  onOpenKnowledgeBase,
   onOpenInspiration,
   onOpenCli,
 }: {
@@ -199,6 +201,7 @@ export function AdvancedModelEntry({
   isOpsExpertActive?: boolean;
   isMcpActive?: boolean;
   isSkillPoolActive?: boolean;
+  isKnowledgeBaseActive?: boolean;
   isInspirationActive?: boolean;
   isCliActive?: boolean;
   onOpenConfig: () => void;
@@ -207,6 +210,7 @@ export function AdvancedModelEntry({
   onOpenOpsExpert: () => void;
   onOpenMcp: () => void;
   onOpenSkillPool: () => void;
+  onOpenKnowledgeBase: () => void;
   onOpenInspiration: () => void;
   onOpenCli: () => void;
 }) {
@@ -292,6 +296,17 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-name">技能池</div>
           <div className="sidebar-advanced-item-desc">全局运维技能库</div>
           <div className="sidebar-advanced-item-meta">搜索 / 新增 / 编辑 / 删除</div>
+        </button>
+        <button
+          className={isKnowledgeBaseActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
+          onClick={onOpenKnowledgeBase}
+        >
+          <div className="sidebar-advanced-item-icon">
+            <i className="fas fa-book-open" aria-label="knowledge-base" />
+          </div>
+          <div className="sidebar-advanced-item-name">知识库管理</div>
+          <div className="sidebar-advanced-item-desc">知识专员资料库</div>
+          <div className="sidebar-advanced-item-meta">上传 / 检索 / 沉淀 / 索引</div>
         </button>
         <button
           className={isTokenUsageActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}

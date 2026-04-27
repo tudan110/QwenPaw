@@ -6486,6 +6486,478 @@
   overflow-x: auto;
 }
 
+.portal-digital-employee .message.agent .knowledge-answer-bubble {
+  max-width: min(860px, 100%);
+  border-color: rgba(15, 23, 42, 0.12);
+  background: #ffffff;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.08);
+}
+
+.portal-digital-employee .knowledge-answer-report {
+  display: grid;
+  gap: 14px;
+  color: #1e293b;
+}
+
+.portal-digital-employee .knowledge-answer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.portal-digital-employee .knowledge-answer-kicker {
+  display: block;
+  margin-bottom: 5px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.portal-digital-employee .knowledge-answer-header h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.portal-digital-employee .knowledge-answer-badge {
+  flex: 0 0 auto;
+  border: 1px solid rgba(16, 185, 129, 0.22);
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.08);
+  color: #047857;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 9px;
+  white-space: nowrap;
+}
+
+.portal-digital-employee .knowledge-answer-badge.warning {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.1);
+  color: #92400e;
+}
+
+.portal-digital-employee .knowledge-answer-section {
+  display: grid;
+  gap: 8px;
+}
+
+.portal-digital-employee .knowledge-answer-section h4 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.portal-digital-employee .knowledge-answer-section p {
+  margin: 0;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.portal-digital-employee .knowledge-evidence-table {
+  display: grid;
+  overflow-x: auto;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.portal-digital-employee .knowledge-evidence-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.95fr) minmax(120px, 0.75fr) 78px minmax(220px, 1.55fr);
+  min-width: 720px;
+}
+
+.portal-digital-employee .knowledge-evidence-row + .knowledge-evidence-row {
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.portal-digital-employee .knowledge-evidence-row.head {
+  background: #f8fafc;
+}
+
+.portal-digital-employee .knowledge-evidence-row > span {
+  min-width: 0;
+  padding: 10px 12px;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.portal-digital-employee .knowledge-evidence-row.head > span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.portal-digital-employee .knowledge-evidence-row strong,
+.portal-digital-employee .knowledge-evidence-row small {
+  display: block;
+}
+
+.portal-digital-employee .knowledge-evidence-row strong {
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.portal-digital-employee .knowledge-evidence-row small {
+  margin-top: 3px;
+  color: #64748b;
+}
+
+.portal-digital-employee .knowledge-evidence-row mark {
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.1);
+  color: #1d4ed8;
+  font-weight: 800;
+  padding: 2px 7px;
+}
+
+.portal-digital-employee .knowledge-answer-boundary {
+  display: grid;
+  gap: 5px;
+  border-left: 3px solid rgba(15, 23, 42, 0.42);
+  border-radius: 0 8px 8px 0;
+  background: #f8fafc;
+  color: #475569;
+  padding: 10px 12px;
+}
+
+.portal-digital-employee .knowledge-answer-boundary strong {
+  color: #0f172a;
+  font-size: 12px;
+}
+
+.portal-digital-employee .knowledge-answer-boundary span {
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.portal-digital-employee .knowledge-answer-ai {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  border-radius: 8px;
+  background: #f8fbff;
+  box-shadow: inset 3px 0 0 rgba(37, 99, 235, 0.72);
+}
+
+.portal-digital-employee .knowledge-answer-ai-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.portal-digital-employee .knowledge-answer-ai-title span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.portal-digital-employee .knowledge-answer-ai-title i {
+  color: #2563eb;
+}
+
+.portal-digital-employee .knowledge-answer-ai-title small {
+  color: #64748b;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.portal-digital-employee .knowledge-answer-ai .portal-x-markdown,
+.portal-digital-employee .knowledge-answer-ai > p {
+  color: #1e293b;
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.portal-digital-employee .knowledge-answer-ai .portal-x-markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.portal-digital-employee .knowledge-answer-ai .portal-x-markdown p {
+  margin: 0 0 10px;
+}
+
+.portal-digital-employee .knowledge-answer-ai .portal-x-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.portal-digital-employee .knowledge-answer-ai .portal-x-markdown ol,
+.portal-digital-employee .knowledge-answer-ai .portal-x-markdown ul {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 10px;
+  padding-left: 22px;
+}
+
+.portal-digital-employee .knowledge-answer-ai .portal-x-markdown ol {
+  list-style: decimal outside;
+}
+
+.portal-digital-employee .knowledge-answer-ai .portal-x-markdown ul {
+  list-style: disc outside;
+}
+
+.portal-digital-employee .knowledge-answer-ai .portal-x-markdown li {
+  min-width: 0;
+  padding-left: 2px;
+  overflow-wrap: anywhere;
+}
+
+.portal-digital-employee .knowledge-answer-ai .portal-x-markdown li::marker {
+  color: #2563eb;
+  font-weight: 800;
+}
+
+.portal-digital-employee .knowledge-answer-ai .portal-x-markdown h1,
+.portal-digital-employee .knowledge-answer-ai .portal-x-markdown h2,
+.portal-digital-employee .knowledge-answer-ai .portal-x-markdown h3,
+.portal-digital-employee .knowledge-answer-ai .portal-x-markdown h4 {
+  margin: 10px 0 8px;
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.portal-digital-employee .knowledge-answer-ai-loading,
+.portal-digital-employee .knowledge-answer-ai-error,
+.portal-digital-employee .knowledge-answer-action-error {
+  margin: 0;
+}
+
+.portal-digital-employee .knowledge-answer-ai-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+}
+
+.portal-digital-employee .knowledge-answer-ai-error,
+.portal-digital-employee .knowledge-answer-action-error {
+  color: #b91c1c;
+}
+
+.portal-digital-employee .knowledge-answer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.portal-digital-employee .knowledge-answer-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.portal-digital-employee .knowledge-answer-actions button.secondary {
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.portal-digital-employee .knowledge-answer-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown {
+  display: block;
+  color: #1e293b;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown h3 {
+  margin: 0 0 12px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown h4 {
+  margin: 16px 0 8px;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown p {
+  margin: 0 0 10px;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown ol {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown ol > li {
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown li + li {
+  margin-top: 4px;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown blockquote {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid rgba(15, 23, 42, 0.42);
+  border-radius: 0 8px 8px 0;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown table {
+  display: block;
+  width: 100%;
+  margin: 8px 0 12px;
+  overflow-x: auto;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown thead {
+  background: #f8fafc;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown th,
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown td {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown th {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown td {
+  color: #334155;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.portal-digital-employee .knowledge-answer-bubble .portal-x-markdown tbody tr:hover {
+  background: rgba(59, 130, 246, 0.04);
+}
+
+.portal-digital-employee.theme-dark .message.agent .knowledge-answer-bubble {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: #111827;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.24);
+}
+
+.portal-digital-employee.theme-dark .knowledge-answer-bubble .portal-x-markdown,
+.portal-digital-employee.theme-dark .knowledge-answer-bubble .portal-x-markdown td {
+  color: #cbd5e1;
+}
+
+.portal-digital-employee.theme-dark .knowledge-answer-bubble .portal-x-markdown h3,
+.portal-digital-employee.theme-dark .knowledge-answer-bubble .portal-x-markdown h4 {
+  color: #f8fafc;
+}
+
+.portal-digital-employee.theme-dark .knowledge-answer-bubble .portal-x-markdown table {
+  border-color: rgba(148, 163, 184, 0.2);
+  background: #0f172a;
+}
+
+.portal-digital-employee.theme-dark .knowledge-answer-bubble .portal-x-markdown thead,
+.portal-digital-employee.theme-dark .knowledge-answer-bubble .portal-x-markdown blockquote {
+  background: rgba(30, 41, 59, 0.82);
+}
+
+.portal-digital-employee.theme-dark .knowledge-answer-report,
+.portal-digital-employee.theme-dark .knowledge-answer-section p,
+.portal-digital-employee.theme-dark .knowledge-evidence-row > span,
+.portal-digital-employee.theme-dark .knowledge-answer-boundary span {
+  color: #cbd5e1;
+}
+
+.portal-digital-employee.theme-dark .knowledge-answer-header h3,
+.portal-digital-employee.theme-dark .knowledge-answer-section h4,
+.portal-digital-employee.theme-dark .knowledge-evidence-row strong,
+.portal-digital-employee.theme-dark .knowledge-answer-boundary strong,
+.portal-digital-employee.theme-dark .knowledge-answer-ai-title span,
+.portal-digital-employee.theme-dark .knowledge-answer-ai .portal-x-markdown h1,
+.portal-digital-employee.theme-dark .knowledge-answer-ai .portal-x-markdown h2,
+.portal-digital-employee.theme-dark .knowledge-answer-ai .portal-x-markdown h3,
+.portal-digital-employee.theme-dark .knowledge-answer-ai .portal-x-markdown h4 {
+  color: #f8fafc;
+}
+
+.portal-digital-employee.theme-dark .knowledge-answer-ai {
+  border-color: rgba(96, 165, 250, 0.24);
+  background: rgba(15, 23, 42, 0.72);
+  box-shadow: inset 3px 0 0 rgba(96, 165, 250, 0.78);
+}
+
+.portal-digital-employee.theme-dark .knowledge-answer-ai .portal-x-markdown,
+.portal-digital-employee.theme-dark .knowledge-answer-ai > p {
+  color: #cbd5e1;
+}
+
+.portal-digital-employee.theme-dark .knowledge-evidence-table {
+  border-color: rgba(148, 163, 184, 0.2);
+  background: #0f172a;
+}
+
+.portal-digital-employee.theme-dark .knowledge-evidence-row.head,
+.portal-digital-employee.theme-dark .knowledge-answer-boundary {
+  background: rgba(30, 41, 59, 0.82);
+}
+
 .portal-digital-employee .process-trace {
   margin-bottom: 12px;
   display: flex;

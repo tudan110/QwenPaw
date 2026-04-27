@@ -7,9 +7,11 @@ import {
   createInitialMessages,
 } from "./helpers";
 import {
+  KNOWLEDGE_BASE_OWNER_ID,
   RESOURCE_IMPORT_OWNER_ID,
   ensureObjectArray,
   ensureSessionRecords,
+  isPortalKnowledgeBaseSession,
   isPortalResourceImportSession,
   mergeSessionRecords,
 } from "./pageHelpers";
@@ -31,10 +33,12 @@ export function usePortalSessionHistory({
   currentChatId,
   currentSessionId,
   activePortalResourceImportSessionId,
+  activePortalKnowledgeBaseSessionId,
   conversationStore,
   setConversationStore,
   remoteSessions,
   portalResourceImportSessions,
+  portalKnowledgeBaseSessions,
   historyVisible,
   setHistoryVisible,
   locationState,
@@ -48,6 +52,7 @@ export function usePortalSessionHistory({
   setExecutionVisible,
   setPortalHomeChatMode,
   setActivePortalResourceImportSessionId,
+  setActivePortalKnowledgeBaseSessionId,
   stopActiveStream,
   refreshRemoteSessions,
   handleSelectRemoteHistory,
@@ -66,10 +71,12 @@ export function usePortalSessionHistory({
   currentChatId: string;
   currentSessionId: string;
   activePortalResourceImportSessionId: string;
+  activePortalKnowledgeBaseSessionId: string;
   conversationStore: ConversationStoreState;
   setConversationStore: React.Dispatch<React.SetStateAction<ConversationStoreState>>;
   remoteSessions: SessionRecord[];
   portalResourceImportSessions: SessionRecord[];
+  portalKnowledgeBaseSessions: SessionRecord[];
   historyVisible: boolean;
   setHistoryVisible: React.Dispatch<React.SetStateAction<boolean>>;
   locationState: PortalLocationState | null;
@@ -83,6 +90,7 @@ export function usePortalSessionHistory({
   setExecutionVisible: React.Dispatch<React.SetStateAction<boolean>>;
   setPortalHomeChatMode: React.Dispatch<React.SetStateAction<boolean>>;
   setActivePortalResourceImportSessionId: React.Dispatch<React.SetStateAction<string>>;
+  setActivePortalKnowledgeBaseSessionId: React.Dispatch<React.SetStateAction<string>>;
   stopActiveStream: (preserveAssistant?: boolean, options?: { silent?: boolean }) => void;
   refreshRemoteSessions: (preserveVisible?: boolean) => Promise<void> | void;
   handleSelectRemoteHistory: (session: SessionRecord) => Promise<void>;
@@ -98,7 +106,9 @@ export function usePortalSessionHistory({
   const [historyActionError, setHistoryActionError] = useState("");
   const scopedRemoteSessions = isRemoteEmployee && currentEmployee?.id === RESOURCE_IMPORT_OWNER_ID
     ? mergeSessionRecords(remoteSessions, portalResourceImportSessions)
-    : remoteSessions;
+    : isRemoteEmployee && currentEmployee?.id === KNOWLEDGE_BASE_OWNER_ID
+      ? mergeSessionRecords(remoteSessions, portalKnowledgeBaseSessions)
+      : remoteSessions;
 
   const persistLocalSessions = useCallback((employeeId: string, nextSessions: SessionRecord[]) => {
     const nextStore: ConversationStoreState = {
@@ -129,16 +139,24 @@ export function usePortalSessionHistory({
       setActivePortalResourceImportSessionId(
         isPortalResourceImportSession(session) ? session.id : "",
       );
+      setActivePortalKnowledgeBaseSessionId(
+        isPortalKnowledgeBaseSession(session) ? session.id : "",
+      );
       setCurrentSessionId(session.id);
       setMessages(session.messages || []);
-      setPortalHomeChatMode(Boolean(session.messages?.length) || isPortalResourceImportSession(session));
+      setPortalHomeChatMode(
+        Boolean(session.messages?.length)
+        || isPortalResourceImportSession(session)
+        || isPortalKnowledgeBaseSession(session),
+      );
       setHistoryVisible(false);
       return;
     }
 
-    if (isPortalResourceImportSession(session)) {
+    if (isPortalResourceImportSession(session) || isPortalKnowledgeBaseSession(session)) {
       stopActiveStream(false, { silent: true });
-      setActivePortalResourceImportSessionId(session.id);
+      setActivePortalResourceImportSessionId(isPortalResourceImportSession(session) ? session.id : "");
+      setActivePortalKnowledgeBaseSessionId(isPortalKnowledgeBaseSession(session) ? session.id : "");
       setCurrentChatId("");
       setCurrentSessionId("");
       setMessages(ensureObjectArray(session.messages));
@@ -148,6 +166,7 @@ export function usePortalSessionHistory({
     }
 
     setActivePortalResourceImportSessionId("");
+    setActivePortalKnowledgeBaseSessionId("");
     setPortalHomeChatMode(true);
     await handleSelectRemoteHistory(session);
   }, [
@@ -155,6 +174,7 @@ export function usePortalSessionHistory({
     handleSelectRemoteHistory,
     isRemoteEmployee,
     setActivePortalResourceImportSessionId,
+    setActivePortalKnowledgeBaseSessionId,
     setCurrentChatId,
     setCurrentSessionId,
     setHistoryVisible,
@@ -215,6 +235,7 @@ export function usePortalSessionHistory({
     setInputMessage("");
     setExecutionVisible(false);
     setActivePortalResourceImportSessionId("");
+    setActivePortalKnowledgeBaseSessionId("");
 
     if (!isPortalHome) {
       resetAlarmWorkbench();
@@ -269,6 +290,7 @@ export function usePortalSessionHistory({
     resetAlarmWorkbench,
     resetRemoteState,
     setActivePortalResourceImportSessionId,
+    setActivePortalKnowledgeBaseSessionId,
     setExecutionVisible,
     setHistoryVisible,
     setInputMessage,
@@ -308,7 +330,11 @@ export function usePortalSessionHistory({
     setHistoryActionError("");
 
     try {
-      if (isRemoteEmployee && !isPortalResourceImportSession(session)) {
+      if (
+        isRemoteEmployee
+        && !isPortalResourceImportSession(session)
+        && !isPortalKnowledgeBaseSession(session)
+      ) {
         await updateChat(remoteAgentId || undefined, session.id, { name: nextTitle });
         await refreshRemoteSessions(false);
       } else {
@@ -356,13 +382,21 @@ export function usePortalSessionHistory({
     setHistoryActionError("");
 
     try {
-      if (isPortalResourceImportSession(session)) {
+      if (isPortalResourceImportSession(session) || isPortalKnowledgeBaseSession(session)) {
         const previousSessions = ensureSessionRecords(conversationStore[currentEmployee.id]);
         const nextSessions = previousSessions.filter((item) => item.id !== session.id);
         persistLocalSessions(currentEmployee.id, nextSessions);
 
-        if (activePortalResourceImportSessionId === session.id) {
-          setActivePortalResourceImportSessionId("");
+        if (
+          activePortalResourceImportSessionId === session.id
+          || activePortalKnowledgeBaseSessionId === session.id
+        ) {
+          if (isPortalResourceImportSession(session)) {
+            setActivePortalResourceImportSessionId("");
+          }
+          if (isPortalKnowledgeBaseSession(session)) {
+            setActivePortalKnowledgeBaseSessionId("");
+          }
           if (isRemoteEmployee) {
             resetRemoteState({
               initialMessages: createInitialMessages(currentEmployee),
@@ -428,6 +462,7 @@ export function usePortalSessionHistory({
     }
   }, [
     activePortalResourceImportSessionId,
+    activePortalKnowledgeBaseSessionId,
     conversationStore,
     currentChatId,
     currentEmployee,
@@ -439,6 +474,7 @@ export function usePortalSessionHistory({
     remoteAgentId,
     resetRemoteState,
     setActivePortalResourceImportSessionId,
+    setActivePortalKnowledgeBaseSessionId,
     setCurrentSessionId,
     setHistoryVisible,
     setMessages,

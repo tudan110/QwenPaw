@@ -1,0 +1,20 @@
+{
+  "pack_id": "ops_baseline",
+  "version": "2026.04.22",
+  "title": "平台基础运维知识包",
+  "description": "用于冷启动和通用问题兜底的内置知识，首期覆盖慢 SQL 通用排查和告警术语边界。",
+  "enabled": true,
+  "scope_label": "平台内置知识",
+  "files": [
+    {
+      "path": "slow_sql_baseline.md",
+      "title": "慢 SQL 通用排查基线",
+      "tags": ["slow_sql", "mysql", "sop"]
+    },
+    {
+      "path": "alert_terms.md",
+      "title": "常见告警术语与处理边界",
+      "tags": ["alert", "glossary", "boundary"]
+    }
+  ]
+}

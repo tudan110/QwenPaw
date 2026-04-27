@@ -24,6 +24,14 @@ export interface PortalEmployeeStatusResponse {
   updatedAt: string;
 }
 
-export async function getPortalEmployeeStatuses() {
-  return requestPortalApi<PortalEmployeeStatusResponse>("/employee-status");
+export async function getPortalEmployeeStatuses(
+  params: { includeAlertCount?: boolean } = {},
+) {
+  const search = new URLSearchParams();
+  if (params.includeAlertCount === false) {
+    search.set("include_alert_count", "false");
+  }
+  return requestPortalApi<PortalEmployeeStatusResponse>(
+    `/employee-status${search.toString() ? `?${search.toString()}` : ""}`,
+  );
 }

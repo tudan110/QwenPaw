@@ -516,7 +516,7 @@ export function usePortalResourceImport({
     if (selectedEmployeeId === RESOURCE_IMPORT_OWNER_ID) {
       const flowId = createResourceImportFlowId();
       const nextMessages = [
-        ...ensureObjectArray(messages),
+        ...ensureObjectArray<MessageRecord>(messages),
         createUserMessage(visibleContent),
         createAgentMessage(resourceImportEmployee, {
           content: "",

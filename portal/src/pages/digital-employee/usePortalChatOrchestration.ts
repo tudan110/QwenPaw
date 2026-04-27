@@ -31,6 +31,8 @@ import {
 } from "./helpers";
 import {
   ORDER_OWNER_ID,
+  KNOWLEDGE_BASE_OWNER_ID,
+  PORTAL_HOME_ID,
   RESOURCE_IMPORT_OWNER_ID,
   buildMentionCollaborationPrompt,
   buildPortalAssistantReply,
@@ -40,6 +42,8 @@ import {
   extractMentionQuery,
   extractMentionTarget,
   isOrderIntent,
+  isKnowledgeBaseCardIntent,
+  isKnowledgeBaseIntent,
   isResourceImportIntent,
   resolveEmployeeAgentId,
   resolveResourceImportTopologyScope,
@@ -89,6 +93,8 @@ export function usePortalChatOrchestration({
   isInteractionLocked,
   setActivePortalResourceImportSessionId,
   openResourceImport,
+  openKnowledgeBaseConversation,
+  searchKnowledgeBaseConversation,
   findResourceImportFlowById,
   navigate,
   navigateToEmployeePage,
@@ -115,6 +121,8 @@ export function usePortalChatOrchestration({
   isInteractionLocked: boolean;
   setActivePortalResourceImportSessionId: Dispatch<SetStateAction<string>>;
   openResourceImport: (visibleContent?: string) => void;
+  openKnowledgeBaseConversation: (visibleContent?: string) => void;
+  searchKnowledgeBaseConversation: (visibleContent?: string) => void;
   findResourceImportFlowById: (flowId: string) => any;
   navigate: NavigateFunction;
   navigateToEmployeePage: NavigateToEmployeePage;
@@ -134,6 +142,8 @@ export function usePortalChatOrchestration({
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const handledPendingDispatchRef = useRef("");
   const handledPendingResourceImportRef = useRef("");
+  const handledPendingKnowledgeBaseRef = useRef("");
+  const handledPendingKnowledgeSearchRef = useRef("");
 
   const safeMessageCount = useMemo(
     () => ensureObjectArray(messages).length,
@@ -365,6 +375,44 @@ export function usePortalChatOrchestration({
     setActivePortalResourceImportSessionId,
   ]);
 
+  const dispatchOrderCollaboration = useCallback(async (
+    content: string,
+    visibleContent: string,
+  ) => {
+    if (!orderEmployee || !content.trim()) {
+      return false;
+    }
+
+    const canCollaborateInCurrentChat = Boolean(
+      isRemoteEmployee
+      && remoteAgentId
+      && currentEmployee?.id !== ORDER_OWNER_ID,
+    );
+
+    if (!canCollaborateInCurrentChat) {
+      return false;
+    }
+
+    await dispatchActiveMessage(
+      buildMentionCollaborationPrompt({
+        currentEmployee,
+        currentAgentId: remoteAgentId || resolveEmployeeAgentId(String(currentEmployee?.id || PORTAL_HOME_ID)),
+        targetEmployee: orderEmployee,
+        userRequest: content,
+      }),
+      {
+        visibleContent,
+      },
+    );
+    return true;
+  }, [
+    currentEmployee,
+    dispatchActiveMessage,
+    isRemoteEmployee,
+    orderEmployee,
+    remoteAgentId,
+  ]);
+
   const handleResourceImportOpenSystemTopology = useCallback(
     async (payload: { flowId: string }) => {
       const flow = findResourceImportFlowById(payload.flowId);
@@ -460,6 +508,76 @@ export function usePortalChatOrchestration({
   ]);
 
   useEffect(() => {
+    const pendingKnowledgeBase = locationState?.pendingKnowledgeBase;
+    if (!pendingKnowledgeBase || !currentEmployee) {
+      return;
+    }
+
+    if (pendingKnowledgeBase.targetEmployeeId !== currentEmployee.id) {
+      return;
+    }
+
+    if (handledPendingKnowledgeBaseRef.current === pendingKnowledgeBase.token) {
+      return;
+    }
+
+    handledPendingKnowledgeBaseRef.current = pendingKnowledgeBase.token;
+
+    navigate(`${locationPathname}${locationSearch}`, {
+      replace: true,
+      state: {
+        gatewayPresentationEmployeeId: currentEmployee.id,
+      } satisfies PortalLocationState,
+    });
+
+    window.setTimeout(() => {
+      openKnowledgeBaseConversation(pendingKnowledgeBase.visibleContent);
+    }, 0);
+  }, [
+    currentEmployee,
+    locationPathname,
+    locationSearch,
+    locationState,
+    navigate,
+    openKnowledgeBaseConversation,
+  ]);
+
+  useEffect(() => {
+    const pendingKnowledgeSearch = locationState?.pendingKnowledgeSearch;
+    if (!pendingKnowledgeSearch || !currentEmployee) {
+      return;
+    }
+
+    if (pendingKnowledgeSearch.targetEmployeeId !== currentEmployee.id) {
+      return;
+    }
+
+    if (handledPendingKnowledgeSearchRef.current === pendingKnowledgeSearch.token) {
+      return;
+    }
+
+    handledPendingKnowledgeSearchRef.current = pendingKnowledgeSearch.token;
+
+    navigate(`${locationPathname}${locationSearch}`, {
+      replace: true,
+      state: {
+        gatewayPresentationEmployeeId: currentEmployee.id,
+      } satisfies PortalLocationState,
+    });
+
+    window.setTimeout(() => {
+      searchKnowledgeBaseConversation(pendingKnowledgeSearch.visibleContent);
+    }, 0);
+  }, [
+    currentEmployee,
+    locationPathname,
+    locationSearch,
+    locationState,
+    navigate,
+    searchKnowledgeBaseConversation,
+  ]);
+
+  useEffect(() => {
     setMentionActiveIndex(0);
   }, [mentionContext?.query]);
 
@@ -522,6 +640,15 @@ export function usePortalChatOrchestration({
         return;
       }
 
+      if (mentionResult.employee.id === KNOWLEDGE_BASE_OWNER_ID && mentionResult.cleanContent) {
+        if (isKnowledgeBaseCardIntent(mentionResult.cleanContent)) {
+          openKnowledgeBaseConversation(mentionResult.visibleContent);
+          return;
+        }
+        searchKnowledgeBaseConversation(mentionResult.visibleContent);
+        return;
+      }
+
       const shouldUseAgentCollaboration = Boolean(
         selectedEmployee
         && isRemoteEmployee
@@ -541,6 +668,17 @@ export function usePortalChatOrchestration({
             visibleContent: mentionResult.visibleContent,
           },
         );
+        return;
+      }
+
+      if (
+        mentionResult.employee.id === ORDER_OWNER_ID
+        && mentionResult.cleanContent
+        && await dispatchOrderCollaboration(
+          mentionResult.cleanContent,
+          mentionResult.visibleContent,
+        )
+      ) {
         return;
       }
 
@@ -573,22 +711,44 @@ export function usePortalChatOrchestration({
       return;
     }
 
-    if (currentEmployee.id !== ORDER_OWNER_ID && orderEmployee && isOrderIntent(rawContent)) {
-      queueMentionDispatch(orderEmployee, rawContent, rawContent);
+    if (currentEmployee.id === KNOWLEDGE_BASE_OWNER_ID) {
+      if (isKnowledgeBaseCardIntent(rawContent)) {
+        openKnowledgeBaseConversation(rawContent);
+        return;
+      }
+      searchKnowledgeBaseConversation(rawContent);
       return;
+    }
+
+    if (isKnowledgeBaseIntent(rawContent)) {
+      if (isKnowledgeBaseCardIntent(rawContent)) {
+        openKnowledgeBaseConversation(rawContent);
+        return;
+      }
+      searchKnowledgeBaseConversation(rawContent);
+      return;
+    }
+
+    if (currentEmployee.id !== ORDER_OWNER_ID && orderEmployee && isOrderIntent(rawContent)) {
+      if (await dispatchOrderCollaboration(rawContent, rawContent)) {
+        return;
+      }
     }
 
     await dispatchActiveMessage(rawContent);
   }, [
     currentEmployee,
     dispatchActiveMessage,
+    dispatchOrderCollaboration,
     isRemoteEmployee,
     navigateToEmployeePage,
+    openKnowledgeBaseConversation,
     openResourceImport,
     orderEmployee,
     queueMentionDispatch,
     remoteAgentId,
     selectedEmployee,
+    searchKnowledgeBaseConversation,
   ]);
 
   useEffect(() => {
