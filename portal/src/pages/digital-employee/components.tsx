@@ -351,8 +351,16 @@ function KnowledgeAnswerReport({
   }
 
   const retrievalSummary = result.summary || result.evidence_boundary_statement || "当前没有在知识库中找到足够相关的资料。";
-  const aiAnswer = String(payload?.answer || "").trim();
-  const synthesisError = String(payload?.synthesis?.error || "").trim();
+  const synthesis = parsedPayload?.synthesis || payload?.synthesis || {};
+  const aiAnswer = String(parsedPayload?.answer || payload?.answer || synthesis.answer || "").trim();
+  const synthesisError = String(synthesis.error || "").trim();
+  const synthesisSkipped = Boolean(synthesis.skipped);
+  const modelLabel = String(
+    synthesis.model_label
+      || synthesis.model_name
+      || synthesis.model
+      || "",
+  ).trim();
   const query = parsedPayload?.query || "";
 
   const handleSaveAnswer = async () => {
@@ -424,42 +432,44 @@ function KnowledgeAnswerReport({
         </aside>
       ) : null}
 
-      <section className="knowledge-answer-ai">
-        <div className="knowledge-answer-ai-title">
-          <span>
-            <i className="fas fa-magic" />
-            AI 总结
-          </span>
-          <small>使用当前 QwenPaw 模型</small>
-        </div>
-        {aiAnswer ? (
-          <MessageMarkdown content={aiAnswer} />
-        ) : synthesisError ? (
-          <p className="knowledge-answer-ai-error">{synthesisError}</p>
-        ) : (
-          <p className="knowledge-answer-ai-loading">
-            <i className="fas fa-spinner fa-spin" />
-            正在生成总结...
-          </p>
-        )}
-        <div className="knowledge-answer-actions">
-          <button type="button" onClick={() => void handleSaveAnswer()} disabled={saveState === "saving" || !aiAnswer}>
-            <i className={`fas ${saveState === "saved" ? "fa-check" : saveState === "saving" ? "fa-spinner fa-spin" : "fa-cloud-arrow-up"}`} />
-            {saveState === "saved" ? "已上传知识库" : saveState === "saving" ? "上传中" : "将回答上传知识库"}
-          </button>
-          <button type="button" className="secondary" onClick={onUploadRequest}>
-            <i className="fas fa-file-arrow-up" />
-            不满意，手动上传文档
-          </button>
-          {saveState === "saved" && onManagementOpen ? (
-            <button type="button" className="secondary" onClick={onManagementOpen}>
-              <i className="fas fa-table-list" />
-              去知识库管理查看
+      {!synthesisSkipped ? (
+        <section className="knowledge-answer-ai">
+          <div className="knowledge-answer-ai-title">
+            <span>
+              <i className="fas fa-magic" />
+              AI 总结
+            </span>
+            <small>{modelLabel ? `使用 ${modelLabel}` : "使用当前 active 模型"}</small>
+          </div>
+          {aiAnswer ? (
+            <MessageMarkdown content={aiAnswer} />
+          ) : synthesisError ? (
+            <p className="knowledge-answer-ai-error">{synthesisError}</p>
+          ) : (
+            <p className="knowledge-answer-ai-loading">
+              <i className="fas fa-spinner fa-spin" />
+              正在生成总结...
+            </p>
+          )}
+          <div className="knowledge-answer-actions">
+            <button type="button" onClick={() => void handleSaveAnswer()} disabled={saveState === "saving" || !aiAnswer}>
+              <i className={`fas ${saveState === "saved" ? "fa-check" : saveState === "saving" ? "fa-spinner fa-spin" : "fa-cloud-arrow-up"}`} />
+              {saveState === "saved" ? "已上传知识库" : saveState === "saving" ? "上传中" : "将回答上传知识库"}
             </button>
-          ) : null}
-        </div>
-        {saveState === "error" ? <p className="knowledge-answer-action-error">上传失败，请稍后重试。</p> : null}
-      </section>
+            <button type="button" className="secondary" onClick={onUploadRequest}>
+              <i className="fas fa-file-arrow-up" />
+              不满意，手动上传文档
+            </button>
+            {saveState === "saved" && onManagementOpen ? (
+              <button type="button" className="secondary" onClick={onManagementOpen}>
+                <i className="fas fa-table-list" />
+                去知识库管理查看
+              </button>
+            ) : null}
+          </div>
+          {saveState === "error" ? <p className="knowledge-answer-action-error">上传失败，请稍后重试。</p> : null}
+        </section>
+      ) : null}
     </div>
   );
 }

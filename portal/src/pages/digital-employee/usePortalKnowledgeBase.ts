@@ -110,6 +110,34 @@ function resolveEvidenceIds(result: KnowledgeQueryResponse) {
     .filter(Boolean);
 }
 
+const KNOWLEDGE_AI_CONFIDENCE_THRESHOLD = 0.8;
+
+function normalizeEvidenceConfidence(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value > 1 ? value / 100 : value;
+  }
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return 0;
+  }
+  const matched = text.match(/(\d+(?:\.\d+)?)/);
+  if (!matched) {
+    return 0;
+  }
+  const parsed = Number(matched[1]);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  return text.includes("%") || parsed > 1 ? parsed / 100 : parsed;
+}
+
+function hasHighConfidenceEvidence(result: KnowledgeQueryResponse) {
+  return (result.relevant_evidence || []).some((item) => (
+    normalizeEvidenceConfidence(item.confidence_score ?? item.confidence_level)
+      >= KNOWLEDGE_AI_CONFIDENCE_THRESHOLD
+  ));
+}
+
 export function usePortalKnowledgeBase({
   conversationStore,
   setConversationStore,
@@ -267,11 +295,42 @@ export function usePortalKnowledgeBase({
 
     try {
       const result = await queryKnowledgeBase(query);
+      const hasConfidentEvidence = hasHighConfidenceEvidence(result);
+      if (hasConfidentEvidence) {
+        const completedMessages = initialMessages.map((message) => (
+          message.id === agentMessage.id
+            ? {
+                ...message,
+                content: formatKnowledgeResult(query, result),
+                knowledgeAnswer: true,
+                knowledgeAnswerPayload: {
+                  query,
+                  result,
+                  synthesis: {
+                    skipped: true,
+                    reason: "命中证据置信度达到 80%，已直接返回知识库检索结果。",
+                  },
+                },
+              }
+            : message
+        ));
+        setMessages(completedMessages);
+        upsertPortalSession(
+          knowledgeBaseEmployee.id,
+          buildKnowledgeBaseSessionRecord(knowledgeBaseEmployee, completedMessages, {
+            sessionId: initialSession.id,
+            previous: initialSession,
+            visibleContent,
+          }),
+        );
+        return;
+      }
+
       const searchedMessages = initialMessages.map((message) => (
         message.id === agentMessage.id
           ? {
               ...message,
-              content: `${formatKnowledgeResult(query, result)}\n\n#### AI 总结\n正在调用当前 QwenPaw 模型生成总结...`,
+              content: `${formatKnowledgeResult(query, result)}\n\n#### AI 总结\n正在调用当前 active 模型生成总结...`,
               knowledgeAnswer: true,
               knowledgeAnswerPayload: {
                 query,

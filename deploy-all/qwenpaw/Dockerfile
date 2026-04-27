@@ -78,6 +78,9 @@ RUN set -eux; \
       supervisor \
       vim \
       gettext-base \
+      tesseract-ocr \
+      tesseract-ocr-eng \
+      tesseract-ocr-chi-sim \
       xfce4 \
       xfce4-terminal \
       xvfb \

@@ -175,6 +175,64 @@ def _resolve_knowledge_model_agent_id(agent_id: str | None) -> str | None:
     return "knowledge"
 
 
+def _resolve_active_model_metadata(agent_id: str | None = None) -> dict[str, str]:
+    try:
+        from qwenpaw.config.config import load_agent_config
+        from qwenpaw.providers import ProviderManager
+
+        manager = ProviderManager.get_instance()
+        model_slot = None
+        source = "global"
+        normalized_agent_id = str(agent_id or "").strip()
+        if normalized_agent_id:
+            try:
+                agent_config = load_agent_config(normalized_agent_id)
+                candidate = agent_config.active_model
+                if candidate and candidate.provider_id and candidate.model:
+                    model_slot = candidate
+                    source = "agent"
+            except Exception:
+                pass
+
+        if not model_slot:
+            model_slot = manager.get_active_model()
+            source = "global"
+
+        if not model_slot:
+            return {}
+
+        provider_id = str(getattr(model_slot, "provider_id", "") or "")
+        model_id = str(getattr(model_slot, "model", "") or "")
+        provider_name = provider_id
+        model_name = model_id
+        try:
+            provider = manager.get_provider(provider_id) if provider_id else None
+            if provider:
+                provider_name = str(getattr(provider, "name", "") or provider_id)
+                for item in list(getattr(provider, "models", []) or []) + list(
+                    getattr(provider, "extra_models", []) or []
+                ):
+                    if str(getattr(item, "id", "") or "") == model_id:
+                        model_name = str(getattr(item, "name", "") or model_id)
+                        break
+        except Exception:
+            pass
+
+        model_label = " / ".join(
+            part for part in [provider_name, model_name] if part
+        )
+        return {
+            "provider": provider_id,
+            "provider_name": provider_name,
+            "model": model_id,
+            "model_name": model_name,
+            "model_label": model_label,
+            "model_source": source,
+        }
+    except Exception:
+        return {}
+
+
 async def synthesize_answer(payload: dict[str, Any] | None, *, agent_id: str | None = None) -> dict[str, Any]:
     engine = _load_engine()
     body = payload or {}
@@ -225,6 +283,7 @@ async def synthesize_answer(payload: dict[str, Any] | None, *, agent_id: str | N
     from qwenpaw.agents.model_factory import create_model_and_formatter
 
     model_agent_id = _resolve_knowledge_model_agent_id(agent_id)
+    model_metadata = _resolve_active_model_metadata(model_agent_id)
     model, _ = create_model_and_formatter(agent_id=model_agent_id)
     response = await model(
         [
@@ -235,8 +294,7 @@ async def synthesize_answer(payload: dict[str, Any] | None, *, agent_id: str | N
     answer = await asyncio.wait_for(_consume_model_text(response), timeout=120)
     return {
         "answer": answer,
-        "provider": model_agent_id,
-        "model": "",
+        **model_metadata,
         "evidence_ids": ordered_ids,
         "created_at": engine.now_iso(),
     }

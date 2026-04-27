@@ -150,9 +150,15 @@ export type KnowledgeUnitListResponse = {
 export type KnowledgeRagResponse = {
   answer?: string;
   provider?: string;
+  provider_name?: string;
   model?: string;
+  model_name?: string;
+  model_label?: string;
+  model_source?: string;
   evidence_ids?: string[];
   latency_ms?: number;
+  skipped?: boolean;
+  reason?: string;
 };
 
 export function getKnowledgeBaseHealth() {

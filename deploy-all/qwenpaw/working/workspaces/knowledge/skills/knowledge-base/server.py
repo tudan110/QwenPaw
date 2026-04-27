@@ -807,6 +807,25 @@ def extract_docx(path: Path, filename: str) -> tuple[list[dict], int, str, dict]
     return chunks, total_text_len, "docx 正文已解析", {"format": "docx", "docx_extract": True}
 
 
+def resolve_ocr_lang() -> str:
+    configured = os.getenv("KNOWLEDGE_BASE_OCR_LANG", "").strip()
+    if configured:
+        return configured
+    if pytesseract is None:
+        return ""
+    try:
+        available = set(pytesseract.get_languages(config=""))
+    except Exception:
+        return ""
+    if "chi_sim" in available and "eng" in available:
+        return "eng+chi_sim"
+    if "chi_sim" in available:
+        return "chi_sim"
+    if "eng" in available:
+        return "eng"
+    return ""
+
+
 def clean_display_text(text: str) -> str:
     text = unicodedata.normalize("NFKC", text or "")
     text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", " ", text)
@@ -1990,7 +2009,11 @@ def extract_chunks(path: Path, filename: str, source_type: str, mime_type: str |
 
         try:
             image = Image.open(path)
-            text = clean_display_text(pytesseract.image_to_string(image) or "")
+            ocr_lang = resolve_ocr_lang()
+            if ocr_lang:
+                text = clean_display_text(pytesseract.image_to_string(image, lang=ocr_lang) or "")
+            else:
+                text = clean_display_text(pytesseract.image_to_string(image) or "")
         except Exception as exc:
             units = [
                 {
@@ -2019,11 +2042,11 @@ def extract_chunks(path: Path, filename: str, source_type: str, mime_type: str |
                 "title": f"{filename} · OCR 片段 {idx + 1}",
                 "content": chunk,
                 "locator": f"整图 OCR / 片段 {idx + 1}",
-                "meta": {"format": fmt, "ocr": True},
+                "meta": {"format": fmt, "ocr": True, "ocr_lang": ocr_lang},
             }
             for idx, chunk in enumerate(chunks)
         ]
-        return units, len(text), "图片 OCR 已完成", {"format": fmt, "ocr": True}
+        return units, len(text), "图片 OCR 已完成", {"format": fmt, "ocr": True, "ocr_lang": ocr_lang}
 
     return [], 0, "未知文件类型", {}
 

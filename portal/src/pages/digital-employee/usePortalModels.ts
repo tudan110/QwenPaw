@@ -262,20 +262,28 @@ export function usePortalModels({
 
     setLoading(true);
     try {
-      const [providerList, active] = await Promise.all([
+      const [providerList, active, globalActive] = await Promise.all([
         modelsApi.listProviders(),
         modelsApi.getActiveModels({
           scope: "effective",
           agent_id: resolvedAgentId,
         }),
+        modelsApi.getActiveModels({
+          scope: "global",
+        }),
       ]);
+      const effectiveActive = active?.active_llm
+        ? active
+        : globalActive?.active_llm
+          ? globalActive
+          : null;
 
       const nextProviders = (Array.isArray(providerList) ? providerList : []).filter(
         (provider) => provider.is_custom,
       );
       setProviders(buildDisplayProviders(nextProviders));
       providersRef.current = nextProviders;
-      setActiveModels(active || null);
+      setActiveModels(effectiveActive);
     } catch (error: any) {
       pushNotice("error", error?.message || "模型配置加载失败");
     } finally {
