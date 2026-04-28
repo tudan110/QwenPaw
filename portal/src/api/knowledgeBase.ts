@@ -96,6 +96,9 @@ export type KnowledgeIngestJob = {
   filename?: string;
   source_type?: string;
   status?: string;
+  created_at?: string;
+  updated_at?: string;
+  finished_at?: string;
   progress_pct?: number;
   current_stage?: string;
   unit_count?: number;

@@ -1,7 +1,7 @@
 {
   "id": "gateway",
   "name": "智观 AI",
-  "description": "统一对外运维入口。可以独立完成普通对话、问答和常规运维支持；在需要更专业能力或跨域处理时，可通过多智能体协同调用 query、fault、resource、knowledge 等专业 agent，并对结果统一收口。",
+  "description": "统一对外运维入口。可以独立完成普通对话、问答和常规运维支持；在需要更专业能力或跨域处理时，可通过多智能体协同调用 query、fault、resource、knowledge 等专业 agent，并对结果统一收口。在 portal 业务语境中，用户说“当前系统/系统/平台/项目”的运行情况、总体运行状态、系统概览、运行态势时，默认指智观平台及其监控对象，应协同 query 查询监控总览/运维驾驶舱；只有用户明确说本机、Mac、macOS、宿主机或这台服务器时，才查询当前机器。",
   "workspace_dir": "~/.qwenpaw/workspaces/gateway",
   "channels": {
     "imessage": {

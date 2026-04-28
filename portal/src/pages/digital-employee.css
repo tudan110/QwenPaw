@@ -4743,6 +4743,279 @@
   margin-bottom: 0;
 }
 
+.portal-digital-employee .order-detail-report {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.portal-digital-employee .order-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.portal-digital-employee .order-detail-kicker {
+  display: block;
+  margin-bottom: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.portal-digital-employee .order-detail-header h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.portal-digital-employee .order-detail-counts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.portal-digital-employee .order-detail-counts span,
+.portal-digital-employee .order-transfer-title mark {
+  border: 1px solid rgba(59, 130, 246, 0.16);
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.08);
+  color: #1d4ed8;
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 9px;
+}
+
+.portal-digital-employee .order-detail-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.portal-digital-employee .order-detail-summary > div {
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 11px 12px;
+}
+
+.portal-digital-employee .order-detail-summary span,
+.portal-digital-employee .order-detail-fields span,
+.portal-digital-employee .order-transfer-meta,
+.portal-digital-employee .order-flow-node small {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.portal-digital-employee .order-detail-summary strong,
+.portal-digital-employee .order-detail-fields strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portal-digital-employee .order-detail-section {
+  display: grid;
+  gap: 10px;
+}
+
+.portal-digital-employee .order-detail-section h4 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.portal-digital-employee .order-detail-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.portal-digital-employee .order-detail-fields > div {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.64);
+  padding: 9px 10px;
+}
+
+.portal-digital-employee .order-transfer-timeline {
+  position: relative;
+  display: grid;
+  gap: 10px;
+}
+
+.portal-digital-employee .order-transfer-item {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 12px;
+  position: relative;
+}
+
+.portal-digital-employee .order-transfer-item:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: 32px;
+  bottom: -11px;
+  left: 14px;
+  width: 2px;
+  background: rgba(148, 163, 184, 0.28);
+}
+
+.portal-digital-employee .order-transfer-marker {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.portal-digital-employee .order-transfer-marker span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.portal-digital-employee .order-transfer-item.finished .order-transfer-marker span,
+.portal-digital-employee .order-flow-node.finished .order-flow-dot {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.portal-digital-employee .order-transfer-item.active .order-transfer-marker span,
+.portal-digital-employee .order-flow-node.active .order-flow-dot {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.portal-digital-employee .order-transfer-item.rejected .order-transfer-marker span,
+.portal-digital-employee .order-flow-node.rejected .order-flow-dot {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.portal-digital-employee .order-transfer-body {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 10px 12px;
+}
+
+.portal-digital-employee .order-transfer-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.portal-digital-employee .order-transfer-title strong {
+  min-width: 0;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.portal-digital-employee .order-transfer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 7px;
+}
+
+.portal-digital-employee .order-transfer-body p {
+  margin: 8px 0 0;
+  border-left: 3px solid rgba(59, 130, 246, 0.32);
+  padding-left: 9px;
+  color: #334155;
+  font-size: 12px;
+}
+
+.portal-digital-employee .order-flow-track {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+.portal-digital-employee .order-flow-node {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.68);
+  padding: 12px 8px 10px;
+  text-align: center;
+}
+
+.portal-digital-employee .order-flow-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.portal-digital-employee .order-flow-node.active .order-flow-dot i {
+  animation: order-flow-spin 1.2s linear infinite;
+}
+
+.portal-digital-employee .order-flow-node strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portal-digital-employee .order-flow-node b {
+  position: absolute;
+  top: 26px;
+  right: -13px;
+  width: 14px;
+  height: 2px;
+  background: rgba(59, 130, 246, 0.28);
+}
+
+.portal-digital-employee .order-detail-empty {
+  border: 1px dashed rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  padding: 12px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+@keyframes order-flow-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .portal-digital-employee .alarm-workorder-toolbar {
   display: flex;
   justify-content: space-between;
@@ -11304,6 +11577,28 @@
 
   .portal-digital-employee .portal-model-page-title {
     font-size: 18px;
+  }
+
+  .portal-digital-employee .order-detail-summary,
+  .portal-digital-employee .order-detail-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-digital-employee .order-detail-header {
+    flex-direction: column;
+  }
+
+  .portal-digital-employee .order-flow-track {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-digital-employee .order-flow-node {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .portal-digital-employee .order-flow-node b {
+    display: none;
   }
 }
 

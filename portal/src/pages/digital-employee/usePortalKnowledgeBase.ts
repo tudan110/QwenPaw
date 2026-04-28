@@ -25,6 +25,7 @@ import type {
   PortalLocationState,
   SessionRecord,
 } from "./pageHelpers";
+import { readKnowledgeAiThresholdRatio } from "./knowledgeBaseSettings";
 
 type MessageRecord = { id: string; knowledgeBaseFlow?: Record<string, any> } & Record<string, any>;
 
@@ -110,8 +111,6 @@ function resolveEvidenceIds(result: KnowledgeQueryResponse) {
     .filter(Boolean);
 }
 
-const KNOWLEDGE_AI_CONFIDENCE_THRESHOLD = 0.8;
-
 function normalizeEvidenceConfidence(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value > 1 ? value / 100 : value;
@@ -131,10 +130,10 @@ function normalizeEvidenceConfidence(value: unknown) {
   return text.includes("%") || parsed > 1 ? parsed / 100 : parsed;
 }
 
-function hasHighConfidenceEvidence(result: KnowledgeQueryResponse) {
+function hasHighConfidenceEvidence(result: KnowledgeQueryResponse, thresholdRatio: number) {
   return (result.relevant_evidence || []).some((item) => (
     normalizeEvidenceConfidence(item.confidence_score ?? item.confidence_level)
-      >= KNOWLEDGE_AI_CONFIDENCE_THRESHOLD
+      >= thresholdRatio
   ));
 }
 
@@ -295,7 +294,9 @@ export function usePortalKnowledgeBase({
 
     try {
       const result = await queryKnowledgeBase(query);
-      const hasConfidentEvidence = hasHighConfidenceEvidence(result);
+      const thresholdRatio = readKnowledgeAiThresholdRatio();
+      const thresholdPercent = Math.round(thresholdRatio * 100);
+      const hasConfidentEvidence = hasHighConfidenceEvidence(result, thresholdRatio);
       if (hasConfidentEvidence) {
         const completedMessages = initialMessages.map((message) => (
           message.id === agentMessage.id
@@ -308,7 +309,7 @@ export function usePortalKnowledgeBase({
                   result,
                   synthesis: {
                     skipped: true,
-                    reason: "命中证据置信度达到 80%，已直接返回知识库检索结果。",
+                    reason: `命中证据置信度达到 ${thresholdPercent}%，已直接返回知识库检索结果。`,
                   },
                 },
               }

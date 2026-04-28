@@ -222,6 +222,8 @@ def _format_detail_light_markdown(
     lines.extend(
         [
             "",
+            _portal_order_detail_block(detail_payload),
+            "",
             "如需继续查看，可以直接说：`查看完整表单信息`、`查看完整流转记录`、`查看完整流程跟踪`。",
         ]
     )
@@ -305,6 +307,8 @@ def _format_detail_full_markdown(
             )
     else:
         lines.append("当前没有流程跟踪信息。")
+
+    lines.extend(["", _portal_order_detail_block(detail_payload)])
 
     return "\n".join(lines).strip()
 
@@ -614,6 +618,14 @@ def _markdown_table(headers: list[str], rows: list[list[Any]]) -> str:
         for row in rows
     ]
     return "\n".join([header_line, separator, *body])
+
+
+def _portal_order_detail_block(detail_payload: dict[str, Any]) -> str:
+    return "```portal-order-detail\n" + json.dumps(
+        detail_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ) + "\n```"
 
 
 def _escape_markdown_cell(value: Any) -> str:
