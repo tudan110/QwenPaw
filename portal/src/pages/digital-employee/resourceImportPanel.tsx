@@ -314,7 +314,7 @@ export function ResourceImportPanel() {
           <p className="resource-import-eyebrow">CMDB Resource Intake</p>
           <h2>智能导入资源清单</h2>
           <p className="resource-import-summary">
-            围绕 veops-cmdb 模型做文件解析、字段映射、数据清洗、拓扑推断与批量入库。
+            围绕 zgops-cmdb 模型做文件解析、字段映射、数据清洗、拓扑推断与批量入库。
           </p>
         </div>
         <div className="resource-import-hero-actions">

@@ -153,7 +153,7 @@ def _veops_cmdb_query_skill_root() -> Path:
         / "workspaces"
         / "query"
         / "skills"
-        / "veops-cmdb"
+        / "zgops-cmdb"
     )
 
 
@@ -166,7 +166,7 @@ def _veops_cmdb_import_skill_root() -> Path:
         / "workspaces"
         / "resource"
         / "skills"
-        / "veops-cmdb-import"
+        / "zgops-cmdb-import"
     )
 
 
@@ -289,7 +289,7 @@ def _build_portal_inspection_prompt(inspection_object: str) -> str:
     lines = [
         f"请帮我巡检一下{target}",
         "要求：",
-        "1. 先协作 query 智能体使用 veops-cmdb 确认巡检对象的拓扑、资源名称、resId/CI ID 和 ciType。",
+        "1. 先协作 query 智能体使用 zgops-cmdb 确认巡检对象的拓扑、资源名称、resId/CI ID 和 ciType。",
         "2. 如果存在多个候选资源，先明确列出候选项，不要默认任选一个。",
         "3. 一旦确认 resId 和 ciType，查询该资源类型的全部指标定义，提取全部指标编码。",
         "4. 调用指标数据接口，使用 resId + 全部指标编码数组完成巡检。",

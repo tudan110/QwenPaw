@@ -277,7 +277,7 @@ def _render_markdown(
                     f"当前系统仅发现 1 个应用：`{only['name']}`（ID: `{only['id']}`）",
                     "",
                     "后续拓扑查询可直接使用：",
-                    f"`scripts/veops-cmdb.sh fetch \"/api/v0.1/ci_relations/s?root_id={only['id']}&level=1,2,3&count=10000\"`",
+                    f"`scripts/zgops-cmdb.sh fetch \"/api/v0.1/ci_relations/s?root_id={only['id']}&level=1,2,3&count=10000\"`",
                 ]
             )
 
@@ -316,7 +316,7 @@ def _render_markdown(
             f"已匹配到应用：`{item['name']}`（ID: `{item['id']}`）",
             "",
             "后续拓扑查询请只针对该应用执行：",
-            f"`scripts/veops-cmdb.sh fetch \"/api/v0.1/ci_relations/s?root_id={item['id']}&level=1,2,3&count=10000\"`",
+            f"`scripts/zgops-cmdb.sh fetch \"/api/v0.1/ci_relations/s?root_id={item['id']}&level=1,2,3&count=10000\"`",
         ]
     )
 

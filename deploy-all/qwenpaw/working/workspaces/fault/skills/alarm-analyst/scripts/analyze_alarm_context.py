@@ -72,7 +72,7 @@ def _veops_find_project_path() -> Path:
         _workspace_root()
         / "query"
         / "skills"
-        / "veops-cmdb"
+        / "zgops-cmdb"
         / "scripts"
         / "find_project.py"
     )
@@ -148,16 +148,16 @@ def _load_cmdb_client():
         _workspace_root()
         / "query"
         / "skills"
-        / "veops-cmdb"
+        / "zgops-cmdb"
         / ".env"
     )
     if not env_path.exists():
-        raise ValueError(f"未找到 veops-cmdb 的环境文件：{env_path}")
+        raise ValueError(f"未找到 zgops-cmdb 的环境文件：{env_path}")
 
     env = find_project._load_env_file(env_path)  # noqa: SLF001
     base_url = _safe_str(env.get("VEOPS_BASE_URL"))
     if not base_url:
-        raise ValueError(f"veops-cmdb 的环境文件缺少 VEOPS_BASE_URL：{env_path}")
+        raise ValueError(f"zgops-cmdb 的环境文件缺少 VEOPS_BASE_URL：{env_path}")
 
     username = _safe_str(env.get("VEOPS_USERNAME"))
     password = _safe_str(env.get("VEOPS_PASSWORD"))

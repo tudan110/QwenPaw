@@ -7,15 +7,15 @@ COMMAND="${1:-}"
 usage() {
   cat <<'EOF'
 用法：
-  scripts/veops-cmdb.sh login
-  scripts/veops-cmdb.sh fetch <api_path>
-  scripts/veops-cmdb.sh find-project [project_name]
-  scripts/veops-cmdb.sh app-topology <project_name> [--output markdown|echarts|json]
-  scripts/veops-cmdb.sh list-models
-  scripts/veops-cmdb.sh model-attributes <type_id>
-  scripts/veops-cmdb.sh model-relations <type_id>
-  scripts/veops-cmdb.sh analyze [--mode <mode>] [--output <output>]
-  scripts/veops-cmdb.sh inoe-stat [count|group|child|child-group|group-attr|types] [--resource_type <type>] [--type_id <id>] [--attr <attr>] [--output json|markdown]
+  scripts/zgops-cmdb.sh login
+  scripts/zgops-cmdb.sh fetch <api_path>
+  scripts/zgops-cmdb.sh find-project [project_name]
+  scripts/zgops-cmdb.sh app-topology <project_name> [--output markdown|echarts|json]
+  scripts/zgops-cmdb.sh list-models
+  scripts/zgops-cmdb.sh model-attributes <type_id>
+  scripts/zgops-cmdb.sh model-relations <type_id>
+  scripts/zgops-cmdb.sh analyze [--mode <mode>] [--output <output>]
+  scripts/zgops-cmdb.sh inoe-stat [count|group|child|child-group|group-attr|types] [--resource_type <type>] [--type_id <id>] [--attr <attr>] [--output json|markdown]
 EOF
 }
 

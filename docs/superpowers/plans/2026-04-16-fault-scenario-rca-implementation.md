@@ -30,7 +30,7 @@
 - Create: `deploy-all/qwenpaw/working/workspaces/fault/skills/scenario-root-cause-analyst/SKILL.md`
 - Create: `deploy-all/qwenpaw/working/workspaces/fault/skills/scenario-root-cause-analyst/scripts/analyze_scenario.py`
 - Create: `deploy-all/qwenpaw/working/workspaces/fault/skills/scenario-root-cause-analyst/references/output-contract.md`
-  - General scene RCA entrypoint that coordinates `veops-cmdb` and `mysql-deadlock-inspector`.
+  - General scene RCA entrypoint that coordinates `zgops-cmdb` and `mysql-deadlock-inspector`.
 
 ### Frontend
 
@@ -346,7 +346,7 @@ if __name__ == "__main__":
 <!-- deploy-all/.../scenario-root-cause-analyst/SKILL.md -->
 ---
 name: scenario-root-cause-analyst
-description: 通用故障场景根因分析 skill，通过 A2A 协作 veops-cmdb 与 mysql-deadlock-inspector。
+description: 通用故障场景根因分析 skill，通过 A2A 协作 zgops-cmdb 与 mysql-deadlock-inspector。
 ---
 ```
 
@@ -689,7 +689,7 @@ git commit -m "feat: finalize fault scenario RCA flow"
 - 对话触发新场景旁路：Task 4, Task 6
 - 后端仅落在 `src/qwenpaw/extensions`：Task 1, Task 2, Task 6
 - 新 skill 仅落在 `deploy-all/qwenpaw/working/workspaces/fault/skills`：Task 3
-- 复用 `veops-cmdb` / A2A 思路：Task 3
+- 复用 `zgops-cmdb` / A2A 思路：Task 3
 - 结构化结果卡片：Task 5
 - 完整日志侧板：Task 5
 - “故障处置”按钮占位：Task 5

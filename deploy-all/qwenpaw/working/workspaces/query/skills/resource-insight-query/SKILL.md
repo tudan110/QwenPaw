@@ -1,16 +1,16 @@
 ---
 name: resource-insight-query
-description: 查询 INOE 资源状态与性能数据。适用于用户询问设备状态统计、数据库状态总览、资源性能 Top、CPU/内存/磁盘/响应时间等性能排行、数据库性能指标清单时使用。告警列表和告警统计继续使用 real-alarm；CMDB 模型/关系/ci count 查询继续使用 veops-cmdb。
+description: 查询 INOE 资源状态与性能数据。适用于用户询问设备状态统计、数据库状态总览、资源性能 Top、CPU/内存/磁盘/响应时间等性能排行、数据库性能指标清单时使用。告警列表和告警统计继续使用 real-alarm；CMDB 模型/关系/ci count 查询继续使用 zgops-cmdb。
 ---
 
 # Resource Insight Query
 
-这是 query 数字员工的资源状态与性能查询技能。它只封装 INOE 资源状态/性能接口，不处理实时告警列表，也不替代 `veops-cmdb`。
+这是 query 数字员工的资源状态与性能查询技能。它只封装 INOE 资源状态/性能接口，不处理实时告警列表，也不替代 `zgops-cmdb`。
 
 ## 边界
 
 - 实时告警列表、告警级别统计、当前告警详情：使用 `real-alarm`。
-- CMDB 模型、CI 列表、CI 关系、`/cmdb/v0.1/ci/count...`：使用 `veops-cmdb`。
+- CMDB 模型、CI 列表、CI 关系、`/cmdb/v0.1/ci/count...`：使用 `zgops-cmdb`。
 - 资源状态总览、性能 Top、数据库指标清单：使用本技能。
 
 ## 配置
@@ -67,7 +67,7 @@ python3 scripts/resource_insight.py top-metric --resource_type database --output
 - “数据库性能 Top / 数据库磁盘使用率排行”：执行 `top-metric --resource_type database`，默认 `order_code=diskRate`。
 - “网络设备性能 / 网络设备 CPU 排行”：执行 `top-metric --resource_type network --order_code cpuRate`。
 - “操作系统性能 / 服务器性能”：分别使用 `resource_type os` 或 `resource_type server`。
-- “帮我进行设备状态的统计”：如果用户没有指定资源类型，先用 `summary --resource_type database` 展示已封装的数据库状态，并说明其他资源状态统计后续由 CMDB count 类接口在 `veops-cmdb` 中承载。
+- “帮我进行设备状态的统计”：如果用户没有指定资源类型，先用 `summary --resource_type database` 展示已封装的数据库状态，并说明其他资源状态统计后续由 CMDB count 类接口在 `zgops-cmdb` 中承载。
 
 ## 已封装接口
 

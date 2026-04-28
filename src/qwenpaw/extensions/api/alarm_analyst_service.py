@@ -49,7 +49,7 @@ def _veops_find_project_path() -> Path:
         _workspace_root()
         / "query"
         / "skills"
-        / "veops-cmdb"
+        / "zgops-cmdb"
         / "scripts"
         / "find_project.py"
     )
@@ -60,7 +60,7 @@ def _veops_app_topology_path() -> Path:
         _workspace_root()
         / "query"
         / "skills"
-        / "veops-cmdb"
+        / "zgops-cmdb"
         / "scripts"
         / "app_topology.py"
     )

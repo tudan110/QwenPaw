@@ -1,5 +1,5 @@
 ---
-name: veops-cmdb-import
+name: zgops-cmdb-import
 description: 用于处理CMDB 测试环境中的资源清单智能导入、资源纳管、批量导入预检查和入库确认。当用户明确表达导入资源清单、上传台账导入、资源纳管、批量导入 CMDB 时使用。
 ---
 

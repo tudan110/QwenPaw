@@ -24,7 +24,7 @@ DEFAULT_ENV_FILE = (
     / "workspaces"
     / "query"
     / "skills"
-    / "veops-cmdb"
+    / "zgops-cmdb"
     / ".env"
 )
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "portal" / "test-fixtures" / "test-zhiguan-clone"

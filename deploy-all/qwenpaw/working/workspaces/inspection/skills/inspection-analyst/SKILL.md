@@ -3,7 +3,7 @@ name: inspection-analyst
 category: inspection
 tags: [inspection, health-check, cmdb, topology, metrics, database, middleware, resource]
 triggers: [巡检, 资源巡检, 健康检查, 数据库巡检, 帮我巡检一下数据库, 帮我巡检一下中间件]
-description: 面向 inspection 智能体的资源巡检技能。先协作 query 智能体使用 veops-cmdb 明确巡检对象的拓扑、resId/CI ID 与 ciType，再查询该资源类型的全部指标定义与指标值，最后向用户展示包含 CMDB 拓扑关系的巡检结果。
+description: 面向 inspection 智能体的资源巡检技能。先协作 query 智能体使用 zgops-cmdb 明确巡检对象的拓扑、resId/CI ID 与 ciType，再查询该资源类型的全部指标定义与指标值，最后向用户展示包含 CMDB 拓扑关系的巡检结果。
 ---
 
 # Inspection Analyst
@@ -13,7 +13,7 @@ description: 面向 inspection 智能体的资源巡检技能。先协作 query 
 它的目标不是只输出一句“可以巡检”，而是完成一条真实巡检链路：
 
 1. 先识别用户要巡检的对象
-2. 协作 query 智能体使用 `veops-cmdb` 确认拓扑、资源 ID（CI ID / resId）与资源类型（`ciType` / `metricType`）
+2. 协作 query 智能体使用 `zgops-cmdb` 确认拓扑、资源 ID（CI ID / resId）与资源类型（`ciType` / `metricType`）
 3. 调用指标定义接口，提取该资源类型的全部指标编码
 4. 调用指标数据接口，使用 `resId + 全部指标编码数组` 获取巡检指标数据
 5. 把拓扑确认结果与指标数据整理成用户可读的巡检结果，并明确展示被巡检对象的 CMDB 拓扑关系
@@ -65,7 +65,7 @@ description: 面向 inspection 智能体的资源巡检技能。先协作 query 
 如果当前工作区具备可用工具，就必须优先执行真实动作：
 
 1. 优先使用内置工具 `chat_with_agent` 协作 `query` 智能体
-2. 让 `query` 智能体使用 `veops-cmdb` 明确：
+2. 让 `query` 智能体使用 `zgops-cmdb` 明确：
    - 根资源名称
    - `resId / CI ID`
    - `ciType`
@@ -108,7 +108,7 @@ cd skills/inspection-analyst && python scripts/inspect_resource_metrics.py --res
 推荐协作提示：
 
 ```text
-请使用 veops-cmdb 帮我确认巡检对象“<用户巡检对象>”在 CMDB 中对应的资源信息，返回：
+请使用 zgops-cmdb 帮我确认巡检对象“<用户巡检对象>”在 CMDB 中对应的资源信息，返回：
 1. 最匹配的根资源名称
 2. resId / CI ID
 3. ciType

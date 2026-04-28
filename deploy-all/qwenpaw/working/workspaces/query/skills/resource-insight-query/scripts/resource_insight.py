@@ -527,7 +527,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "status-overview":
         resource = normalize_resource_type(args.resource_type)
         if resource["api_type"] != "数据库":
-            payload = make_error(400, "当前状态 overview 仅发现并封装了数据库接口；其他资源状态统计请使用 veops-cmdb 的 CMDB count 类查询")
+            payload = make_error(400, "当前状态 overview 仅发现并封装了数据库接口；其他资源状态统计请使用 zgops-cmdb 的 CMDB count 类查询")
             print_output(payload, args.output, payload["msg"])
             return 1
         payload = query_database_status_overview(**common)

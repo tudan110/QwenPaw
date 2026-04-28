@@ -91,7 +91,7 @@ def test_build_alarm_analyst_card_filters_noisy_impact_and_sanitizes_titles() ->
             "## 影响范围\n"
             "### 受影响应用\n"
             "- CMDB\n"
-            "- 应用拓扑确认（query -> veops-cmdb）\n"
+            "- 应用拓扑确认（query -> zgops-cmdb）\n"
             "- 天翼智观应用中依赖 MySQL 的写入链路\n"
             "### 受影响资源\n"
             "- 3094\n"

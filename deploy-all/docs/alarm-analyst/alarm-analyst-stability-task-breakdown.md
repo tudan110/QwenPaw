@@ -33,7 +33,7 @@
 ### 2.3 本次不在首轮范围内的内容
 
 - 大规模前端重构
-- `real-alarm` 和 `veops-cmdb` 的协议重构
+- `real-alarm` 和 `zgops-cmdb` 的协议重构
 - 新增依赖
 - 端到端自动化 UI 测试
 

@@ -1113,7 +1113,7 @@ export function buildMentionCollaborationPrompt({
   const extraCollaborationHints =
     isQueryAgent && requestLooksLikeTopology
       ? [
-          "本次协作涉及 CMDB 资源关系拓扑时，请优先使用 query 数字员工已启用的 veops-cmdb skill。",
+          "本次协作涉及 CMDB 资源关系拓扑时，请优先使用 query 数字员工已启用的 zgops-cmdb skill。",
           "如果拿到了应用或资源拓扑，请直接返回可渲染的 ```echarts 代码块，优先使用 tree 树状图并设置从左到右展开，不要只返回文字摘要。",
         ]
       : [];
@@ -1167,7 +1167,7 @@ export function buildResourceImportTopologyCollaborationRequest(scope: {
       resourceSummary ? `本次导入资源摘要：${resourceSummary}。` : "",
       "请优先围绕这次导入涉及的资源构建结果，不要扩展到无关应用或全系统。",
       "如支持按 CI ID 或应用过滤，请先过滤再查询。",
-      "请优先使用已启用的 veops-cmdb skill，并返回可直接渲染的 ```echarts 代码块，优先 tree 树状图，从左到右展开。",
+      "请优先使用已启用的 zgops-cmdb skill，并返回可直接渲染的 ```echarts 代码块，优先 tree 树状图，从左到右展开。",
     ].filter(Boolean).join("\n");
   }
 
@@ -1178,7 +1178,7 @@ export function buildResourceImportTopologyCollaborationRequest(scope: {
       resourceSummary ? `本次导入资源摘要：${resourceSummary}。` : "",
       "不要查询全系统，也不要自动扩展到无关应用。",
       "只返回这些资源之间的节点和关系；没有关系的资源也要作为独立节点展示。",
-      "请优先使用已启用的 veops-cmdb skill，并返回可直接渲染的 ```echarts 代码块，优先 tree 树状图，从左到右展开。",
+      "请优先使用已启用的 zgops-cmdb skill，并返回可直接渲染的 ```echarts 代码块，优先 tree 树状图，从左到右展开。",
     ].filter(Boolean).join("\n");
   }
 

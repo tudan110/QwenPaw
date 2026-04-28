@@ -2,7 +2,7 @@
 
 ## 1. 文档目的
 
-本文档基于《[Alarm Analyst 根因分析流程需求文档](./alarm-analyst-rca-requirements.md)》拆解出可执行的实施计划，用于指导 `alarm-analyst`、Portal、`real-alarm`、`veops-cmdb` 以及后端路由的联动改造。
+本文档基于《[Alarm Analyst 根因分析流程需求文档](./alarm-analyst-rca-requirements.md)》拆解出可执行的实施计划，用于指导 `alarm-analyst`、Portal、`real-alarm`、`zgops-cmdb` 以及后端路由的联动改造。
 
 目标不是重复需求，而是明确：
 
@@ -51,7 +51,7 @@
 - `deploy-all/qwenpaw/working/workspaces/fault/skills/alarm-analyst/scripts/analyze_alarm_context.py`
 - `deploy-all/qwenpaw/working/workspaces/fault/skills/alarm-analyst/scripts/get_metric_definitions.py`
 - `deploy-all/qwenpaw/working/workspaces/fault/skills/real-alarm/scripts/get_alarms.py`
-- `deploy-all/qwenpaw/working/workspaces/query/skills/veops-cmdb/scripts/*`
+- `deploy-all/qwenpaw/working/workspaces/query/skills/zgops-cmdb/scripts/*`
 
 ### 3.3 后端接口层
 
@@ -71,7 +71,7 @@
 - `tests/unit/extensions/api/test_portal_backend.py`
 - `deploy-all/qwenpaw/working/workspaces/fault/skills/alarm-analyst/scripts/tests/test_analyze_alarm_context.py`
 - `deploy-all/qwenpaw/working/workspaces/fault/skills/real-alarm/scripts/tests/test_ci_id_support.py`
-- `deploy-all/qwenpaw/working/workspaces/query/skills/veops-cmdb/scripts/tests/test_http_fallback.py`
+- `deploy-all/qwenpaw/working/workspaces/query/skills/zgops-cmdb/scripts/tests/test_http_fallback.py`
 
 ---
 
@@ -208,7 +208,7 @@
 
 ### 改动项
 
-1. `veops-cmdb`：
+1. `zgops-cmdb`：
    - 匿名优先
    - 401/403 再登录
    - Python 网络失败时回退到 `curl`
@@ -220,7 +220,7 @@
 
 - 在 Python HTTP 不可用但 curl 可用的环境下，技能仍能工作
 - 回退后 `neId`、时间窗口、Header 不丢失
-- `veops-cmdb` 与 `real-alarm` 都有对应回退测试
+- `zgops-cmdb` 与 `real-alarm` 都有对应回退测试
 
 ---
 

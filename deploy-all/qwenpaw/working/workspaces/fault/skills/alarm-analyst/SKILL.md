@@ -163,7 +163,7 @@ Portal 落地时，需要体现以下链路：
 对于 `数据库锁异常（db_mysql_001 10.43.150.186）` 这类 MySQL 告警，默认最短路径是：
 
 1. 从告警文本中提取资产编号、IP、告警标题、`resId/CI ID`、告警时间
-2. 通过 query 数字员工的 `veops-cmdb` 查询 CMDB，获取：
+2. 通过 query 数字员工的 `zgops-cmdb` 查询 CMDB，获取：
    - `ciType`
    - `CI ID`
    - 应用/环境/拓扑
@@ -210,7 +210,7 @@ cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-typ
 ### 3. CMDB 系统
 
 - 是独立部署的资产管理系统
-- 资源信息查询优先通过 **query 数字员工** 下的 **`veops-cmdb`** skill 完成
+- 资源信息查询优先通过 **query 数字员工** 下的 **`zgops-cmdb`** skill 完成
 - 重点用于按资产编号确认资源类型、实例、所属应用、环境与关系拓扑
 
 ### 4. 故障处置员数字员工
@@ -256,7 +256,7 @@ ORDER_CREATE_NOTIFY_MENTION_ALL=true
   - 飞书：优先发送 `interactive` 卡片，不再依赖把 Markdown 原文塞进纯文本消息
   - 钉钉：发送 `markdown` 消息；避免依赖移动端不稳定的表格展示
   - 通用应用 webhook（如量子密信）：保持通用 text 协议，正文使用纯文本列表，不发送 `**`、`>` 等 Markdown 控制符
-- 当需要调用 `veops-cmdb` 查询拓扑时，直接遵循 `veops-cmdb` 自己的配置与访问规则，不在当前 skill 内重复声明
+- 当需要调用 `zgops-cmdb` 查询拓扑时，直接遵循 `zgops-cmdb` 自己的配置与访问规则，不在当前 skill 内重复声明
 - 具体 API 路径、请求体和调用时机写在本 `SKILL.md` 中
 - 如果后续更换指标服务地址，优先只改 `.env`，不要在多个脚本或提示词里硬编码
 - 如果缺少 token，不要继续请求；直接返回配置缺失错误
@@ -266,7 +266,7 @@ ORDER_CREATE_NOTIFY_MENTION_ALL=true
 
 ### 当前指标定义接口
 
-当已经通过 query 数字员工 + `veops-cmdb` 确认资源 `ciType` 后，应先调用指标定义接口，拿到该资源类型可分析的指标列表，再由 AI 从中筛选关键指标。
+当已经通过 query 数字员工 + `zgops-cmdb` 确认资源 `ciType` 后，应先调用指标定义接口，拿到该资源类型可分析的指标列表，再由 AI 从中筛选关键指标。
 
 - **Method**: `POST`
 - **Path**: `/resource/resource/threshold/getMetricDefinitions`
@@ -336,8 +336,8 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py --res-id 3094
    - `resId/CI ID`
    - 告警时间
    - 设备名 / 管理 IP
-2. 以当前告警的 `resId` 作为根节点，通过 `veops-cmdb` 查询**根资源详情**
-3. 再以同一个 `resId` 作为根节点，通过 `veops-cmdb` 查询 **CMDB 拓扑关系**
+2. 以当前告警的 `resId` 作为根节点，通过 `zgops-cmdb` 查询**根资源详情**
+3. 再以同一个 `resId` 作为根节点，通过 `zgops-cmdb` 查询 **CMDB 拓扑关系**
 4. 从拓扑结果中提取**全部**相关资源 ID（CI ID），不能只取根资源，也不能只取每条关系中的一端
 5. 把这些资源 ID 全部收集起来后，再逐个调用 `real-alarm` 查询告警
 6. `real-alarm` 的告警查询必须把当前资源 ID 放入请求体里的 `neId`
@@ -361,7 +361,7 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py --res-id 3094
 下面这条规则不是建议，而是本 skill 的**完成条件**：
 
 1. 一旦已经拿到当前告警的根资源 `resId`
-2. 且已经通过 `veops-cmdb` 查到了该根资源在 CMDB 中的关联拓扑
+2. 且已经通过 `zgops-cmdb` 查到了该根资源在 CMDB 中的关联拓扑
 3. 就**必须**把拓扑中的全部关联节点资源 ID 提取出来，形成去重后的 `resourceIds`
 4. 然后**必须**逐个查询这些 `resourceIds` 对应的告警信息
 
@@ -401,7 +401,7 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py --res-id 3094
 
 该脚本会按以下顺序执行真实动作：
 
-1. 以 `resId` 为根，通过 `veops-cmdb` 查询根资源详情，明确根资源 `ciType`
+1. 以 `resId` 为根，通过 `zgops-cmdb` 查询根资源详情，明确根资源 `ciType`
 2. 以同一个 `resId` 为根查询 CMDB 关系拓扑
 3. 收集拓扑中的全部关联资源 ID
 4. **必须**按这些资源 ID 遍历查询它们在“当前告警发生时间前后 10 分钟”窗口内的告警
@@ -463,7 +463,7 @@ cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-typ
 当前项目内置了 **`multi_agent_collaboration`** 协作能力，实际协作应优先遵循以下原则：
 
 1. 需要其他 agent 的专长时，优先走多智能体协作
-2. 查询 CMDB 时，优先找 query 数字员工，并使用其 `veops-cmdb` skill
+2. 查询 CMDB 时，优先找 query 数字员工，并使用其 `zgops-cmdb` skill
 3. 协作术语应尽量使用仓库现有能力名：
    - `list_agents`
    - `chat_with_agent`
@@ -473,20 +473,20 @@ cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-typ
 
 - **CMDB 查询优先协作给 query 数字员工**
 - 如果用户明确要求“调用 query 看 CMDB”，必须在回复过程里体现这一点
-- 如果接口未接通，仍要在过程说明中写出“计划协作给 query -> veops-cmdb”
+- 如果接口未接通，仍要在过程说明中写出“计划协作给 query -> zgops-cmdb”
 - 如果 query 返回的是应用或资源拓扑，优先保留并展示其返回的 ` ```echarts ` 代码块，不要把拓扑图改写成纯文字
 
 ### 过程展示要求
 
 即使当前没有真正发起 Agent-to-Agent 调用，也应在用户可见输出中体现类似信息：
 
-- `准备协作 query 数字员工，使用 veops-cmdb 查询资产 db_mysql_001 的 CMDB 资源信息`
+- `准备协作 query 数字员工，使用 zgops-cmdb 查询资产 db_mysql_001 的 CMDB 资源信息`
 - `协作目标：确认 ciType、实例、所属应用、环境与拓扑关系`
 - `当前阶段先按示例结果继续推演，后续将接入真实协作调用`
 
 ### 拓扑可视化要求
 
-当 query 数字员工通过 `veops-cmdb` 返回应用拓扑或资源关系拓扑时，默认按下面规则处理：
+当 query 数字员工通过 `zgops-cmdb` 返回应用拓扑或资源关系拓扑时，默认按下面规则处理：
 
 1. 优先展示为可渲染的 `echarts` 树状图，而不是只输出文字层级
 2. 图表结构优先使用：
@@ -518,14 +518,14 @@ cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-typ
 - 用户说：`某应用新增数据失败了`
 - 用户说：`CMDB 插入数据失败了`
 
-这类问题不能只盯着应用本身，要先通过 **query -> veops-cmdb** 查应用拓扑，把应用依赖的组件链路拆出来，再逐层分析。
+这类问题不能只盯着应用本身，要先通过 **query -> zgops-cmdb** 查应用拓扑，把应用依赖的组件链路拆出来，再逐层分析。
 
 ### 典型拓扑拆解方式
 
 当用户描述的是“应用动作失败”而不是“单个资源直接告警”时，默认按下面的顺序做：
 
 1. 先识别目标应用或目标业务动作
-2. 通过 query 数字员工 + `veops-cmdb` 查询应用拓扑关系
+2. 通过 query 数字员工 + `zgops-cmdb` 查询应用拓扑关系
 3. 列出该应用涉及的关键组件，例如：
    - 应用服务本身
    - 中间件组件
@@ -542,7 +542,7 @@ cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-typ
 
 默认分析动作：
 
-1. 先通过 `veops-cmdb` 查应用拓扑
+1. 先通过 `zgops-cmdb` 查应用拓扑
 2. 确认该应用依赖了哪些服务组件
 3. 对每个关键组件做分层分析：
    - 应用服务本身
@@ -556,7 +556,7 @@ cd skills/alarm-analyst && python scripts/get_metric_definitions.py --metric-typ
 
 默认分析动作：
 
-1. 先通过 `veops-cmdb` 查 CMDB 应用使用到了哪些组件
+1. 先通过 `zgops-cmdb` 查 CMDB 应用使用到了哪些组件
 2. 判断是否涉及 MySQL 等数据库组件
 3. 如果涉及 MySQL，则继续：
    - 用资产编号确认 mysql 资源
@@ -691,7 +691,7 @@ graph TD
 
 ### 第 3 阶段：协作 query 数字员工查询 CMDB / 应用拓扑
 
-拿到资产编号、应用名、系统名或故障动作后，优先通过 query 数字员工的 `veops-cmdb` 查询：
+拿到资产编号、应用名、系统名或故障动作后，优先通过 query 数字员工的 `zgops-cmdb` 查询：
 
 - 该资产是否存在
 - 该资源的 `ciType`
@@ -701,12 +701,12 @@ graph TD
 - 上下游关联关系
 - 应用拓扑涉及的关键组件
 
-这一步必须突出“是通过 query 数字员工下的 `veops-cmdb` 完成”，不要把 CMDB 查询写成一个抽象黑盒。
+这一步必须突出“是通过 query 数字员工下的 `zgops-cmdb` 完成”，不要把 CMDB 查询写成一个抽象黑盒。
 
 如果当前无真实协作调用，也必须在过程里明确：
 
 - `准备通过 multi_agent_collaboration 协作 query 数字员工`
-- `计划使用 veops-cmdb 查询资产 db_mysql_001`
+- `计划使用 zgops-cmdb 查询资产 db_mysql_001`
 - `预期确认：ciType / 应用 / 环境 / 拓扑关系`
 - `如果查到应用或资源拓扑，将直接以 echarts 树状图展示关键依赖链`
 
@@ -727,7 +727,7 @@ graph TD
 
 默认步骤：
 
-1. 通过 query + `veops-cmdb` 确认 `ciType`
+1. 通过 query + `zgops-cmdb` 确认 `ciType`
 2. 如果是应用故障场景，先拆出应用依赖组件
 3. 使用 `ciType` / 组件类型 作为 `metricType` 调用指标定义接口
 4. 获取候选指标列表
@@ -990,7 +990,7 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 
 1. `告警接收与解析`
 2. `智观告警上下文确认`
-3. `CMDB / 应用拓扑确认（query -> veops-cmdb）`
+3. `CMDB / 应用拓扑确认（query -> zgops-cmdb）`
 4. `组件拆解与故障类型识别`
 5. `指标采集计划`
 6. `关键指标与影响范围`
@@ -1050,7 +1050,7 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 - 每一步都尽量引用当前告警里的具体实体，如资产编号、IP、资源类型、实例名
 - 明确区分“已知信息”和“待确认信息”
 - 接口未接时，也要把“计划调用哪个系统”写出来
-- 需要协作时，要把 query 数字员工和 `veops-cmdb` 明确写出来
+- 需要协作时，要把 query 数字员工和 `zgops-cmdb` 明确写出来
 - 涉及应用拓扑或资源关系拓扑时，优先输出或保留 `echarts` 树状图代码块
 - 需要闭环时，要把“清除告警 / 修改工单状态 / 恢复验证”明确写出来
 - RCA 结论形成后，必须明确体现“已自动调用 4.2 工单创建接口”或“工单创建失败原因”
@@ -1107,9 +1107,9 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 - 同时确认近 7 日是否出现过相同或相似告警，以及是否已有关联工单
 - 当前阶段先按单条活动告警继续分析
 
-### 3. CMDB 资源确认（query -> veops-cmdb）
+### 3. CMDB 资源确认（query -> zgops-cmdb）
 - 准备通过 multi_agent_collaboration 协作 query 数字员工
-- 计划使用 veops-cmdb 查询资产 `db_mysql_001` 的资源详情
+- 计划使用 zgops-cmdb 查询资产 `db_mysql_001` 的资源详情
 - 目标是确认该资源的 `ciType`、实例信息、所属应用和运行环境
 - 当前按示例场景继续推演：该资产对应资源 `ciType = mysql`
 - 如果查到应用或资源拓扑，会直接用 `echarts` 树状图展示关键依赖关系
@@ -1202,7 +1202,7 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 
 - 识别资产编号 `db_mysql_001`
 - 说明会去智观确认活动告警与工单状态
-- 说明会协作 query 数字员工，用 `veops-cmdb` 查询 CMDB
+- 说明会协作 query 数字员工，用 `zgops-cmdb` 查询 CMDB
 - 说明 `ciType = mysql` 后会先调 `getMetricDefinitions`
 - 再说明 AI 如何从候选指标里挑关键指标
 - 说明影响范围如何判断
@@ -1227,7 +1227,7 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 
 回复重点必须包含：
 
-- 先通过 query + `veops-cmdb` 查询应用拓扑
+- 先通过 query + `zgops-cmdb` 查询应用拓扑
 - 如果已经拿到拓扑，优先直接展示 `echarts` 树状图
 - 列出该应用依赖的关键组件
 - 对数据库、中间件、网络、基础资源、应用本身分别进入分析
@@ -1256,8 +1256,8 @@ cd skills/alarm-analyst && python scripts/create_manual_workorder.py \
 - RCA 结论形成后，必须优先执行 `scripts/create_manual_workorder.py` 创建工单，不要只输出“计划创建工单”
 - 工单创建成功后，必须优先通过 webhook 推送通知，不要只输出“计划通知”
 - webhook 可按配置推送到应用（可配置为量子密信）、钉钉、飞书；如果未配置，也要明确说明“通知未配置”
-- 但必须把“告警 -> 智观 -> query/veops-cmdb -> `getMetricDefinitions` -> AI 挑关键指标 -> 指标值 -> 影响范围 -> 自动创建工单 -> webhook 通知 -> 处置 -> 恢复验证 -> 清除告警 -> 更新工单状态”这条链路完整写给用户
-- 查询 CMDB 时，默认体现为通过 query 数字员工下的 `veops-cmdb` 完成
+- 但必须把“告警 -> 智观 -> query/zgops-cmdb -> `getMetricDefinitions` -> AI 挑关键指标 -> 指标值 -> 影响范围 -> 自动创建工单 -> webhook 通知 -> 处置 -> 恢复验证 -> 清除告警 -> 更新工单状态”这条链路完整写给用户
+- 查询 CMDB 时，默认体现为通过 query 数字员工下的 `zgops-cmdb` 完成
 - 如果查询到拓扑，默认以 `echarts` 树状图展示，并保留 query 返回的图表代码块
 - 如果用户描述的是“应用动作失败”，默认先查应用拓扑，再查单个组件
 - 分析应用故障时，必须覆盖基础资源、网络、应用、数据库、中间件、业务逻辑这 6 类故障类型

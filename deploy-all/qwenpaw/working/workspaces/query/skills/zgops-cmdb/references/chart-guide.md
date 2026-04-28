@@ -28,11 +28,11 @@
 ## 调用方式
 
 ```bash
-bash scripts/veops-cmdb.sh analyze --mode summary --output markdown
-bash scripts/veops-cmdb.sh analyze --mode model-groups --output markdown
-bash scripts/veops-cmdb.sh analyze --mode relation-types --output markdown
-bash scripts/veops-cmdb.sh analyze --mode app-relations --output markdown
-bash scripts/veops-cmdb.sh analyze --mode summary --output markdown-echarts-only
+bash scripts/zgops-cmdb.sh analyze --mode summary --output markdown
+bash scripts/zgops-cmdb.sh analyze --mode model-groups --output markdown
+bash scripts/zgops-cmdb.sh analyze --mode relation-types --output markdown
+bash scripts/zgops-cmdb.sh analyze --mode app-relations --output markdown
+bash scripts/zgops-cmdb.sh analyze --mode summary --output markdown-echarts-only
 ```
 
 ## 模式说明

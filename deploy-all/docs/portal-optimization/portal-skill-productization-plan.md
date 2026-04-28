@@ -2,7 +2,7 @@
 
 ## 1. 背景
 
-当前 `veops-cmdb-import` 在 portal 中呈现为较完整的产品化流程：有导入卡片、过程日志、确认表单、结果区和阶段状态；而 `alarm-analyst` 与 `inspection-analyst` 目前大多仍停留在“大模型回复文本 + Markdown 展示”的层面。
+当前 `zgops-cmdb-import` 在 portal 中呈现为较完整的产品化流程：有导入卡片、过程日志、确认表单、结果区和阶段状态；而 `alarm-analyst` 与 `inspection-analyst` 目前大多仍停留在“大模型回复文本 + Markdown 展示”的层面。
 
 这会带来两个明显问题：
 
@@ -34,7 +34,7 @@
 
 ## 3. 现状判断
 
-### 3.1 `veops-cmdb-import` 为什么更像产品
+### 3.1 `zgops-cmdb-import` 为什么更像产品
 
 它不是因为“提示词更好”，而是因为它走的是完整的结构化协议和组件化渲染路线：
 
