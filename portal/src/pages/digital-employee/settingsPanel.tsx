@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  readConversationProcessRecordDetailsExpandable,
   readConversationProcessRecordDisplayMode,
+  writeConversationProcessRecordDetailsExpandable,
   writeConversationProcessRecordDisplayMode,
   type ConversationProcessRecordDisplayMode,
 } from "./conversationSettings";
@@ -807,6 +809,8 @@ export function SettingsPanel() {
     useState<ConversationProcessRecordDisplayMode>(() =>
       readConversationProcessRecordDisplayMode(),
     );
+  const [processRecordDetailsExpandable, setProcessRecordDetailsExpandable] =
+    useState(() => readConversationProcessRecordDetailsExpandable());
   const [showFaultAnalysisConfidence, setShowFaultAnalysisConfidence] =
     useState(() => readFaultAnalysisConfidenceVisible());
   const [notificationForms, setNotificationForms] = useState<
@@ -832,6 +836,11 @@ export function SettingsPanel() {
   ) => {
     setProcessRecordDisplayMode(
       writeConversationProcessRecordDisplayMode(mode),
+    );
+  };
+  const handleProcessRecordDetailsExpandableChange = (expandable: boolean) => {
+    setProcessRecordDetailsExpandable(
+      writeConversationProcessRecordDetailsExpandable(expandable),
     );
   };
   const handleFaultAnalysisConfidenceVisibilityChange = (visible: boolean) => {
@@ -1606,6 +1615,55 @@ export function SettingsPanel() {
             <section className="portal-advanced-config-panel settings-content-panel">
               {activeTab === "conversation" ? (
                 <div className="portal-model-shell">
+                  <section className="settings-section">
+                    <div className="portal-model-block-head">
+                      <div>
+                        <h4>过程记录步骤详情</h4>
+                        <p>
+                          控制过程步骤是否可以点开查看思考内容、工具调用参数和返回结果。关闭后只显示步骤概览，原始详情不会渲染到页面。
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="settings-choice-grid">
+                      <button
+                        type="button"
+                        className={
+                          processRecordDetailsExpandable
+                            ? "portal-managed-config-toggle active"
+                            : "portal-managed-config-toggle"
+                        }
+                        onClick={() =>
+                          handleProcessRecordDetailsExpandableChange(true)
+                        }
+                      >
+                        <i className="fas fa-up-right-and-down-left-from-center" />
+                        允许展开
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          !processRecordDetailsExpandable
+                            ? "portal-managed-config-toggle active"
+                            : "portal-managed-config-toggle"
+                        }
+                        onClick={() =>
+                          handleProcessRecordDetailsExpandableChange(false)
+                        }
+                      >
+                        <i className="fas fa-eye-slash" />
+                        仅显示概览
+                      </button>
+                    </div>
+
+                    <div className="portal-managed-config-hint settings-inline-hint">
+                      当前状态：
+                      {processRecordDetailsExpandable
+                        ? "可点击查看步骤详情"
+                        : "步骤详情已隐藏"}
+                    </div>
+                  </section>
+
                   <section className="settings-section">
                     <div className="portal-model-block-head">
                       <div>

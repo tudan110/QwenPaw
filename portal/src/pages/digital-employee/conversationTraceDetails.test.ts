@@ -20,6 +20,6 @@ test("chat trace steps restore expandable thinking and tool details", () => {
 
 test("conversation settings expose a detail expandability control", () => {
   assert.match(settingsSource, />过程记录步骤详情</);
-  assert.match(settingsSource, />允许展开</);
-  assert.match(settingsSource, />仅显示概览</);
+  assert.match(settingsSource, />\s*允许展开\s*</);
+  assert.match(settingsSource, />\s*仅显示概览\s*</);
 });

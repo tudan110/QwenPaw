@@ -386,7 +386,7 @@ export function AdvancedModelEntry({
           </div>
           <div className="sidebar-advanced-item-name">设置</div>
           <div className="sidebar-advanced-item-desc">对话与界面偏好</div>
-          <div className="sidebar-advanced-item-meta">过程记录 / 默认展开</div>
+          <div className="sidebar-advanced-item-meta">过程记录 / 详情与默认展开</div>
         </button>
       </div>
 
