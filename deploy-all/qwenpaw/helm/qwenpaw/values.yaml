@@ -28,7 +28,9 @@ securityContext:
 env:
   TZ: "Asia/Shanghai"
   QWENPAW_PORT: "8088"
-  QWENPAW_APP_WORKERS: "2"
+  # Custom provider configuration is file-backed and not yet synchronized
+  # across worker processes; keep one worker until shared-state support lands.
+  QWENPAW_APP_WORKERS: "1"
   QWENPAW_APP_BACKLOG: "2048"
   QWENPAW_APP_TIMEOUT_KEEP_ALIVE: "5"
   QWENPAW_DISABLED_CHANNELS: "imessage"
