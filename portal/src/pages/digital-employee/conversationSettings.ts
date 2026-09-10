@@ -1,9 +1,14 @@
 export const DEFAULT_CONVERSATION_PROCESS_RECORD_DISPLAY_MODE = "collapsed";
 export const CONVERSATION_PROCESS_RECORD_DISPLAY_MODE_CHANGED_EVENT =
   "portal-conversation-process-record-display-mode-changed";
+export const DEFAULT_CONVERSATION_PROCESS_RECORD_DETAILS_EXPANDABLE = true;
+export const CONVERSATION_PROCESS_RECORD_DETAILS_EXPANDABLE_CHANGED_EVENT =
+  "portal-conversation-process-record-details-expandable-changed";
 
 const CONVERSATION_PROCESS_RECORD_DISPLAY_MODE_STORAGE_KEY =
   "portal.conversation.processRecordDisplayMode";
+const CONVERSATION_PROCESS_RECORD_DETAILS_EXPANDABLE_STORAGE_KEY =
+  "portal.conversation.processRecordDetailsExpandable";
 const CONVERSATION_PROCESS_RECORD_DISPLAY_MODES = ["expanded", "collapsed"] as const;
 
 export type ConversationProcessRecordDisplayMode =
@@ -57,4 +62,65 @@ export function writeConversationProcessRecordDisplayMode(
   }
 
   return normalized;
+}
+
+export function normalizeConversationProcessRecordDetailsExpandable(
+  value: unknown,
+): boolean {
+  if (value === true || value === "true") {
+    return true;
+  }
+  if (value === false || value === "false") {
+    return false;
+  }
+  return DEFAULT_CONVERSATION_PROCESS_RECORD_DETAILS_EXPANDABLE;
+}
+
+export function readConversationProcessRecordDetailsExpandable(): boolean {
+  if (typeof window === "undefined") {
+    return DEFAULT_CONVERSATION_PROCESS_RECORD_DETAILS_EXPANDABLE;
+  }
+
+  try {
+    return normalizeConversationProcessRecordDetailsExpandable(
+      window.localStorage.getItem(
+        CONVERSATION_PROCESS_RECORD_DETAILS_EXPANDABLE_STORAGE_KEY,
+      ),
+    );
+  } catch (error) {
+    console.error(
+      "Failed to load conversation process record detail preference:",
+      error,
+    );
+    return DEFAULT_CONVERSATION_PROCESS_RECORD_DETAILS_EXPANDABLE;
+  }
+}
+
+export function writeConversationProcessRecordDetailsExpandable(
+  value: unknown,
+): boolean {
+  const expandable = normalizeConversationProcessRecordDetailsExpandable(value);
+  if (typeof window === "undefined") {
+    return expandable;
+  }
+
+  try {
+    window.localStorage.setItem(
+      CONVERSATION_PROCESS_RECORD_DETAILS_EXPANDABLE_STORAGE_KEY,
+      String(expandable),
+    );
+    window.dispatchEvent(
+      new CustomEvent(
+        CONVERSATION_PROCESS_RECORD_DETAILS_EXPANDABLE_CHANGED_EVENT,
+        { detail: { expandable } },
+      ),
+    );
+  } catch (error) {
+    console.error(
+      "Failed to persist conversation process record detail preference:",
+      error,
+    );
+  }
+
+  return expandable;
 }
