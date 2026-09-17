@@ -844,7 +844,6 @@ export function EmployeeChatMainPanel({
   onTicketRefresh,
   ticketActionNotice,
   activeModelLabel,
-  safeCapabilities,
   safeQuickCommands,
   resourceImportCommand,
   isInteractionLocked,
@@ -899,7 +898,6 @@ export function EmployeeChatMainPanel({
   onTicketRefresh: () => void;
   ticketActionNotice: string;
   activeModelLabel?: string;
-  safeCapabilities: string[];
   safeQuickCommands: string[];
   resourceImportCommand: string;
   isInteractionLocked: boolean;
@@ -925,25 +923,6 @@ export function EmployeeChatMainPanel({
 }) {
   return (
     <div className="chat-main">
-      <div className="chat-header">
-        <div className="chat-header-main">
-          <div className="chat-header-copy">
-            <strong>
-              {isAlarmWorkbenchMode
-                ? `${visibleEmployee.name} - 告警工单处置`
-                : `${visibleEmployee.name} - 智能服务`}
-            </strong>
-            <span>支持历史追溯、模型切换与专属能力调用</span>
-          </div>
-          {headerStatusLabel ? (
-            <span className="chat-status-pill alert">{headerStatusLabel}</span>
-          ) : null}
-        </div>
-        <div className={isAlarmWorkbenchMode ? "chat-capabilities alarm-mode" : "chat-capabilities"}>
-          {chatHeaderActions}
-        </div>
-      </div>
-
       <div
         className="chat-messages"
         ref={chatMessagesRef}
@@ -988,99 +967,90 @@ export function EmployeeChatMainPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      {!isAlarmWorkbenchMode ? (
-        <div className="quick-commands">
-          <div className="capabilities-row">
-            {safeCapabilities.map((item) => (
-              <span key={item} className="capability-label">
-                {item}
-              </span>
-            ))}
-          </div>
-          <div className="quick-cmd-row">
-            {safeQuickCommands.map((command) => (
+      <div className="input-area">
+        <div className="input-wrapper">
+          <div className="portal-home-composer-card chat-composer-card">
+          <textarea
+            ref={chatInputRef}
+            rows={1}
+            value={inputMessage}
+            disabled={isInteractionLocked}
+            onBlur={onComposerBlur}
+            onClick={onInputSelection}
+            onChange={onComposerChange}
+            onKeyDown={onComposerKeyDown}
+            onKeyUp={onInputSelection}
+            placeholder={`向 ${visibleEmployee.name} 描述您的需求...（Enter 发送，Shift+Enter 换行）`}
+          />
+          <div className="portal-home-composer-footer">
+            {!isAlarmWorkbenchMode ? (
+              <div className="portal-home-quick-actions">
+                {safeQuickCommands.map((command) => (
+                  <button
+                    key={`chat-${command}`}
+                    className="portal-home-quick-action"
+                    onClick={() => {
+                      if (command === resourceImportCommand) {
+                        openResourceImport();
+                        return;
+                      }
+                      onSendPreset(command);
+                    }}
+                    disabled={isInteractionLocked}
+                  >
+                    <i className="fas fa-bolt" />
+                    {command}
+                  </button>
+                ))}
+              </div>
+            ) : <div />}
+            <div className="portal-home-composer-actions">
+              {chatHeaderActions}
               <button
-                key={command}
-                className="quick-cmd"
-                onClick={() => {
-                  if (command === resourceImportCommand) {
-                    openResourceImport();
-                    return;
-                  }
-                  onSendPreset(command);
-                }}
-                disabled={isInteractionLocked}
+                className={
+                  isConversationRunning
+                    ? "send-btn stop-mode"
+                    : isCreatingChat
+                      ? "send-btn disabled"
+                      : "send-btn"
+                }
+                onClick={onPrimaryAction}
+                disabled={isCreatingChat && !isConversationRunning}
+                aria-label={isConversationRunning ? "停止聊天" : "发送消息"}
               >
-                <i className="fas fa-bolt" />
-                {command}
+                {isConversationRunning ? (
+                  <span className="send-btn-stop-icon" aria-hidden="true" />
+                ) : (
+                  <i className="fas fa-paper-plane" />
+                )}
+              </button>
+            </div>
+          </div>
+          </div>
+          {mentionSuggestions.length ? (
+          <div className="mention-suggestions">
+            {mentionSuggestions.map((item, index) => (
+              <button
+                key={`mention-${item.employee.id}`}
+                type="button"
+                className={index === mentionActiveIndex ? "mention-suggestion active" : "mention-suggestion"}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onApplyMentionSuggestion(item.employee.name);
+                }}
+              >
+                <DigitalEmployeeAvatar
+                  employee={item.employee}
+                  className="mention-suggestion-avatar"
+                />
+                <span className="mention-suggestion-copy">
+                  <strong>{item.employee.name}</strong>
+                  <small>{item.employee.desc}</small>
+                </span>
               </button>
             ))}
           </div>
-        </div>
-      ) : null}
-
-      <div className="input-area">
-        <div className="input-hint-row">
-          <span>输入自然语言即可开始协同办公。</span>
-        </div>
-        <div className="input-wrapper">
-          <div className={isCreatingChat ? "input-box disabled" : "input-box"}>
-            <i className="fas fa-comment-dots" />
-            <textarea
-              ref={chatInputRef}
-              rows={1}
-              value={inputMessage}
-              disabled={isInteractionLocked}
-              onBlur={onComposerBlur}
-              onClick={onInputSelection}
-              onChange={onComposerChange}
-              onKeyDown={onComposerKeyDown}
-              onKeyUp={onInputSelection}
-              placeholder={`向 ${visibleEmployee.name} 描述您的需求...（Enter 发送，Shift+Enter 换行）`}
-            />
-          </div>
-          {mentionSuggestions.length ? (
-            <div className="mention-suggestions">
-              {mentionSuggestions.map((item, index) => (
-                <button
-                  key={`mention-${item.employee.id}`}
-                  type="button"
-                  className={index === mentionActiveIndex ? "mention-suggestion active" : "mention-suggestion"}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    onApplyMentionSuggestion(item.employee.name);
-                  }}
-                >
-                  <DigitalEmployeeAvatar
-                    employee={item.employee}
-                    className="mention-suggestion-avatar"
-                  />
-                  <span className="mention-suggestion-copy">
-                    <strong>{item.employee.name}</strong>
-                    <small>{item.employee.desc}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
           ) : null}
-          <button
-            className={
-              isConversationRunning
-                ? "send-btn stop-mode"
-                : isCreatingChat
-                  ? "send-btn disabled"
-                  : "send-btn"
-            }
-            onClick={onPrimaryAction}
-            disabled={isCreatingChat && !isConversationRunning}
-            aria-label={isConversationRunning ? "停止聊天" : "发送消息"}
-          >
-            {isConversationRunning ? (
-              <span className="send-btn-stop-icon" aria-hidden="true" />
-            ) : (
-              <i className="fas fa-paper-plane" />
-            )}
-          </button>
         </div>
       </div>
     </div>

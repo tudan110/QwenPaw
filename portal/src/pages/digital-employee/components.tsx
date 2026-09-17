@@ -994,8 +994,8 @@ export const ChatMessageItem = memo(function ChatMessageItem({
           <div
             className={
               isStreamingMessage
-                ? `message-bubble streaming-bubble markdown-bubble${hasKnowledgeAnswer ? " knowledge-answer-bubble" : ""}`
-                : `message-bubble markdown-bubble${hasKnowledgeAnswer ? " knowledge-answer-bubble" : ""}`
+                ? `message-bubble streaming-bubble markdown-bubble${hasKnowledgeAnswer ? " knowledge-answer-bubble" : " plain-message-bubble"}`
+                : `message-bubble markdown-bubble${hasKnowledgeAnswer ? " knowledge-answer-bubble" : " plain-message-bubble"}`
             }
           >
             {orderDetailPayload ? (

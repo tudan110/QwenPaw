@@ -1163,7 +1163,6 @@ export default function DigitalEmployeePage({
     [messages],
   );
   const safeExecutionList = ensureObjectArray<ExecutionRecord>(executionList);
-  const safeCapabilities = ensureStringArray(currentEmployee?.capabilities);
   const safeQuickCommands = ensureStringArray(currentEmployee?.quickCommands);
   const showModelSelector = currentView === "chat";
   const isGatewayPresentedChildView = Boolean(
@@ -1443,11 +1442,21 @@ export default function DigitalEmployeePage({
         />
       ) : null}
       <>
-        <button className="history-btn" onClick={() => void handleOpenHistory()}>
-          <i className="fas fa-history" /> 已处理任务
+        <button
+          className="history-btn portal-home-history-btn"
+          onClick={() => void handleOpenHistory()}
+          aria-label="已处理任务"
+          title="已处理任务"
+        >
+          <i className="fas fa-history" />
         </button>
-        <button className="history-btn new-chat-btn" onClick={handleStartNewConversation}>
-          <i className="fas fa-plus" /> 新对话
+        <button
+          className="history-btn portal-home-history-btn portal-home-new-chat-btn"
+          onClick={handleStartNewConversation}
+          aria-label="新对话"
+          title="新对话"
+        >
+          <i className="fas fa-plus" />
         </button>
       </>
       {chatSidebarToggleButton}
@@ -1984,7 +1993,6 @@ export default function DigitalEmployeePage({
                     onTicketRefresh={() => void loadAlarmWorkorders()}
                     ticketActionNotice={ticketActionNotice}
                     activeModelLabel={activeModelLabel}
-                    safeCapabilities={safeCapabilities}
                     safeQuickCommands={safeQuickCommands}
                     resourceImportCommand={RESOURCE_IMPORT_COMMAND}
                     isInteractionLocked={isInteractionLocked}
