@@ -28,7 +28,7 @@ env:
   # 开关：默认开启；如需关闭可在部署配置中覆盖为 "false"。
   PORTAL_SSO_ENABLED: "true"
   # INOE 前端 NodePort（自动拼登录 URL 用），默认 30081；仅当 NodePort 改了才设。
-  # PORTAL_SSO_INOE_PORT: "30081"
+  PORTAL_SSO_INOE_PORT: "30081"
   # 登录页完整地址覆盖，默认自动拼 http://<当前host>:<上面端口>/login。
   # 仅当 portal/INOE 不同 host 或登录路径不同才配；格式须 http://ip:port/login（不以 / 结尾）。
   # PORTAL_SSO_LOGIN_URL: ""
