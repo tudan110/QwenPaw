@@ -342,6 +342,7 @@ export function McpPanel() {
   const [accessLoading, setAccessLoading] = useState(false);
   const [accessSaving, setAccessSaving] = useState(false);
   const [accessError, setAccessError] = useState("");
+  const [deleteClient, setDeleteClient] = useState<McpClientInfo | null>(null);
 
   const loadClients = useCallback(async () => {
     setLoading(true);
@@ -622,11 +623,17 @@ export function McpPanel() {
     }
   };
 
-  const handleDelete = async (client: McpClientInfo) => {
-    if (!window.confirm(`确认删除 MCP “${client.name}” 吗？`)) {
+  const handleDelete = (client: McpClientInfo) => {
+    setDeleteClient(client);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteClient) {
       return;
     }
 
+    const client = deleteClient;
+    setDeleteClient(null);
     try {
       await mcpApi.deleteClient(client.key, agentId);
       setNotice({ type: "success", message: `已删除 MCP：${client.name}` });
@@ -1045,6 +1052,51 @@ export function McpPanel() {
                   onClick={() => void handleSubmit()}
                 >
                   {saving ? "保存中..." : editingClient ? "保存修改" : "创建 MCP"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteClient ? (
+        <div
+          className="history-modal show"
+          onClick={() => setDeleteClient(null)}
+        >
+          <div
+            className="history-content portal-confirm-dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="history-header">
+              <h3>
+                <i className="fas fa-triangle-exclamation" /> 删除 MCP
+              </h3>
+              <button
+                type="button"
+                className="history-close"
+                onClick={() => setDeleteClient(null)}
+              >
+                <i className="fas fa-times" />
+              </button>
+            </div>
+            <div className="history-body portal-confirm-body">
+              <div className="portal-confirm-copy">确认删除 MCP “{deleteClient.name}”吗？</div>
+              <div className="portal-model-form-actions portal-confirm-actions">
+                <button
+                  type="button"
+                  className="portal-model-btn secondary"
+                  onClick={() => setDeleteClient(null)}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="portal-model-btn secondary danger"
+                  onClick={() => void handleConfirmDelete()}
+                >
+                  <i className="fas fa-trash-can" />
+                  确认删除
                 </button>
               </div>
             </div>

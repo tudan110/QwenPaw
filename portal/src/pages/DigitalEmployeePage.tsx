@@ -41,6 +41,7 @@ import {
   PortalAlertBell,
   PortalHomeHero,
   SessionHistoryModal,
+  SessionDeleteConfirmDialog,
   SidebarEmployeeCard,
 } from "./digital-employee/pageFragments";
 import {
@@ -1191,12 +1192,15 @@ export default function DigitalEmployeePage({
     setHistoryDraftTitle,
     historyActionSessionId,
     historyActionError,
+    historyDeleteSession,
     handleSelectHistory,
     handleStartNewConversation,
     handleStartHistoryRename,
     handleCancelHistoryRename,
     handleSubmitHistoryRename,
     handleDeleteHistorySession,
+    handleCancelHistoryDelete,
+    handleConfirmHistoryDelete,
   } = usePortalSessionHistory({
     currentEmployee,
     isRemoteEmployee,
@@ -2087,6 +2091,13 @@ export default function DigitalEmployeePage({
         onDeleteHistorySession={(session) => {
           void handleDeleteHistorySession(session);
         }}
+      />
+
+      <SessionDeleteConfirmDialog
+        session={historyDeleteSession}
+        submitting={Boolean(historyDeleteSession && historyActionSessionId === historyDeleteSession.id)}
+        onClose={handleCancelHistoryDelete}
+        onConfirm={() => void handleConfirmHistoryDelete()}
       />
 
       <ExecutionHistoryModal

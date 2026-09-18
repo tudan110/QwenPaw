@@ -104,6 +104,7 @@ export function usePortalSessionHistory({
   const [historyDraftTitle, setHistoryDraftTitle] = useState("");
   const [historyActionSessionId, setHistoryActionSessionId] = useState("");
   const [historyActionError, setHistoryActionError] = useState("");
+  const [historyDeleteSession, setHistoryDeleteSession] = useState<SessionRecord | null>(null);
   const scopedRemoteSessions = isRemoteEmployee && currentEmployee?.id === RESOURCE_IMPORT_OWNER_ID
     ? mergeSessionRecords(remoteSessions, portalResourceImportSessions)
     : isRemoteEmployee && currentEmployee?.id === KNOWLEDGE_BASE_OWNER_ID
@@ -128,6 +129,7 @@ export function usePortalSessionHistory({
     setHistoryDraftTitle("");
     setHistoryActionSessionId("");
     setHistoryActionError("");
+    setHistoryDeleteSession(null);
   }, [historyVisible]);
 
   const handleSelectHistory = useCallback(async (session: SessionRecord) => {
@@ -374,14 +376,28 @@ export function usePortalSessionHistory({
     remoteAgentId,
   ]);
 
-  const handleDeleteHistorySession = useCallback(async (session: SessionRecord) => {
+  const handleDeleteHistorySession = useCallback((session: SessionRecord) => {
+    setHistoryDeleteSession(session);
+    setHistoryActionError("");
+  }, []);
+
+  const handleCancelHistoryDelete = useCallback(() => {
+    if (!historyActionSessionId) {
+      setHistoryDeleteSession(null);
+    }
+  }, [historyActionSessionId]);
+
+  const handleConfirmHistoryDelete = useCallback(async () => {
+    const session = historyDeleteSession;
     if (!currentEmployee) {
       return;
     }
 
-    if (!window.confirm(`确认删除“${session.title}”吗？`)) {
+    if (!session) {
       return;
     }
+
+    setHistoryDeleteSession(null);
 
     setHistoryActionSessionId(session.id);
     setHistoryActionError("");
@@ -472,6 +488,7 @@ export function usePortalSessionHistory({
     currentChatId,
     currentEmployee,
     currentSessionId,
+    historyDeleteSession,
     historyEditingId,
     isRemoteEmployee,
     persistLocalSessions,
@@ -492,11 +509,14 @@ export function usePortalSessionHistory({
     setHistoryDraftTitle,
     historyActionSessionId,
     historyActionError,
+    historyDeleteSession,
     handleSelectHistory,
     handleStartNewConversation,
     handleStartHistoryRename,
     handleCancelHistoryRename,
     handleSubmitHistoryRename,
     handleDeleteHistorySession,
+    handleCancelHistoryDelete,
+    handleConfirmHistoryDelete,
   };
 }

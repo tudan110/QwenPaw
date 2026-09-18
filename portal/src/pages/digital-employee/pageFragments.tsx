@@ -1528,6 +1528,62 @@ export function SessionHistoryModal({
   );
 }
 
+export function SessionDeleteConfirmDialog({
+  session,
+  submitting,
+  onClose,
+  onConfirm,
+}: {
+  session: SessionRecord | null;
+  submitting: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  if (!session) {
+    return null;
+  }
+
+  return (
+    <div className="history-modal show" onClick={onClose}>
+      <div
+        className="history-content portal-confirm-dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="history-header">
+          <h3>
+            <i className="fas fa-triangle-exclamation" /> 删除已处理任务
+          </h3>
+          <button className="history-close" onClick={onClose}>
+            <i className="fas fa-times" />
+          </button>
+        </div>
+        <div className="history-body portal-confirm-body">
+          <div className="portal-confirm-copy">确认删除“{session.title}”吗？</div>
+          <div className="portal-model-form-actions portal-confirm-actions">
+            <button
+              type="button"
+              className="portal-model-btn secondary"
+              disabled={submitting}
+              onClick={onClose}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="portal-model-btn secondary danger"
+              disabled={submitting}
+              onClick={onConfirm}
+            >
+              <i className={`fas ${submitting ? "fa-spinner fa-spin" : "fa-trash-can"}`} />
+              确认删除
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DashboardHistoryModal({
   open,
   employeeName,

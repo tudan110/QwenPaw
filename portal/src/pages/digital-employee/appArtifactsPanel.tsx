@@ -102,6 +102,7 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardA
   const [versions, setVersions] = useState<AppVersion[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [versionsError, setVersionsError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -127,10 +128,17 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardA
     void loadData();
   };
 
-  const handleDelete = async (id: string, title: string) => {
-    if (!confirm(`确定要删除「${title}」吗？`)) return;
+  const handleDelete = (id: string, title: string) => {
+    setDeleteTarget({ id, title });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+
+    const target = deleteTarget;
+    setDeleteTarget(null);
     try {
-      await deleteArtifact(id);
+      await deleteArtifact(target.id);
       void loadData();
     } catch (e) {
       setError(e instanceof Error ? e.message : "删除失败");
@@ -426,6 +434,51 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardA
                   ))}
                 </ul>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div
+          className="history-modal show"
+          onClick={() => setDeleteTarget(null)}
+        >
+          <div
+            className="history-content portal-confirm-dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="history-header">
+              <h3>
+                <i className="fas fa-triangle-exclamation" /> 删除应用
+              </h3>
+              <button
+                type="button"
+                className="history-close"
+                onClick={() => setDeleteTarget(null)}
+              >
+                <i className="fas fa-times" />
+              </button>
+            </div>
+            <div className="history-body portal-confirm-body">
+              <div className="portal-confirm-copy">确定要删除「{deleteTarget.title}」吗？</div>
+              <div className="portal-model-form-actions portal-confirm-actions">
+                <button
+                  type="button"
+                  className="portal-model-btn secondary"
+                  onClick={() => setDeleteTarget(null)}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="portal-model-btn secondary danger"
+                  onClick={() => void handleConfirmDelete()}
+                >
+                  <i className="fas fa-trash-can" />
+                  确认删除
+                </button>
+              </div>
             </div>
           </div>
         </div>

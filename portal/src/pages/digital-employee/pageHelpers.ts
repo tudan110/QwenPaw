@@ -868,7 +868,7 @@ export const PORTAL_HOME_EMPLOYEE: DigitalEmployee = {
   success: "100%",
   status: "running",
   urgent: false,
-  gradient: "linear-gradient(135deg, #1d4ed8, #0f172a)",
+  gradient: "linear-gradient(135deg, #429fe8 0%, #3e81f6 100%)",
   capabilities: [
     "自然语言对话",
     "统一入口接入",
