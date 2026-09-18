@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { setAppArtifactListing } from "../../api/lightApps";
+import PortalConfirmDialog from "../../components/PortalConfirmDialog";
 import "./app-artifacts.css";
 
 interface AppArtifact {
@@ -439,50 +440,13 @@ export function AppArtifactsPanel({ onOpenWorkbench, onEditApp, onOpenDashboardA
         </div>
       )}
 
-      {deleteTarget && (
-        <div
-          className="history-modal show"
-          onClick={() => setDeleteTarget(null)}
-        >
-          <div
-            className="history-content portal-confirm-dialog"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="history-header">
-              <h3>
-                <i className="fas fa-triangle-exclamation" /> 删除应用
-              </h3>
-              <button
-                type="button"
-                className="history-close"
-                onClick={() => setDeleteTarget(null)}
-              >
-                <i className="fas fa-times" />
-              </button>
-            </div>
-            <div className="history-body portal-confirm-body">
-              <div className="portal-confirm-copy">确定要删除「{deleteTarget.title}」吗？</div>
-              <div className="portal-model-form-actions portal-confirm-actions">
-                <button
-                  type="button"
-                  className="portal-model-btn secondary"
-                  onClick={() => setDeleteTarget(null)}
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  className="portal-model-btn secondary danger"
-                  onClick={() => void handleConfirmDelete()}
-                >
-                  <i className="fas fa-trash-can" />
-                  确认删除
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <PortalConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="删除应用"
+        message={deleteTarget ? `确定要删除「${deleteTarget.title}」吗？` : ""}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => void handleConfirmDelete()}
+      />
     </div>
   );
 }

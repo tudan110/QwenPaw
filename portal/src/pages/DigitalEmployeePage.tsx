@@ -41,7 +41,6 @@ import {
   PortalAlertBell,
   PortalHomeHero,
   SessionHistoryModal,
-  SessionDeleteConfirmDialog,
   SidebarEmployeeCard,
 } from "./digital-employee/pageFragments";
 import {
@@ -67,6 +66,7 @@ import { useRemoteChatSession } from "./digital-employee/useRemoteChatSession";
 import { portalAppTitle } from "../config/portalBranding";
 import portalLogo from "../assets/images/portal-logo.png";
 import PortalTraditionalViewButton from "../components/PortalTraditionalViewButton";
+import PortalConfirmDialog from "../components/PortalConfirmDialog";
 import "./digital-employee.css";
 
 import {
@@ -2093,8 +2093,10 @@ export default function DigitalEmployeePage({
         }}
       />
 
-      <SessionDeleteConfirmDialog
-        session={historyDeleteSession}
+      <PortalConfirmDialog
+        open={Boolean(historyDeleteSession)}
+        title="删除已处理任务"
+        message={historyDeleteSession ? `确认删除“${historyDeleteSession.title}”吗？` : ""}
         submitting={Boolean(historyDeleteSession && historyActionSessionId === historyDeleteSession.id)}
         onClose={handleCancelHistoryDelete}
         onConfirm={() => void handleConfirmHistoryDelete()}

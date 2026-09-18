@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import { getProviderFallbackIcon, PROVIDER_ICON_BY_ID } from "../../assets/images/providerIcons";
 import { CT_CNOS_PROVIDER_ID, CT_CNOS_SIMULATED_MODELS } from "./usePortalModels";
+import PortalConfirmDialog from "../../components/PortalConfirmDialog";
 import type {
   AddProviderModelPayload,
   DisplayProvider,
@@ -892,70 +893,6 @@ function BuiltinApiKeyDialog({
                 关闭
               </button>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DeleteConfirmDialog({
-  open,
-  title,
-  message,
-  confirmLabel,
-  confirmIconClass,
-  submitting,
-  onClose,
-  onConfirm,
-}: {
-  open: boolean;
-  title: string;
-  message: string;
-  confirmLabel?: string;
-  confirmIconClass?: string;
-  submitting: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  if (!open) {
-    return null;
-  }
-
-  return (
-    <div className="history-modal show" onClick={onClose}>
-      <div
-        className="history-content portal-confirm-dialog"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="history-header">
-          <h3>
-            <i className="fas fa-triangle-exclamation" /> {title}
-          </h3>
-          <button className="history-close" onClick={onClose}>
-            <i className="fas fa-times" />
-          </button>
-        </div>
-        <div className="history-body portal-confirm-body">
-          <div className="portal-confirm-copy">{message}</div>
-          <div className="portal-model-form-actions portal-confirm-actions">
-            <button
-              type="button"
-              className="portal-model-btn secondary"
-              disabled={submitting}
-              onClick={onClose}
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              className="portal-model-btn secondary danger"
-              disabled={submitting}
-              onClick={onConfirm}
-            >
-              <i className={`fas ${submitting ? "fa-spinner fa-spin" : confirmIconClass || "fa-trash-can"}`} />
-              {confirmLabel || "确认删除"}
-            </button>
           </div>
         </div>
       </div>
@@ -2204,7 +2141,7 @@ export function ModelConfigModal({
           onApply={onApplyBuiltinApiKey}
           onClose={() => setBuiltinApiDialogOpen(false)}
         />
-        <DeleteConfirmDialog
+        <PortalConfirmDialog
           open={Boolean(deleteConfirmState)}
           title={
             deleteConfirmState?.kind === "provider"
