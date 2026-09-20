@@ -452,6 +452,7 @@ export function PortalHomeHero({
                 }}
                 disabled={isInteractionLocked}
               >
+                <i className="fas fa-bolt" />
                 {command}
               </button>
             ))}

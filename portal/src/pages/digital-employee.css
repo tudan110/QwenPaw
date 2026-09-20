@@ -4368,6 +4368,21 @@
   padding-bottom: 8px;
 }
 
+.portal-digital-employee .portal-home-stage .portal-home-composer-card textarea {
+  min-height: 140px;
+  max-height: 240px;
+}
+
+.portal-digital-employee .portal-home-stage .portal-home-composer-card {
+  padding-bottom: 8px;
+}
+
+.portal-digital-employee .portal-home-stage .portal-home-composer-footer {
+  margin-top: 8px;
+  align-items: center;
+  transform: translateY(-2px);
+}
+
 .portal-digital-employee .chat-composer-card .portal-home-composer-footer {
   margin-top: 8px;
   align-items: center;
@@ -12464,6 +12479,11 @@
 
   .portal-digital-employee .portal-home-hero h2 {
     font-size: 34px;
+  }
+
+  .portal-digital-employee .portal-home-stage .portal-home-composer-card textarea {
+    min-height: 112px;
+    max-height: 200px;
   }
 
   .portal-digital-employee .portal-home-composer-footer {
