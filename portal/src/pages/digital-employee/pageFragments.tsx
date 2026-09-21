@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { Tooltip } from "antd";
 import type {
   ChangeEvent,
   KeyboardEvent,
@@ -298,19 +299,25 @@ export function PortalAlertBell({
           })()}
         </button>
       ) : null}
-      <button
-        ref={activeAlertTriggerRef}
-        type="button"
-        className={alertCount ? "alert-bell has-alerts" : "alert-bell"}
-        aria-label={alertCount ? `消息提醒，当前 ${alertCount} 条未处理` : "消息提醒"}
-        aria-expanded={alertPopupOpen}
-        onClick={onToggleAlertPopup}
+      <Tooltip
+        title={alertCount ? `消息提醒 (${alertCount}条未处理)` : "消息提醒"}
+        placement="bottom"
+        mouseEnterDelay={0.1}
       >
-        {alertBellIcon}
-        <span className="bell-badge">
-          {alertCount > 99 ? "99+" : alertCount}
-        </span>
-      </button>
+        <button
+          ref={activeAlertTriggerRef}
+          type="button"
+          className={alertCount ? "alert-bell has-alerts" : "alert-bell"}
+          aria-label={alertCount ? `消息提醒，当前 ${alertCount} 条未处理` : "消息提醒"}
+          aria-expanded={alertPopupOpen}
+          onClick={onToggleAlertPopup}
+        >
+          {alertBellIcon}
+          <span className="bell-badge">
+            {alertCount > 99 ? "99+" : alertCount}
+          </span>
+        </button>
+      </Tooltip>
       {popup}
     </div>
   );
@@ -374,15 +381,16 @@ export function PortalHomeHero({
     <div className="portal-home-stage">
       <div className="portal-home-toolbar">
         {alertBell}
-        <button
-          type="button"
-          className="ops-board-theme-toggle portal-home-theme-toggle"
-          onClick={onToggleTheme}
-          aria-label="切换整页主题"
-          title="切换整页主题"
-        >
-          {themeToggleIcon}
-        </button>
+        <Tooltip title="切换整页主题" placement="bottom" mouseEnterDelay={0.1}>
+          <button
+            type="button"
+            className="ops-board-theme-toggle portal-home-theme-toggle"
+            onClick={onToggleTheme}
+            aria-label="切换整页主题"
+          >
+            {themeToggleIcon}
+          </button>
+        </Tooltip>
         <PortalTraditionalViewButton className="portal-home-traditional-toggle" />
       </div>
       <div className="portal-home-hero">
@@ -459,15 +467,16 @@ export function PortalHomeHero({
           </div>
           <div className="portal-home-composer-actions">
             {modelSelector}
-            <button
-              type="button"
-              className="history-btn portal-home-history-btn"
-              onClick={onOpenHistory}
-              aria-label="已处理任务"
-              title="已处理任务"
-            >
-              <i className="fas fa-history" />
-            </button>
+            <Tooltip title="已处理任务" placement="bottom" mouseEnterDelay={0.1}>
+              <button
+                type="button"
+                className="history-btn portal-home-history-btn"
+                onClick={onOpenHistory}
+                aria-label="已处理任务"
+              >
+                <i className="fas fa-history" />
+              </button>
+            </Tooltip>
             <button
               className={
                 isConversationRunning
@@ -585,15 +594,16 @@ export function DashboardPanel({
             <span>{dashboardClock}</span>
           </div>
           {alertBell}
-          <button
-            type="button"
-            className="kanban-theme-toggle theme-toggle"
-            onClick={onToggleTheme}
-            aria-label="切换整页主题"
-            title="切换整页主题"
-          >
-            {themeToggleIcon}
-          </button>
+          <Tooltip title="切换整页主题" placement="bottom" mouseEnterDelay={0.1}>
+            <button
+              type="button"
+              className="kanban-theme-toggle theme-toggle"
+              onClick={onToggleTheme}
+              aria-label="切换整页主题"
+            >
+              {themeToggleIcon}
+            </button>
+          </Tooltip>
           <PortalTraditionalViewButton />
         </div>
       </div>

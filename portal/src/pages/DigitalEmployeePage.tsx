@@ -9,6 +9,7 @@ import {
   type ReactNode,
   type WheelEvent,
 } from "react";
+import { Tooltip } from "antd";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   digitalEmployees,
@@ -1450,26 +1451,36 @@ export default function DigitalEmployeePage({
     : chatSidebarCollaborators;
   const showChatSidebarToggle = Boolean(!isPortalHomeChat && selectedEmployee);
   const sidebarToggleButton = (
-    <button
-      type="button"
-      className="sidebar-collapse-btn"
-      onClick={handleToggleSidebar}
+    <Tooltip
       title={sidebarCollapsed ? "展开左侧面板" : "收起左侧面板"}
-      aria-label={sidebarCollapsed ? "展开左侧面板" : "收起左侧面板"}
+      placement="right"
+      mouseEnterDelay={0.1}
     >
-      <i className={sidebarCollapsed ? "fas fa-chevron-right" : "fas fa-chevron-left"} />
-    </button>
+      <button
+        type="button"
+        className="sidebar-collapse-btn"
+        onClick={handleToggleSidebar}
+        aria-label={sidebarCollapsed ? "展开左侧面板" : "收起左侧面板"}
+      >
+        <i className={sidebarCollapsed ? "fas fa-chevron-right" : "fas fa-chevron-left"} />
+      </button>
+    </Tooltip>
   );
   const chatSidebarToggleButton = showChatSidebarToggle ? (
-    <button
-      type="button"
-      className="history-btn chat-sidebar-header-toggle"
-      onClick={() => setChatSidebarCollapsed((value) => !value)}
+    <Tooltip
       title={chatSidebarCollapsed ? "展开右侧信息栏" : "收起右侧信息栏"}
-      aria-label={chatSidebarCollapsed ? "展开右侧信息栏" : "收起右侧信息栏"}
+      placement="bottom"
+      mouseEnterDelay={0.1}
     >
-      <i className={chatSidebarCollapsed ? "fas fa-chevron-left" : "fas fa-chevron-right"} />
-    </button>
+      <button
+        type="button"
+        className="history-btn chat-sidebar-header-toggle"
+        onClick={() => setChatSidebarCollapsed((value) => !value)}
+        aria-label={chatSidebarCollapsed ? "展开右侧信息栏" : "收起右侧信息栏"}
+      >
+        <i className={chatSidebarCollapsed ? "fas fa-chevron-left" : "fas fa-chevron-right"} />
+      </button>
+    </Tooltip>
   ) : null;
   const chatHeaderStatusLabel = !isRemoteEmployee && isAlarmWorkbenchMode ? "告警触发" : null;
   const chatHeaderActions = (
@@ -1490,22 +1501,24 @@ export default function DigitalEmployeePage({
         />
       ) : null}
       <>
-        <button
-          className="history-btn portal-home-history-btn"
-          onClick={() => void handleOpenHistory()}
-          aria-label="已处理任务"
-          title="已处理任务"
-        >
-          <i className="fas fa-history" />
-        </button>
-        <button
-          className="history-btn portal-home-history-btn portal-home-new-chat-btn"
-          onClick={handleStartNewConversation}
-          aria-label="新对话"
-          title="新对话"
-        >
-          <i className="fas fa-plus" />
-        </button>
+        <Tooltip title="已处理任务" placement="bottom" mouseEnterDelay={0.1}>
+          <button
+            className="history-btn portal-home-history-btn"
+            onClick={() => void handleOpenHistory()}
+            aria-label="已处理任务"
+          >
+            <i className="fas fa-history" />
+          </button>
+        </Tooltip>
+        <Tooltip title="新对话" placement="bottom" mouseEnterDelay={0.1}>
+          <button
+            className="history-btn portal-home-history-btn portal-home-new-chat-btn"
+            onClick={handleStartNewConversation}
+            aria-label="新对话"
+          >
+            <i className="fas fa-plus" />
+          </button>
+        </Tooltip>
       </>
       {chatSidebarToggleButton}
     </>
@@ -1541,34 +1554,44 @@ export default function DigitalEmployeePage({
           </button>
 
           <div className="view-tabs">
-            <button
-              className={currentView === "overview" ? "view-tab active" : "view-tab"}
-              onClick={() => {
-                updateCurrentEmployeeRoute({
-                  view: "overview",
-                  panel: null,
-                });
-              }}
-              title="总览"
-              aria-label="总览"
+            <Tooltip
+              title={sidebarCollapsed ? "总览" : ""}
+              placement="right"
+              mouseEnterDelay={0.1}
             >
-              <i className="fas fa-chart-line" />
-              <span>总览</span>
-            </button>
-            <button
-              className={currentView === "dashboard" ? "view-tab active" : "view-tab"}
-              onClick={() => {
-                updateCurrentEmployeeRoute({
-                  view: "dashboard",
-                  panel: null,
-                });
-              }}
-              title="看板"
-              aria-label="看板"
+              <button
+                className={currentView === "overview" ? "view-tab active" : "view-tab"}
+                onClick={() => {
+                  updateCurrentEmployeeRoute({
+                    view: "overview",
+                    panel: null,
+                  });
+                }}
+                aria-label="总览"
+              >
+                <i className="fas fa-chart-line" />
+                <span>总览</span>
+              </button>
+            </Tooltip>
+            <Tooltip
+              title={sidebarCollapsed ? "看板" : ""}
+              placement="right"
+              mouseEnterDelay={0.1}
             >
-              <i className="fas fa-chart-pie" />
-              <span>看板</span>
-            </button>
+              <button
+                className={currentView === "dashboard" ? "view-tab active" : "view-tab"}
+                onClick={() => {
+                  updateCurrentEmployeeRoute({
+                    view: "dashboard",
+                    panel: null,
+                  });
+                }}
+                aria-label="看板"
+              >
+                <i className="fas fa-chart-pie" />
+                <span>看板</span>
+              </button>
+            </Tooltip>
           </div>
 
           <div className="agents-title">
@@ -1580,18 +1603,26 @@ export default function DigitalEmployeePage({
 
           <div className="agent-list">
             {sidebarCardEmployee ? (
-              <SidebarEmployeeCard
-                employee={sidebarCardEmployee}
-                active
-                onClick={() => {
-                  navigateToPortalHome({
-                    view: "chat",
-                    panel: null,
-                  });
-                }}
-                getEmployeeStatusBadgeClassName={getEmployeeStatusBadgeClassName}
-                getEmployeeStatusLabel={getEmployeeStatusLabel}
-              />
+              <Tooltip
+                title={sidebarCollapsed ? sidebarCardEmployee.name : ""}
+                placement="right"
+                mouseEnterDelay={0.1}
+              >
+                <div>
+                  <SidebarEmployeeCard
+                    employee={sidebarCardEmployee}
+                    active
+                    onClick={() => {
+                      navigateToPortalHome({
+                        view: "chat",
+                        panel: null,
+                      });
+                    }}
+                    getEmployeeStatusBadgeClassName={getEmployeeStatusBadgeClassName}
+                    getEmployeeStatusLabel={getEmployeeStatusLabel}
+                  />
+                </div>
+              </Tooltip>
             ) : null}
           </div>
 
@@ -1720,15 +1751,16 @@ export default function DigitalEmployeePage({
           {!showPortalHomeHero && currentView !== "dashboard" ? (
             <div className="portal-global-quick-actions">
               {renderAlertBell()}
-              <button
-                type="button"
-                className="ops-board-theme-toggle"
-                onClick={() => setPageTheme((value) => (value === "light" ? "dark" : "light"))}
-                aria-label="切换整页主题"
-                title="切换整页主题"
-              >
-                {themeToggleIcon}
-              </button>
+              <Tooltip title="切换整页主题" placement="bottom" mouseEnterDelay={0.1}>
+                <button
+                  type="button"
+                  className="ops-board-theme-toggle"
+                  onClick={() => setPageTheme((value) => (value === "light" ? "dark" : "light"))}
+                  aria-label="切换整页主题"
+                >
+                  {themeToggleIcon}
+                </button>
+              </Tooltip>
               <PortalTraditionalViewButton />
             </div>
           ) : null}

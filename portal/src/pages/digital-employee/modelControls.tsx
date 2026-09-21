@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
+import { Tooltip } from "antd";
 import { getProviderFallbackIcon, PROVIDER_ICON_BY_ID } from "../../assets/images/providerIcons";
 import { CT_CNOS_PROVIDER_ID, CT_CNOS_SIMULATED_MODELS } from "./usePortalModels";
 import PortalConfirmDialog from "../../components/PortalConfirmDialog";
@@ -579,62 +580,65 @@ export function AdvancedModelEntry({
       <div className="sidebar-advanced mini-nav" ref={flyoutContainerRef}>
         {/* ⚡ 配置中心 trigger */}
         <div className="sidebar-mini-item-wrap">
-          <button
-            type="button"
-            className={
-              activeFlyout === "config"
-                ? "sidebar-mini-btn active-flyout"
-                : isConfigCategoryActive
-                  ? "sidebar-mini-btn active"
-                  : "sidebar-mini-btn"
-            }
-            onClick={() => setActiveFlyout((prev) => (prev === "config" ? null : "config"))}
-            title="⚡ 配置中心 (点击展开)"
-            aria-label="配置中心"
-          >
-            <span className="sidebar-mini-btn-icon">⚡</span>
-            {isConfigCategoryActive && <span className="sidebar-mini-dot" />}
-          </button>
+          <Tooltip title="⚡ 配置中心" placement="right" mouseEnterDelay={0.1}>
+            <button
+              type="button"
+              className={
+                activeFlyout === "config"
+                  ? "sidebar-mini-btn active-flyout"
+                  : isConfigCategoryActive
+                    ? "sidebar-mini-btn active"
+                    : "sidebar-mini-btn"
+              }
+              onClick={() => setActiveFlyout((prev) => (prev === "config" ? null : "config"))}
+              aria-label="配置中心"
+            >
+              <span className="sidebar-mini-btn-icon">⚡</span>
+              {isConfigCategoryActive && <span className="sidebar-mini-dot" />}
+            </button>
+          </Tooltip>
         </div>
 
         {/* 🧰 能力工坊 trigger */}
         <div className="sidebar-mini-item-wrap">
-          <button
-            type="button"
-            className={
-              activeFlyout === "workbench"
-                ? "sidebar-mini-btn active-flyout"
-                : isWorkbenchCategoryActive
-                  ? "sidebar-mini-btn active"
-                  : "sidebar-mini-btn"
-            }
-            onClick={() => setActiveFlyout((prev) => (prev === "workbench" ? null : "workbench"))}
-            title="🧰 能力工坊 (点击展开)"
-            aria-label="能力工坊"
-          >
-            <span className="sidebar-mini-btn-icon">🧰</span>
-            {isWorkbenchCategoryActive && <span className="sidebar-mini-dot" />}
-          </button>
+          <Tooltip title="🧰 能力工坊" placement="right" mouseEnterDelay={0.1}>
+            <button
+              type="button"
+              className={
+                activeFlyout === "workbench"
+                  ? "sidebar-mini-btn active-flyout"
+                  : isWorkbenchCategoryActive
+                    ? "sidebar-mini-btn active"
+                    : "sidebar-mini-btn"
+              }
+              onClick={() => setActiveFlyout((prev) => (prev === "workbench" ? null : "workbench"))}
+              aria-label="能力工坊"
+            >
+              <span className="sidebar-mini-btn-icon">🧰</span>
+              {isWorkbenchCategoryActive && <span className="sidebar-mini-dot" />}
+            </button>
+          </Tooltip>
         </div>
 
         {/* 📊 运维中枢 trigger */}
         <div className="sidebar-mini-item-wrap">
-          <button
-            type="button"
-            className={
-              activeFlyout === "ops"
-                ? "sidebar-mini-btn active-flyout"
-                : isOpsCategoryActive
-                  ? "sidebar-mini-btn active"
-                  : "sidebar-mini-btn"
-            }
-            onClick={() => setActiveFlyout((prev) => (prev === "ops" ? null : "ops"))}
-            title="📊 运维中枢 (点击展开)"
-            aria-label="运维中枢"
-          >
-            <span className="sidebar-mini-btn-icon">📊</span>
-            {isOpsCategoryActive && <span className="sidebar-mini-dot" />}
-          </button>
+          <Tooltip title="📊 运维中枢" placement="right" mouseEnterDelay={0.1}>
+            <button
+              type="button"
+              className={
+                activeFlyout === "ops"
+                  ? "sidebar-mini-btn active-flyout"
+                  : isOpsCategoryActive
+                    ? "sidebar-mini-btn active"
+                    : "sidebar-mini-btn"
+              }
+              onClick={() => setActiveFlyout((prev) => (prev === "ops" ? null : "ops"))}
+              aria-label="运维中枢"
+            >
+              <span className="sidebar-mini-btn-icon">📊</span>
+              {isOpsCategoryActive && <span className="sidebar-mini-dot" />}
+            </button>
+          </Tooltip>
         </div>
 
         {/* Flyout Popover */}
@@ -642,15 +646,16 @@ export function AdvancedModelEntry({
           <div className={`sidebar-mini-flyout flyout-${activeFlyout}`}>
             <div className="sidebar-mini-flyout-header">
               <span className="sidebar-mini-flyout-title">{currentFlyoutTitle}</span>
-              <button
-                type="button"
-                className="sidebar-mini-flyout-close"
-                onClick={() => setActiveFlyout(null)}
-                title="关闭"
-                aria-label="关闭"
-              >
-                <i className="fas fa-times" />
-              </button>
+              <Tooltip title="关闭" placement="top" mouseEnterDelay={0.1}>
+                <button
+                  type="button"
+                  className="sidebar-mini-flyout-close"
+                  onClick={() => setActiveFlyout(null)}
+                  aria-label="关闭"
+                >
+                  <i className="fas fa-times" />
+                </button>
+              </Tooltip>
             </div>
             <div className="sidebar-mini-flyout-grid">
               {currentFlyoutItems.map((item) => (
