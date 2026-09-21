@@ -282,6 +282,50 @@ export default function DigitalEmployeePage({
   const [executionList, setExecutionList] = useState(executionHistory);
   const [pageTheme, setPageTheme] = useState<"light" | "dark">(loadPageTheme);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(loadSidebarCollapsed);
+  const prevIsMobileRef = useRef<boolean | null>(null);
+
+  // Auto-manage sidebar collapsed state based on screen size (mobile <= 980px collapses, PC > 980px expands)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleResize = () => {
+      const currentIsMobile = window.innerWidth <= 980;
+      if (prevIsMobileRef.current === null) {
+        prevIsMobileRef.current = currentIsMobile;
+        setSidebarCollapsed(currentIsMobile);
+      } else if (prevIsMobileRef.current !== currentIsMobile) {
+        prevIsMobileRef.current = currentIsMobile;
+        setSidebarCollapsed(currentIsMobile);
+      }
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Auto-collapse sidebar on mobile screens when navigating routes
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth <= 980) {
+      setSidebarCollapsed(true);
+    }
+  }, [location.pathname, location.search]);
+
+  const handleToggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined" && window.innerWidth > 980) {
+        persistSidebarCollapsed(next);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleMainContentClick = useCallback(() => {
+    if (typeof window !== "undefined" && window.innerWidth <= 980 && !sidebarCollapsed) {
+      setSidebarCollapsed(true);
+    }
+  }, [sidebarCollapsed]);
   const [chatSidebarCollapsed, setChatSidebarCollapsed] = useState<boolean>(loadChatSidebarCollapsed);
   const [chatSidebarCollapsedSections, setChatSidebarCollapsedSections] = useState<
     Record<ChatSidebarSectionKey, boolean>
@@ -1409,7 +1453,7 @@ export default function DigitalEmployeePage({
     <button
       type="button"
       className="sidebar-collapse-btn"
-      onClick={() => setSidebarCollapsed((value) => !value)}
+      onClick={handleToggleSidebar}
       title={sidebarCollapsed ? "展开左侧面板" : "收起左侧面板"}
       aria-label={sidebarCollapsed ? "展开左侧面板" : "收起左侧面板"}
     >
@@ -1657,6 +1701,7 @@ export default function DigitalEmployeePage({
         </div>
 
         <div
+          onClick={handleMainContentClick}
           className={
             isModelConfigMode || isSettingsMode || isTokenUsageMode || isOpsExpertMode || isMcpMode || isSkillPoolMode || isFdeWorkbenchMode || isKnowledgeBaseMode || isInspirationMode || isCliMode || isResourceImportMode || isNlCustomizationMode || isAiBigScreenMode || isAppMarketMode || isTracesMode || isAlarmRegistryMode || isAppArtifactsMode || isAppWorkbenchMode || isDashboardAssemblyMode || isChannelsMode || isInboxMode
               ? `main-content advanced-page-mode${isKnowledgeBaseMode ? " knowledge-base-page-mode" : ""}`

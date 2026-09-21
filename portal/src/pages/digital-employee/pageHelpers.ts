@@ -1041,7 +1041,10 @@ export function loadSidebarCollapsed(): boolean {
     return false;
   }
   try {
-    return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true";
+    if (window.innerWidth <= 980) {
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }

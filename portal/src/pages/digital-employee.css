@@ -12247,6 +12247,7 @@
     padding: 0;
     width: auto;
     border-bottom: none;
+    order: 1;
   }
 
   .portal-digital-employee .sidebar.sidebar-collapsed .logo-icon {
@@ -12274,9 +12275,14 @@
     height: 32px;
   }
 
+  .portal-digital-employee .sidebar-collapse-btn i {
+    transform: rotate(90deg);
+  }
+
   .portal-digital-employee .sidebar.sidebar-collapsed .sidebar-collapse-btn {
     position: static;
     transform: none;
+    order: 2;
   }
 
   .portal-digital-employee .main-content {
