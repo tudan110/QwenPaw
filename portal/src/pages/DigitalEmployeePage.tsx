@@ -1549,6 +1549,8 @@ export default function DigitalEmployeePage({
                   panel: null,
                 });
               }}
+              title="总览"
+              aria-label="总览"
             >
               <i className="fas fa-chart-line" />
               <span>总览</span>
@@ -1561,6 +1563,8 @@ export default function DigitalEmployeePage({
                   panel: null,
                 });
               }}
+              title="看板"
+              aria-label="看板"
             >
               <i className="fas fa-chart-pie" />
               <span>看板</span>
@@ -1592,6 +1596,7 @@ export default function DigitalEmployeePage({
           </div>
 
           <AdvancedModelEntry
+            sidebarCollapsed={sidebarCollapsed}
             activeModelLabel={activeModelLabel}
             activeProviderName={activeProviderName}
             isActive={isModelConfigMode}

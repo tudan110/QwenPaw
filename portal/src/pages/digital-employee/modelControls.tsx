@@ -213,6 +213,7 @@ function useOutsideClose(
 }
 
 export function AdvancedModelEntry({
+  sidebarCollapsed,
   activeModelLabel,
   activeProviderName,
   isActive,
@@ -258,6 +259,7 @@ export function AdvancedModelEntry({
   onOpenChannels,
   onOpenInbox,
 }: {
+  sidebarCollapsed?: boolean;
   activeModelLabel: string;
   activeProviderName: string;
   isActive?: boolean;
@@ -306,6 +308,379 @@ export function AdvancedModelEntry({
   const [configOpen, setConfigOpen] = useState(false);
   const [workbenchOpen, setWorkbenchOpen] = useState(false);
   const [opsOpen, setOpsOpen] = useState(false);
+  const [activeFlyout, setActiveFlyout] = useState<"config" | "workbench" | "ops" | null>(null);
+  const flyoutContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!activeFlyout) {
+      return;
+    }
+    const handleDocumentClick = (event: globalThis.MouseEvent) => {
+      if (
+        flyoutContainerRef.current
+        && !flyoutContainerRef.current.contains(event.target as Node)
+      ) {
+        setActiveFlyout(null);
+      }
+    };
+    document.addEventListener("mousedown", handleDocumentClick);
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentClick);
+    };
+  }, [activeFlyout]);
+
+  useEffect(() => {
+    if (!sidebarCollapsed) {
+      setActiveFlyout(null);
+    }
+  }, [sidebarCollapsed]);
+
+  const isConfigCategoryActive = Boolean(
+    isActive || isMcpActive || isSkillPoolActive || isChannelsActive || isSettingsActive
+  );
+  const isWorkbenchCategoryActive = Boolean(
+    isKnowledgeBaseActive
+      || isOpsExpertActive
+      || isFdeWorkbenchActive
+      || isCliActive
+      || isInspirationActive
+      || isAiBigScreenActive
+      || isAppArtifactsActive
+      || isNlCustomizationActive
+      || isAppMarketActive
+      || isProxyDatasourcesActive
+  );
+  const isOpsCategoryActive = Boolean(
+    isInboxActive
+      || isCronJobsActive
+      || isSelfMonitorActive
+      || isAlarmRegistryActive
+      || isTokenUsageActive
+      || isTracesActive
+  );
+
+  if (sidebarCollapsed) {
+    const configItems = [
+      {
+        id: "config",
+        name: "模型配置",
+        desc: activeProviderName ? `${activeProviderName} · ${activeModelLabel}` : "配置大模型底座",
+        icon: (
+          <span role="img" aria-label="model-config">
+            🧠
+          </span>
+        ),
+        active: isActive,
+        onClick: onOpenConfig,
+      },
+      {
+        id: "mcp",
+        name: "MCP管理",
+        desc: "协议接入控制台",
+        icon: (
+          <span role="img" aria-label="mcp">
+            🔌
+          </span>
+        ),
+        active: isMcpActive,
+        onClick: onOpenMcp,
+      },
+      {
+        id: "skills",
+        name: "技能",
+        desc: "全局运维技能库",
+        icon: (
+          <span role="img" aria-label="skill-pool">
+            ⚡
+          </span>
+        ),
+        active: isSkillPoolActive,
+        onClick: onOpenSkillPool,
+      },
+      {
+        id: "channels",
+        name: "频道配置",
+        desc: "管理消息接入频道",
+        icon: (
+          <span role="img" aria-label="channels">
+            📡
+          </span>
+        ),
+        active: isChannelsActive,
+        onClick: onOpenChannels,
+      },
+      {
+        id: "settings",
+        name: "设置",
+        desc: "对话与界面偏好",
+        icon: (
+          <span role="img" aria-label="settings">
+            ⚙️
+          </span>
+        ),
+        active: isSettingsActive,
+        onClick: onOpenSettings,
+      },
+    ];
+
+    const workbenchItems = [
+      {
+        id: "knowledge-base",
+        name: "知识库管理",
+        desc: "知识库助手资料库",
+        icon: <i className="fas fa-book-open" aria-label="knowledge-base" />,
+        active: isKnowledgeBaseActive,
+        onClick: onOpenKnowledgeBase,
+      },
+      {
+        id: "ops-expert",
+        name: "运维专家",
+        desc: "数字员工专家库",
+        icon: (
+          <span role="img" aria-label="ops-expert">
+            🧑‍💻
+          </span>
+        ),
+        active: isOpsExpertActive,
+        onClick: onOpenOpsExpert,
+      },
+      {
+        id: "fde-workbench",
+        name: "skill 构建助手",
+        desc: "FDE 把需求变成技能",
+        icon: (
+          <span role="img" aria-label="fde-workbench">
+            🛠️
+          </span>
+        ),
+        active: isFdeWorkbenchActive,
+        onClick: onOpenFdeWorkbench,
+      },
+      {
+        id: "cli",
+        name: "CLI终端",
+        desc: "命令行交互界面",
+        icon: (
+          <span role="img" aria-label="cli">
+            💻
+          </span>
+        ),
+        active: isCliActive,
+        onClick: onOpenCli,
+      },
+      {
+        id: "inspiration",
+        name: "灵感中心",
+        desc: "探索 AI 运维新范式",
+        icon: (
+          <span role="img" aria-label="inspiration">
+            💡
+          </span>
+        ),
+        active: isInspirationActive,
+        onClick: onOpenInspiration,
+      },
+      {
+        id: "ai-big-screen",
+        name: "AI大屏工坊",
+        desc: "自然语言定制运维大屏",
+        icon: (
+          <span role="img" aria-label="ai-big-screen">
+            🖥️
+          </span>
+        ),
+        active: isAiBigScreenActive,
+        onClick: onOpenAiBigScreen,
+      },
+      {
+        id: "app-artifacts",
+        name: "我的应用",
+        desc: "AI 生成的页面与卡片",
+        icon: (
+          <span role="img" aria-label="app-artifacts">
+            🎨
+          </span>
+        ),
+        active: isAppArtifactsActive,
+        onClick: onOpenAppArtifacts,
+      },
+    ];
+
+    const opsItems = [
+      {
+        id: "inbox",
+        name: "收件箱",
+        desc: "统一查看任务通知与心跳",
+        icon: (
+          <span role="img" aria-label="inbox">
+            📬
+          </span>
+        ),
+        active: isInboxActive,
+        onClick: onOpenInbox,
+      },
+      {
+        id: "cron-jobs",
+        name: "定时任务",
+        desc: "任务调度中心",
+        icon: (
+          <span role="img" aria-label="cron-jobs">
+            ⏰
+          </span>
+        ),
+        active: isCronJobsActive,
+        onClick: onOpenCronJobs,
+      },
+      {
+        id: "self-monitor",
+        name: "自监控",
+        desc: "系统自身健康驾驶舱",
+        icon: (
+          <span role="img" aria-label="self-monitor">
+            📡
+          </span>
+        ),
+        active: isSelfMonitorActive,
+        onClick: onOpenSelfMonitor,
+      },
+      {
+        id: "alarm-registry",
+        name: "告警台账",
+        desc: "告警处置状态一览",
+        icon: (
+          <span role="img" aria-label="alarm-registry">
+            🚨
+          </span>
+        ),
+        active: isAlarmRegistryActive,
+        onClick: onOpenAlarmRegistry,
+      },
+    ];
+
+    const currentFlyoutItems =
+      activeFlyout === "config"
+        ? configItems
+        : activeFlyout === "workbench"
+          ? workbenchItems
+          : activeFlyout === "ops"
+            ? opsItems
+            : [];
+
+    const currentFlyoutTitle =
+      activeFlyout === "config"
+        ? "⚡ 配置中心"
+        : activeFlyout === "workbench"
+          ? "🧰 能力工坊"
+          : activeFlyout === "ops"
+            ? "📊 运维中枢"
+            : "";
+
+    return (
+      <div className="sidebar-advanced mini-nav" ref={flyoutContainerRef}>
+        {/* ⚡ 配置中心 trigger */}
+        <div className="sidebar-mini-item-wrap">
+          <button
+            type="button"
+            className={
+              activeFlyout === "config"
+                ? "sidebar-mini-btn active-flyout"
+                : isConfigCategoryActive
+                  ? "sidebar-mini-btn active"
+                  : "sidebar-mini-btn"
+            }
+            onClick={() => setActiveFlyout((prev) => (prev === "config" ? null : "config"))}
+            title="⚡ 配置中心 (点击展开)"
+            aria-label="配置中心"
+          >
+            <span className="sidebar-mini-btn-icon">⚡</span>
+            {isConfigCategoryActive && <span className="sidebar-mini-dot" />}
+          </button>
+        </div>
+
+        {/* 🧰 能力工坊 trigger */}
+        <div className="sidebar-mini-item-wrap">
+          <button
+            type="button"
+            className={
+              activeFlyout === "workbench"
+                ? "sidebar-mini-btn active-flyout"
+                : isWorkbenchCategoryActive
+                  ? "sidebar-mini-btn active"
+                  : "sidebar-mini-btn"
+            }
+            onClick={() => setActiveFlyout((prev) => (prev === "workbench" ? null : "workbench"))}
+            title="🧰 能力工坊 (点击展开)"
+            aria-label="能力工坊"
+          >
+            <span className="sidebar-mini-btn-icon">🧰</span>
+            {isWorkbenchCategoryActive && <span className="sidebar-mini-dot" />}
+          </button>
+        </div>
+
+        {/* 📊 运维中枢 trigger */}
+        <div className="sidebar-mini-item-wrap">
+          <button
+            type="button"
+            className={
+              activeFlyout === "ops"
+                ? "sidebar-mini-btn active-flyout"
+                : isOpsCategoryActive
+                  ? "sidebar-mini-btn active"
+                  : "sidebar-mini-btn"
+            }
+            onClick={() => setActiveFlyout((prev) => (prev === "ops" ? null : "ops"))}
+            title="📊 运维中枢 (点击展开)"
+            aria-label="运维中枢"
+          >
+            <span className="sidebar-mini-btn-icon">📊</span>
+            {isOpsCategoryActive && <span className="sidebar-mini-dot" />}
+          </button>
+        </div>
+
+        {/* Flyout Popover */}
+        {activeFlyout && (
+          <div className={`sidebar-mini-flyout flyout-${activeFlyout}`}>
+            <div className="sidebar-mini-flyout-header">
+              <span className="sidebar-mini-flyout-title">{currentFlyoutTitle}</span>
+              <button
+                type="button"
+                className="sidebar-mini-flyout-close"
+                onClick={() => setActiveFlyout(null)}
+                title="关闭"
+                aria-label="关闭"
+              >
+                <i className="fas fa-times" />
+              </button>
+            </div>
+            <div className="sidebar-mini-flyout-grid">
+              {currentFlyoutItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={
+                    item.active
+                      ? "sidebar-mini-flyout-item active"
+                      : "sidebar-mini-flyout-item"
+                  }
+                  onClick={() => {
+                    item.onClick();
+                    setActiveFlyout(null);
+                  }}
+                  title={`${item.name} · ${item.desc}`}
+                >
+                  <div className="sidebar-mini-flyout-item-icon">{item.icon}</div>
+                  <div className="sidebar-mini-flyout-item-info">
+                    <div className="sidebar-mini-flyout-item-name">{item.name}</div>
+                    <div className="sidebar-mini-flyout-item-desc">{item.desc}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="sidebar-advanced expanded">
