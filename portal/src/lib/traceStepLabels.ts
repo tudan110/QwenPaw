@@ -13,39 +13,96 @@ export type TraceStepBlock = {
 
 export type TraceStepDisplay = { icon: string; text: string };
 
-// Tool names are conventionally `verb_noun` (query_alarms, list_hosts,
-// execute_shell_command). We classify on the *leading verb token* so unrelated
-// nouns can't false-match (e.g. "widget" must not read as "get").
-const VERB_CATEGORIES: Array<{ icon: string; text: string; verbs: string[] }> = [
-  { icon: "fa-terminal", text: "执行脚本", verbs: ["shell", "bash", "cmd", "command", "terminal", "python", "script", "exec", "execute", "run"] },
-  { icon: "fa-magnifying-glass", text: "检索数据", verbs: ["search", "web", "browse", "crawl", "http", "fetch", "request", "retrieve", "retriev", "query", "lookup", "grep", "find"] },
-  { icon: "fa-database", text: "读取数据", verbs: ["read", "list", "ls", "get", "load", "describe", "count", "stat", "show", "view", "inspect"] },
-  { icon: "fa-pen-nib", text: "生成内容", verbs: ["write", "create", "generate", "generat", "render", "report", "export", "draw", "chart", "plot", "compose", "build", "make"] },
+const VERB_CATEGORIES: Array<{ text: string; verbs: string[] }> = [
+  {
+    text: "执行脚本",
+    verbs: ["shell", "bash", "sh", "zsh", "terminal", "python", "script", "exec", "execute", "run", "cmd", "command", "powershell"],
+  },
+  {
+    text: "检索数据",
+    verbs: ["search", "query", "web", "browse", "crawl", "http", "fetch", "request", "retrieve", "lookup", "grep", "find", "scan"],
+  },
+  {
+    text: "读取数据",
+    verbs: ["read", "list", "ls", "get", "load", "describe", "count", "stat", "show", "view", "inspect", "detail", "info", "cat", "tail", "head"],
+  },
+  {
+    text: "生成内容",
+    verbs: ["write", "create", "generate", "render", "report", "export", "draw", "chart", "plot", "compose", "build", "make", "save", "edit", "patch", "modify", "update"],
+  },
 ];
 
-/** Coarse, non-sensitive category for a process-record step. */
+/** Split a raw tool name (supporting snake_case, kebab-case, camelCase, and MCP namespaces `__`) into lower-cased tokens. */
+function tokenizeToolName(raw: string): { tokens: string[]; actionTokens: string[] } {
+  const parts = raw.split("__");
+  const actionPart = parts.length > 1 ? parts[parts.length - 1] : raw;
+
+  const splitCamelAndSeparators = (s: string) =>
+    s
+      .replace(/([a-z0-9])([A-Z])/g, "$1_$2") // camelCase -> camel_Case
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean);
+
+  return {
+    tokens: splitCamelAndSeparators(raw),
+    actionTokens: splitCamelAndSeparators(actionPart),
+  };
+}
+
+/** Coarse category for the entire process-record step summary header. */
 export function traceStepDisplay(block: TraceStepBlock | null | undefined): TraceStepDisplay {
   if (block?.kind === "thinking") {
     return { icon: "fa-brain", text: "思考分析" };
   }
   if (block?.kind === "tool") {
-    const raw = String(block?.title || "").trim().toLowerCase();
-    const tokens = raw.split(/[^a-z0-9]+/).filter(Boolean);
-    const first = tokens[0] || "";
-
-    if (!raw || tokens.includes("skill") || tokens.includes("skills")) {
+    const raw = String(block?.title || "").trim();
+    if (!raw) {
       return { icon: "fa-puzzle-piece", text: "调用技能" };
     }
-    // Standalone shell/script hints anywhere in the name → 执行脚本.
-    if (tokens.some((t) => ["shell", "bash", "script"].includes(t))) {
-      return { icon: "fa-terminal", text: "执行脚本" };
+
+    const { tokens } = tokenizeToolName(raw);
+
+    if (tokens.includes("skill") || tokens.includes("skills")) {
+      return { icon: "fa-puzzle-piece", text: "调用技能" };
     }
-    for (const cat of VERB_CATEGORIES) {
-      if (cat.verbs.some((v) => first === v || first.startsWith(v))) {
-        return { icon: cat.icon, text: cat.text };
-      }
-    }
+
     return { icon: "fa-screwdriver-wrench", text: "调用工具" };
   }
   return { icon: block?.icon || "fa-gear", text: "处理中" };
 }
+
+/** Detailed coarse action category for a specific tool execution (shown in the expanded details row). */
+export function getToolActionCategory(rawTitle: string | null | undefined): string {
+  const raw = String(rawTitle || "").trim();
+  if (!raw) return "调用工具";
+
+  const { tokens, actionTokens } = tokenizeToolName(raw);
+
+  if (tokens.includes("skill") || tokens.includes("skills")) {
+    return "调用技能";
+  }
+
+  // Explicit script execution hints anywhere in tokens
+  if (tokens.some((t) => ["shell", "bash", "python", "script", "terminal", "powershell"].includes(t))) {
+    return "执行脚本";
+  }
+
+  const candidateTokensList = [actionTokens, tokens];
+
+  for (const tokenList of candidateTokensList) {
+    const first = tokenList[0];
+    if (!first) continue;
+
+    for (const cat of VERB_CATEGORIES) {
+      if (cat.verbs.includes(first)) {
+        return cat.text;
+      }
+    }
+  }
+
+  return "调用工具";
+}
+
+
+

@@ -16,7 +16,7 @@ import {
   type KnowledgeQueryResponse,
 } from "../../api/knowledgeBase";
 import { lazyNamed } from "../../utils/lazyNamed";
-import { traceStepDisplay } from "../../lib/traceStepLabels";
+import { traceStepDisplay, getToolActionCategory } from "../../lib/traceStepLabels";
 import {
   extractVisualBlocks,
   extractRenderableContentSegments,
@@ -799,6 +799,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   );
   const traceBundleDefaultOpen = traceBundleDisplayMode === "expanded";
   const [isTraceBundleOpen, setIsTraceBundleOpen] = useState(() => traceBundleDefaultOpen);
+  const [traceBundleSessionKey, setTraceBundleSessionKey] = useState(0);
   const hasManualTraceBundleToggleRef = useRef(false);
   const pendingManualTraceBundleToggleRef = useRef(false);
 
@@ -867,11 +868,16 @@ export const ChatMessageItem = memo(function ChatMessageItem({
             className="trace-block trace-bundle"
             open={isTraceBundleOpen}
             onToggle={(event) => {
+              const nextOpen = event.currentTarget.open;
               if (pendingManualTraceBundleToggleRef.current) {
                 hasManualTraceBundleToggleRef.current = true;
                 pendingManualTraceBundleToggleRef.current = false;
               }
-              setIsTraceBundleOpen(event.currentTarget.open);
+              if (!nextOpen) {
+                // 收起最外层过程记录时，重置内部所有步骤及详情的展开状态
+                setTraceBundleSessionKey((k) => k + 1);
+              }
+              setIsTraceBundleOpen(nextOpen);
             }}
           >
             <summary
@@ -886,27 +892,38 @@ export const ChatMessageItem = memo(function ChatMessageItem({
               }}
             >
               <span className="trace-label">
-                <i className={`fas ${isTraceThinkingPhase ? "fa-brain" : "fa-layer-group"}`} />
-                {isTraceThinkingPhase ? "正在思考…" : "过程记录"}
-              </span>
-              {showTraceBundleStreamingIndicator || traceBundleSubtitle ? (
-                <span className="trace-summary-meta">
-                  {showTraceBundleStreamingIndicator ? (
-                    <span className="trace-status-indicator" aria-label="过程记录生成中">
-                      <i className="fas fa-spinner fa-spin" aria-hidden="true" />
-                      <span>生成中</span>
-                    </span>
-                  ) : null}
-                  {traceBundleSubtitle ? (
-                    <span className="trace-subtitle">{traceBundleSubtitle}</span>
-                  ) : null}
+                <i className="fas fa-chevron-down trace-chevron" aria-hidden="true" />
+                <span className="trace-status-icon">
+                  {isStreamingMessage ? (
+                    <i className="fas fa-spinner fa-spin" aria-hidden="true" />
+                  ) : (
+                    <i className="fas fa-check-circle" aria-hidden="true" />
+                  )}
                 </span>
-              ) : null}
+                <span>
+                  {isTraceThinkingPhase
+                    ? "正在思考与执行…"
+                    : isStreamingMessage
+                    ? "正在执行中…"
+                    : "已完成本轮思考与执行"}
+                </span>
+              </span>
+              <span className="trace-summary-meta">
+                {showTraceBundleStreamingIndicator ? (
+                  <span className="trace-status-indicator" aria-label="过程记录生成中">
+                    <i className="fas fa-spinner fa-spin" aria-hidden="true" />
+                    <span>生成中</span>
+                  </span>
+                ) : null}
+                {traceBundleSubtitle ? (
+                  <span className="trace-subtitle">{traceBundleSubtitle}</span>
+                ) : null}
+              </span>
             </summary>
             <div className="trace-body trace-bundle-body">
               {auxiliaryTraceBlocks.map((block: any, index: number) => (
                 <TraceEntry
-                  key={block.id || `${block.kind}-${index}`}
+                  key={`${block.id || `${block.kind}-${index}`}-s${traceBundleSessionKey}`}
                   block={block}
                   defaultOpen={traceBundleDefaultOpen}
                   detailsExpandable={traceDetailsExpandable}
@@ -1293,30 +1310,86 @@ function TraceEntry({
   // 为 undefined 时退回原有的 block.defaultOpen / defaultOpen 行为。
   open?: boolean;
 }) {
-  if (block?.kind === "response") {
-    return (
-      <section className="trace-entry response">
-        <div className="trace-entry-caption">
-          <span className="trace-label">
-            <i className="fas fa-comment-dots" />
-            中间回复
+  const isTool = block?.kind === "tool";
+  const isThinking = block?.kind === "thinking";
+  const isResponse = block?.kind === "response";
+
+  const { icon, text } = traceStepDisplay(block);
+  const displayTitle = isThinking
+    ? "深度思考"
+    : isTool
+    ? (text === "处理中" ? "调用工具" : text)
+    : isResponse
+    ? "中间回复"
+    : text;
+
+  const displayIcon = isThinking
+    ? "fa-brain"
+    : isTool
+    ? (icon === "fa-gear" ? "fa-wrench" : icon)
+    : isResponse
+    ? "fa-comment-dots"
+    : icon;
+
+  if (isResponse) {
+    if (!detailsExpandable) {
+      return (
+        <div className="trace-entry trace-entry-static response">
+          <span className="trace-summary trace-summary-static">
+            <span className="trace-label">
+              <i className="fas fa-comment-dots" />
+              {displayTitle}
+            </span>
+            <span className="trace-summary-meta">
+              <span className="trace-status-done">
+                完成 <i className="fas fa-check" />
+              </span>
+            </span>
           </span>
-          <span className="trace-subtitle">过程消息</span>
         </div>
-        <ResponseTraceBlock block={block} isStreaming={isStreaming} />
-      </section>
+      );
+    }
+    return (
+      <details
+        className="trace-entry response"
+        open={open ?? block?.defaultOpen ?? defaultOpen}
+      >
+        <summary className="trace-summary">
+          <span className="trace-label">
+            <i className="fas fa-chevron-down trace-chevron" aria-hidden="true" />
+            <i className="fas fa-comment-dots" />
+            {displayTitle}
+          </span>
+          <span className="trace-summary-meta">
+            <span className="trace-status-done">
+              {isStreaming ? (
+                <span className="trace-running-badge"><i className="fas fa-spinner fa-spin" /> 处理中</span>
+              ) : (
+                <span>完成 <i className="fas fa-check" /></span>
+              )}
+            </span>
+          </span>
+        </summary>
+        <div className="trace-body">
+          <ResponseTraceBlock block={block} isStreaming={isStreaming} />
+        </div>
+      </details>
     );
   }
 
-  const { icon, text } = traceStepDisplay(block);
   if (!detailsExpandable) {
     // 概览模式不挂载原始内容，避免通过页面 DOM 读取思考或工具参数。
     return (
-      <div className={`trace-block trace-entry trace-entry-static ${block?.kind || "misc"}`}>
+      <div className={`trace-entry trace-entry-static ${block?.kind || "misc"}`}>
         <span className="trace-summary trace-summary-static">
           <span className="trace-label">
-            <i className={`fas ${icon}`} aria-hidden="true" />
-            {text}
+            <i className={`fas ${displayIcon}`} aria-hidden="true" />
+            {displayTitle}
+          </span>
+          <span className="trace-summary-meta">
+            <span className="trace-status-done">
+              完成 <i className="fas fa-check" />
+            </span>
           </span>
         </span>
       </div>
@@ -1325,17 +1398,24 @@ function TraceEntry({
 
   return (
     <details
-      className={`trace-block trace-entry ${block?.kind || "misc"}`}
+      className={`trace-entry ${block?.kind || "misc"}`}
       open={open ?? block?.defaultOpen ?? defaultOpen}
     >
       <summary className="trace-summary">
         <span className="trace-label">
-          <i className={`fas ${icon}`} aria-hidden="true" />
-          {text}
+          <i className="fas fa-chevron-down trace-chevron" aria-hidden="true" />
+          <i className={`fas ${displayIcon}`} aria-hidden="true" />
+          {displayTitle}
         </span>
-        {block?.subtitle ? (
-          <span className="trace-subtitle">{block.subtitle}</span>
-        ) : null}
+        <span className="trace-summary-meta">
+          <span className="trace-status-done">
+            {isStreaming ? (
+              <span className="trace-running-badge"><i className="fas fa-spinner fa-spin" /> 处理中</span>
+            ) : (
+              <span>完成 <i className="fas fa-check" /></span>
+            )}
+          </span>
+        </span>
       </summary>
       <div className="trace-body">
         {block?.kind === "tool" ? (
@@ -1488,25 +1568,64 @@ function isRichResponseContent(content: string) {
 }
 
 function ToolTraceBlock({ block }: { block: any }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const sections = [
     { key: "input", label: "Input", content: block.inputContent },
     { key: "output", label: "Output", content: block.outputContent },
   ].filter((section) => section.content);
 
+  const rawTitle = String(block?.title || block?.toolName || "").trim();
+  const actionCategory = getToolActionCategory(rawTitle);
+
   if (!sections.length) {
-    return <MessageMarkdown content={block.content} />;
+    return (
+      <div className="tool-trace-block-simple">
+        {rawTitle ? (
+          <div className="tool-trace-action-header">
+            <div className="tool-trace-action-main">
+              {actionCategory ? <span className="tool-trace-action-category">{actionCategory}</span> : null}
+              <span className="tool-trace-action-title">{rawTitle}</span>
+            </div>
+          </div>
+        ) : null}
+        <MessageMarkdown content={block.content} />
+      </div>
+    );
   }
 
   return (
-    <div className="tool-trace-stack">
-      {sections.map((section) => (
-        <ToolTracePanel
-          key={`${block.id}-${section.key}`}
-          label={section.label}
-          content={section.content}
-          panelClassName={section.key}
-        />
-      ))}
+    <div className="tool-trace-block">
+      {rawTitle ? (
+        <div className="tool-trace-action-header">
+          <div className="tool-trace-action-main">
+            {actionCategory ? <span className="tool-trace-action-category">{actionCategory}</span> : null}
+            <span className="tool-trace-action-title">{rawTitle}</span>
+          </div>
+          <span className="tool-trace-action-status">
+            完成 <i className="fas fa-check" />
+          </span>
+        </div>
+      ) : null}
+      <details
+        className="tool-trace-details"
+        open={detailsOpen}
+        onToggle={(e) => setDetailsOpen(e.currentTarget.open)}
+      >
+        <summary className="tool-trace-details-toggle">
+          <i className="fas fa-chevron-down trace-chevron" />
+          <span>{detailsOpen ? "收起详情" : "查看详情"}</span>
+        </summary>
+        <div className="tool-trace-stack">
+          {sections.map((section) => (
+            <ToolTracePanel
+              key={`${block.id}-${section.key}`}
+              label={section.label}
+              content={section.content}
+              panelClassName={section.key}
+            />
+          ))}
+        </div>
+      </details>
     </div>
   );
 }
