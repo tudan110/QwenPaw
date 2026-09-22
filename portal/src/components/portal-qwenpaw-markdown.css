@@ -81,10 +81,10 @@
 }
 
 .portal-qwenpaw-markdown table th {
-  background: rgba(59, 130, 246, 0.08);
+  background: #f8fafc;
   text-align: left;
   color: #1e293b;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .portal-qwenpaw-markdown table td,
@@ -176,8 +176,8 @@
 }
 
 .portal-digital-employee.theme-dark .portal-qwenpaw-markdown code {
-  background: rgba(148, 163, 184, 0.18);
-  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(148, 163, 184, 0.16);
+  border-color: rgba(148, 163, 184, 0.2);
   color: #e2e8f0;
 }
 
@@ -186,13 +186,14 @@
 }
 
 .portal-digital-employee.theme-dark .portal-qwenpaw-markdown table th {
-  background: rgba(59, 130, 246, 0.16);
+  background: rgba(255, 255, 255, 0.05);
   color: #f8fafc;
+  font-weight: 600;
 }
 
 .portal-digital-employee.theme-dark .portal-qwenpaw-markdown table td,
 .portal-digital-employee.theme-dark .portal-qwenpaw-markdown table th {
-  border-color: rgba(148, 163, 184, 0.18);
+  border-color: rgba(148, 163, 184, 0.16);
 }
 
 .portal-digital-employee.theme-dark .portal-qwenpaw-code-block {

@@ -2699,38 +2699,53 @@
   color: #e2e8f0;
 }
 
-.portal-digital-employee.theme-dark .markdown-bubble > *:not(.portal-x-markdown) :not(pre) > code {
-  background: rgba(148, 163, 184, 0.18);
+.portal-digital-employee.theme-dark .markdown-bubble :not(pre) > code,
+.portal-digital-employee.theme-dark .portal-x-markdown :not(pre) > code {
+  background: rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(148, 163, 184, 0.22);
   color: #e2e8f0;
 }
 
-.portal-digital-employee.theme-dark .markdown-bubble > *:not(.portal-x-markdown) table {
+.portal-digital-employee.theme-dark .markdown-bubble table,
+.portal-digital-employee.theme-dark .portal-x-markdown table {
   background: #182235;
   border-color: #2a3b56;
   color: #e2e8f0;
 }
 
-.portal-digital-employee.theme-dark .markdown-bubble > *:not(.portal-x-markdown) th,
-.portal-digital-employee.theme-dark .markdown-bubble > *:not(.portal-x-markdown) td {
-  border-bottom-color: rgba(148, 163, 184, 0.18);
+.portal-digital-employee.theme-dark .markdown-bubble th,
+.portal-digital-employee.theme-dark .markdown-bubble td,
+.portal-digital-employee.theme-dark .portal-x-markdown th,
+.portal-digital-employee.theme-dark .portal-x-markdown td {
+  border-color: rgba(148, 163, 184, 0.16);
 }
 
-.portal-digital-employee.theme-dark .markdown-bubble > *:not(.portal-x-markdown) th {
-  background: rgba(148, 163, 184, 0.12);
+.portal-digital-employee.theme-dark .markdown-bubble thead,
+.portal-digital-employee.theme-dark .markdown-bubble th,
+.portal-digital-employee.theme-dark .portal-x-markdown thead,
+.portal-digital-employee.theme-dark .portal-x-markdown th {
+  background: rgba(255, 255, 255, 0.05);
   color: #f8fafc;
+  font-weight: 600;
 }
 
-.portal-digital-employee.theme-dark .message.user .markdown-bubble > *:not(.portal-x-markdown) table {
+.portal-digital-employee.theme-dark .message.user .markdown-bubble table,
+.portal-digital-employee.theme-dark .message.user .portal-x-markdown table {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.16);
 }
 
-.portal-digital-employee.theme-dark .message.user .markdown-bubble > *:not(.portal-x-markdown) th,
-.portal-digital-employee.theme-dark .message.user .markdown-bubble > *:not(.portal-x-markdown) td {
-  border-bottom-color: rgba(255, 255, 255, 0.14);
+.portal-digital-employee.theme-dark .message.user .markdown-bubble th,
+.portal-digital-employee.theme-dark .message.user .markdown-bubble td,
+.portal-digital-employee.theme-dark .message.user .portal-x-markdown th,
+.portal-digital-employee.theme-dark .message.user .portal-x-markdown td {
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
-.portal-digital-employee.theme-dark .message.user .markdown-bubble > *:not(.portal-x-markdown) th {
+.portal-digital-employee.theme-dark .message.user .markdown-bubble thead,
+.portal-digital-employee.theme-dark .message.user .markdown-bubble th,
+.portal-digital-employee.theme-dark .message.user .portal-x-markdown thead,
+.portal-digital-employee.theme-dark .message.user .portal-x-markdown th {
   background: rgba(255, 255, 255, 0.12);
 }
 
@@ -7621,7 +7636,7 @@
 }
 
 .portal-digital-employee .markdown-bubble > *:not(.portal-x-markdown) th {
-  background: rgba(59, 130, 246, 0.08);
+  background: #f8fafc;
   font-weight: 600;
 }
 
@@ -7681,12 +7696,12 @@
 
 .portal-digital-employee .markdown-bubble .portal-x-markdown thead,
 .portal-digital-employee .markdown-bubble .portal-x-markdown th {
-  background: rgba(59, 130, 246, 0.08);
+  background: #f8fafc;
 }
 
 .portal-digital-employee .markdown-bubble .portal-x-markdown th {
   color: #1e293b;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .portal-digital-employee .markdown-bubble .portal-x-markdown thead th:first-child {
@@ -8083,7 +8098,7 @@
 }
 
 .portal-digital-employee .knowledge-answer-bubble .portal-x-markdown thead {
-  background: rgba(59, 130, 246, 0.08);
+  background: #f8fafc;
 }
 
 .portal-digital-employee .knowledge-answer-bubble .portal-x-markdown th,
@@ -8095,10 +8110,10 @@
 }
 
 .portal-digital-employee .knowledge-answer-bubble .portal-x-markdown th {
-  background: rgba(59, 130, 246, 0.08);
+  background: #f8fafc;
   color: #1e293b;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -8150,11 +8165,12 @@
 
 .portal-digital-employee.theme-dark .markdown-bubble .portal-x-markdown thead,
 .portal-digital-employee.theme-dark .markdown-bubble .portal-x-markdown th {
-  background: rgba(59, 130, 246, 0.16);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .portal-digital-employee.theme-dark .markdown-bubble .portal-x-markdown th {
   color: #f8fafc;
+  font-weight: 600;
 }
 
 .portal-digital-employee.theme-dark .knowledge-answer-report,
