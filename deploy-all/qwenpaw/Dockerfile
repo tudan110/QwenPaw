@@ -205,7 +205,7 @@ RUN mkdir -p /app/working /app/working.secret
 # QwenPaw app port (default 8088). Override at runtime with -e QWENPAW_PORT=3000.
 ENV QWENPAW_PORT=8088
 # Deployment-oriented backend runtime defaults. Override at runtime with -e or Helm values.
-ENV QWENPAW_APP_WORKERS=2
+ENV QWENPAW_APP_WORKERS=1
 ENV QWENPAW_APP_BACKLOG=2048
 ENV QWENPAW_APP_TIMEOUT_KEEP_ALIVE=5
 
