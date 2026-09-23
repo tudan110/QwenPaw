@@ -60,6 +60,14 @@ def is_alarm_analyst_card_candidate(
     report_text = _unwrap_portal_alarm_analyst_card_content(raw_report_text)
     if len(report_text) < 20:
         return False
+    # Streaming assistant messages often contain a status update immediately
+    # before the final report. They must never become durable cards.
+    if re.search(
+        r"(?:推送已(?:成功)?发送|通知已(?:成功)?推送|现在整理完整|下面是完整的?分析报告|"
+        r"报告推送成功|现在我来汇总)",
+        report_text,
+    ):
+        return False
 
     if _matches_portal_alarm_analyst_protocol(raw_report_text, report_text):
         return True
@@ -275,6 +283,13 @@ def _build_workorder_proposal(
             "IP",
         ),
     )
+    if not manage_ip:
+        host_value = _extract_labeled_value(
+            report_text,
+            ("主机", "主机名"),
+        )
+        if re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", host_value):
+            manage_ip = host_value
     if not (device_name or manage_ip):
         return None
 

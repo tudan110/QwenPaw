@@ -793,7 +793,6 @@ export default function DigitalEmployeePage({
 
   const {
     sortedOpsAlerts,
-    alertToast,
     alertPopupOpen,
     alertPopupPosition,
     alertPopupRef,
@@ -815,7 +814,6 @@ export default function DigitalEmployeePage({
         pageTheme={pageTheme}
         alertBellIcon={alertBellIcon}
         sortedOpsAlerts={sortedOpsAlerts}
-        alertToast={alertToast}
         alertPopupOpen={alertPopupOpen}
         alertPopupPosition={alertPopupPosition}
         alertPopupRef={alertPopupRef}

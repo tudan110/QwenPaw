@@ -4,13 +4,16 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
 from qwenpaw.app.chats.models import ChatSpec
+from qwenpaw.extensions.api.alarm_analyst_card_models import (
+    AlarmAnalystCardRecommendation,
+)
 from qwenpaw.extensions.api import portal_backend
 
 
@@ -672,6 +675,108 @@ def test_list_alarm_analyst_cards_returns_backfilled_card_without_runtime_manage
     ]
 
 
+def test_list_alarm_analyst_cards_replaces_incomplete_alarm_card_with_final_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(portal_backend.app)
+    session_id = "portal-fault-alarm-COM_11223"
+    partial_card = portal_backend.AlarmAnalystCard.model_validate(
+        {
+            "type": "alarm-analyst-card",
+            "version": "v1",
+            "source": {
+                "chatId": "chat-11223",
+                "messageId": "assistant-progress",
+                "skillName": "alarm-analyst",
+                "contentHash": "progress-hash",
+            },
+            "summary": {
+                "title": "端口11223(Vlanif1) 连通性异常",
+                "conclusion": "已获取告警基础信息。",
+            },
+            "rootCause": {"reason": "已获取告警基础信息。"},
+            "impact": {"affectedApplications": [], "affectedResources": []},
+            "topology": {"nodes": [], "edges": []},
+            "recommendations": [],
+            "evidence": [],
+            "rawReportMarkdown": (
+                "## 告警分析报告：端口11223(Vlanif1) 连通性异常\n"
+                "## 根因判断\n"
+                "- 正在查询端口状态。"
+            ),
+        }
+    )
+    final_card = partial_card.model_copy(
+        update={
+            "source": partial_card.source.model_copy(
+                update={"message_id": "assistant-final", "content_hash": "final-hash"}
+            ),
+            "summary": partial_card.summary.model_copy(
+                update={"conclusion": "网络设备端口连通性异常（ICMP Ping 不可达）。"}
+            ),
+            "root_cause": partial_card.root_cause.model_copy(
+                update={"reason": "端口11223(Vlanif1) ICMP Ping 采集值为 0.0（不可达）。"}
+            ),
+            "recommendations": [
+                AlarmAnalystCardRecommendation(
+                    title="登录设备确认端口物理与协议状态",
+                    priority="p0",
+                    description="登录设备确认 Vlanif1 端口物理/协议状态，并核查配置变更记录。",
+                )
+            ],
+            "raw_report_markdown": (
+                "## 告警分析报告：端口11223(Vlanif1) 连通性异常\n"
+                "## 根因判断\n"
+                "- 端口11223(Vlanif1) ICMP Ping 采集值为 0.0（不可达）。\n"
+                "## 影响范围\n"
+                "- 设备管理面不可达，业务暂未受影响。\n"
+                "## 处置建议\n"
+                "- P0：登录设备确认 Vlanif1 端口物理/协议状态，并核查配置变更记录。\n"
+            ),
+        }
+    )
+    mirrored: list[str] = []
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_load_cards_for_chat_from_db",
+        lambda _chat_id: {
+            "assistant-progress": partial_card.model_dump(by_alias=True),
+        },
+    )
+
+    async def fake_backfill(*, request, session_id: str, chat_id: str, employee_id: str):
+        assert (session_id, chat_id, employee_id) == (
+            "portal-fault-alarm-COM_11223",
+            "chat-11223",
+            "fault",
+        )
+        return final_card
+
+    async def fake_mirror(_request, *, session_id: str, chat_id: str, message_id: str, card):
+        mirrored.append(message_id)
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_try_persist_alarm_analyst_card_from_agent_context",
+        fake_backfill,
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_mirror_alarm_analyst_card_to_session_state",
+        fake_mirror,
+    )
+
+    response = client.get(
+        "/api/portal/alarm-analyst/cards/chat-11223",
+        params={"sessionId": session_id},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["cards"][0]["source"]["messageId"] == "assistant-final"
+    assert mirrored == ["assistant-final"]
+
+
 
 def test_alarm_analyst_cards_route_reuses_existing_db_card_for_alarm_session(
     monkeypatch: pytest.MonkeyPatch,
@@ -1279,20 +1384,23 @@ def test_real_alarm_register_route_persists_session_id(
 
 
 
-def test_stream_done_status_update_uses_session_id_when_chat_id_missing(
+def test_stream_without_persisted_card_schedules_retry_with_session_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    update_calls: list[dict[str, object]] = []
+    retry_calls: list[dict[str, str]] = []
 
     monkeypatch.setattr(
         portal_backend,
         "_try_persist_analysis_result_from_stream",
-        lambda **_kwargs: None,
+        lambda **_kwargs: False,
     )
+    def fake_schedule_retry(**kwargs: str) -> None:
+        retry_calls.append(kwargs)
+
     monkeypatch.setattr(
         portal_backend,
-        "_update_portal_real_alarm_registry_safe",
-        lambda **kwargs: update_calls.append(kwargs) or {},
+        "_schedule_alarm_analysis_retry",
+        fake_schedule_retry,
     )
 
     class DummyStream:
@@ -1318,8 +1426,57 @@ def test_stream_done_status_update_uses_session_id_when_chat_id_missing(
         ),
     )
 
-    assert update_calls[0]["session_id"] == "portal-fault-alarm-abc"
-    assert update_calls[0]["status"] == "analyzed"
+    assert retry_calls == [
+        {
+            "session_id": "portal-fault-alarm-abc",
+            "chat_id": "",
+            "reason": "stream completed without a persisted alarm analysis card",
+        }
+    ]
+
+
+def test_stream_marks_analysis_complete_only_after_card_persistence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    retry_calls: list[dict[str, str]] = []
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_try_persist_analysis_result_from_stream",
+        lambda **_kwargs: True,
+    )
+    def fake_schedule_retry(**kwargs: str) -> None:
+        retry_calls.append(kwargs)
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_schedule_alarm_analysis_retry",
+        fake_schedule_retry,
+    )
+
+    class DummyStream:
+        async def aclose(self) -> None:
+            return None
+
+        def __aiter__(self):
+            async def _gen():
+                yield 'data: {"object":"message"}'
+            return _gen()
+
+    class DummyTaskTracker:
+        def stream_from_queue(self, _queue, _chat_id):
+            return DummyStream()
+
+    asyncio.run(
+        portal_backend._drain_portal_real_alarm_stream(
+            DummyTaskTracker(),
+            object(),
+            "chat-1",
+            "portal-fault-alarm-abc",
+        ),
+    )
+
+    assert retry_calls == []
 
 
 
@@ -1366,6 +1523,159 @@ def test_stream_persistence_uses_unified_alarm_card_helper(
     assert persisted_calls[0]["session_id"] == "portal-fault-alarm-abc"
     assert persisted_calls[0]["employee_id"] == "fault"
 
+
+def test_auto_takeover_filters_delayed_and_exhausted_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(timezone.utc)
+    records = {
+        "delayed": {
+            "status": "pending_retry",
+            "nextRetryAt": (now + timedelta(minutes=5)).isoformat(),
+        },
+        "due": {
+            "status": "pending_retry",
+            "nextRetryAt": (now - timedelta(minutes=1)).isoformat(),
+        },
+        "failed": {"status": "analysis_failed"},
+    }
+    monkeypatch.setattr(
+        portal_backend,
+        "get_alarm_record",
+        lambda alarm_id: records.get(alarm_id),
+    )
+
+    result = portal_backend._filter_auto_takeover_eligible_alarms(
+        {
+            "source": "live",
+            "items": [
+                {"alarmId": "new"},
+                {"alarmId": "delayed"},
+                {"alarmId": "due"},
+                {"alarmId": "failed"},
+            ],
+        },
+    )
+
+    assert [item["alarmId"] for item in result["items"]] == ["new", "due"]
+    assert result["total"] == 2
+
+
+@pytest.mark.asyncio
+async def test_timed_out_analysis_is_scheduled_for_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    retry_calls: list[dict[str, str]] = []
+    monkeypatch.setattr(
+        portal_backend,
+        "_analysis_retry_settings",
+        lambda: {
+            "max_attempts": 3,
+            "base_delay_seconds": 60,
+            "analysis_timeout_seconds": 60,
+        },
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "load_alarm_records",
+        lambda: {
+            "alarm-1": {
+                "status": "analyzing",
+                "sessionId": "portal-fault-alarm-alarm-1",
+                "chatId": "chat-1",
+                "lastTriggeredAt": (
+                    datetime.now(timezone.utc) - timedelta(minutes=2)
+                ).isoformat(),
+            }
+        },
+    )
+    class FakeChatManager:
+        async def list_chats(self) -> list[object]:
+            return []
+
+    class FakeTaskTracker:
+        async def get_status(self, _chat_id: str) -> str:
+            return "idle"
+
+    async def fake_workspace(_request, _employee_id: str):
+        return SimpleNamespace(
+            chat_manager=FakeChatManager(),
+            task_tracker=FakeTaskTracker(),
+        )
+
+    def fake_schedule_retry(**kwargs: str) -> None:
+        retry_calls.append(kwargs)
+
+    monkeypatch.setattr(
+        portal_backend,
+        "_get_portal_employee_workspace",
+        fake_workspace,
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_schedule_alarm_analysis_retry",
+        fake_schedule_retry,
+    )
+
+    assert await portal_backend._recover_timed_out_alarm_analyses(
+        SimpleNamespace(
+            app=SimpleNamespace(
+                state=SimpleNamespace(
+                    multi_agent_manager=SimpleNamespace(get_agent=object()),
+                ),
+            ),
+        ),
+    ) == 1
+    assert retry_calls[0]["session_id"] == "portal-fault-alarm-alarm-1"
+    assert "timed out" in str(retry_calls[0]["reason"])
+
+
+def test_analysis_retry_uses_backoff_then_marks_exhausted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    updates: list[dict[str, object]] = []
+    record = {"alarmId": "alarm-1", "retryCount": 0}
+    monkeypatch.setattr(
+        portal_backend,
+        "get_alarm_record",
+        lambda _alarm_id: record,
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_analysis_retry_settings",
+        lambda: {
+            "max_attempts": 2,
+            "base_delay_seconds": 60,
+            "analysis_timeout_seconds": 900,
+        },
+    )
+    monkeypatch.setattr(
+        portal_backend,
+        "_update_portal_real_alarm_registry_safe",
+        lambda **kwargs: updates.append(kwargs),
+    )
+
+    before = datetime.now(timezone.utc)
+    portal_backend._schedule_alarm_analysis_retry(
+        session_id="portal-fault-alarm-alarm-1",
+        chat_id="chat-1",
+        reason="card persistence failed",
+    )
+
+    assert updates[0]["status"] == "pending_retry"
+    assert updates[0]["retry_count"] == 1
+    assert datetime.fromisoformat(str(updates[0]["next_retry_at"])) >= before
+
+    record["retryCount"] = 2
+    portal_backend._schedule_alarm_analysis_retry(
+        session_id="portal-fault-alarm-alarm-1",
+        chat_id="chat-1",
+        reason="card persistence failed",
+    )
+
+    assert updates[1]["status"] == "analysis_failed"
+    assert updates[1]["retry_count"] == 3
+    assert updates[1]["next_retry_at"] == ""
 
 
 def test_list_alarm_analyst_cards_enriches_missing_proposal_fields_from_registry(

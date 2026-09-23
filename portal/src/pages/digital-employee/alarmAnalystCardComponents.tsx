@@ -686,8 +686,22 @@ function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
   }
 
   const blastRadius = stripMarkdownInline(card.impact.blastRadiusText || "");
+  let impactText = isJunkValue(blastRadius) ? "" : blastRadius;
+  if (!impactText) {
+    const rawImpactSection = extractMarkdownSection(
+      unwrapPortalAlarmAnalystCardContent(card.rawReportMarkdown),
+      ["影响范围", "影响面", "影响分析"],
+    );
+    if (rawImpactSection) {
+      const firstEntry = extractBulletEntries(rawImpactSection)[0] || rawImpactSection.split("\n")[0];
+      const cleaned = stripMarkdownInline(firstEntry);
+      if (cleaned && !isJunkValue(cleaned)) {
+        impactText = cleaned;
+      }
+    }
+  }
   const impactSegments = [
-    isJunkValue(blastRadius) ? "" : blastRadius,
+    impactText,
     card.impact.affectedApplications.length
       ? `受影响应用：${joinUnique(card.impact.affectedApplications.map((item) => item.name || ""))}`
       : "",
@@ -711,15 +725,50 @@ function buildFallbackRows(card: AlarmAnalystCardV1): AlarmAnalystSummaryRow[] {
   );
   if (evidenceSummary && !isJunkValue(evidenceSummary)) {
     rows.push({ label: "关键提醒", value: stripMarkdownInline(evidenceSummary), tone: "warning" });
+  } else {
+    const rawEvidenceSection = extractMarkdownSection(
+      unwrapPortalAlarmAnalystCardContent(card.rawReportMarkdown),
+      ["证据摘要", "关键证据", "分析依据", "异常指标"],
+    );
+    if (rawEvidenceSection) {
+      const firstEntry = extractBulletEntries(rawEvidenceSection)[0] || rawEvidenceSection.split("\n")[0];
+      const cleaned = stripMarkdownInline(firstEntry);
+      if (cleaned && !isJunkValue(cleaned)) {
+        rows.push({ label: "关键提醒", value: cleaned, tone: "warning" });
+      }
+    }
   }
 
   return rows;
 }
 
+function mergeSummaryRows(
+  reportRows: AlarmAnalystSummaryRow[],
+  fallbackRows: AlarmAnalystSummaryRow[],
+): AlarmAnalystSummaryRow[] {
+  const reportMap = new Map(reportRows.map((row) => [row.label, row]));
+  const fallbackMap = new Map(fallbackRows.map((row) => [row.label, row]));
+
+  return SUMMARY_LABEL_ORDER
+    .map((label) => {
+      const reportRow = reportMap.get(label);
+      if (reportRow && reportRow.value && !isJunkValue(reportRow.value)) {
+        return reportRow;
+      }
+      const fallbackRow = fallbackMap.get(label);
+      if (fallbackRow && fallbackRow.value && !isJunkValue(fallbackRow.value)) {
+        return fallbackRow;
+      }
+      return null;
+    })
+    .filter((row): row is AlarmAnalystSummaryRow => Boolean(row));
+}
+
 function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
   const reportText = unwrapPortalAlarmAnalystCardContent(card.rawReportMarkdown);
   const reportSummaryRows = buildSummaryRowsFromReport(card);
-  const summaryRows = (reportSummaryRows.length ? reportSummaryRows : buildFallbackRows(card))
+  const fallbackSummaryRows = buildFallbackRows(card);
+  const summaryRows = mergeSummaryRows(reportSummaryRows, fallbackSummaryRows)
     .filter((row) => showConfidence || row.label !== "置信度");
   const rowsByLabel = new Map(summaryRows.map((row) => [row.label, row]));
 
@@ -816,38 +865,53 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
       : null,
   ].filter(Boolean) as AlarmAnalystDecisionCard[];
 
-  const hasDetailTiers = card.recommendations.some(
-    (r) => r.stage === "prevention",
-  );
-  const tierRows: { tier: "emergency" | "repair" | "prevention"; label: string; items: string[] }[] = [];
-  if (hasDetailTiers) {
-    const groups = {
-      emergency: [] as string[],
-      repair: [] as string[],
-      prevention: [] as string[],
-    };
-    for (const rec of card.recommendations) {
-      const stage = rec.stage || "";
-      if (stage in groups) {
-        groups[stage as keyof typeof groups].push(
-          stripMarkdownInline(rec.description || rec.title || ""),
-        );
+  // Group recommendations into 3 tiers: emergency, repair, prevention
+  const groups = {
+    emergency: [] as string[],
+    repair: [] as string[],
+    prevention: [] as string[],
+  };
+
+  for (const rec of card.recommendations) {
+    const rawContent = stripMarkdownInline(rec.description || rec.title || "");
+    if (!rawContent || isJunkValue(rawContent)) {
+      continue;
+    }
+
+    let stage = rec.stage;
+    if (!stage) {
+      if (rawContent.startsWith("🚑") || /紧急|止血|切备|主备倒换|隔离|降级|限流|回滚/u.test(rawContent)) {
+        stage = "emergency";
+      } else if (/预防|中长期|长期|基线|纳管|CMDB|cmdb|阈值|监控|巡检|备件/u.test(rawContent)) {
+        stage = "prevention";
+      } else {
+        stage = "repair";
       }
     }
-    if (groups.emergency.length) {
-      tierRows.push({ tier: "emergency", label: "紧急止血（立即执行）", items: groups.emergency });
-    }
-    if (groups.repair.length) {
-      tierRows.push({ tier: "repair", label: "根因修复（计划内操作 / 短期）", items: groups.repair });
-    }
-    if (groups.prevention.length) {
-      tierRows.push({ tier: "prevention", label: "预防措施（中长期）", items: groups.prevention });
+
+    if (stage in groups) {
+      groups[stage as keyof typeof groups].push(rawContent);
+    } else {
+      groups.repair.push(rawContent);
     }
   }
 
+  const tierRows: { tier: "emergency" | "repair" | "prevention"; label: string; items: string[] }[] = [];
+  if (groups.emergency.length) {
+    tierRows.push({ tier: "emergency", label: "紧急止血（立即执行）", items: groups.emergency });
+  }
+  if (groups.repair.length) {
+    tierRows.push({ tier: "repair", label: "根因修复（计划内操作 / 短期）", items: groups.repair });
+  }
+  if (groups.prevention.length) {
+    tierRows.push({ tier: "prevention", label: "预防措施（中长期）", items: groups.prevention });
+  }
+
+  const hasDetailTiers = tierRows.length > 0;
+
   // Ranked Top-N candidate root causes; per-candidate confidence obeys the
   // same visibility toggle as the main confidence badge.
-  const rootCauseCandidates = (card.rootCause.candidates || [])
+  let rootCauseCandidates = (card.rootCause.candidates || [])
     .filter((item) => Boolean(item?.reason))
     .map((item) => ({
       rank: item.rank,
@@ -858,6 +922,35 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
         : "",
       evidence: stripMarkdownInline(item.evidence || ""),
     }));
+
+  if (rootCauseCandidates.length === 0) {
+    const mainReason = (
+      rowsByLabel.get("根因方向")?.value ||
+      stripMarkdownInline(card.rootCause.reason || "") ||
+      rowsByLabel.get("故障性质")?.value ||
+      stripMarkdownInline(card.summary.conclusion || "")
+    );
+    if (mainReason && !isJunkValue(mainReason)) {
+      const evidenceText = (
+        rowsByLabel.get("关键提醒")?.value ||
+        card.evidence
+          .slice(0, 2)
+          .map((e) => e.summary || e.title || "")
+          .filter((s) => !isJunkValue(s))
+          .join("；") ||
+        ""
+      );
+      rootCauseCandidates = [
+        {
+          rank: 1,
+          reason: mainReason,
+          resourceName: anchorText || stripMarkdownInline(card.rootCause.resourceName || ""),
+          confidence: showConfidence ? (confidenceLabel || "90%") : "",
+          evidence: evidenceText,
+        },
+      ];
+    }
+  }
 
   return {
     title: titleText,

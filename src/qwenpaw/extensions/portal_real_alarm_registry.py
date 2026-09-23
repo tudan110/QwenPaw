@@ -77,7 +77,9 @@ CREATE TABLE IF NOT EXISTS alarm_records (
     handled_at TEXT NOT NULL DEFAULT '',
     last_triggered_at TEXT NOT NULL DEFAULT '',
     resolved_at TEXT NOT NULL DEFAULT '',
-    analysis_result TEXT NOT NULL DEFAULT ''
+    analysis_result TEXT NOT NULL DEFAULT '',
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    next_retry_at TEXT NOT NULL DEFAULT ''
 )
 """
 
@@ -114,6 +116,8 @@ _KEY_TO_COL: dict[str, str] = {
     "lastTriggeredAt": "last_triggered_at",
     "resolvedAt": "resolved_at",
     "analysisResult": "analysis_result",
+    "retryCount": "retry_count",
+    "nextRetryAt": "next_retry_at",
 }
 _COL_TO_KEY: dict[str, str] = {v: k for k, v in _KEY_TO_COL.items()}
 _ALL_COLUMNS = list(_KEY_TO_COL.values())
@@ -202,6 +206,14 @@ def _open_db(db_path: Path) -> sqlite3.Connection:
     if "alarm_location" not in existing_cols:
         conn.execute(
             "ALTER TABLE alarm_records ADD COLUMN alarm_location TEXT NOT NULL DEFAULT ''"
+        )
+    if "retry_count" not in existing_cols:
+        conn.execute(
+            "ALTER TABLE alarm_records ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0"
+        )
+    if "next_retry_at" not in existing_cols:
+        conn.execute(
+            "ALTER TABLE alarm_records ADD COLUMN next_retry_at TEXT NOT NULL DEFAULT ''"
         )
     conn.commit()
     return conn
@@ -525,6 +537,8 @@ def update_alarm_record(
     verification_status: str = "",
     last_error: str | None = None,
     analysis_result: str | None = None,
+    retry_count: int | None = None,
+    next_retry_at: str | None = None,
     path: str | Path | None = None,
 ) -> dict[str, Any]:
     db_path = _resolve_registry_path(path)
@@ -614,6 +628,16 @@ def update_alarm_record(
                 merged["analysisResult"] = analysis_result
             elif existing.get("analysisResult"):
                 merged["analysisResult"] = existing.get("analysisResult")
+
+            if retry_count is not None:
+                merged["retryCount"] = max(0, int(retry_count))
+            else:
+                merged["retryCount"] = int(existing.get("retryCount") or 0)
+
+            if next_retry_at is not None:
+                merged["nextRetryAt"] = _coalesce_text(next_retry_at)
+            elif existing.get("nextRetryAt"):
+                merged["nextRetryAt"] = existing.get("nextRetryAt")
 
             # Upsert into DB
             db_values = {}

@@ -365,6 +365,31 @@ FIELD_SPECS: dict[str, FieldSpec] = {
             "polling",
             min_value=1,
         ),
+        FieldSpec(
+            "analysis_retry_max_attempts",
+            "QWENPAW_PORTAL_REAL_ALARM_RETRY_MAX_ATTEMPTS",
+            3,
+            "int",
+            "polling",
+            min_value=0,
+            max_value=10,
+        ),
+        FieldSpec(
+            "analysis_retry_base_delay_seconds",
+            "QWENPAW_PORTAL_REAL_ALARM_RETRY_BASE_DELAY",
+            60,
+            "float",
+            "polling",
+            min_value=1,
+        ),
+        FieldSpec(
+            "analysis_timeout_seconds",
+            "QWENPAW_PORTAL_REAL_ALARM_ANALYSIS_TIMEOUT",
+            900,
+            "float",
+            "polling",
+            min_value=60,
+        ),
         # Hours to look back from the moment real-time analysis is
         # switched on. 0 = only alarms born after the switch flip.
         FieldSpec(

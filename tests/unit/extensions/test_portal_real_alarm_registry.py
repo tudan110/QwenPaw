@@ -73,6 +73,30 @@ def test_update_alarm_record_can_resolve_existing_entry_by_chat_id(tmp_path: Pat
     assert records["alarm-1"]["chatId"] == "chat-1"
 
 
+def test_update_alarm_record_persists_retry_metadata(tmp_path: Path) -> None:
+    registry_path = _registry_path(tmp_path)
+
+    portal_real_alarm_registry.update_alarm_record(
+        alarm={"alarmId": "alarm-1", "title": "数据库锁异常"},
+        status="pending_retry",
+        retry_count=2,
+        next_retry_at="2026-09-23T00:00:00+00:00",
+        last_error="card persistence failed",
+        path=registry_path,
+    )
+
+    record = portal_real_alarm_registry.get_alarm_record(
+        "alarm-1",
+        path=registry_path,
+    )
+
+    assert record is not None
+    assert record["status"] == "pending_retry"
+    assert record["retryCount"] == 2
+    assert record["nextRetryAt"] == "2026-09-23T00:00:00+00:00"
+    assert record["lastError"] == "card persistence failed"
+
+
 def test_registry_timestamps_fall_back_to_east_eight_timezone(
     monkeypatch,
     tmp_path: Path,

@@ -71,7 +71,7 @@ class ManualWorkorderDispatchRequest(BaseModel):
 
     @property
     def alarm_id(self) -> str:
-        return self.alarm.alarm_id
+        return self.alarm.alarm_id or str(self.res_id or "").strip()
 
 
 class AlarmAnalystWorkorderCreateRequest(BaseModel):

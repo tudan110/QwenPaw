@@ -22,7 +22,6 @@ import type {
   DashboardKanbanFilter,
   DashboardWorkColumn,
   ExecutionRecord,
-  PortalAlertToastState,
   PortalOpsAlert,
   SessionRecord,
 } from "./pageHelpers";
@@ -144,7 +143,6 @@ export function PortalAlertBell({
   pageTheme,
   alertBellIcon,
   sortedOpsAlerts,
-  alertToast,
   alertPopupOpen,
   alertPopupPosition,
   alertPopupRef,
@@ -159,7 +157,6 @@ export function PortalAlertBell({
   pageTheme: "light" | "dark";
   alertBellIcon: ReactNode;
   sortedOpsAlerts: PortalOpsAlert[];
-  alertToast: PortalAlertToastState | null;
   alertPopupOpen: boolean;
   alertPopupPosition: { top: number; left: number } | null;
   alertPopupRef: MutableRefObject<HTMLDivElement | null>;
@@ -172,7 +169,6 @@ export function PortalAlertBell({
   onToggleAlertPopup: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
   const alertCount = sortedOpsAlerts.length;
-  const toastAlert = alertToast?.visible ? alertToast.alert : null;
   const popup =
     alertPopupOpen && alertPopupPosition && typeof document !== "undefined"
       ? createPortal(
@@ -281,24 +277,6 @@ export function PortalAlertBell({
 
   return (
     <div className="alert-bell-wrap">
-      {toastAlert ? (
-        <button
-          type="button"
-          className="danmaku-toast"
-          onClick={() => onPortalAlertAction(toastAlert)}
-        >
-          <span className="danmaku-dot" />
-          <span className="danmaku-toast-message">{toastAlert.message}</span>
-          {(() => {
-            const employee =
-              employeesWithRuntimeStatus.find((item) => item.id === toastAlert.employeeId) ||
-              getEmployeeById(toastAlert.employeeId);
-            return employee ? (
-              <span className="danmaku-emp">{employee.name}</span>
-            ) : null;
-          })()}
-        </button>
-      ) : null}
       <Tooltip
         title={alertCount ? `消息提醒 (${alertCount}条未处理)` : "消息提醒"}
         placement="bottom"

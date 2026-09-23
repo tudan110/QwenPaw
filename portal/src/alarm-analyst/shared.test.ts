@@ -131,6 +131,77 @@ test("merges stored cards by raw report markdown when message id differs", () =>
   assert.equal(merged[0].alarmAnalystCard.summary.conclusion, "历史回放兜底匹配");
 });
 
+test("binds a stored card to a reconstructed alarm report when ids and text changed", () => {
+  const messages = [
+    {
+      id: "history-agent-1",
+      type: "agent",
+      content: [
+        "## 告警分析报告：端口异常",
+        "## 根因判断",
+        "- 链路不可达",
+        "## 影响范围",
+        "- 业务链路受影响",
+        "## 处置建议",
+        "- 检查端口和光模块",
+      ].join("\n"),
+    },
+  ];
+  const cards = [
+    {
+      type: "alarm-analyst-card",
+      version: "v1",
+      source: {
+        chatId: "chat-1",
+        messageId: "stream-message-id",
+        skillName: "alarm-analyst",
+        contentHash: "hash-reconstructed",
+      },
+      summary: {
+        title: "端口异常",
+        conclusion: "链路不可达",
+      },
+      rootCause: { reason: "链路不可达" },
+      impact: { affectedApplications: [], affectedResources: [] },
+      topology: { nodes: [], edges: [] },
+      recommendations: [],
+      evidence: [],
+      rawReportMarkdown: "流式阶段报告（历史回放文本已被重建）",
+    },
+  ] as any;
+
+  const merged = mergeAlarmAnalystCards(messages, cards);
+
+  assert.equal(merged[0].alarmAnalystCard.summary.title, "端口异常");
+});
+
+test("deduplicates retry-generated cards by source message id", () => {
+  const messages = [
+    {
+      id: "agent-duplicate",
+      enhancementSourceMessageId: "stream-message-id",
+      type: "agent",
+      processBlocks: [{ kind: "response", content: "报告正文" }],
+    },
+  ];
+  const cards = [
+    {
+      source: { messageId: "stream-message-id" },
+      summary: { title: "旧卡片" },
+      rawReportMarkdown: "旧报告",
+    },
+    {
+      source: { messageId: "stream-message-id" },
+      summary: { title: "新卡片" },
+      rawReportMarkdown: "报告正文",
+    },
+  ] as any;
+
+  const merged = mergeAlarmAnalystCards(messages, cards);
+
+  assert.equal(merged[0].alarmAnalystCard.summary.title, "新卡片");
+});
+
 test("merges stored cards when report markdown differs only by alarm marker wrapper", () => {
   const messages = [
     {

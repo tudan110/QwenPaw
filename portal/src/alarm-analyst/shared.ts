@@ -301,18 +301,38 @@ export function mergeAlarmAnalystCards(messages: any[] = [], cards: AlarmAnalyst
     return messages;
   }
 
+  // A retry can persist the same logical card more than once. Keep the last
+  // payload for a source message so an older replay cannot win by accident.
+  const dedupedCards = [...cards].reduce<AlarmAnalystCardV1[]>((result, card) => {
+    const sourceMessageId = String(card?.source?.messageId || "").trim();
+    if (!sourceMessageId) {
+      result.push(card);
+      return result;
+    }
+    const previousIndex = result.findIndex(
+      (candidate) => String(candidate?.source?.messageId || "").trim() === sourceMessageId,
+    );
+    if (previousIndex >= 0) {
+      result[previousIndex] = card;
+    } else {
+      result.push(card);
+    }
+    return result;
+  }, []);
+
   const cardsByMessageId = new Map(
-    cards
+    dedupedCards
       .filter((card) => card?.source?.messageId)
       .map((card) => [String(card.source.messageId), card] as const),
   );
   const cardsByReportMarkdown = new Map(
-    cards
+    dedupedCards
       .filter((card) => card?.rawReportMarkdown)
       .map((card) => [normalizeAlarmAnalystReportKey(card.rawReportMarkdown), card] as const),
   );
 
-  return messages.map((message) => {
+  const matchedCardKeys = new Set<AlarmAnalystCardV1>();
+  const mergedMessages = messages.map((message) => {
     const sourceMessageId = getAlarmAnalystSourceMessageId(message);
     const reportMarkdown = getAlarmAnalystReportMarkdown(message);
     const card = (
@@ -322,9 +342,35 @@ export function mergeAlarmAnalystCards(messages: any[] = [], cards: AlarmAnalyst
     if (!card) {
       return message;
     }
+    matchedCardKeys.add(card);
     return {
       ...message,
       alarmAnalystCard: card,
     };
   });
+
+  // History reconstruction can assign a new assistant message id and can
+  // normalize the report text differently from the streaming response. In
+  // that case bind remaining cards to the remaining final report messages
+  // within this already-selected alarm session. This is intentionally
+  // conservative: only a one-to-one set of candidates is eligible.
+  const remainingCards = dedupedCards.filter((card) => !matchedCardKeys.has(card));
+  const remainingMessageIndexes = mergedMessages
+    .map((message, index) => ({ message, index }))
+    .filter(({ message }) => (
+      message?.type === "agent"
+      && !message?.alarmAnalystCard
+      && looksLikeAlarmAnalystReportForAlarmSession(getAlarmAnalystReportMarkdown(message))
+    ));
+  if (remainingCards.length === remainingMessageIndexes.length && remainingCards.length > 0) {
+    for (let index = 0; index < remainingCards.length; index += 1) {
+      const target = remainingMessageIndexes[index];
+      mergedMessages[target.index] = {
+        ...target.message,
+        alarmAnalystCard: remainingCards[index],
+      };
+    }
+  }
+
+  return mergedMessages;
 }

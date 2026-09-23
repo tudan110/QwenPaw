@@ -590,6 +590,102 @@ def _build_portal_inspection_payload(
     }
 
 
+def _analysis_retry_settings() -> dict[str, float | int]:
+    return {
+        "max_attempts": diagnosis_settings_store.resolve_int(
+            "analysis_retry_max_attempts",
+            "QWENPAW_PORTAL_REAL_ALARM_RETRY_MAX_ATTEMPTS",
+            3,
+            min_value=0,
+            max_value=10,
+        ),
+        "base_delay_seconds": diagnosis_settings_store.resolve_float(
+            "analysis_retry_base_delay_seconds",
+            "QWENPAW_PORTAL_REAL_ALARM_RETRY_BASE_DELAY",
+            60,
+            min_value=1,
+        ),
+        "analysis_timeout_seconds": diagnosis_settings_store.resolve_float(
+            "analysis_timeout_seconds",
+            "QWENPAW_PORTAL_REAL_ALARM_ANALYSIS_TIMEOUT",
+            900,
+            min_value=60,
+        ),
+    }
+
+
+def _parse_registry_timestamp(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _is_alarm_retry_due(record: dict[str, Any], *, now: datetime) -> bool:
+    if str(record.get("status") or "").strip() != "pending_retry":
+        return False
+    next_retry_at = _parse_registry_timestamp(record.get("nextRetryAt"))
+    return next_retry_at is None or next_retry_at <= now
+
+
+def _schedule_alarm_analysis_retry(
+    *,
+    session_id: str,
+    chat_id: str,
+    reason: str,
+) -> None:
+    """Persist one bounded, exponentially delayed retry for an alarm analysis."""
+    record = get_alarm_record(
+        session_id.removeprefix(PORTAL_REAL_ALARM_SESSION_PREFIX),
+    )
+    if record is None:
+        _update_portal_real_alarm_registry_safe(
+            session_id=session_id,
+            chat_id=chat_id,
+            status="pending_retry",
+            source="alarm-analysis-retry-untracked",
+            last_error=reason,
+        )
+        return
+
+    settings = _analysis_retry_settings()
+    attempt = int(record.get("retryCount") or 0) + 1
+    max_attempts = int(settings["max_attempts"])
+    if attempt > max_attempts:
+        _update_portal_real_alarm_registry_safe(
+            alarm_id=str(record.get("alarmId") or ""),
+            session_id=session_id,
+            chat_id=chat_id,
+            status="analysis_failed",
+            source="alarm-analysis-retry-exhausted",
+            last_error=reason,
+            retry_count=attempt,
+            next_retry_at="",
+        )
+        return
+
+    delay_seconds = float(settings["base_delay_seconds"]) * (2 ** (attempt - 1))
+    next_retry_at = (
+        datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
+    ).isoformat()
+    _update_portal_real_alarm_registry_safe(
+        alarm_id=str(record.get("alarmId") or ""),
+        session_id=session_id,
+        chat_id=chat_id,
+        status="pending_retry",
+        source="alarm-analysis-retry",
+        last_error=reason,
+        retry_count=attempt,
+        next_retry_at=next_retry_at,
+    )
+
+
 async def _drain_portal_real_alarm_stream(
     task_tracker: Any,
     queue: Any,
@@ -597,28 +693,32 @@ async def _drain_portal_real_alarm_stream(
     session_id: str = "",
 ) -> None:
     chunks: list[str] = []
+    stream_error = ""
     stream_it = task_tracker.stream_from_queue(queue, chat_id)
     try:
         async for chunk in stream_it:
             chunks.append(chunk)
-    except Exception:
+    except Exception as exc:
+        stream_error = f"stream failed: {type(exc).__name__}: {exc}"
         print(
             f"[WARN] drain portal real alarm stream failed for chat_id={chat_id}",
         )
         traceback.print_exc()
     finally:
         await stream_it.aclose()
-    _update_portal_real_alarm_registry_safe(
-        chat_id=chat_id,
-        session_id=session_id,
-        status="analyzed",
-        source="auto-stream-done",
-    )
-    if session_id and chunks:
-        _try_persist_analysis_result_from_stream(
+    persisted = False
+    if not stream_error and session_id and chunks:
+        persisted = _try_persist_analysis_result_from_stream(
             chunks=chunks,
             chat_id=chat_id,
             session_id=session_id,
+        )
+    if session_id and not persisted:
+        reason = stream_error or "stream completed without a persisted alarm analysis card"
+        _schedule_alarm_analysis_retry(
+            session_id=session_id,
+            chat_id=chat_id,
+            reason=reason,
         )
 
 
@@ -737,7 +837,7 @@ async def _ensure_portal_real_alarm_sessions(
     takeover_source: str = "manual-trigger",
 ) -> dict[str, Any]:
     items = alarms_payload.get("items") or []
-    result = {
+    result: dict[str, Any] = {
         "total": len(items) if isinstance(items, list) else 0,
         "eligible": 0,
         "created": 0,
@@ -797,6 +897,11 @@ async def _ensure_portal_real_alarm_sessions(
             result["eligible"] += 1
             session_id = _build_portal_real_alarm_session_id(alarm)
             result["sessions"].append(session_id)
+            registry_record = get_alarm_record(alarm_id) or {}
+            is_pending_retry = (
+                str(registry_record.get("status") or "").strip()
+                == "pending_retry"
+            )
             chat = chats_by_session.get(session_id)
             is_new_chat = chat is None
             should_start = is_new_chat
@@ -814,7 +919,7 @@ async def _ensure_portal_real_alarm_sessions(
                     has_history = _portal_real_alarm_has_history(state)
                     if has_history:
                         _portal_real_alarm_last_sent.pop(session_id, None)
-                        should_start = False
+                        should_start = is_pending_retry
                     else:
                         # No AI reply yet – check dedup window to decide
                         # whether this is a stuck session (allow retry) or
@@ -862,6 +967,7 @@ async def _ensure_portal_real_alarm_sessions(
                         chat_id=chat.id if chat is not None else "",
                         res_id=str(alarm.get("resId") or "").strip(),
                         source=takeover_source,
+                        next_retry_at="",
                     )
                 result["skipped"] += 1
                 continue
@@ -936,6 +1042,79 @@ def _finalize_missing_pending_retry_records(
     return finalized_count
 
 
+async def _recover_timed_out_alarm_analyses(request: Request) -> int:
+    """Move timed-out in-flight analyses back into the bounded retry queue."""
+    manager = getattr(request.app.state, "multi_agent_manager", None)
+    if manager is None or not hasattr(manager, "get_agent"):
+        return 0
+    workspace = await _get_portal_employee_workspace(request, "fault")
+    if workspace is None:
+        return 0
+    chats_by_session = {
+        str(chat.session_id): chat
+        for chat in await workspace.chat_manager.list_chats()
+    }
+    settings = _analysis_retry_settings()
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=float(settings["analysis_timeout_seconds"]),
+    )
+    recovered = 0
+    for record in load_alarm_records().values():
+        if str(record.get("status") or "").strip() != "analyzing":
+            continue
+        last_triggered_at = _parse_registry_timestamp(
+            record.get("lastTriggeredAt"),
+        )
+        if last_triggered_at is None or last_triggered_at > cutoff:
+            continue
+        session_id = str(record.get("sessionId") or "").strip()
+        if not session_id:
+            continue
+        chat = chats_by_session.get(session_id)
+        if (
+            chat is not None
+            and await workspace.task_tracker.get_status(chat.id) == "running"
+        ):
+            continue
+        _schedule_alarm_analysis_retry(
+            session_id=session_id,
+            chat_id=str(record.get("chatId") or "").strip(),
+            reason=(
+                "analysis timed out before a persisted alarm analysis card "
+                "was produced"
+            ),
+        )
+        recovered += 1
+    return recovered
+
+
+def _filter_auto_takeover_eligible_alarms(
+    alarms_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep new alarms and retries whose exponential-delay window has elapsed."""
+    now = datetime.now(timezone.utc)
+    eligible_items: list[dict[str, Any]] = []
+    for item in alarms_payload.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        alarm_id = str(item.get("alarmId") or item.get("id") or "").strip()
+        record = get_alarm_record(alarm_id) if alarm_id else None
+        status = str((record or {}).get("status") or "").strip()
+        if status == "analysis_failed":
+            continue
+        if status == "pending_retry" and not _is_alarm_retry_due(
+            record or {},
+            now=now,
+        ):
+            continue
+        eligible_items.append(item)
+    return {
+        **alarms_payload,
+        "items": eligible_items,
+        "total": len(eligible_items),
+    }
+
+
 async def _build_portal_real_alarm_trigger_payload(
     limit: int,
     trigger_body: dict[str, Any] | None,
@@ -1003,6 +1182,9 @@ async def _run_portal_real_alarm_auto_takeover_once() -> dict[str, Any]:
         PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT,
         min_value=1,
     )
+    recovered_timeouts = await _recover_timed_out_alarm_analyses(
+        SimpleNamespace(app=runtime_app),
+    )
     anchor = diagnosis_settings_store.get_analysis_anchor()
     # The visible-alarm payload sorts ascending by event time and slices
     # to the limit, i.e. it keeps the OLDEST alarms. With the analysis
@@ -1053,6 +1235,7 @@ async def _run_portal_real_alarm_auto_takeover_once() -> dict[str, Any]:
                 "items": eligible_items[:takeover_limit],
                 "total": takeover_limit,
             }
+    alarms_payload = _filter_auto_takeover_eligible_alarms(alarms_payload)
     summary = await _ensure_portal_real_alarm_sessions(
         SimpleNamespace(app=runtime_app),
         alarms_payload,
@@ -1077,6 +1260,7 @@ async def _run_portal_real_alarm_auto_takeover_once() -> dict[str, Any]:
             or len(alarms_payload.get("items") or []),
         ),
         "finalizedMissing": finalized_missing,
+        "recoveredTimedOut": recovered_timeouts,
         **summary,
     }
 
@@ -2624,6 +2808,8 @@ def _update_portal_real_alarm_registry_safe(
     verification_status: str = "",
     last_error: str | None = None,
     analysis_result: str | None = None,
+    retry_count: int | None = None,
+    next_retry_at: str | None = None,
 ) -> dict[str, Any] | None:
     try:
         return update_alarm_record(
@@ -2637,6 +2823,8 @@ def _update_portal_real_alarm_registry_safe(
             verification_status=verification_status,
             last_error=last_error,
             analysis_result=analysis_result,
+            retry_count=retry_count,
+            next_retry_at=next_retry_at,
         )
     except ValueError as exc:
         print(
@@ -2681,6 +2869,8 @@ def _persist_analysis_result_to_registry(
             status="analyzed",
             source="alarm-analyst-card-persisted",
             analysis_result=result_json,
+            last_error="",
+            next_retry_at="",
         )
     except Exception as exc:
         print(
@@ -2745,7 +2935,7 @@ def _try_persist_analysis_result_from_stream(
     chunks: list[str],
     chat_id: str,
     session_id: str,
-) -> None:
+) -> bool:
     """After agent streaming ends, parse SSE chunks to extract the alarm
     analyst report, build a card, and persist it to BOTH the alarm registry
     (for external callers) AND the card DB the portal frontend reads — so the
@@ -2753,10 +2943,10 @@ def _try_persist_analysis_result_from_stream(
     conversation and backfill it."""
     try:
         if not session_id.startswith(PORTAL_REAL_ALARM_SESSION_PREFIX):
-            return
+            return False
         completed_messages = _collect_sse_report_messages(chunks)
         if not completed_messages:
-            return
+            return False
         for chosen_id, report_markdown in reversed(completed_messages):
             message_id = chosen_id or f"auto-stream-{chat_id}"
             matched, _card, _used_existing = _persist_alarm_analyst_card_from_report(
@@ -2768,12 +2958,13 @@ def _try_persist_analysis_result_from_stream(
                 process_blocks=[],
             )
             if matched:
-                return
+                return True
     except Exception as exc:
         print(
             f"[WARN] _try_persist_analysis_result_from_stream failed: "
             f"{type(exc).__name__}: {exc}",
         )
+    return False
 
 
 async def _get_employee_alert_count(
@@ -3127,7 +3318,7 @@ def _looks_like_alarm_analyst_report_for_alarm_session(
     report_markdown: str,
 ) -> bool:
     normalized = str(report_markdown or "").strip()
-    if len(normalized) < 80:
+    if not normalized:
         return False
     marker_count = sum(
         1
@@ -3142,6 +3333,7 @@ def _looks_like_alarm_analyst_report_for_alarm_session(
             "根因分析结论",
             "根因结论",
             "根因分析",
+            "根因方向",
             "### 🔍 结论",
             "影响范围",
             "影响评估",
@@ -3157,6 +3349,27 @@ def _looks_like_alarm_analyst_report_for_alarm_session(
         if marker in normalized
     )
     return marker_count >= 3
+
+
+def _has_complete_alarm_analyst_report(report_markdown: str) -> bool:
+    """Return whether a report has every section needed for a useful card.
+
+    An alarm-bound conversation can emit several assistant messages while it
+    works. Persisting an early message produces a card that looks finished but
+    omits the root cause, blast radius, or remediation the user needs. Only
+    reports containing all three analytical sections qualify as the durable
+    card for an alarm session.
+    """
+    normalized = str(report_markdown or "")
+    section_groups = (
+        ("根因判断", "根因分析结论", "根因结论", "根因分析", "根因方向"),
+        ("影响范围", "影响分析", "影响面", "影响评估"),
+        ("处置建议", "建议动作", "修复建议", "处置方案"),
+    )
+    return all(
+        any(marker in normalized for marker in section_markers)
+        for section_markers in section_groups
+    )
 
 
 def _load_existing_alarm_analyst_card(
@@ -3215,6 +3428,21 @@ def _load_existing_alarm_analyst_card_by_report(
     return None
 
 
+def _alarm_analyst_card_quality(card: AlarmAnalystCard) -> tuple[int, int]:
+    """Rank final reports above streaming progress cards."""
+    raw = str(card.raw_report_markdown or "")
+    progress_penalty = int(bool(re.search(
+        r"(?:推送已(?:成功)?发送|通知已(?:成功)?推送|现在整理完整|"
+        r"下面是完整的?分析报告|报告推送成功|现在我来汇总)",
+        raw,
+    )))
+    marker_count = sum(
+        marker in raw
+        for marker in ("告警分析报告", "根因判断", "影响范围", "处置建议", "总结")
+    )
+    return (marker_count - progress_penalty * 10, len(raw))
+
+
 def _persist_alarm_analyst_card_from_report(
     *,
     session_id: str,
@@ -3253,6 +3481,14 @@ def _persist_alarm_analyst_card_from_report(
         and _looks_like_alarm_analyst_report_for_alarm_session(report_markdown)
     )
     if not matched and not alarm_bound_fallback_matched:
+        return False, None, False
+    if (
+        _is_alarm_bound_fault_session(
+            session_id=session_id,
+            employee_id=employee_id,
+        )
+        and not _has_complete_alarm_analyst_report(report_markdown)
+    ):
         return False, None, False
 
     card_report_markdown = report_markdown
@@ -4201,6 +4437,16 @@ async def dispatch_fault_manual_workorder(
             "alarmId": alarm_id,
             "chatId": parsed.chat_id,
             "resId": parsed.res_id,
+            "dispatchRequest": {
+                "chatId": parsed.chat_id,
+                "resId": parsed.res_id,
+                "metricType": parsed.metric_type,
+                "alarm": parsed.alarm.model_dump(mode="json"),
+                "analysis": parsed.analysis.model_dump(mode="json"),
+                "context": {
+                    "callback_url": callback_url,
+                },
+            },
             "analysisRecord": record,
             "callbackUrl": callback_url,
         }
@@ -4271,7 +4517,7 @@ async def notify_fault_manual_workorder_closed(
                 detail_parts.append(f"resId={res_id}")
             raise HTTPException(
                 status_code=404,
-                detail=f"analysis record not found for {', '.join(detail_parts)}",
+                detail=f"manual workorder not found (analysis record not found for {', '.join(detail_parts)})",
             )
 
         # Use res_id from stored record for metric verification if not in request
@@ -4354,6 +4600,7 @@ async def notify_fault_manual_workorder_closed(
             "chatId": chat_id,
             "resId": effective_res_id,
             "analysisRecord": merged_record,
+            "manualWorkorder": merged_record,
             "verification": verification,
         }
     except ValidationError as exc:
@@ -4509,12 +4756,7 @@ def _extract_alarm_analyst_card_candidate_text(
         for marker in (
             "# PORTAL ALARM ANALYST CARD MODE",
             "## 告警分析报告",
-            "## 📊 总结",
-            "## 总结",
-            "### 🔔 告警基本信息",
-            "### 🔍 根因分析",
-            "### 📈 关联资源与告警",
-            "### 🚑 处置建议",
+            "## 完整故障分析报告",
         )
         if normalized.find(marker) >= 0
     ]
@@ -4524,7 +4766,7 @@ def _extract_alarm_analyst_card_candidate_text(
     if allow_alarm_session_fallback and _looks_like_alarm_analyst_report_for_alarm_session(
         normalized,
     ):
-        return normalized
+        return str(report_markdown or "")
     return ""
 
 
@@ -4620,29 +4862,48 @@ async def list_portal_alarm_analyst_cards(
         # because card persistence is DB-first and history refresh should
         # still be able to render previously saved cards.
         db_chat_records = _load_cards_for_chat_from_db(chat_id)
-        if db_chat_records:
-            cards = []
-            for payload in db_chat_records.values():
-                shaped = _shape_alarm_analyst_card_payload(payload)
-                if not shaped:
-                    continue
-                card = AlarmAnalystCard.model_validate(shaped)
-                cards.append(
-                    _enrich_alarm_analyst_card_with_alarm_context(
-                        session_id=session_id,
-                        card=card,
-                    )
-                )
-            return AlarmAnalystCardListResponse(
-                cards=cards,
-            ).model_dump(by_alias=True)
+        cards_by_source: dict[str, AlarmAnalystCard] = {}
+        cards_without_source: list[AlarmAnalystCard] = []
+        for payload in db_chat_records.values():
+            shaped = _shape_alarm_analyst_card_payload(payload)
+            if not shaped:
+                continue
+            card = AlarmAnalystCard.model_validate(shaped)
+            card = _enrich_alarm_analyst_card_with_alarm_context(
+                session_id=session_id,
+                card=card,
+            )
+            source_message_id = str(card.source.message_id or "").strip()
+            if not source_message_id:
+                cards_without_source.append(card)
+                continue
+            previous = cards_by_source.get(source_message_id)
+            if previous is None or _alarm_analyst_card_quality(card) > _alarm_analyst_card_quality(previous):
+                cards_by_source[source_message_id] = card
 
-        backfilled_card = await _try_persist_alarm_analyst_card_from_agent_context(
-            request=request,
+        cards = list(cards_by_source.values()) + cards_without_source
+        alarm_bound_session = _is_alarm_bound_fault_session(
             session_id=session_id,
-            chat_id=chat_id,
             employee_id="fault",
         )
+        needs_backfill = (
+            not cards
+            or (
+                alarm_bound_session
+                and not any(
+                    _has_complete_alarm_analyst_report(card.raw_report_markdown)
+                    for card in cards
+                )
+            )
+        )
+        backfilled_card = None
+        if needs_backfill:
+            backfilled_card = await _try_persist_alarm_analyst_card_from_agent_context(
+                request=request,
+                session_id=session_id,
+                chat_id=chat_id,
+                employee_id="fault",
+            )
         if backfilled_card is not None:
             await _mirror_alarm_analyst_card_to_session_state(
                 request,
@@ -4651,8 +4912,16 @@ async def list_portal_alarm_analyst_cards(
                 message_id=backfilled_card.source.message_id,
                 card=backfilled_card,
             )
+            cards.append(backfilled_card)
+
+        if cards:
+            if alarm_bound_session:
+                # An alarm session represents one incident. Returning only the
+                # strongest report ensures a stale progress card cannot render
+                # alongside the complete analysis after history reconstruction.
+                cards = [max(cards, key=_alarm_analyst_card_quality)]
             return AlarmAnalystCardListResponse(
-                cards=[backfilled_card],
+                cards=cards,
             ).model_dump(by_alias=True)
 
         if not hasattr(request.app.state, "multi_agent_manager"):

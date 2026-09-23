@@ -34,6 +34,19 @@ def test_is_alarm_analyst_card_candidate_matches_report_with_rca_markers() -> No
     assert matched is True
 
 
+def test_is_alarm_analyst_card_candidate_rejects_progress_message() -> None:
+    assert is_alarm_analyst_card_candidate(
+        employee_id="fault",
+        report_markdown=(
+            "推送已发送。现在整理完整分析结果给用户：\n"
+            "告警识别 — syslog上报 Link Down，两端口 ICMP Ping=0.0，阈值0触发。\n"
+            "根因方向：需要进一步确认设备端口状态。\n"
+            "处置建议：登录设备检查端口和光模块。\n"
+        ),
+        process_blocks=[],
+    ) is False
+
+
 def test_build_alarm_analyst_card_extracts_summary_recommendations_and_hash() -> None:
     card = build_alarm_analyst_card(
         chat_id="chat-1",

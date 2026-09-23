@@ -106,6 +106,7 @@ def build_analysis_dispatch_history_message(record: dict[str, Any]) -> dict[str,
         "type": "agent",
         "content": "\n".join(content_lines),
         "analysisRecord": record,
+        "manualWorkorder": record,
     }
 
 
