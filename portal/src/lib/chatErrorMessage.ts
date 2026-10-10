@@ -72,6 +72,17 @@ export function toFriendlyChatError(error: unknown): string {
     return "模型流式连接中断，请重试当前步骤。";
   }
 
+  // vLLM rejects automatic tool calls unless its serving flags and parser are
+  // configured. This signature points to model deployment configuration,
+  // rather than a transient model execution failure.
+  if (
+    /(?:(?:["']?auto["']?|automatic)\s+tool\s+choice.{0,120}requires|requires.{0,120}(?:["']?auto["']?|automatic)\s+tool\s+choice|--enable-auto-tool-choice|--tool-call-parser)/i.test(
+      raw,
+    )
+  ) {
+    return "模型部署配置问题：vLLM 服务未启用工具调用支持，无法处理当前请求。请模型服务管理员检查启动参数 --enable-auto-tool-choice 和 --tool-call-parser；如果模型服务已启用，请平台管理员检查该模型的工具调用配置。反馈问题时请附模型名称和发生时间。";
+  }
+
   // 模型执行类错误：按类别给出友好提示，隐藏内部实现细节
   // （临时文件路径、错误码、内部名称）。
   const looksLikeModelError =

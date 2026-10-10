@@ -34,6 +34,16 @@ test("network interruptions get a retry hint", () => {
   );
 });
 
+test("explains vLLM automatic tool-choice deployment configuration errors", () => {
+  const raw =
+    '400 Bad Request: "auto" tool choice requires --enable-auto-tool-choice and --tool-call-parser hermes';
+  const message = toFriendlyChatError(raw);
+  assert.match(message, /模型部署配置问题/);
+  assert.match(message, /vLLM/);
+  assert.match(message, /平台管理员检查/);
+  assert.doesNotMatch(message, /400|hermes|Bad Request/);
+});
+
 test("never leaks internal dump paths / product names", () => {
   const out = toFriendlyChatError("boom (Details: /tmp/qwenpaw_query_error_abc.json)");
   assert.doesNotMatch(out, /\/tmp|qwenpaw|Details/);
