@@ -73,6 +73,18 @@ export function getSession(): SsoSession | null {
   return { token, user, expireAt };
 }
 
+export function getChatUserId(): string {
+  const session = getSession();
+  if (!session) {
+    return "default";
+  }
+  const username = session.user?.username;
+  if (typeof username !== "string" || !username.trim()) {
+    throw new Error("登录信息缺少用户名，请重新登录后再发起对话。");
+  }
+  return username.trim();
+}
+
 export function setSession(input: {
   token: string;
   user?: SsoUser | null;

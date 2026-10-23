@@ -11,8 +11,8 @@ import {
   listChats,
   updateChat,
 } from "../api/copawChat";
+import { getChatUserId } from "../auth/ssoSession";
 
-const DEFAULT_USER_ID = "default";
 const DEFAULT_CHANNEL = "console";
 const DEFAULT_SESSION_NAME = "New Chat";
 const ROLE_TOOL = "tool";
@@ -282,7 +282,7 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
     const session = normalizedSessionId ? this.findSession(normalizedSessionId) : undefined;
     return {
       sessionId: session?.sessionId || normalizedSessionId,
-      userId: session?.userId || DEFAULT_USER_ID,
+      userId: session?.userId || getChatUserId(),
       channel: session?.channel || DEFAULT_CHANNEL,
       realId: session?.realId ?? null,
     };
@@ -328,7 +328,7 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
       id: sessionId,
       name: DEFAULT_SESSION_NAME,
       sessionId,
-      userId: DEFAULT_USER_ID,
+      userId: getChatUserId(),
       channel: DEFAULT_CHANNEL,
       messages: [],
       meta: {},
@@ -400,7 +400,7 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
     this.sessionListRequest = (async () => {
       try {
         const chats = await listChats(this.agentId, {
-          user_id: DEFAULT_USER_ID,
+          user_id: getChatUserId(),
           channel: DEFAULT_CHANNEL,
         });
         return this.applyChatsToSessionList(chats as any[]);
@@ -460,7 +460,7 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
           id: sessionId,
           name: fromList.name || DEFAULT_SESSION_NAME,
           sessionId: fromList.sessionId || sessionId,
-          userId: fromList.userId || DEFAULT_USER_ID,
+          userId: fromList.userId || getChatUserId(),
           channel: fromList.channel || DEFAULT_CHANNEL,
           messages,
           meta: fromList.meta || {},
@@ -480,7 +480,7 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
           id: sessionId,
           name: refreshed.name || DEFAULT_SESSION_NAME,
           sessionId: refreshed.sessionId || sessionId,
-          userId: refreshed.userId || DEFAULT_USER_ID,
+          userId: refreshed.userId || getChatUserId(),
           channel: refreshed.channel || DEFAULT_CHANNEL,
           messages,
           meta: refreshed.meta || {},
@@ -509,7 +509,7 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
       id: sessionId,
       name: fromList?.name || sessionId,
       sessionId: fromList?.sessionId || sessionId,
-      userId: fromList?.userId || DEFAULT_USER_ID,
+      userId: fromList?.userId || getChatUserId(),
       channel: fromList?.channel || DEFAULT_CHANNEL,
       messages,
       meta: fromList?.meta || {},
@@ -554,7 +554,7 @@ export class PortalRuntimeSessionApi implements IAgentScopeRuntimeWebUISessionAP
     const extended: ExtendedSession = {
       ...session,
       sessionId: session.id,
-      userId: DEFAULT_USER_ID,
+      userId: getChatUserId(),
       channel: DEFAULT_CHANNEL,
     } as ExtendedSession;
 

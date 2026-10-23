@@ -1,4 +1,5 @@
 import { requestPortalApi } from "./portalWorkorders";
+import { getChatUserId } from "../auth/ssoSession";
 
 const DEFAULT_API_BASE_URL = "/copaw-api/api";
 const DEFAULT_FALLBACK_AGENT_ID = "default";
@@ -411,7 +412,7 @@ export function reconnectChat(
     {
       reconnect: true,
       session_id: sessionId,
-      user_id: "default",
+      user_id: getChatUserId(),
       channel: "console",
       stream: true,
     },

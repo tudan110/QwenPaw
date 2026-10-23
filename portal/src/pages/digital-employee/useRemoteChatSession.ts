@@ -49,8 +49,8 @@ import {
   FAULT_SCENARIO_ANALYZING_PLACEHOLDER,
   maybeHandleFaultScenarioMessage,
 } from "./faultScenario";
+import { getChatUserId } from "../../auth/ssoSession";
 
-const COPAW_USER_ID = "default";
 const COPAW_CHANNEL = "console";
 const REMOTE_WAIT_BLOCK_ID = "portal-remote-waiting-status";
 
@@ -985,7 +985,7 @@ export function useRemoteChatSession({
 
     try {
       const chats = await listChats(nextRemoteAgentId, {
-        user_id: COPAW_USER_ID,
+        user_id: getChatUserId(),
         channel: COPAW_CHANNEL,
       });
       if (remoteHistoryRequestIdRef.current !== requestId) {
@@ -1466,7 +1466,7 @@ export function useRemoteChatSession({
           ensuredChat = await createChat(nextRemoteAgentId, {
             name: chatName || normalizedVisibleContent,
             session_id: sessionId || createRemoteSessionId(nextEmployee.id),
-            user_id: COPAW_USER_ID,
+            user_id: getChatUserId(),
             channel: COPAW_CHANNEL,
             meta: chatMeta || undefined,
           });
@@ -1498,7 +1498,7 @@ export function useRemoteChatSession({
             },
           ],
           session_id: ensuredChat.session_id,
-          user_id: COPAW_USER_ID,
+          user_id: getChatUserId(),
           channel: COPAW_CHANNEL,
           stream: true,
         },

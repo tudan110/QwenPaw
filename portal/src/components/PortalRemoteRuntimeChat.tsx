@@ -15,6 +15,7 @@ import { ConfigProvider, bailianTheme } from "@agentscope-ai/design";
 import { theme as antdTheme } from "antd";
 import { createPortalRuntimeSessionApi } from "../lib/portalRuntimeSessionApi";
 import { stopChat } from "../api/copawChat";
+import { getChatUserId } from "../auth/ssoSession";
 import PortalStreamingResponseCard from "./PortalStreamingResponseCard";
 
 const DEFAULT_API_BASE_URL = "/copaw-api/api";
@@ -22,7 +23,6 @@ const API_BASE_URL = (import.meta.env.VITE_COPAW_API_BASE_URL || DEFAULT_API_BAS
   /\/$/,
   "",
 );
-const DEFAULT_USER_ID = "default";
 const DEFAULT_CHANNEL = "console";
 const RUNTIME_DESC_SCROLL_SELECTOR =
   ".qwenpaw-bubble-list-scroll.qwenpaw-bubble-list-order-desc";
@@ -233,10 +233,10 @@ export function PortalRemoteRuntimeChat({
       const requestBody = {
         input: lastInput,
         session_id: requestSessionId,
-        user_id: sessionContext.userId || session?.user_id || DEFAULT_USER_ID,
         channel: sessionContext.channel || session?.channel || DEFAULT_CHANNEL,
         stream: true,
         ...biz_params,
+        user_id: sessionContext.userId || session?.user_id || getChatUserId(),
       };
 
       const backendChatId =
@@ -329,7 +329,7 @@ export function PortalRemoteRuntimeChat({
               body: JSON.stringify({
                 reconnect: true,
                 session_id: sessionContext.sessionId || data.session_id,
-                user_id: sessionContext.userId || DEFAULT_USER_ID,
+                user_id: sessionContext.userId || getChatUserId(),
                 channel: sessionContext.channel || DEFAULT_CHANNEL,
               }),
               signal: data.signal,
