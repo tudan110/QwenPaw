@@ -4807,6 +4807,11 @@
   transform: translateY(-2px);
 }
 
+.portal-digital-employee .portal-home-composer-footer:has(.model-selector-panel) {
+  position: relative;
+  z-index: 3;
+}
+
 .portal-digital-employee .portal-home-composer-card textarea {
   width: 100%;
   min-height: 82px;
