@@ -521,6 +521,8 @@ export function normalizeRemoteSessions(
   return dedupedChats.map((chat) => ({
     id: chat.id,
     sessionId: chat.session_id,
+    userId: chat.user_id,
+    channel: chat.channel,
     title: buildRemoteSessionTitle(chat, employeeId),
     updatedAt: chat.updated_at || chat.created_at || new Date().toISOString(),
     status: chat.status || "idle",

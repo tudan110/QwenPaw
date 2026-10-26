@@ -399,10 +399,14 @@ export function reconnectChat(
   agentId: string | undefined,
   {
     sessionId,
+    userId,
+    channel = "console",
     signal,
     onEvent,
   }: {
     sessionId: string;
+    userId?: string;
+    channel?: string;
     signal?: AbortSignal;
     onEvent?: (event: Record<string, any>) => void;
   },
@@ -412,8 +416,8 @@ export function reconnectChat(
     {
       reconnect: true,
       session_id: sessionId,
-      user_id: getChatUserId(),
-      channel: "console",
+      user_id: userId || getChatUserId(),
+      channel,
       stream: true,
     },
     { signal, onEvent },

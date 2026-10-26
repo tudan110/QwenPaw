@@ -1863,6 +1863,7 @@ export default function DigitalEmployeePage({
                       employeeId: "fault",
                       sessionId: sessionId || chatId,
                       chatId,
+                      source: "alarm-registry",
                     },
                   },
                 });

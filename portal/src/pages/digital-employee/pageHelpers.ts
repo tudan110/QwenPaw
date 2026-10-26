@@ -928,6 +928,7 @@ export type PortalLocationState = {
     employeeId: string;
     sessionId: string;
     chatId?: string;
+    source?: "alarm-registry";
   };
   workbenchInitialPrompt?: {
     token: string;
@@ -994,6 +995,8 @@ export type SessionRecord = {
   updatedAt?: string;
   messages?: any[];
   sessionId?: string;
+  userId?: string;
+  channel?: string;
   status?: string;
   meta?: Record<string, unknown>;
   detail?: string;

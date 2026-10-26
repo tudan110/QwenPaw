@@ -195,6 +195,21 @@ export function usePortalSessionHistory({
       return;
     }
 
+    if (isRemoteEmployee && openSession.source === "alarm-registry" && openSession.chatId) {
+      navigate(`${locationPathname}${locationSearch}`, {
+        replace: true,
+        state: {},
+      });
+      void handleSelectHistory({
+        id: openSession.chatId,
+        sessionId: openSession.sessionId,
+        userId: "default",
+        channel: "console",
+        title: "告警分析",
+      });
+      return;
+    }
+
     const openKey = `${openSession.employeeId}:${openSession.sessionId}`;
     const availableSessions = isRemoteEmployee
       ? scopedRemoteSessions

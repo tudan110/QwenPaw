@@ -148,6 +148,8 @@ export function useRemoteChatSession({
   const currentEmployeeRef = useRef(currentEmployee);
   const currentChatIdRef = useRef(currentChatId);
   const currentSessionIdRef = useRef(currentSessionId);
+  const currentChatUserIdRef = useRef("");
+  const currentChatChannelRef = useRef(COPAW_CHANNEL);
   const currentChatStatusRef = useRef(currentChatStatus);
   const currentChatMetaRef = useRef<any>(null);
   const isStreamingRef = useRef(isStreaming);
@@ -1018,12 +1020,16 @@ export function useRemoteChatSession({
     employee,
     sessionId,
     chatId,
+    userId,
+    channel,
     messages,
   }: {
     agentId: string;
     employee: any;
     sessionId: string;
     chatId: string;
+    userId: string;
+    channel: string;
     messages: any[];
   }) => {
     const normalizedSessionId = String(sessionId || "").trim();
@@ -1053,6 +1059,8 @@ export function useRemoteChatSession({
     try {
       await reconnectChat(agentId, {
         sessionId: normalizedSessionId,
+        userId,
+        channel,
         signal: controller.signal,
         onEvent: (event) => handleRemoteStreamEvent(event, employee),
       });
@@ -1214,6 +1222,10 @@ export function useRemoteChatSession({
             : history.status || session.status || "idle";
       setCurrentChatId(session.id);
       setCurrentSessionId(selectedSessionId);
+      currentChatIdRef.current = session.id;
+      currentSessionIdRef.current = selectedSessionId;
+      currentChatUserIdRef.current = session.userId || getChatUserId();
+      currentChatChannelRef.current = session.channel || COPAW_CHANNEL;
       setCurrentChatStatus(selectedStatus);
       currentChatMetaRef.current = session?.meta || history?.meta || null;
       setMessages(nextMessages);
@@ -1226,6 +1238,8 @@ export function useRemoteChatSession({
             employee: nextEmployee,
             sessionId: selectedSessionId,
             chatId: session.id,
+            userId: currentChatUserIdRef.current,
+            channel: currentChatChannelRef.current,
             messages: nextMessages || [],
           });
         }, 0);
@@ -1459,6 +1473,8 @@ export function useRemoteChatSession({
         ensuredChat = {
           id: currentChatIdRef.current,
           session_id: currentSessionIdRef.current,
+          user_id: currentChatUserIdRef.current || getChatUserId(),
+          channel: currentChatChannelRef.current,
         };
       } else {
         setIsCreatingChat(true);
@@ -1479,6 +1495,8 @@ export function useRemoteChatSession({
       setCurrentSessionId(ensuredChat.session_id);
       currentChatIdRef.current = ensuredChat.id;
       currentSessionIdRef.current = ensuredChat.session_id;
+      currentChatUserIdRef.current = ensuredChat.user_id;
+      currentChatChannelRef.current = ensuredChat.channel || COPAW_CHANNEL;
       currentChatMetaRef.current = chatMeta || ensuredChat.meta || currentChatMetaRef.current || null;
 
       await streamChat(
@@ -1498,8 +1516,8 @@ export function useRemoteChatSession({
             },
           ],
           session_id: ensuredChat.session_id,
-          user_id: getChatUserId(),
-          channel: COPAW_CHANNEL,
+          user_id: ensuredChat.user_id,
+          channel: ensuredChat.channel || COPAW_CHANNEL,
           stream: true,
         },
         {
@@ -1558,6 +1576,10 @@ export function useRemoteChatSession({
     setRemoteSessions([]);
     setCurrentSessionId("");
     setCurrentChatId("");
+    currentSessionIdRef.current = "";
+    currentChatIdRef.current = "";
+    currentChatUserIdRef.current = "";
+    currentChatChannelRef.current = COPAW_CHANNEL;
     currentChatMetaRef.current = null;
     setPendingAlarmWorkorderProposal(null);
     setIsSubmittingAlarmWorkorder(false);
