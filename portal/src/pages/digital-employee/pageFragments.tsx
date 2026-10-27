@@ -325,6 +325,8 @@ export function PortalHomeHero({
   onSendPreset,
   onPrimaryAction,
   modelSelector,
+  approvalModeSelector,
+  approvalPanel,
 }: {
   alertBell: ReactNode;
   themeToggleIcon: ReactNode;
@@ -354,6 +356,8 @@ export function PortalHomeHero({
   onSendPreset: (command: string) => void;
   onPrimaryAction: () => void;
   modelSelector: ReactNode;
+  approvalModeSelector?: ReactNode;
+  approvalPanel?: ReactNode;
 }) {
   return (
     <div className="portal-home-stage">
@@ -383,6 +387,7 @@ export function PortalHomeHero({
         <p>以对话方式发起运维协同</p>
       </div>
 
+      {approvalPanel}
       <div className="portal-home-composer-card">
         <textarea
           ref={homeComposerRef}
@@ -445,6 +450,7 @@ export function PortalHomeHero({
           </div>
           <div className="portal-home-composer-actions">
             {modelSelector}
+            {approvalModeSelector}
             <Tooltip title="已处理任务" placement="bottom" mouseEnterDelay={0.1}>
               <button
                 type="button"
@@ -850,11 +856,13 @@ export function EmployeeChatMainPanel({
   isConversationRunning,
   isCreatingChat,
   onPrimaryAction,
+  approvalPanel,
 }: {
   visibleEmployee: DigitalEmployee;
   isAlarmWorkbenchMode: boolean;
   headerStatusLabel?: string | null;
   chatHeaderActions: ReactNode;
+  approvalPanel?: ReactNode;
   chatMessagesRef: MutableRefObject<HTMLDivElement | null>;
   messagesEndRef: MutableRefObject<HTMLDivElement | null>;
   safeMessages: ChatMessageRecord[];
@@ -956,6 +964,7 @@ export function EmployeeChatMainPanel({
         <div ref={messagesEndRef} />
       </div>
 
+      {approvalPanel}
       <div className="input-area">
         <div className="input-wrapper">
           <div className="portal-home-composer-card chat-composer-card">

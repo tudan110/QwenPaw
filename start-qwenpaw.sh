@@ -313,7 +313,8 @@ if [ "$HOST_OVERRIDDEN" != true ]; then
 fi
 if [ "$USE_WORKER_APP" != false ]; then
     if [ "$WORKERS_OVERRIDDEN" != true ]; then
-        set -- "$@" --workers "${QWENPAW_APP_WORKERS:-2}"
+        # Approval Futures and running chat tasks are process-local.
+        set -- "$@" --workers "${QWENPAW_APP_WORKERS:-1}"
     fi
     if [ "$BACKLOG_OVERRIDDEN" != true ]; then
         set -- "$@" --backlog "${QWENPAW_APP_BACKLOG:-2048}"

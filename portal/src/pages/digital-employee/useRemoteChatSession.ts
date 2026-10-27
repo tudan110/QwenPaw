@@ -50,6 +50,9 @@ import {
   maybeHandleFaultScenarioMessage,
 } from "./faultScenario";
 import { getChatUserId } from "../../auth/ssoSession";
+import { stopMainChatApprovalTask } from "../../api/mainChatApproval";
+import { withMainChatApprovalLevel } from "./mainChatApproval";
+import { useMainChatApprovalMode, useMainChatApprovals } from "./useMainChatApproval";
 
 const COPAW_CHANNEL = "console";
 const REMOTE_WAIT_BLOCK_ID = "portal-remote-waiting-status";
@@ -109,15 +112,20 @@ export function useRemoteChatSession({
   isRemoteEmployee,
   remoteAgentId,
   setMessages,
+  approvalEnabled = false,
 }: {
   currentEmployee: any;
   isRemoteEmployee: boolean;
   remoteAgentId: string | null;
   setMessages: Dispatch<SetStateAction<any[]>>;
+  approvalEnabled?: boolean;
 }) {
   const [currentSessionId, setCurrentSessionId] = useState("");
   const [currentChatId, setCurrentChatId] = useState("");
   const [currentChatStatus, setCurrentChatStatus] = useState("idle");
+  const approvalMode = useMainChatApprovalMode(remoteAgentId, currentSessionId);
+  const approvalLevelRef = useRef(approvalMode.level);
+  approvalLevelRef.current = approvalMode.level;
   const [historyVisible, setHistoryVisible] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
@@ -789,6 +797,31 @@ export function useRemoteChatSession({
     setCurrentChatStatus("idle");
   }, [finalizePendingResponse]);
 
+  const cancelApprovalTask = useCallback(async (signal: AbortSignal) => {
+    const agentId = remoteAgentIdRef.current;
+    const chatId = currentChatIdRef.current;
+    if (!agentId || !chatId) {
+      throw new Error("缺少当前任务信息，无法取消任务。");
+    }
+    await stopMainChatApprovalTask(agentId, chatId, signal);
+    if (remoteAgentIdRef.current === agentId && currentChatIdRef.current === chatId) {
+      stopActiveStream(false);
+    }
+  }, [stopActiveStream]);
+
+  const approvals = useMainChatApprovals({
+    agentId: remoteAgentId,
+    sessionId: currentSessionId,
+    enabled: approvalEnabled && isRemoteEmployee,
+    onCancelTask: cancelApprovalTask,
+  });
+  const isWaitingForApproval = approvals.items.length > 0;
+  useEffect(() => {
+    if (!isWaitingForApproval) return;
+    clearRemoteWaitNoticeTimers();
+    clearRemoteWaitNotice();
+  }, [isWaitingForApproval]);
+
   const maybeEnhanceAlarmAnalystMessage = useCallback(async ({
     frontendMessageId,
     backendMessageId,
@@ -1415,6 +1448,8 @@ export function useRemoteChatSession({
   ) => {
     const nextEmployee = currentEmployeeRef.current;
     const nextRemoteAgentId = remoteAgentIdRef.current;
+    const requestApprovalLevel = approvalLevelRef.current;
+    const approvalSessionId = currentSessionIdRef.current;
     if (
       !nextEmployee ||
       !nextRemoteAgentId ||
@@ -1491,6 +1526,9 @@ export function useRemoteChatSession({
         }
       }
 
+      if (ensuredChat.session_id !== approvalSessionId) {
+        approvalMode.rememberForSession(ensuredChat.session_id, requestApprovalLevel);
+      }
       setCurrentChatId(ensuredChat.id);
       setCurrentSessionId(ensuredChat.session_id);
       currentChatIdRef.current = ensuredChat.id;
@@ -1501,7 +1539,7 @@ export function useRemoteChatSession({
 
       await streamChat(
         nextRemoteAgentId,
-        {
+        withMainChatApprovalLevel({
           input: [
             {
               role: "user",
@@ -1519,7 +1557,7 @@ export function useRemoteChatSession({
           user_id: ensuredChat.user_id,
           channel: ensuredChat.channel || COPAW_CHANNEL,
           stream: true,
-        },
+        }, requestApprovalLevel),
         {
           signal: controller.signal,
           onEvent: (event) => handleRemoteStreamEvent(event, nextEmployee),
@@ -1558,7 +1596,7 @@ export function useRemoteChatSession({
     }
 
     return streamSucceeded;
-  }, [refreshRemoteSessions]);
+  }, [refreshRemoteSessions, approvalMode.rememberForSession]);
 
   const resetRemoteState = useCallback(({
     initialMessages = [],
@@ -1598,6 +1636,8 @@ export function useRemoteChatSession({
   }, [setMessages, stopActiveStream]);
 
   return {
+    approvalMode,
+    approvals,
     currentSessionId,
     setCurrentSessionId,
     currentChatId,

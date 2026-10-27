@@ -1,0 +1,354 @@
+.portal-digital-employee .main-chat-approval-mode {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.portal-digital-employee .portal-home-composer-footer:has(.main-chat-approval-mode) {
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
+
+.portal-digital-employee .portal-home-composer-actions:has(.main-chat-approval-mode) {
+  max-width: 100%;
+  flex-wrap: wrap;
+  margin-left: auto;
+  gap: 8px;
+}
+
+.portal-digital-employee .main-chat-approval-mode-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-light);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.portal-digital-employee .main-chat-approval-mode-trigger.unprotected {
+  color: var(--danger);
+}
+
+.portal-digital-employee .main-chat-approval-mode-trigger > .fa-chevron-down {
+  font-size: 9px;
+}
+
+.portal-digital-employee .main-chat-approval-mode-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 35;
+  width: min(310px, calc(100vw - 48px));
+  max-height: min(360px, calc(100vh - 160px));
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-white);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+}
+
+.portal-digital-employee .main-chat-approval-mode-caption {
+  padding: 8px 10px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.portal-digital-employee .main-chat-approval-mode-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.portal-digital-employee .main-chat-approval-mode-menu button:hover,
+.portal-digital-employee .main-chat-approval-mode-menu button.selected {
+  background: var(--bg-gray);
+}
+
+.portal-digital-employee .main-chat-approval-mode-menu strong,
+.portal-digital-employee .main-chat-approval-mode-menu small {
+  display: block;
+}
+
+.portal-digital-employee .main-chat-approval-mode-menu strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.portal-digital-employee .main-chat-approval-mode-menu small {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.portal-digital-employee .main-chat-approval-mode-menu .fa-check {
+  color: var(--primary);
+}
+
+.portal-digital-employee .main-chat-approval-storage-error {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 36;
+  width: 260px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-white);
+  color: var(--text-secondary);
+  font-size: 12px;
+  box-shadow: var(--shadow);
+}
+
+.portal-digital-employee .main-chat-approval-panel {
+  flex-shrink: 0;
+  max-height: min(46vh, 460px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 20px 8px;
+  scrollbar-gutter: stable;
+}
+
+.portal-digital-employee .portal-home-stage > .main-chat-approval-panel {
+  width: min(100%, 860px);
+  margin: 0 auto 12px;
+}
+
+.portal-digital-employee .main-chat-approval-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 2px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.portal-digital-employee .main-chat-approval-status i {
+  color: var(--primary);
+}
+
+.portal-digital-employee .main-chat-approval-card {
+  padding: 15px 16px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: 12px;
+  background: var(--bg-white);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+  font-size: 12px;
+}
+
+.portal-digital-employee .main-chat-approval-card header,
+.portal-digital-employee .main-chat-approval-card footer,
+.portal-digital-employee .main-chat-approval-heading,
+.portal-digital-employee .main-chat-approval-decisions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.portal-digital-employee .main-chat-approval-card header,
+.portal-digital-employee .main-chat-approval-card footer {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.portal-digital-employee .main-chat-approval-heading {
+  flex-wrap: wrap;
+}
+
+.portal-digital-employee .main-chat-approval-heading > i {
+  color: var(--primary);
+}
+
+.portal-digital-employee .main-chat-approval-heading strong {
+  font-size: 13px;
+}
+
+.portal-digital-employee .main-chat-approval-severity {
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: var(--bg-gray);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.portal-digital-employee .main-chat-approval-severity.high,
+.portal-digital-employee .main-chat-approval-severity.critical {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+.portal-digital-employee .main-chat-approval-severity.medium {
+  color: #92400e;
+  background: #fffbeb;
+}
+
+.portal-digital-employee.theme-dark .main-chat-approval-severity.high,
+.portal-digital-employee.theme-dark .main-chat-approval-severity.critical {
+  color: #fca5a5;
+  background: #3a202b;
+}
+
+.portal-digital-employee.theme-dark .main-chat-approval-severity.medium {
+  color: #fcd34d;
+  background: #332c1c;
+}
+
+.portal-digital-employee .main-chat-approval-countdown,
+.portal-digital-employee .main-chat-approval-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.portal-digital-employee .main-chat-approval-countdown {
+  font-variant-numeric: tabular-nums;
+}
+
+.portal-digital-employee .main-chat-approval-meta {
+  flex-wrap: wrap;
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+
+.portal-digital-employee .main-chat-approval-meta code,
+.portal-digital-employee .main-chat-approval-target code {
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: var(--bg-gray);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.portal-digital-employee .main-chat-approval-summary {
+  max-height: 140px;
+  overflow: auto;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-light);
+  color: var(--text-secondary);
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.portal-digital-employee .main-chat-approval-target {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--text-secondary);
+}
+
+.portal-digital-employee .main-chat-approval-hint {
+  margin: 10px 0 12px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.portal-digital-employee .main-chat-approval-button {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-white);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.portal-digital-employee .main-chat-approval-button.primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
+.portal-digital-employee .main-chat-approval-button.deny {
+  color: var(--danger);
+}
+
+.portal-digital-employee .main-chat-approval-button.quiet {
+  background: var(--bg-light);
+  color: var(--text-secondary);
+}
+
+.portal-digital-employee .main-chat-approval-button:hover:not(:disabled),
+.portal-digital-employee .main-chat-approval-mode-trigger:hover:not(:disabled) {
+  border-color: var(--primary);
+}
+
+.portal-digital-employee .main-chat-approval-button:disabled,
+.portal-digital-employee .main-chat-approval-mode-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.portal-digital-employee .main-chat-approval-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 6px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-light);
+  color: var(--danger);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.portal-digital-employee .main-chat-approval-error button {
+  flex-shrink: 0;
+  padding: 4px;
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.portal-digital-employee .main-chat-approval-mode button:focus-visible,
+.portal-digital-employee .main-chat-approval-panel button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+@media (max-width: 640px) {
+  .portal-digital-employee .main-chat-approval-panel {
+    margin-right: 10px;
+    margin-left: 10px;
+    max-height: 40vh;
+  }
+
+  .portal-digital-employee .main-chat-approval-card {
+    padding: 12px;
+  }
+
+  .portal-digital-employee .main-chat-approval-decisions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    margin-left: auto;
+  }
+
+}

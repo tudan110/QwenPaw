@@ -64,6 +64,10 @@ import { usePortalKnowledgeBase } from "./digital-employee/usePortalKnowledgeBas
 import { usePortalResourceImport } from "./digital-employee/usePortalResourceImport";
 import { usePortalSessionHistory } from "./digital-employee/usePortalSessionHistory";
 import { useRemoteChatSession } from "./digital-employee/useRemoteChatSession";
+import {
+  MainChatApprovalModeSelector,
+  MainChatApprovalPanel,
+} from "./digital-employee/mainChatApprovalControls";
 import { portalAppTitle } from "../config/portalBranding";
 import portalLogo from "../assets/images/portal-logo.png";
 import PortalTraditionalViewButton from "../components/PortalTraditionalViewButton";
@@ -542,6 +546,8 @@ export default function DigitalEmployeePage({
   }, [clearReplyFocusAlignmentHandles, rememberChatScrollMetrics]);
 
   const {
+    approvalMode,
+    approvals,
     currentSessionId,
     setCurrentSessionId,
     currentChatId,
@@ -570,6 +576,7 @@ export default function DigitalEmployeePage({
     isRemoteEmployee,
     remoteAgentId,
     setMessages,
+    approvalEnabled: currentView === "chat" && !activeAdvancedPanel,
   });
   const isRemoteConversationRunning = isStreaming || currentChatStatus === "running";
 
@@ -1481,6 +1488,16 @@ export default function DigitalEmployeePage({
     </Tooltip>
   ) : null;
   const chatHeaderStatusLabel = !isRemoteEmployee && isAlarmWorkbenchMode ? "告警触发" : null;
+  const approvalModeSelector = isRemoteEmployee ? (
+    <MainChatApprovalModeSelector
+      key={`${remoteAgentId}:${currentSessionId}`}
+      level={approvalMode.level}
+      onChange={approvalMode.setLevel}
+      disabled={isInteractionLocked || isRemoteConversationRunning || isCreatingChat}
+      error={approvalMode.storageError}
+    />
+  ) : null;
+  const approvalPanel = <MainChatApprovalPanel controls={approvals} />;
   const chatHeaderActions = (
     <>
       {showModelSelector ? (
@@ -1498,6 +1515,7 @@ export default function DigitalEmployeePage({
           onRefresh={() => void fetchModelState()}
         />
       ) : null}
+      {approvalModeSelector}
       <>
         <Tooltip title="已处理任务" placement="bottom" mouseEnterDelay={0.1}>
           <button
@@ -1991,6 +2009,8 @@ export default function DigitalEmployeePage({
             >
               {showPortalHomeHero ? (
                 <PortalHomeHero
+                  approvalModeSelector={approvalModeSelector}
+                  approvalPanel={approvalPanel}
                   alertBell={renderAlertBell()}
                   themeToggleIcon={themeToggleIcon}
                   portalLogo={portalLogo}
@@ -2042,6 +2062,7 @@ export default function DigitalEmployeePage({
               ) : (
                 <>
                   <EmployeeChatMainPanel
+                    approvalPanel={approvalPanel}
                     visibleEmployee={visibleEmployee}
                     isAlarmWorkbenchMode={isAlarmWorkbenchMode}
                     headerStatusLabel={chatHeaderStatusLabel}
