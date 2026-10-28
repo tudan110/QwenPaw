@@ -25,10 +25,14 @@ from qwenpaw.extensions.api.alarm_analyst_card_models import (
 SECTION_HEADING_RE = re.compile(r"^#{1,6}\s*(.+?)\s*$", re.MULTILINE)
 BULLET_LINE_RE = re.compile(r"^\s*(?:[-*+]\s+|\d+\.\s+)(.+?)\s*$", re.MULTILINE)
 RESOURCE_ID_RE = re.compile(
-    r"(?:资源\s*ID(?:（CI\s*ID）|\(CI\s*ID\))?|CI\s*ID|res[_\s-]*id)[:：]?\s*([0-9]+)",
+    r"(?:资源\s*ID(?:（CI\s*ID）|\(CI\s*ID\))?|CI\s*ID|res[_\s-]*id)"
+    r"[:：]?\s*([0-9]+)(?=$|[\s,，、;；)）(（|。])",
     re.IGNORECASE,
 )
-RESOURCE_ID_FALLBACK_RE = re.compile(r"(?:根资源|资源)\D{0,8}([0-9]{3,})")
+RESOURCE_ID_FALLBACK_RE = re.compile(
+    r"(?:根因资源|根资源|资源)(?:[ \t]*[:：][ \t]*|[ \t]+)"
+    r"([0-9]+)(?=$|[\s,，、;；)）(（|。])"
+)
 ROOT_RESOURCE_RE = re.compile(
     r"(?:根资源|根因对象|根因资源|根资源为)[:：]?\s*([A-Za-z0-9_.\-\u4e00-\u9fa5]+)"
 )
@@ -728,7 +732,10 @@ def _extract_resource_id(text: str) -> str:
         ("资源 ID（CI ID）", "资源 ID(CI ID)", "资源ID（CI ID）", "资源 ID", "CI ID", "resId"),
     )
     if labeled:
-        digits = re.search(r"[0-9]{3,}", labeled)
+        digits = re.match(
+            r"([0-9]+)(?=$|[\s,，、;；)）(（|。])",
+            labeled,
+        )
         if digits:
             return digits.group(0)
     match = RESOURCE_ID_RE.search(str(text or ""))

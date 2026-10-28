@@ -3,12 +3,42 @@ import test from "node:test";
 
 import {
   buildAlarmAnalystCardRequest,
+  formatAlarmAnalystConfidence,
   getAlarmAnalystReportMarkdown,
   looksLikeAlarmAnalystReportForAlarmSession,
   mergeAlarmAnalystCards,
   shouldAttemptAlarmAnalystCardByContent,
   shouldEnableAlarmAnalystCards,
 } from "./shared.ts";
+
+test("confidence display shows only the percentage from a verbose report value", () => {
+  const value = "90%（评分对象：CPU采样命中配置阈值而触发告警；v2得分20+50+20+0；非统计概率）";
+  assert.equal(formatAlarmAnalystConfidence(value), "90%");
+  assert.equal(formatAlarmAnalystConfidence("100% (all evidence supported)"), "100%");
+  assert.equal(formatAlarmAnalystConfidence("90% 补充说明"), "90%");
+  assert.equal(formatAlarmAnalystConfidence("90.5%（说明）"), "90.5%");
+  assert.equal(formatAlarmAnalystConfidence("0%（根因未确定）"), "0%");
+  assert.equal(value.includes("评分对象"), true);
+});
+
+test("confidence display preserves plain percentages and legacy values", () => {
+  for (const [value, expected] of [
+    ["90%", "90%"], ["100%", "100%"], ["0%", "0%"],
+    [0, "0%"], [0.9, "90%"], [90, "90%"],
+    ["high", "90%"], ["medium", "70%"], ["low", "50%"],
+    ["高", "90%"], ["中", "70%"], ["低", "50%"],
+    ["待确认", "待确认"], [null, ""], [undefined, ""],
+  ] as const) {
+    assert.equal(formatAlarmAnalystConfidence(value), expected);
+  }
+});
+
+test("confidence display does not mistake a percentage in an explanation for a score", () => {
+  assert.equal(
+    formatAlarmAnalystConfidence("待确认（资料相关性90%）"),
+    "待确认（资料相关性90%）",
+  );
+});
 
 test("builds alarm analyst card request from grouped response blocks", () => {
   const message = {

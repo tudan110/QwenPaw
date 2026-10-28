@@ -104,6 +104,39 @@ export type AlarmAnalystCardRequest = {
   processBlocks: Array<Record<string, unknown>>;
 };
 
+export function formatAlarmAnalystConfidence(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  const normalized = raw.toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+
+  const percentMatch = normalized.match(
+    /^(\d{1,3}(?:\.\d+)?)\s*%(?=$|\s|[（(])/u,
+  );
+  if (percentMatch) {
+    return `${Math.max(0, Math.min(100, Number(percentMatch[1])))}%`;
+  }
+
+  const numericValue = Number(normalized);
+  if (Number.isFinite(numericValue)) {
+    const percent = numericValue <= 1
+      ? Math.round(numericValue * 100)
+      : Math.round(numericValue);
+    return `${Math.max(0, Math.min(100, percent))}%`;
+  }
+  if (normalized === "high" || normalized === "高") {
+    return "90%";
+  }
+  if (normalized === "medium" || normalized === "中") {
+    return "70%";
+  }
+  if (normalized === "low" || normalized === "低") {
+    return "50%";
+  }
+  return raw;
+}
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

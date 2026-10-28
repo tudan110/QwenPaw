@@ -5,6 +5,7 @@ import pytest
 from qwenpaw.extensions.api.alarm_analyst_card_models import AlarmAnalystCard
 from qwenpaw.extensions.api.alarm_analyst_card_service import (
     build_alarm_analyst_card,
+    extract_display_fields,
     is_alarm_analyst_card_candidate,
 )
 
@@ -28,6 +29,63 @@ def _build_table_test_card(sections: str) -> AlarmAnalystCard:
         ),
         process_blocks=[],
     )
+
+
+@pytest.mark.parametrize("score", [90, 100])
+def test_v2_scoped_score_survives_card_and_registry_display(score: int) -> None:
+    confidence = (
+        f"{score}%（评分对象：CPU采样命中配置阈值而触发告警；"
+        "非统计概率）"
+    )
+    card = _build_table_test_card(
+        "## 根因判断\n"
+        "已确认阈值触发；配置合理性待核验。\n"
+        "## 影响范围\n业务影响待验证。\n"
+        "## 📊 总结\n"
+        f"- 置信度：{confidence}\n"
+        "- 故障性质：CPU阈值触发，未证实耗尽\n"
+        "- 根因方向：已核验规则条件命中，配置适用性待核验\n"
+        "- 通知状态：未执行\n"
+    )
+    restored = AlarmAnalystCard.model_validate_json(
+        card.model_dump_json(by_alias=True),
+    )
+    displayed = extract_display_fields(restored.model_dump(by_alias=True))
+    assert displayed["confidence"] == confidence
+    assert "业务影响待验证" in restored.raw_report_markdown
+
+
+@pytest.mark.parametrize(
+    "knowledge_result",
+    [
+        (
+            "已按「MySQL 锁等待」检索，query_id=query-1。\n"
+            "知识库来源：PaaS层故障根因分析.md，数据库与缓存故障，"
+            "evidence_id=12；场景指引，仅部分适用，需核对实例版本。\n"
+        ),
+        (
+            "已按「MySQL 锁等待」检索，query_id=query-2；"
+            "本次知识库检索未找到可靠匹配资料，建议补充同实例历史工单。\n"
+        ),
+        "知识库检索失败：HTTP 503，未取得补充资料；不等于无匹配。\n",
+        "知识库未查询：未取得应用地址，请求未发出。\n",
+    ],
+)
+def test_knowledge_result_survives_card_serialization(knowledge_result):
+    card = _build_table_test_card(
+        "## 根因判断\n锁等待原因待核验。\n"
+        "## 影响范围\n业务影响待验证。\n"
+        "## 知识匹配与适用性\n"
+        + knowledge_result
+        + "本地参考：references/rca-paas.md 数据库章节，仅作排查参考。\n"
+        "## 处置建议\n1. 只读核对锁等待链。\n"
+        "## 📊 总结\n- 通知状态：未执行\n"
+    )
+    stored = card.model_dump_json(by_alias=True)
+    restored = AlarmAnalystCard.model_validate_json(stored)
+    assert knowledge_result in restored.raw_report_markdown
+    assert "本地参考：references/rca-paas.md" in restored.raw_report_markdown
+    assert "## 📊 总结" in restored.raw_report_markdown
 
 
 @pytest.mark.parametrize(
@@ -112,6 +170,78 @@ def test_display_fields_preserve_explicit_quantified_confidence() -> None:
     assert display["confidence"] == (
         "30%（证据支持评分：20+10+0+0+0，非统计概率）"
     )
+
+
+@pytest.mark.parametrize(
+    "root_text",
+    [
+        "未达到资源耗尽（持续高位/100%），具体原因待核验。",
+        "资源使用率100%，资源阈值为3094，具体原因待核验。",
+        "资源位于10.2.0.15，具体原因待核验。",
+        "资源异常发生于2026-10-28，具体原因待核验。",
+    ],
+)
+def test_root_metric_numbers_do_not_override_explicit_ci(
+    root_text: str,
+) -> None:
+    card = _build_table_test_card("## 根因判断\n" + root_text)
+
+    assert card.root_cause.resource_id == "3094"
+    assert card.root_cause.ci_id == "3094"
+    assert card.topology.highlighted_node_ids[0] == "3094"
+    if card.workorder_proposal is not None:
+        assert card.workorder_proposal.resource_id == "3094"
+
+
+@pytest.mark.parametrize(
+    "root_text",
+    [
+        "资源耗尽（100%），不能定位根因对象。",
+        "资源使用率100%，不能定位根因对象。",
+        "资源位于10.2.0.15，不能定位根因对象。",
+        "资源于2026-10-28发生异常，不能定位根因对象。",
+        "资源 ID：100%，不是有效对象标识。",
+        "CI ID：10.2.0.15，不是有效对象标识。",
+        "资源 ID：未知，CPU数值3094。",
+    ],
+)
+def test_metric_numbers_without_ci_do_not_create_resource_id(
+    root_text: str,
+) -> None:
+    card = build_alarm_analyst_card(
+        chat_id="numeric-chat",
+        message_id="numeric-report",
+        employee_id="fault",
+        report_markdown=(
+            "## 告警分析报告：资源告警\n"
+            "## 根因判断\n" + root_text
+        ),
+        process_blocks=[],
+    )
+
+    assert card.root_cause.resource_id is None
+    assert card.root_cause.ci_id is None
+    assert not card.topology.highlighted_node_ids
+    if card.workorder_proposal is not None:
+        assert card.workorder_proposal.resource_id == ""
+
+
+@pytest.mark.parametrize(
+    "root_text,expected",
+    [
+        ("根资源 MySQL（CI ID 12）锁等待。", "12"),
+        ("根因资源 ID：5002，候选对象已定位。", "5002"),
+        ("MySQL 资源 3094 存在锁等待。", "3094"),
+        ("根资源：5002，发生锁等待。", "5002"),
+        ("resId: 5002，发生锁等待。", "5002"),
+    ],
+)
+def test_explicit_root_ci_and_legacy_direct_resource_ids_are_preserved(
+    root_text: str, expected: str,
+) -> None:
+    card = _build_table_test_card("## 根因判断\n" + root_text)
+
+    assert card.root_cause.ci_id == expected
 
 
 def test_root_summary_preserves_key_value_table_support() -> None:

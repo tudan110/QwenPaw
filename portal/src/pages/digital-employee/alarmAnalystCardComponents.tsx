@@ -2,7 +2,10 @@ import { memo, useEffect, useMemo, useState, type ComponentPropsWithoutRef } fro
 
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
 import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
-import type { AlarmAnalystCardV1 } from "../../alarm-analyst/shared";
+import {
+  formatAlarmAnalystConfidence as mapConfidenceLabel,
+  type AlarmAnalystCardV1,
+} from "../../alarm-analyst/shared";
 import {
   normalizeMarkdownDisplayContent,
   unwrapPortalAlarmAnalystCardContent,
@@ -412,38 +415,6 @@ function buildSummaryRowsFromReport(card: AlarmAnalystCardV1): AlarmAnalystSumma
 
 function joinUnique(items: string[] = []) {
   return [...new Set(items.map((item) => item.trim()).filter(Boolean))].join("、");
-}
-
-function mapConfidenceLabel(value: unknown) {
-  const raw = String(value || "").trim();
-  const normalized = raw.toLowerCase();
-  if (!normalized) {
-    return "";
-  }
-
-  const percentMatch = normalized.match(/^(\d{1,3})(?:\.\d+)?\s*%$/);
-  if (percentMatch) {
-    const percent = Math.max(0, Math.min(100, Number(percentMatch[1])));
-    return `${percent}%`;
-  }
-
-  const numericValue = Number(normalized);
-  if (Number.isFinite(numericValue)) {
-    const percent = numericValue <= 1
-      ? Math.round(numericValue * 100)
-      : Math.round(numericValue);
-    return `${Math.max(0, Math.min(100, percent))}%`;
-  }
-  if (normalized === "high" || normalized === "高") {
-    return "90%";
-  }
-  if (normalized === "medium" || normalized === "中") {
-    return "70%";
-  }
-  if (normalized === "low" || normalized === "低") {
-    return "50%";
-  }
-  return raw;
 }
 
 function mapStatusLabel(value: string) {
@@ -1090,7 +1061,7 @@ export const AlarmAnalystCardPanel = memo(function AlarmAnalystCardPanel({
                       ) : null}
                       {item.confidence ? (
                         <span className="alarm-analyst-candidate-confidence">
-                          {item.confidence}
+                          {mapConfidenceLabel(item.confidence)}
                         </span>
                       ) : null}
                     </div>
