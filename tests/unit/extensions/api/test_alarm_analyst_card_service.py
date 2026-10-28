@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+
+from qwenpaw.extensions.api.alarm_analyst_card_models import AlarmAnalystCard
 from qwenpaw.extensions.api.alarm_analyst_card_service import (
     build_alarm_analyst_card,
     is_alarm_analyst_card_candidate,
@@ -7,6 +10,236 @@ from qwenpaw.extensions.api.alarm_analyst_card_service import (
 
 
 PORTAL_ALARM_ANALYST_CARD_MARKER = "# PORTAL ALARM ANALYST CARD MODE"
+
+
+def _build_table_test_card(sections: str) -> AlarmAnalystCard:
+    return build_alarm_analyst_card(
+        chat_id="table-chat",
+        message_id="table-report",
+        employee_id="fault",
+        report_markdown=(
+            "## 告警分析报告：资源告警\n"
+            "## 告警基础信息\n"
+            "| 字段 | 值 |\n"
+            "|---|---|\n"
+            "| 设备名称 | example-host |\n"
+            "| 资源 ID（CI ID） | 3094 |\n"
+            + sections
+        ),
+        process_blocks=[],
+    )
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        (
+            "| 故障类型 | 根因 | 置信度 | 依据 |\n"
+            "|---|---|---|---|\n"
+            "| 连接超时 | 连接池等待，具体原因待核验 | 中 | 连接使用率偏高 |\n"
+        ),
+        (
+            "| 依据 | 置信度 | 根因 |\n"
+            "|:---|:---:|---:|\n"
+            "| 连接使用率偏高 | 中 | 连接池等待，具体原因待核验 |\n"
+        ),
+        (
+            "| 根因 | 置信度 | 依据 |\n"
+            "|---|---|---|\n"
+            "| 连接池等待，具体原因待核验 | 中 | 连接使用率偏高 |\n"
+        ),
+    ],
+)
+def test_root_summary_uses_reason_column_not_table_header(table: str) -> None:
+    card = _build_table_test_card("## 根因判断\n" + table)
+
+    assert card.summary.conclusion == "连接池等待，具体原因待核验"
+    assert card.root_cause.reason == card.summary.conclusion
+    assert "|" not in card.summary.conclusion
+    assert card.summary.status == "suspected"
+
+
+def test_root_summary_keeps_prose_before_candidate_table() -> None:
+    card = _build_table_test_card(
+        "## 根因判断\n"
+        "具体根因尚未确认，需要核验连接池状态。\n"
+        "| 根因 | 置信度 | 依据 |\n"
+        "|---|---|---|\n"
+        "| 连接池等待 | 中 | 连接数偏高 |\n"
+    )
+
+    assert card.summary.conclusion == "具体根因尚未确认，需要核验连接池状态。"
+
+
+def test_root_summary_prefers_intro_over_supporting_fact_bullets() -> None:
+    card = _build_table_test_card(
+        "## 根因判断\n"
+        "**已确认阈值触发；配置合理性待核验。**\n\n"
+        "已确认事实：\n"
+        "- CPU 达到配置阈值。\n"
+        "- 缺少本站基线，不能判断规则是否错误。\n"
+        "## 📊 总结\n"
+        "- 置信度：30%（证据支持评分，非统计概率）\n"
+    )
+
+    assert card.summary.conclusion == "已确认阈值触发；配置合理性待核验。"
+    assert card.root_cause.reason == card.summary.conclusion
+    assert card.summary.status == "suspected"
+
+
+def test_root_summary_still_supports_bullets_without_intro() -> None:
+    card = _build_table_test_card(
+        "## 根因判断\n"
+        "- 具体负载来源待核验。\n"
+        "- 告警达到阈值。\n"
+    )
+
+    assert card.summary.conclusion == "具体负载来源待核验。"
+
+
+def test_display_fields_preserve_explicit_quantified_confidence() -> None:
+    from qwenpaw.extensions.api.alarm_analyst_card_service import (
+        extract_display_fields,
+    )
+
+    card = _build_table_test_card(
+        "## 根因判断\n疑似连接池等待，仍需验证。\n"
+        "## 📊 总结\n"
+        "- 置信度：30%（证据支持评分：20+10+0+0+0，非统计概率）\n"
+    )
+    display = extract_display_fields(card.model_dump(by_alias=True))
+
+    assert display["confidence"] == (
+        "30%（证据支持评分：20+10+0+0+0，非统计概率）"
+    )
+
+
+def test_root_summary_preserves_key_value_table_support() -> None:
+    card = _build_table_test_card(
+        "## 根因判断\n"
+        "| 项目 | 内容 |\n"
+        "|---|---|\n"
+        "| 根因方向 | 连接池等待，仍需核验 |\n"
+    )
+
+    assert card.summary.conclusion == "连接池等待，仍需核验"
+
+
+def test_root_summary_falls_back_to_summary_when_root_table_has_no_data() -> None:
+    card = _build_table_test_card(
+        "## 根因判断\n"
+        "| 根因 | 置信度 | 依据 |\n"
+        "|---|---|---|\n"
+        "## 📊 总结\n"
+        "- 置信度：未量化\n"
+        "- 故障性质：连接超时，具体原因未确定\n"
+    )
+
+    assert "连接超时，具体原因未确定" in card.summary.conclusion
+    assert "置信度 | 依据" not in card.summary.conclusion
+    assert card.summary.status == "unknown"
+
+
+def test_summary_metadata_does_not_substitute_for_missing_root_cause() -> None:
+    card = _build_table_test_card(
+        "## 根因判断\n"
+        "| 根因 | 置信度 | 依据 |\n"
+        "|---|---|---|\n"
+        "## 📊 总结\n"
+        "- 置信度：未量化\n"
+        "- 分析状态：partial\n"
+    )
+
+    assert "未能确定" in card.summary.conclusion
+    assert card.summary.status == "unknown"
+    assert card.summary.confidence is None
+
+
+def test_header_only_tables_do_not_claim_success_or_become_card_values() -> None:
+    card = _build_table_test_card(
+        "## 根因判断\n"
+        "| 根因 | 置信度 | 依据 |\n"
+        "|---|---|---|\n"
+        "## 影响范围\n"
+        "| 范围层级 | 受影响对象 | 影响程度 | 验证状态 |\n"
+        "|---|---|---|---|\n"
+    )
+
+    assert "未能确定" in card.summary.conclusion
+    assert "已完成" not in card.summary.conclusion
+    assert card.summary.status == "unknown"
+    assert card.summary.confidence is None
+    assert card.impact.blast_radius_text
+    assert "待确认" in card.impact.blast_radius_text
+    assert "|" not in card.impact.blast_radius_text
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        (
+            "| 范围层级 | 受影响对象 | 影响程度 | 验证状态 |\n"
+            "|---|---|---|---|\n"
+            "| 设备 | example-host | 指标告警 | 已观测 |\n"
+            "| 服务 | example-service | 可能受影响 | 待验证 |\n"
+        ),
+        (
+            "| 验证状态 | 影响程度 | 受影响对象 |\n"
+            "|:---:|---|---|\n"
+            "| 已观测 | 指标告警 | example-host |\n"
+            "| 待验证 | 可能受影响 | example-service |\n"
+        ),
+    ],
+)
+def test_impact_table_summary_preserves_objects_effects_and_uncertainty(
+    table: str,
+) -> None:
+    card = _build_table_test_card(
+        "## 根因判断\n- 具体原因待核验。\n## 影响范围\n" + table
+    )
+
+    text = card.impact.blast_radius_text or ""
+    for value in ("example-host", "指标告警", "example-service", "待验证"):
+        assert value in text
+    assert "|" not in text
+    assert "---" not in text
+    assert not card.impact.affected_applications
+    assert not card.impact.affected_resources
+
+
+def test_impact_table_skips_empty_table_before_readable_records() -> None:
+    card = _build_table_test_card(
+        "## 根因判断\n- 原因待核验。\n"
+        "## 影响范围\n"
+        "### 资源关联\n"
+        "| 受影响对象 | 影响程度 |\n"
+        "|---|---|\n"
+        "### 业务影响\n"
+        "| 受影响对象 | 影响程度 | 验证状态 |\n"
+        "|---|---|---|\n"
+        "| example-service | 可能受影响 | 待验证 |\n"
+    )
+
+    assert "example-service" in (card.impact.blast_radius_text or "")
+    assert "待验证" in (card.impact.blast_radius_text or "")
+
+
+def test_display_fields_reuse_structured_impact_for_registry() -> None:
+    from qwenpaw.extensions.api.alarm_analyst_card_service import (
+        extract_display_fields,
+    )
+
+    card = _build_table_test_card(
+        "## 根因判断\n- 原因待核验。\n"
+        "## 影响范围\n"
+        "| 受影响对象 | 影响程度 | 验证状态 |\n"
+        "|---|---|---|\n"
+        "| example-service | 可能受影响 | 待验证 |\n"
+    )
+    display = extract_display_fields(card.model_dump(by_alias=True))
+
+    assert display["impactScope"] == card.impact.blast_radius_text
+    assert "待验证" in display["impactScope"]
 
 
 def test_is_alarm_analyst_card_candidate_matches_report_with_rca_markers() -> None:

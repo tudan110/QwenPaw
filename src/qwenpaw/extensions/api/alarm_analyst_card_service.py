@@ -132,15 +132,24 @@ def build_alarm_analyst_card(
     evidence_section = _extract_named_section(report_text, ("证据摘要", "关键证据", "证据", "分析依据"))
 
     title = _extract_title(report_text)
-    conclusion = (
-        _first_meaningful_item(root_section)
-        or _first_meaningful_item(summary_section)
-        or _first_meaningful_item(report_text)
-    )
+    root_conclusion = _first_meaningful_item(root_section, prefer_intro=True)
+    conclusion = root_conclusion or _extract_labeled_value(
+        summary_section,
+        ("根因方向", "故障性质", "核心结论", "根因", "结论"),
+    ) or _first_meaningful_item(summary_section)
+    if not conclusion and not root_section and not summary_section:
+        conclusion = _first_meaningful_item(report_text)
+    has_conclusion = bool(conclusion)
+    if not has_conclusion:
+        conclusion = "未能确定（缺少可读的分析结论）"
     resource_id = _extract_resource_id(root_section) or _extract_resource_id(report_text)
     resource_name = _extract_root_resource_name(root_section) or _extract_root_resource_name(report_text)
     severity = _detect_severity(report_text)
-    confidence, status = _detect_confidence_and_status(root_section or report_text)
+    confidence, status = _detect_confidence_and_status(
+        root_section if root_conclusion else summary_section or report_text,
+    )
+    if not has_conclusion:
+        status = "unknown"
     applications, resources, blast_radius_text = _extract_impact_entities(impact_section or report_text)
     nodes, edges = _extract_topology_payload(process_blocks)
     highlighted_node_ids = [item for item in (resource_id, resource_name) if item]
@@ -174,7 +183,7 @@ def build_alarm_analyst_card(
             title=title,
             conclusion=conclusion,
             severity=severity,
-            confidence=confidence,
+            confidence=confidence if has_conclusion else None,
             status=status,
         ),
         root_cause=AlarmAnalystCardRootCause(
@@ -574,22 +583,83 @@ TABLE_KV_RE = re.compile(
 _TABLE_HEADER_VALUES = {
     "结论", "内容", "值", "value", "说明", "描述", "备注",
     "步骤", "项目", "维度", "字段", "指标", "当前值",
+    "置信度", "依据", "验证状态", "影响程度", "分析状态", "报告分析状态",
 }
 
 
-def _first_meaningful_item(text: str) -> str:
-    bullets = [
-        _sanitize_inline_text(item)
-        for item in BULLET_LINE_RE.findall(str(text or ""))
-        if _sanitize_inline_text(item)
-        and not _is_ai_thinking_text(_sanitize_inline_text(item))
-        and _sanitize_inline_text(item) not in _GENERIC_FILLER_VALUES
-    ]
-    if bullets:
-        return bullets[0]
+def _iter_markdown_tables(
+    text: str,
+) -> Iterable[tuple[list[str], list[list[str]]]]:
+    def split_row(line: str) -> list[str]:
+        stripped = line.strip()
+        if "|" not in stripped:
+            return []
+        if stripped.startswith("|"):
+            stripped = stripped[1:]
+        stripped = re.sub(r"(?<!\\)\|$", "", stripped)
+        return [
+            cell.strip().replace(r"\|", "|")
+            for cell in re.split(r"(?<!\\)\|", stripped)
+        ]
+
+    def is_separator(cells: list[str]) -> bool:
+        return bool(cells) and all(
+            re.fullmatch(r":?-{2,}:?", cell) for cell in cells
+        )
+
+    lines = str(text or "").splitlines()
+    index = 0
+    while index + 1 < len(lines):
+        headers = split_row(lines[index])
+        separator = split_row(lines[index + 1])
+        if (
+            len(headers) < 2
+            or len(separator) != len(headers)
+            or not is_separator(separator)
+        ):
+            index += 1
+            continue
+        rows: list[list[str]] = []
+        index += 2
+        while index < len(lines):
+            cells = split_row(lines[index])
+            if len(cells) != len(headers):
+                break
+            if not is_separator(cells) and cells != headers:
+                rows.append([_sanitize_inline_text(cell) for cell in cells])
+            index += 1
+        yield [_sanitize_inline_text(cell) for cell in headers], rows
+
+
+def _first_meaningful_item(text: str, *, prefer_intro: bool = False) -> str:
+    if prefer_intro:
+        intro = re.split(
+            r"^\s*(?:#{1,6}\s|[-*+]\s+|\d+\.\s+|\|)",
+            str(text or ""),
+            maxsplit=1,
+            flags=re.MULTILINE,
+        )[0]
+        conclusion = _first_meaningful_item(intro)
+        if conclusion:
+            return conclusion
+
+    for item in BULLET_LINE_RE.findall(str(text or "")):
+        cleaned = _sanitize_inline_text(item)
+        if (
+            cleaned
+            and not _is_ai_thinking_text(cleaned)
+            and cleaned not in _GENERIC_FILLER_VALUES
+            and not re.match(
+                r"^(?:置信度|分析状态|报告分析状态|报告生成时间)[:：]",
+                cleaned,
+            )
+        ):
+            return cleaned
 
     for line in str(text or "").splitlines():
         if re.match(r"^\s*#{1,6}\s", line):
+            continue
+        if BULLET_LINE_RE.match(line):
             continue
         if "|" in line:
             continue
@@ -602,12 +672,44 @@ def _first_meaningful_item(text: str) -> str:
         ):
             return cleaned
 
-    # Try table rows: | label | value |
+    preferred_columns = (
+        "主根因", "根因", "候选根因", "根因方向", "根因描述",
+        "故障原因", "故障性质", "结论", "原因",
+    )
+    for headers, rows in _iter_markdown_tables(text):
+        normalized = [_normalize_heading(cell) for cell in headers]
+        column = next(
+            (
+                normalized.index(name)
+                for name in preferred_columns
+                if name in normalized
+            ),
+            None,
+        )
+        for cells in rows:
+            if column is not None:
+                value = cells[column]
+            elif len(headers) == 2:
+                if cells[0] in _TABLE_HEADER_VALUES:
+                    continue
+                value = cells[1]
+            else:
+                continue
+            if (
+                value
+                and value not in _TABLE_HEADER_VALUES
+                and value not in _GENERIC_FILLER_VALUES
+                and not _is_ai_thinking_text(value)
+            ):
+                return value
+
+    # Preserve legacy two-column rows without a Markdown header.
     for match in TABLE_KV_RE.finditer(str(text or "")):
         label = _sanitize_inline_text(match.group(1))
         value = _sanitize_inline_text(match.group(2))
         if (
             label and value
+            and "|" not in value
             and len(value) > 3
             and not re.match(r"^[-:]+$", label)
             and label not in _TABLE_HEADER_VALUES
@@ -617,7 +719,7 @@ def _first_meaningful_item(text: str) -> str:
         ):
             return value
 
-    return "已完成故障根因分析。"
+    return ""
 
 
 def _extract_resource_id(text: str) -> str:
@@ -742,7 +844,15 @@ def _detect_confidence_and_status(text: str) -> tuple[str, str]:
     normalized = str(text or "")
     if not normalized.strip():
         return "low", "unknown"
-    if any(keyword in normalized for keyword in ("疑似", "可能", "待确认", "怀疑")):
+    if any(
+        keyword in normalized
+        for keyword in ("未能确定", "未确定", "无法确定", "根因未知")
+    ):
+        return "low", "unknown"
+    if any(
+        keyword in normalized
+        for keyword in ("疑似", "可能", "待确认", "待核验", "未确认", "怀疑")
+    ):
         return "medium", "suspected"
     return "high", "identified"
 
@@ -800,11 +910,68 @@ def _extract_impact_entities(
     deduped_applications = _dedupe_entities(applications)
     deduped_resources = _dedupe_entities(resources)
     summarized_blast_radius = _summarize_blast_radius(deduped_applications, deduped_resources)
+    if not blast_radius_text and not summarized_blast_radius:
+        blast_radius_text = _extract_impact_table_summary(text)
     if summarized_blast_radius and (
         not blast_radius_text or not re.match(r"^(影响|波及|涉及)", blast_radius_text)
     ):
         blast_radius_text = summarized_blast_radius
     return deduped_applications, deduped_resources, blast_radius_text
+
+
+def _extract_impact_table_summary(text: str) -> str:
+    impact_columns = {
+        "影响程度", "已知影响", "潜在影响", "影响描述", "可能影响",
+        "可能影响及依据", "影响范围", "评估",
+    }
+    object_columns = {
+        "受影响对象", "影响对象", "资源名称", "资源名称／标识",
+        "资源名称/标识", "维度与对象", "对象",
+    }
+    state_columns = {
+        "验证状态", "判断状态", "影响状态", "状态与限制",
+        "影响状态与限制", "判断状态与限制",
+    }
+    matched_table = False
+    for headers, rows in _iter_markdown_tables(text):
+        normalized = [_normalize_heading(cell) for cell in headers]
+        effects = [
+            index for index, name in enumerate(normalized)
+            if name in impact_columns
+        ]
+        if not effects:
+            continue
+        matched_table = True
+        object_index = next(
+            (i for i, name in enumerate(normalized) if name in object_columns),
+            None,
+        )
+        state_index = next(
+            (i for i, name in enumerate(normalized) if name in state_columns),
+            None,
+        )
+        summaries: list[str] = []
+        for cells in rows:
+            descriptions = [
+                f"{headers[i]}：{cells[i]}" if len(effects) > 1 else cells[i]
+                for i in effects if cells[i]
+            ]
+            if not descriptions:
+                continue
+            description = "；".join(descriptions)
+            if object_index is not None and cells[object_index]:
+                description = f"{cells[object_index]}：{description}"
+            if state_index is not None and cells[state_index]:
+                description += f"（{cells[state_index]}）"
+            summaries.append(description)
+        if summaries:
+            summary = "；".join(summaries[:3])
+            if len(summaries) > 3:
+                summary += f"；另有{len(summaries) - 3}项，详见完整报告"
+            return summary
+    return (
+        "影响范围待确认（未取得可读的影响记录）" if matched_table else ""
+    )
 
 
 def _split_named_values(line: str) -> list[str]:
@@ -1367,6 +1534,14 @@ def extract_display_fields(card_dict: dict[str, Any]) -> dict[str, Any]:
         elif raw_conf in ("low", "低"):
             confidence = "50%"
 
+    impact_scope = rows_by_label.get("影响范围", "")
+    if not impact_scope:
+        structured_impact = _sanitize_inline_text(
+            (card_dict.get("impact") or {}).get("blastRadiusText") or "",
+        )
+        if structured_impact and not _is_progress_chatter(structured_impact):
+            impact_scope = structured_impact
+
     disposal_texts = [
         cleaned
         for item in (card_dict.get("recommendations") or [])
@@ -1385,7 +1560,7 @@ def extract_display_fields(card_dict: dict[str, Any]) -> dict[str, Any]:
         "anchorObject": resource_name,
         "faultNature": fault_nature,
         "rootCauseDirection": root_cause_direction,
-        "impactScope": rows_by_label.get("影响范围", ""),
+        "impactScope": impact_scope,
         "emergencyPlan": rows_by_label.get("紧急预案", ""),
         "priorityAction": rows_by_label.get("优先动作", ""),
         "relatedAlarmQueryStatus": rows_by_label.get("关联资源告警查询状态", ""),

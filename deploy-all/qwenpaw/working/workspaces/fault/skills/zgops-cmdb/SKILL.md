@@ -9,9 +9,9 @@ description: 用于查询当前配置所指向的 CMDB 环境。当用户询问�
 
 ## CMDB MCP 优先级
 
-本工作区已启用 `cmdb-query` MCP Server。Agent 必须优先直接调用以下 MCP Tools；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC，也不要为此编写额外 MCP 客户端。不要打开浏览器或使用 `browser_use` 等浏览器工具。
+本工作区已启用 `cmdb-query` MCP Server。查询时直接调用下面的数据工具；有CI ID先查详情/关系，没有唯一对象先搜索。**不先调用 `cmdb-query__cmdbLogin`，也不先运行登录脚本或client.login**，不能把登录成功当作只读MCP查询前提。不要自行使用 `curl`、`requests`、SSE、JSON-RPC或额外客户端，不使用浏览器代查。
 
-仅在 cmdb-query MCP Driver 未加载、客户端/工具不可用或协议响应无法解析时，才允许回退到旧脚本路径（见末尾"旧脚本回退路径"）。MCP Tool 返回的可解析业务错误（4xx/5xx、鉴权、参数错误）必须 fail-fast，不换参数重试。
+仅在 cmdb-query MCP Driver 未加载、工具缺失、连接/传输不可用或协议无法解析时，才回退到旧脚本路径。可解析的空结果、参数错误、鉴权/权限或业务4xx/5xx必须fail-fast并说明，不以脚本换身份绕过，不换参数反复试探。登录参数错误不证明数据MCP不可用，也不是转脚本的理由。
 
 ## MCP Tools
 
@@ -26,7 +26,6 @@ description: 用于查询当前配置所指向的 CMDB 环境。当用户询问�
 | 搜索 CI 实例 | `cmdb-query__searchCiInstances` | `q`, `page`, `count` | `q=_type:<模型名>` 按类型搜索 |
 | 查 CI 实例详情 | `cmdb-query__getCiInstance` | `id` | 传 CI 的 `_id` |
 | 查 CI 关系拓扑 | `cmdb-query__getCiRelations` | `root_id`, `level`, `count` | 查上下游关系链 |
-| 登录 | `cmdb-query__cmdbLogin` | — | 获取会话 token（通常只读查询不需要） |
 | 查用户信息 | `cmdb-query__getCmdbUserInfo` | — | — |
 | CI 数量统计 | `cmdb-query__countCi` | — | 全量 CI 数量 |
 | CI 属性分组统计 | `cmdb-query__countCiByAttribute` | — | 按属性分组计数 |
@@ -95,5 +94,6 @@ scripts/zgops-cmdb.sh inoe-stat group --resource_type middleware --attr vendor -
 
 - 这套环境中 `project` 对应"应用"模型
 - 凭据由设置页统一管理，MCP 路径无需任何配置
+- `cmdb-query__cmdbLogin` 不属于本技能默认查询流程；仅用户明确要求认证操作时按实际工具schema及授权处理，不空参数试调用、不猜凭据，失败也不影响对可用数据工具的独立判断
 - 如需图表规范，读取 `references/chart-guide.md` 或 `references/echarts-examples.md`
 - 如果用户要做资源导入/纳管/批量导入，改用同级 `zgops-cmdb-import` skill
