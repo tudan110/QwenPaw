@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState, type MutableRefObject } from "react";
 import { deleteChat, updateChat } from "../../api/copawChat";
 import { saveConversationStore } from "../../lib/conversationStore";
 import {
-  buildPortalHomePath,
   createAlarmWorkorderMessage,
   createInitialMessages,
 } from "./helpers";
@@ -258,19 +257,7 @@ export function usePortalSessionHistory({
     setExecutionVisible(false);
     setActivePortalResourceImportSessionId("");
     setActivePortalKnowledgeBaseSessionId("");
-
-    if (!isPortalHome) {
-      resetAlarmWorkbench();
-      resetRemoteState({
-        initialMessages: [],
-      });
-      setPortalHomeChatMode(false);
-      setHistoryVisible(false);
-      navigate(buildPortalHomePath({ view: "chat" }), {
-        state: null,
-      });
-      return;
-    }
+    setHistoryVisible(false);
 
     if (isAlarmWorkbenchMode) {
       resetAlarmWorkbench();
@@ -300,7 +287,6 @@ export function usePortalSessionHistory({
     createAndActivateLocalSession(currentEmployee, initialMessages);
     setMessages(initialMessages);
     setPortalHomeChatMode(false);
-    setHistoryVisible(false);
   }, [
     createAndActivateLocalSession,
     currentEmployee,
@@ -308,7 +294,6 @@ export function usePortalSessionHistory({
     isPortalHome,
     isRemoteEmployee,
     loadAlarmWorkorders,
-    navigate,
     resetAlarmWorkbench,
     resetRemoteState,
     setActivePortalResourceImportSessionId,
