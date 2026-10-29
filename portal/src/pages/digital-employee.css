@@ -7415,6 +7415,12 @@
   color: #202123;
 }
 
+.portal-digital-employee .message.user .portal-x-markdown p,
+.portal-digital-employee .message.user .portal-x-markdown li {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .portal-digital-employee .message.agent .plain-message-bubble {
   padding: 0;
   border-radius: 0;
