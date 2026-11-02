@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { createElement } from "react";
+import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
 import type { ProviderInfo } from "../../api/models";
 import type { SaveProviderPayload, usePortalModels } from "./usePortalModels";
+import type { ModelConfigModal } from "./modelControls";
 
 test("one-step model setup preserves provider cards and global defaults", async (t) => {
   const originalWindow = globalThis.window;
@@ -66,6 +67,14 @@ test("one-step model setup preserves provider cards and global defaults", async 
     });
     t.mock.method(modelsApi, "setActiveLlm", async () => {
       assert.fail("adding a model must not change the global or agent default");
+    });
+    t.mock.method(modelsApi, "removeModel", async () => {
+      assert.fail("saving or revoking a provider must not replace its models");
+    });
+    t.mock.method(modelsApi, "deleteCustomProvider", async (id) => {
+      calls.push("delete");
+      providers.delete(id);
+      return [...providers.values()];
     });
     const setup = () => {
       let hook: ReturnType<typeof usePortalModels>;
@@ -158,6 +167,72 @@ test("one-step model setup preserves provider cards and global defaults", async 
       }), true);
       assert.deepEqual(calls.splice(0), ["create", "configure"]);
       assert.deepEqual(providers.get("legacy")?.extra_models, []);
+    });
+
+    await t.test("former preset ID has no special model or authorization behavior", async () => {
+      const hook = setup();
+      const custom = { ...payload, providerId: "ct-cnos" };
+      assert.equal(await hook.handleSaveProvider(custom), true);
+      assert.deepEqual(calls.splice(0), ["create", "configure", "add"]);
+      assert.equal(await hook.handleSaveProvider({
+        ...custom, mode: "edit", initialModelId: undefined,
+      }), true);
+      assert.deepEqual(calls.splice(0), ["configure"]);
+      assert.equal(await hook.handleRevokeProviderAuth("ct-cnos"), true);
+      assert.deepEqual(calls.splice(0), ["configure"]);
+      assert.equal(providers.get("ct-cnos")?.api_key, "");
+      assert.deepEqual(providers.get("ct-cnos")?.extra_models, [
+        { id: "claude-test", name: "claude-test" },
+      ]);
+      assert.equal("handleApplyBuiltinApiKey" in hook, false);
+      assert.equal(await hook.handleDeleteProvider("ct-cnos"), true);
+      assert.deepEqual(calls.splice(0), ["delete"]);
+      assert.equal(providers.has("ct-cnos"), false);
+    });
+
+    await t.test("custom provider cards have no key acquisition or deletion exemptions", async () => {
+      const { ModelConfigModal: ModelPage } = await server.ssrLoadModule(
+        "/src/pages/digital-employee/modelControls.tsx",
+      );
+      const action = async () => true;
+      const props: ComponentProps<typeof ModelConfigModal> = {
+        open: true,
+        activeProviderId: "",
+        activeProviderName: "",
+        activeModelLabel: "",
+        globalActiveProviderId: "",
+        globalActiveProviderName: "",
+        globalActiveModelId: "",
+        globalActiveModelLabel: "",
+        usesGlobalDefault: true,
+        eligibleProviders: [],
+        displayProviders: [{
+          id: "ct-cnos", name: "Custom service", isCustom: true,
+          isLocal: false, baseUrl: "https://example.com/v1",
+          apiKeyMasked: "", apiKeyConfigured: false, description: "",
+          requireApiKey: false, supportModelDiscovery: false,
+          configured: true, available: false, generateKwargs: {}, models: [],
+        }],
+        loading: false, switching: false, submitting: false, notice: null,
+        onRefresh: () => {},
+        onSelectDefaultModel: action,
+        onSubmitProvider: action,
+        onSubmitModel: action,
+        onDeleteProvider: action,
+        onRevokeProviderAuth: action,
+        onRemoveModel: action,
+        onTestProvider: action,
+        onTestModel: action,
+        onProbeMultimodal: action,
+        onDiscoverModels: action,
+        onConfigureModel: action,
+      };
+      const html = renderToStaticMarkup(createElement(ModelPage, props));
+      assert.match(html, /Custom service/);
+      assert.match(html, />删除<\/button>/);
+      assert.match(html, />模型<\/button>/);
+      assert.match(html, />设置<\/button>/);
+      assert.doesNotMatch(html, /获取 API Key|builtin-api-key|portal-demo-account/);
     });
   } finally {
     await server.close();

@@ -7,12 +7,6 @@ import {
 } from "../../api/models";
 
 const DEFAULT_MODEL_AGENT_ID = "default";
-export const CT_CNOS_PROVIDER_ID = "ct-cnos";
-export const CT_CNOS_SIMULATED_MODELS: ModelInfo[] = [
-  { id: "qwen3.5", name: "qwen3.5" },
-  { id: "qiming1.0", name: "启明1.0" },
-  { id: "deepseek3.2", name: "deepseek3.2" },
-];
 
 export type ModelNoticeTone = "success" | "error" | "info";
 
@@ -95,28 +89,7 @@ function getPortalProviderModels(provider?: ProviderInfo) {
   if (!provider) {
     return [];
   }
-  if (provider.id === CT_CNOS_PROVIDER_ID && !provider.api_key) {
-    return [];
-  }
   return flattenModels(provider);
-}
-
-function buildDisplayProviders(providerList: ProviderInfo[]) {
-  return providerList
-    .map((provider, index) => ({
-      ...provider,
-      __order: index,
-    }))
-    .sort((left, right) => {
-      if (left.id === CT_CNOS_PROVIDER_ID && right.id !== CT_CNOS_PROVIDER_ID) {
-        return -1;
-      }
-      if (right.id === CT_CNOS_PROVIDER_ID && left.id !== CT_CNOS_PROVIDER_ID) {
-        return 1;
-      }
-      return left.__order - right.__order;
-    })
-    .map(({ __order, ...provider }) => provider as ProviderInfo);
 }
 
 function isProviderConfigured(provider: ProviderInfo) {
@@ -266,8 +239,8 @@ export function usePortalModels({
 
       const nextAllProviders = Array.isArray(providerList) ? providerList : [];
       const nextProviders = nextAllProviders.filter((provider) => provider.is_custom);
-      setAllProviders(buildDisplayProviders(nextAllProviders));
-      setProviders(buildDisplayProviders(nextProviders));
+      setAllProviders(nextAllProviders);
+      setProviders(nextProviders);
       providersRef.current = nextProviders;
       setActiveModels(effectiveActive);
       setGlobalActiveModels(globalActive?.active_llm ? globalActive : null);
@@ -284,31 +257,6 @@ export function usePortalModels({
     setGlobalActiveModels(null);
     void fetchModelState();
   }, [fetchModelState, resolvedAgentId]);
-
-  const syncCtCnosModels = useCallback(async (
-    providerId: string,
-    currentModels: ModelInfo[],
-    shouldHaveModels: boolean,
-  ) => {
-    const targetModels = shouldHaveModels ? CT_CNOS_SIMULATED_MODELS : [];
-    const targetIds = new Set(targetModels.map((model) => model.id));
-    const currentIds = new Set(currentModels.map((model) => model.id));
-
-    for (const model of currentModels) {
-      if (!targetIds.has(model.id)) {
-        await modelsApi.removeModel(providerId, model.id);
-      }
-    }
-
-    for (const model of targetModels) {
-      if (!currentIds.has(model.id)) {
-        await modelsApi.addModel(providerId, {
-          id: model.id,
-          name: model.name || model.id,
-        });
-      }
-    }
-  }, []);
 
   const eligibleProviders = useMemo<EligibleProvider[]>(
     () =>
@@ -565,14 +513,6 @@ export function usePortalModels({
         provider.id === providerId ? configuredProvider : provider,
       );
 
-      if (providerId === CT_CNOS_PROVIDER_ID && !initialModelId) {
-        await syncCtCnosModels(
-          providerId,
-          flattenModels(configuredProvider || existingProvider),
-          Boolean(configuredProvider?.api_key || apiKey || existingProvider?.api_key),
-        );
-      }
-
       if (initialModelId) {
         const updatedProvider = await modelsApi.addModel(providerId, {
           id: initialModelId,
@@ -608,7 +548,7 @@ export function usePortalModels({
     } finally {
       setSubmitting(false);
     }
-  }, [fetchModelState, pushNotice, syncCtCnosModels]);
+  }, [fetchModelState, pushNotice]);
 
   const handleAddModel = useCallback(async (payload: AddProviderModelPayload) => {
     const providerId = payload.providerId.trim();
@@ -690,16 +630,9 @@ export function usePortalModels({
 
     setSubmitting(true);
     try {
-      const configuredProvider = await modelsApi.configureProvider(providerId, {
+      await modelsApi.configureProvider(providerId, {
         api_key: "",
       });
-      if (providerId === CT_CNOS_PROVIDER_ID) {
-        await syncCtCnosModels(
-          providerId,
-          flattenModels(configuredProvider || provider),
-          false,
-        );
-      }
       await fetchModelState();
       pushNotice("success", `${providerName} 的 API 密钥授权已撤销`);
       return true;
@@ -709,54 +642,7 @@ export function usePortalModels({
     } finally {
       setSubmitting(false);
     }
-  }, [fetchModelState, pushNotice, syncCtCnosModels]);
-
-  const handleApplyBuiltinApiKey = useCallback(async (
-    providerId: string,
-    apiKey: string,
-  ) => {
-    const normalizedProviderId = providerId.trim();
-    const normalizedApiKey = apiKey.trim();
-
-    if (!normalizedProviderId) {
-      pushNotice("error", "未找到可应用的模型提供商");
-      return false;
-    }
-    if (!normalizedApiKey) {
-      pushNotice("error", "API Key 不能为空");
-      return false;
-    }
-
-    const existingProvider = providersRef.current.find((provider) => provider.id === normalizedProviderId);
-    if (!existingProvider) {
-      pushNotice("error", "当前提供商不存在");
-      return false;
-    }
-
-    setSubmitting(true);
-    try {
-      const configuredProvider = await modelsApi.configureProvider(normalizedProviderId, {
-        api_key: normalizedApiKey,
-      });
-
-      if (normalizedProviderId === CT_CNOS_PROVIDER_ID) {
-        await syncCtCnosModels(
-          normalizedProviderId,
-          flattenModels(configuredProvider || existingProvider),
-          true,
-        );
-      }
-
-      await fetchModelState();
-      pushNotice("success", `${existingProvider.name || normalizedProviderId} API Key 已应用，模型已自动配置`);
-      return true;
-    } catch (error: any) {
-      pushNotice("error", error?.message || "应用 API Key 失败");
-      return false;
-    } finally {
-      setSubmitting(false);
-    }
-  }, [fetchModelState, pushNotice, syncCtCnosModels]);
+  }, [fetchModelState, pushNotice]);
 
   const handleRemoveModel = useCallback(async (
     providerId: string,
@@ -993,7 +879,6 @@ export function usePortalModels({
     handleAddModel,
     handleDeleteProvider,
     handleRevokeProviderAuth,
-    handleApplyBuiltinApiKey,
     handleRemoveModel,
     handleConfigureModel,
     handleTestProvider,

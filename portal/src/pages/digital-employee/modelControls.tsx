@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import { Tooltip } from "antd";
 import { getProviderFallbackIcon, PROVIDER_ICON_BY_ID } from "../../assets/images/providerIcons";
-import { CT_CNOS_PROVIDER_ID, CT_CNOS_SIMULATED_MODELS } from "./usePortalModels";
 import PortalConfirmDialog from "../../components/PortalConfirmDialog";
 import type {
   AddProviderModelPayload,
@@ -52,19 +51,6 @@ const DEFAULT_ADD_MODEL_FORM_STATE: AddModelFormState = {
 };
 
 const SHOW_ADD_PROVIDER = false;
-
-type BuiltinApiKeyRecord = {
-  serviceName: string;
-  apiKey: string;
-  expireAt: string;
-  appNames: string[];
-  id: string;
-  providerName: string;
-  ownerAccount: string;
-};
-
-const DEFAULT_BUILTIN_API_KEY_OWNER_ACCOUNT = "portal-demo-account";
-const DEFAULT_BUILTIN_API_KEY_SAMPLE_KEY = "sk-ctcnos-demo-4f7a8c2b91f8";
 
 const PROTOCOL_OPTIONS = [
   {
@@ -1058,241 +1044,15 @@ function formatGenerateConfig(generateKwargs?: Record<string, unknown>) {
     : "";
 }
 
-function buildBuiltinApiKeyAppOptions(provider: DisplayProvider) {
-  const options = provider.models.map((model) => ({
-    id: model.id,
-    name: model.name || model.id,
-  }));
-  if (options.length > 0) {
-    return options;
-  }
-  return CT_CNOS_SIMULATED_MODELS.map((model) => ({
-    id: model.id,
-    name: model.name || model.id,
-  }));
-}
-
-function buildBuiltinApiKeySeedRecords(provider: DisplayProvider): BuiltinApiKeyRecord[] {
-  const appOptions = buildBuiltinApiKeyAppOptions(provider);
-  const providerName = provider.name || provider.id;
-  const modelNames = appOptions.map((item) => item.name);
-
-  return [
-    {
-      id: `${provider.id}-seed-1`,
-      apiKey: DEFAULT_BUILTIN_API_KEY_SAMPLE_KEY,
-      expireAt: "2026-12-31T23:59:59Z",
-      serviceName: "智能客服",
-      appNames: modelNames,
-      providerName,
-      ownerAccount: DEFAULT_BUILTIN_API_KEY_OWNER_ACCOUNT,
-    },
-  ];
-}
-
-function maskBuiltinApiKey(apiKey: string) {
-  const compact = apiKey.trim();
-  if (!compact) {
-    return "***";
-  }
-  if (compact.length <= 10) {
-    return `${compact.slice(0, 3)}***`;
-  }
-  return `${compact.slice(0, 6)}***${compact.slice(-4)}`;
-}
-
-function formatBuiltinApiKeyExpireAt(expireAt: string) {
-  return new Date(expireAt).toLocaleString("zh-CN", { hour12: false });
-}
-
-function BuiltinApiKeyCopyIcon() {
-  return (
-    <svg
-      className="message-copy-icon copy"
-      viewBox="0 0 1024 1024"
-      overflow="hidden"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path d="M161.744 322.8864a69.6768 69.6768 0 0 1 15.6768-23.8656 69.6768 69.6768 0 0 1 23.8656-15.68A69.7824 69.7824 0 0 1 227.2 278.4h448c8.9504 0 17.5904 1.648 25.9136 4.944a69.6256 69.6256 0 0 1 23.8656 15.6768 69.664 69.664 0 0 1 15.6768 23.8656A69.7664 69.7664 0 0 1 745.6 348.8v448c0 8.9504-1.648 17.5904-4.944 25.9136a69.6128 69.6128 0 0 1-15.6768 23.8656 69.6736 69.6736 0 0 1-23.8656 15.6768A69.7728 69.7728 0 0 1 675.2 867.2H227.2c-8.9536 0-17.5904-1.648-25.9136-4.944a69.664 69.664 0 0 1-23.8656-15.6768 69.6256 69.6256 0 0 1-15.68-23.8656A69.7856 69.7856 0 0 1 156.8 796.8V348.8c0-8.9536 1.648-17.5904 4.944-25.9136zM227.2 803.2h448c1.7664 0 3.2736-0.624 4.5248-1.8752 1.2512-1.2512 1.8752-2.7584 1.8752-4.5248V348.8c0-1.7664-0.624-3.2768-1.8752-4.5248A6.1696 6.1696 0 0 0 675.2 342.4H227.2c-1.7664 0-3.2768 0.624-4.5248 1.8752-1.248 1.248-1.8752 2.7584-1.8752 4.5248v448c0 1.7664 0.624 3.2736 1.8752 4.5248 1.248 1.2512 2.7584 1.8752 4.5248 1.8752z" />
-      <path d="M811.776 161.1584a95.1872 95.1872 0 0 1 30.5056 20.56 95.2096 95.2096 0 0 1 20.56 30.5056A94.96 94.96 0 0 1 870.4 249.6v390.4c0 17.6736-14.3264 32-32 32s-32-14.3264-32-32V249.6a31.76 31.76 0 0 0-9.3728-22.6272A31.8016 31.8016 0 0 0 774.4 217.6H384c-17.6736 0-32-14.3264-32-32s14.3264-32 32-32h390.4c13.008 0 25.4656 2.5184 37.376 7.5584z" />
-    </svg>
-  );
-}
-
-function BuiltinApiKeyApplyIcon() {
-  return <i className="fas fa-check" aria-hidden="true" />;
-}
-
-function BuiltinApiKeyDialog({
-  open,
-  providerId,
-  providerName,
-  records,
-  submitting,
-  onApply,
-  onClose,
-}: {
-  open: boolean;
-  providerId: string;
-  providerName: string;
-  records: BuiltinApiKeyRecord[];
-  submitting: boolean;
-  onApply: (providerId: string, apiKey: string) => Promise<boolean>;
-  onClose: () => void;
-}) {
-  const [copyNotice, setCopyNotice] = useState("");
-  const resetTimerRef = useRef<number | null>(null);
-
-  useEffect(
-    () => () => {
-      if (resetTimerRef.current) {
-        window.clearTimeout(resetTimerRef.current);
-      }
-    },
-    [],
-  );
-
-  const handleCopy = async (apiKey: string) => {
-    try {
-      await navigator.clipboard.writeText(apiKey);
-      setCopyNotice("API Key 复制成功");
-      if (resetTimerRef.current) {
-        window.clearTimeout(resetTimerRef.current);
-      }
-      resetTimerRef.current = window.setTimeout(() => {
-        setCopyNotice("");
-        resetTimerRef.current = null;
-      }, 1600);
-    } catch (error) {
-      console.error("Failed to copy api key:", error);
-    }
-  };
-
-  const handleApply = async (apiKey: string) => {
-    const succeeded = await onApply(providerId, apiKey);
-    if (succeeded) {
-      onClose();
-    }
-  };
-
-  if (!open) {
-    return null;
-  }
-
-  return (
-    <div className="history-modal show" onClick={onClose}>
-      <div
-        className="history-content portal-provider-config-dialog builtin-api-key-dialog"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="history-header">
-          <h3>
-            <i className="fas fa-key" /> {providerName} · 获取 API Key
-          </h3>
-          <button className="history-close" onClick={onClose}>
-            <i className="fas fa-times" />
-          </button>
-        </div>
-        <div className="history-body portal-provider-config-body">
-          <div className="portal-model-form">
-            {copyNotice ? (
-              <div className="model-inline-notice success">{copyNotice}</div>
-            ) : null}
-            <div className="builtin-api-key-list">
-              <div className="builtin-api-key-list-head">
-                <div>
-                  <strong>API Key 列表</strong>
-                  <span>展示当前提供商下的 API Key 示例数据</span>
-                </div>
-              </div>
-
-              {records.length > 0 ? (
-                <div className="builtin-api-key-table-wrap">
-                  <table className="builtin-api-key-table">
-                    <thead>
-                      <tr>
-                        <th>名称</th>
-                        <th>API Key</th>
-                        <th>提供商</th>
-                        <th>可用模型</th>
-                        <th>有效期</th>
-                        <th>归属账号</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {records.map((item) => (
-                        <tr key={item.id}>
-                          <td>{item.serviceName}</td>
-                          <td>
-                            <div className="builtin-api-key-value-row">
-                              <span className="builtin-api-key-value">{maskBuiltinApiKey(item.apiKey)}</span>
-                              <button
-                                type="button"
-                                className="builtin-api-key-action builtin-api-key-copy"
-                                title="复制 API Key"
-                                aria-label="复制 API Key"
-                                onClick={() => void handleCopy(item.apiKey)}
-                              >
-                                <BuiltinApiKeyCopyIcon />
-                              </button>
-                              <button
-                                type="button"
-                                className="builtin-api-key-action builtin-api-key-apply"
-                                title="应用 API Key"
-                                aria-label="应用 API Key"
-                                disabled={submitting}
-                                onClick={() => void handleApply(item.apiKey)}
-                              >
-                                <BuiltinApiKeyApplyIcon />
-                              </button>
-                            </div>
-                          </td>
-                          <td>{item.providerName}</td>
-                          <td>
-                            <div className="portal-provider-model-preview builtin-api-key-models">
-                              {item.appNames.map((name) => (
-                                <span key={`${item.id}-${name}`} className="portal-provider-model-chip passive">
-                                  {name}
-                                </span>
-                              ))}
-                            </div>
-                          </td>
-                          <td>{formatBuiltinApiKeyExpireAt(item.expireAt)}</td>
-                          <td>{item.ownerAccount}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="builtin-api-key-empty">当前还没有 API Key 数据。</div>
-              )}
-            </div>
-
-            <div className="portal-model-form-actions">
-              <button type="button" className="portal-model-btn secondary" onClick={onClose}>
-                关闭
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ProviderLibrary({
   displayProviders,
   activeProviderId,
-  onAcquireApiKey,
   onPrefillConnect,
   onManageModels,
   onDeleteProvider,
 }: {
   displayProviders: DisplayProvider[];
   activeProviderId: string;
-  onAcquireApiKey: (provider: DisplayProvider) => void;
   onPrefillConnect: (provider: DisplayProvider) => void;
   onManageModels: (provider: DisplayProvider) => void;
   onDeleteProvider: (provider: DisplayProvider) => Promise<void>;
@@ -1393,15 +1153,6 @@ function ProviderLibrary({
               )}
 
               <div className="portal-provider-card-actions">
-                {provider.id === CT_CNOS_PROVIDER_ID ? (
-                  <button
-                    type="button"
-                    className="portal-model-btn secondary compact"
-                    onClick={() => onAcquireApiKey(provider)}
-                  >
-                    获取 API Key
-                  </button>
-                ) : null}
                 <button
                   type="button"
                   className="portal-model-btn secondary compact"
@@ -1416,7 +1167,7 @@ function ProviderLibrary({
                 >
                   设置
                 </button>
-                {provider.isCustom && provider.id !== CT_CNOS_PROVIDER_ID ? (
+                {provider.isCustom ? (
                   <button
                     type="button"
                     className="portal-model-btn secondary compact danger"
@@ -1712,7 +1463,7 @@ function AddModelDialog({
             </div>
 
             <div className="portal-form-group" style={{ marginBottom: 12 }}>
-              <label htmlFor="portal-add-model-id">模型 ID</label>
+              <label htmlFor="portal-add-model-id">模型名称</label>
               <input
                 id="portal-add-model-id"
                 value={form.modelId}
@@ -1721,7 +1472,7 @@ function AddModelDialog({
                 onChange={(event) =>
                   onChange((prev) => ({ ...prev, modelId: event.target.value }))
                 }
-                placeholder="例如：DeepSeek-R1-0528"
+                placeholder="例如：deepseek-v4-flash 或 deepseek-v4-pro"
               />
             </div>
 
@@ -1924,7 +1675,7 @@ function ProviderConfigDialog({
 
             {mode === "add-model" ? (
               <div className="portal-form-group" style={{ marginBottom: 12 }}>
-                <label htmlFor="portal-initial-model">默认模型（模型 ID）</label>
+                <label htmlFor="portal-initial-model">模型名称</label>
                 <input
                   id="portal-initial-model"
                   value={form.initialModelId}
@@ -1932,7 +1683,7 @@ function ProviderConfigDialog({
                   onChange={(event) =>
                     onChange((prev) => ({ ...prev, initialModelId: event.target.value }))
                   }
-                  placeholder="例如：gpt-4o 或 deepseek-chat"
+                  placeholder="例如：deepseek-v4-flash 或 deepseek-v4-pro"
                 />
               </div>
             ) : null}
@@ -2184,7 +1935,6 @@ export function ModelConfigModal({
   onSubmitModel,
   onDeleteProvider,
   onRevokeProviderAuth,
-  onApplyBuiltinApiKey,
   onRemoveModel,
   onTestProvider,
   onTestModel,
@@ -2214,7 +1964,6 @@ export function ModelConfigModal({
   onSubmitModel: (payload: AddProviderModelPayload) => Promise<boolean>;
   onDeleteProvider: (providerId: string) => Promise<boolean>;
   onRevokeProviderAuth: (providerId: string) => Promise<boolean>;
-  onApplyBuiltinApiKey: (providerId: string, apiKey: string) => Promise<boolean>;
   onRemoveModel: (providerId: string, modelId: string) => Promise<boolean>;
   onTestProvider: (providerId: string, payload?: {
     apiKey?: string;
@@ -2240,8 +1989,6 @@ export function ModelConfigModal({
   const [providerDialogMode, setProviderDialogMode] = useState<"create" | "edit" | "add-model">("create");
   const [selectedProviderId, setSelectedProviderId] = useState("");
   const [modelDialogOpen, setModelDialogOpen] = useState(false);
-  const [builtinApiDialogOpen, setBuiltinApiDialogOpen] = useState(false);
-  const [builtinApiProvider, setBuiltinApiProvider] = useState<DisplayProvider | null>(null);
   const [defaultProviderId, setDefaultProviderId] = useState("");
   const [defaultModelId, setDefaultModelId] = useState("");
 
@@ -2253,8 +2000,6 @@ export function ModelConfigModal({
       setManagedProviderId("");
       setProviderDialogOpen(false);
       setModelDialogOpen(false);
-      setBuiltinApiDialogOpen(false);
-      setBuiltinApiProvider(null);
       setDefaultProviderId(globalActiveProviderId);
       setDefaultModelId(globalActiveModelId);
     }
@@ -2375,11 +2120,6 @@ export function ModelConfigModal({
       setDefaultProviderId(defaultProviderId);
       setDefaultModelId(defaultModelId);
     }
-  };
-
-  const handleOpenBuiltinApiDialog = (provider: DisplayProvider) => {
-    setBuiltinApiProvider(provider);
-    setBuiltinApiDialogOpen(true);
   };
 
   const handleDelete = async (provider: DisplayProvider) => {
@@ -2514,7 +2254,6 @@ export function ModelConfigModal({
               <ProviderLibrary
                 displayProviders={displayProviders}
                 activeProviderId={activeProviderId}
-                onAcquireApiKey={handleOpenBuiltinApiDialog}
                 onPrefillConnect={handlePrefillProvider}
                 onManageModels={(provider) => setManagedProviderId(provider.id)}
                 onDeleteProvider={handleDelete}
@@ -2584,15 +2323,6 @@ export function ModelConfigModal({
           onClose={() => setModelDialogOpen(false)}
           onSubmit={handleSubmitModel}
           onChange={(updater) => setModelForm((prev) => updater(prev))}
-        />
-        <BuiltinApiKeyDialog
-          open={builtinApiDialogOpen}
-          providerId={builtinApiProvider?.id || ""}
-          providerName={builtinApiProvider?.name || "内置提供商"}
-          records={builtinApiProvider ? buildBuiltinApiKeySeedRecords(builtinApiProvider) : []}
-          submitting={submitting}
-          onApply={onApplyBuiltinApiKey}
-          onClose={() => setBuiltinApiDialogOpen(false)}
         />
         <PortalConfirmDialog
           open={Boolean(deleteConfirmState)}
