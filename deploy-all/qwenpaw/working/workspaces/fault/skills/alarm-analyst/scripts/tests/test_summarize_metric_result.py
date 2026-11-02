@@ -205,7 +205,7 @@ def test_first_read_contains_executable_summary_and_complete_template(capsys):
     )
     example = re.search(r"```md\n([\s\S]*?)\n```", protocol)
     assert example is not None
-    assert len(protocol[: example.end()].splitlines()) <= 132
+    assert len(protocol[: example.end()].splitlines()) <= 144
     report = example.group(1)
     assert len(report) <= 4500
     assert report.rstrip().endswith("- 通知状态：未执行")

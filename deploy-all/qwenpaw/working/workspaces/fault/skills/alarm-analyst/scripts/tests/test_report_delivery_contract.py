@@ -84,7 +84,44 @@ def test_ordinary_analysis_template_is_inline_complete_card_without_export():
         extract_display_fields(card.model_dump(by_alias=True))["confidence"]
         == "90%"
     )
-    assert len(PROTOCOL[: REPORT_MATCH.end()].splitlines()) <= 132
+    assert len(PROTOCOL[: REPORT_MATCH.end()].splitlines()) <= 144
+
+
+def test_severity_factors_are_in_first_read_and_preserved_in_full_report():
+    first_read = "\n".join(PROTOCOL.splitlines()[:144])
+    assert REPORT in first_read
+    section = REPORT.split("### 严重程度参考\n", 1)[1].split(
+        "\n## ", 1
+    )[0]
+    assert "| 主要因素 | 事实及来源 | 对判断的作用 |" in section
+    for factor in ("影响对象", "持续情况", "业务重要性", "适用规则/指标"):
+        assert f"| {factor} |" in section
+    for boundary in (
+        "受损未验证",
+        "业务中断时长未知",
+        "不按低重要性处理",
+        "未取得适用故障分级规则",
+        "配置合理性待核验",
+        "不直接决定故障等级",
+    ):
+        assert boundary in section
+    assert "综合参考" in section
+    assert section in build_card(REPORT).raw_report_markdown
+
+
+def test_skill_and_protocol_share_first_read_and_severity_self_check():
+    skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+    for text in (skill, PROTOCOL):
+        assert "1～144行" in text
+        assert "1～132行" not in text
+        assert "主要因素" in text
+        assert "不为填表新增查询" in text
+    self_check = skill.split("### 最终回复前自检", 1)[1].split(
+        "### 处置建议规则", 1
+    )[0]
+    assert "严重程度参考" in self_check
+    assert "判断作用与未知项限制" in self_check
+    assert "推荐新的具体阈值" in self_check
 
 
 def test_explicit_export_is_additional_link_before_summary_not_a_replacement():
