@@ -43,6 +43,7 @@ export interface DisplayProvider {
   configured: boolean;
   available: boolean;
   generateKwargs: Record<string, unknown>;
+  protocol?: string;
   models: Array<{
     id: string;
     name: string;
@@ -61,6 +62,7 @@ export interface SaveProviderPayload {
   apiKey: string;
   protocol?: string;
   generateConfigText?: string;
+  initialModelId?: string;
 }
 
 export interface AddProviderModelPayload {
@@ -342,6 +344,7 @@ export function usePortalModels({
         configured: isProviderConfigured(provider),
         available: isProviderAvailable(provider),
         generateKwargs: provider.generate_kwargs || {},
+        protocol: provider.chat_model,
         models: getPortalProviderModels(provider).map((model) => ({
           id: model.id,
           name: model.name || model.id,
@@ -504,6 +507,7 @@ export function usePortalModels({
     const protocol =
       payload.protocol || existingProvider?.chat_model || "OpenAIChatModel";
     const parsedGenerateConfig = parseGenerateConfig(payload.generateConfigText);
+    const initialModelId = payload.initialModelId?.trim();
 
     if (!providerName) {
       pushNotice("error", "请填写模型提供商名称");
@@ -515,20 +519,38 @@ export function usePortalModels({
       return false;
     }
 
+    if (payload.initialModelId !== undefined) {
+      if (!initialModelId) {
+        pushNotice("error", "请填写默认模型的模型 ID");
+        return false;
+      }
+      if (!baseUrl) {
+        pushNotice("error", "请填写模型服务地址");
+        return false;
+      }
+      if (flattenModels(existingProvider).some((model) => model.id === initialModelId)) {
+        pushNotice("error", `模型 ${initialModelId} 已存在`);
+        return false;
+      }
+    }
+
     if (!parsedGenerateConfig.ok) {
       pushNotice("error", parsedGenerateConfig.error);
       return false;
     }
 
     setSubmitting(true);
+    let providerSaved = Boolean(existingProvider);
     try {
       if (!existingProvider) {
-        await modelsApi.createCustomProvider({
+        const createdProvider = await modelsApi.createCustomProvider({
           id: providerId,
           name: providerName,
           default_base_url: baseUrl,
           chat_model: protocol,
         });
+        providersRef.current = [...providersRef.current, createdProvider];
+        providerSaved = true;
       }
 
       const configuredProvider = await modelsApi.configureProvider(providerId, {
@@ -539,7 +561,11 @@ export function usePortalModels({
         generate_kwargs: parsedGenerateConfig.value,
       });
 
-      if (providerId === CT_CNOS_PROVIDER_ID) {
+      providersRef.current = providersRef.current.map((provider) =>
+        provider.id === providerId ? configuredProvider : provider,
+      );
+
+      if (providerId === CT_CNOS_PROVIDER_ID && !initialModelId) {
         await syncCtCnosModels(
           providerId,
           flattenModels(configuredProvider || existingProvider),
@@ -547,17 +573,37 @@ export function usePortalModels({
         );
       }
 
+      if (initialModelId) {
+        const updatedProvider = await modelsApi.addModel(providerId, {
+          id: initialModelId,
+          name: initialModelId,
+        });
+        providersRef.current = providersRef.current.map((provider) =>
+          provider.id === providerId ? updatedProvider : provider,
+        );
+      }
+
       await fetchModelState();
       pushNotice(
         "success",
-        payload.mode === "create"
+        initialModelId
+          ? `模型 ${initialModelId} 已添加到 ${providerName}，全局默认 LLM 保持不变`
+          : payload.mode === "create"
           ? `${providerName} 已创建，可稍后补充地址、密钥和模型`
           : `${providerName} 设置已保存`,
       );
 
       return true;
-    } catch (error: any) {
-      pushNotice("error", error?.message || "提供商保存失败");
+    } catch (error: unknown) {
+      await fetchModelState();
+      const message = error instanceof Error ? error.message : "提供商保存失败";
+      pushNotice(
+        "error",
+        initialModelId && providerSaved
+          ? `${message}。提供商已保留，模型尚未添加，请重试或在卡片中继续配置。`
+          : message,
+        0,
+      );
       return false;
     } finally {
       setSubmitting(false);

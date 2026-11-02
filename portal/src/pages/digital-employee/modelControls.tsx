@@ -20,13 +20,13 @@ type ProviderConfigFormState = {
   apiKeyConfigured: boolean;
   generateConfigText: string;
   advancedOpen: boolean;
+  initialModelId: string;
 };
 
 type AddModelFormState = {
   providerId: string;
   providerName: string;
   modelId: string;
-  modelName: string;
   generateConfigText: string;
   advancedOpen: boolean;
 };
@@ -40,16 +40,18 @@ const DEFAULT_PROVIDER_FORM_STATE: ProviderConfigFormState = {
   apiKeyConfigured: false,
   generateConfigText: "",
   advancedOpen: false,
+  initialModelId: "",
 };
 
 const DEFAULT_ADD_MODEL_FORM_STATE: AddModelFormState = {
   providerId: "",
   providerName: "",
   modelId: "",
-  modelName: "",
   generateConfigText: "",
   advancedOpen: false,
 };
+
+const SHOW_ADD_PROVIDER = false;
 
 type BuiltinApiKeyRecord = {
   serviceName: string;
@@ -1028,14 +1030,15 @@ function buildProviderPrefill(provider: DisplayProvider): ProviderConfigFormStat
     providerId: provider.id,
     baseUrl: provider.baseUrl,
     apiKey: "",
-    protocol:
+    protocol: provider.protocol || (
       provider.id.includes("anthropic")
       || provider.id.includes("minimax")
         ? "AnthropicChatModel"
-        : "OpenAIChatModel",
+        : "OpenAIChatModel"),
     apiKeyConfigured: provider.apiKeyConfigured,
     generateConfigText,
     advancedOpen: Boolean(generateConfigText),
+    initialModelId: "",
   };
 }
 
@@ -1044,7 +1047,6 @@ function buildAddModelPrefill(provider: DisplayProvider): AddModelFormState {
     providerId: provider.id,
     providerName: provider.name,
     modelId: "",
-    modelName: "",
     generateConfigText: "",
     advancedOpen: false,
   };
@@ -1704,43 +1706,23 @@ function AddModelDialog({
             <div className={`model-inline-notice ${notice.tone}`}>{notice.text}</div>
           ) : null}
           <form className="portal-model-form" onSubmit={onSubmit}>
-            <div className="portal-form-row">
-              <div className="portal-form-group">
-                <label>提供商 ID</label>
-                <input value={form.providerId} disabled />
-              </div>
-              <div className="portal-form-group">
-                <label>显示名称</label>
-                <input value={form.providerName} disabled />
-              </div>
+            <div className="portal-form-group" style={{ marginBottom: 12 }}>
+              <label htmlFor="portal-add-model-provider">提供商</label>
+              <input id="portal-add-model-provider" value={form.providerName} disabled />
             </div>
 
-            <div className="portal-form-row">
-              <div className="portal-form-group">
-                <label>模型 ID</label>
-                <input
-                  value={form.modelId}
-                  onChange={(event) =>
-                    onChange((prev) => ({ ...prev, modelId: event.target.value }))
-                  }
-                  placeholder="例如：DeepSeek-R1-0528"
-                />
-              </div>
-              <div className="portal-form-group">
-                <label>模型名称</label>
-                <input
-                  value={form.modelName}
-                  onChange={(event) =>
-                    onChange((prev) => ({ ...prev, modelName: event.target.value }))
-                  }
-                  placeholder="展示名称，可选"
-                />
-              </div>
-            </div>
-
-            <div className="portal-model-tip">
-              <i className="fas fa-circle-info" />
-              先保存提供商，再为该提供商单独添加可用模型。
+            <div className="portal-form-group" style={{ marginBottom: 12 }}>
+              <label htmlFor="portal-add-model-id">模型 ID</label>
+              <input
+                id="portal-add-model-id"
+                value={form.modelId}
+                required
+                disabled={submitting || disabled}
+                onChange={(event) =>
+                  onChange((prev) => ({ ...prev, modelId: event.target.value }))
+                }
+                placeholder="例如：DeepSeek-R1-0528"
+              />
             </div>
 
             <div className="portal-advanced-config">
@@ -1811,12 +1793,15 @@ function ProviderConfigDialog({
   onTestProvider,
   onRevokeAuthorization,
   onChange,
+  providerOptions,
+  selectedProviderId,
+  onSelectProvider,
 }: {
   open: boolean;
   form: ProviderConfigFormState;
   submitting: boolean;
   disabled?: boolean;
-  mode: "create" | "edit";
+  mode: "create" | "edit" | "add-model";
   notice: ModelNoticeState | null;
   showRevokeAuthorization?: boolean;
   onClose: () => void;
@@ -1824,6 +1809,9 @@ function ProviderConfigDialog({
   onTestProvider: () => void;
   onRevokeAuthorization: () => void;
   onChange: (updater: (prev: ProviderConfigFormState) => ProviderConfigFormState) => void;
+  providerOptions: PortalSelectOption[];
+  selectedProviderId: string;
+  onSelectProvider: (providerId: string) => void;
 }) {
   if (!open) {
     return null;
@@ -1837,7 +1825,7 @@ function ProviderConfigDialog({
       >
         <div className="history-header">
           <h3>
-            <i className="fas fa-sliders" /> {mode === "create" ? "添加提供商" : "提供商设置"}
+            <i className={`fas ${mode === "add-model" ? "fa-cube" : "fa-sliders"}`} /> {mode === "add-model" ? "添加模型" : mode === "create" ? "添加提供商" : "提供商设置"}
           </h3>
           <button className="history-close" onClick={onClose}>
             <i className="fas fa-times" />
@@ -1848,8 +1836,21 @@ function ProviderConfigDialog({
             <div className={`model-inline-notice ${notice.tone}`}>{notice.text}</div>
           ) : null}
           <form className="portal-model-form" onSubmit={onSubmit}>
+            {mode === "add-model" ? (
+              <div className="portal-form-group" style={{ marginBottom: 12 }}>
+                <label>提供商</label>
+                <PortalSelect
+                  value={selectedProviderId}
+                  options={[{ value: "", label: "自定义" }, ...providerOptions]}
+                  placeholder="自定义"
+                  disabled={submitting || disabled}
+                  onChange={onSelectProvider}
+                />
+              </div>
+            ) : null}
+            <fieldset disabled={submitting || disabled} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
             <div className="portal-form-row">
-              <div className="portal-form-group">
+              {mode !== "add-model" ? <div className="portal-form-group">
                 <label>提供商 ID</label>
                 <input
                   value={form.providerId}
@@ -1859,24 +1860,40 @@ function ProviderConfigDialog({
                   placeholder="可选，不填则自动生成"
                   disabled={mode === "edit"}
                 />
-              </div>
+              </div> : null}
               <div className="portal-form-group">
-                <label>显示名称</label>
+                <label htmlFor="portal-provider-name">{mode === "add-model" ? "提供商名称" : "显示名称"}</label>
                 <input
+                  id="portal-provider-name"
                   value={form.providerName}
+                  required={mode === "add-model"}
                   onChange={(event) =>
                     onChange((prev) => ({ ...prev, providerName: event.target.value }))
                   }
                   placeholder="例如：自定义模型服务"
                 />
               </div>
+              {mode === "add-model" ? (
+                <div className="portal-form-group">
+                  <label>协议</label>
+                  <ProtocolSelect
+                    value={form.protocol}
+                    disabled={submitting || disabled}
+                    onChange={(value) =>
+                      onChange((prev) => ({ ...prev, protocol: value }))
+                    }
+                  />
+                </div>
+              ) : null}
             </div>
 
             <div className="portal-form-row">
               <div className="portal-form-group">
-                <label>API Base URL</label>
+                <label htmlFor="portal-provider-base-url">API Base URL</label>
                 <input
+                  id="portal-provider-base-url"
                   value={form.baseUrl}
+                  required={mode === "add-model"}
                   onChange={(event) =>
                     onChange((prev) => ({ ...prev, baseUrl: event.target.value }))
                   }
@@ -1884,15 +1901,18 @@ function ProviderConfigDialog({
                 />
               </div>
               <div className="portal-form-group">
-                <label>API Key</label>
+                <label htmlFor="portal-provider-api-key">API Key</label>
                 <input
+                  id="portal-provider-api-key"
                   type="password"
                   value={form.apiKey}
                   onChange={(event) =>
                     onChange((prev) => ({ ...prev, apiKey: event.target.value }))
                   }
                   placeholder={
-                    mode === "create"
+                    mode === "add-model" && !selectedProviderId
+                      ? "输入 API 密钥，无需鉴权时可留空"
+                      : mode === "create"
                       ? "可选，创建后可稍后补充"
                       : form.apiKeyConfigured
                         ? "留空以保持当前密钥"
@@ -1902,7 +1922,22 @@ function ProviderConfigDialog({
               </div>
             </div>
 
-            <div className="portal-form-row">
+            {mode === "add-model" ? (
+              <div className="portal-form-group" style={{ marginBottom: 12 }}>
+                <label htmlFor="portal-initial-model">默认模型（模型 ID）</label>
+                <input
+                  id="portal-initial-model"
+                  value={form.initialModelId}
+                  required
+                  onChange={(event) =>
+                    onChange((prev) => ({ ...prev, initialModelId: event.target.value }))
+                  }
+                  placeholder="例如：gpt-4o 或 deepseek-chat"
+                />
+              </div>
+            ) : null}
+
+            {mode !== "add-model" ? <div className="portal-form-row">
               <div className="portal-form-group">
                 <label>协议</label>
                 <ProtocolSelect
@@ -1913,7 +1948,7 @@ function ProviderConfigDialog({
                   }
                 />
               </div>
-            </div>
+            </div> : null}
 
             <div className="portal-advanced-config">
               <button
@@ -1945,10 +1980,15 @@ function ProviderConfigDialog({
                 </div>
               ) : null}
             </div>
+            </fieldset>
 
             <div className="portal-model-tip">
               <i className="fas fa-circle-info" />
-              {mode === "create"
+              {mode === "add-model"
+                ? selectedProviderId
+                  ? "模型将添加到所选提供商；连接设置的修改对该提供商下所有模型生效。不会更改全局默认 LLM。"
+                  : "一次保存提供商和首个模型，不会更改全局默认 LLM。之后可在提供商卡片的“模型”中继续添加。"
+                : mode === "create"
                 ? "创建提供商时 Base URL、API Key 都可先留空，模型请到“模型管理”里单独添加。"
                 : "设置时需要填写 Base URL；API Key 留空则保持当前密钥。模型请到“模型管理”里单独添加。"}
             </div>
@@ -1985,7 +2025,7 @@ function ProviderConfigDialog({
                       submitting ? "fa-spinner fa-spin" : "fa-plug-circle-plus"
                     }`}
                   />
-                  {submitting ? "保存中..." : mode === "create" ? "创建提供商" : "保存设置"}
+                  {submitting ? "保存中..." : mode === "add-model" ? "添加模型" : mode === "create" ? "创建提供商" : "保存设置"}
                 </button>
               </div>
             </div>
@@ -2197,7 +2237,8 @@ export function ModelConfigModal({
   const [modelForm, setModelForm] = useState<AddModelFormState>(DEFAULT_ADD_MODEL_FORM_STATE);
   const [managedProviderId, setManagedProviderId] = useState("");
   const [providerDialogOpen, setProviderDialogOpen] = useState(false);
-  const [providerDialogMode, setProviderDialogMode] = useState<"create" | "edit">("create");
+  const [providerDialogMode, setProviderDialogMode] = useState<"create" | "edit" | "add-model">("create");
+  const [selectedProviderId, setSelectedProviderId] = useState("");
   const [modelDialogOpen, setModelDialogOpen] = useState(false);
   const [builtinApiDialogOpen, setBuiltinApiDialogOpen] = useState(false);
   const [builtinApiProvider, setBuiltinApiProvider] = useState<DisplayProvider | null>(null);
@@ -2226,13 +2267,16 @@ export function ModelConfigModal({
   const handleSubmitProvider = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const succeeded = await onSubmitProvider({
-      mode: providerDialogMode,
+      mode: providerDialogMode === "add-model"
+        ? selectedProviderId ? "edit" : "create"
+        : providerDialogMode,
       providerId: providerForm.providerId,
       providerName: providerForm.providerName,
       baseUrl: providerForm.baseUrl,
       apiKey: providerForm.apiKey,
       protocol: providerForm.protocol,
       generateConfigText: providerForm.generateConfigText,
+      initialModelId: providerDialogMode === "add-model" ? providerForm.initialModelId : undefined,
     });
     if (succeeded) {
       setProviderForm(DEFAULT_PROVIDER_FORM_STATE);
@@ -2293,6 +2337,29 @@ export function ModelConfigModal({
     setManagedProviderId("");
     setProviderForm(DEFAULT_PROVIDER_FORM_STATE);
     setProviderDialogMode("create");
+    setProviderDialogOpen(true);
+  };
+
+  const handleSelectProvider = (providerId: string) => {
+    const provider = displayProviders.find((item) => item.id === providerId);
+    setSelectedProviderId(providerId);
+    setProviderForm((prev) => ({
+      ...(provider ? buildProviderPrefill(provider) : {
+        ...DEFAULT_PROVIDER_FORM_STATE,
+        providerId: `custom-${crypto.randomUUID()}`,
+      }),
+      initialModelId: prev.initialModelId,
+    }));
+  };
+
+  const handleAddModelWithProvider = () => {
+    setManagedProviderId("");
+    setSelectedProviderId("");
+    setProviderForm({
+      ...DEFAULT_PROVIDER_FORM_STATE,
+      providerId: `custom-${crypto.randomUUID()}`,
+    });
+    setProviderDialogMode("add-model");
     setProviderDialogOpen(true);
   };
 
@@ -2372,9 +2439,12 @@ export function ModelConfigModal({
               模型配置 <small>AI模型管理</small>
             </div>
             <div className="portal-model-page-actions">
-              <button className="portal-model-btn" onClick={handleAddProvider}>
-                <i className="fas fa-plus" /> 添加提供商
+              <button className="portal-model-btn" onClick={handleAddModelWithProvider} disabled={disabled || submitting}>
+                <i className="fas fa-plus" /> 添加模型
               </button>
+              {SHOW_ADD_PROVIDER ? <button className="portal-model-btn" onClick={handleAddProvider}>
+                <i className="fas fa-plus" /> 添加提供商
+              </button> : null}
               <button className="portal-model-btn" onClick={onRefresh}>
                 <i className={`fas ${loading ? "fa-spinner fa-spin" : "fa-rotate-right"}`} /> 刷新
               </button>
@@ -2475,9 +2545,12 @@ export function ModelConfigModal({
           submitting={submitting}
           disabled={disabled}
           mode={providerDialogMode}
+          providerOptions={displayProviders.map((provider) => ({ value: provider.id, label: provider.name }))}
+          selectedProviderId={selectedProviderId}
+          onSelectProvider={handleSelectProvider}
           notice={notice}
           showRevokeAuthorization={providerDialogMode === "edit" && providerForm.apiKeyConfigured}
-          onClose={() => setProviderDialogOpen(false)}
+          onClose={() => { if (!submitting) setProviderDialogOpen(false); }}
           onSubmit={handleSubmitProvider}
           onTestProvider={() =>
             void onTestProvider(
