@@ -31,6 +31,8 @@ import logging
 import time
 from typing import Any
 
+from qwenpaw.extensions.runtime.chat_errors import refine_kunlun_chat_error
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["install_traceability"]
@@ -219,6 +221,13 @@ def _install_lifecycle_trace() -> None:
             await _emit_user_message(ctx)
         result = await _orig_run(self, phase, ctx)
         if phase == Phase.ON_ERROR:
+            try:
+                refine_kunlun_chat_error(ctx)
+            except Exception:  # classification must not replace the error
+                logger.exception(
+                    "Kunlun failure classification failed; "
+                    "retaining normalized error",
+                )
             await _emit_error(ctx)
         return result
 

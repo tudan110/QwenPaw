@@ -13,6 +13,27 @@ const GENERIC_FRIENDLY = "服务暂时遇到点问题，请稍后重试。";
 const TRACEBACK_PATTERN =
   /Traceback \(most recent call last\)|File "[^"]+", line \d+|\n\s*at [\w.$<>]+ \(/i;
 
+const KUNLUN_ERROR_MESSAGES: Record<string, string> = {
+  KUNLUN_MODEL_UNAUTHORIZED:
+    "昆仑模型未授权：当前调用身份无权使用所选模型。请联系管理员核对模型 ID、应用授权及模型密钥权限。",
+  KUNLUN_ROUTE_NOT_FOUND:
+    "昆仑接口未找到：网关未找到对应的模型接口。请联系管理员核对接口地址和网关转发路由。",
+  KUNLUN_NOT_FOUND:
+    "昆仑接口或模型未找到：请联系管理员核对所选模型 ID、接口地址和网关转发路由。",
+  KUNLUN_AUTH_FAILED:
+    "昆仑身份验证未通过：请联系管理员检查网关凭据和后端模型密钥是否有效；这不一定代表凭据已过期。",
+  KUNLUN_NOT_CONFIGURED:
+    "昆仑调用配置不完整：请联系管理员补全网关地址及调用凭据。",
+  KUNLUN_SERVICE_UNAVAILABLE:
+    "昆仑网关或模型服务暂时不可用。请稍后重试；持续失败时，请联系管理员检查网关及模型服务状态。",
+  KUNLUN_CONNECTION_FAILED:
+    "无法连接昆仑服务。请联系管理员检查服务器到网关的网络连接；如需 SDP，请确认其登录状态和资源访问权限。",
+  KUNLUN_TIMEOUT:
+    "昆仑服务响应超时，本轮未能完成回答。请稍后重试；持续超时时，请联系管理员检查网关和模型服务。",
+  KUNLUN_RATE_LIMITED:
+    "昆仑请求受限：请求频率或调用额度超出限制。请稍后重试，或联系管理员核对调用额度。",
+};
+
 /**
  * Normalize whatever the runtime hands us — a plain string, an
  * `IAgentScopeRuntimeError` (`{ code, message }`), or an ERROR message item
@@ -61,6 +82,14 @@ export function toFriendlyChatError(error: unknown): string {
   // 明确的堆栈/崩溃特征：直接给通用友好提示，绝不外泄原始内容。
   if (TRACEBACK_PATTERN.test(raw)) {
     return GENERIC_FRIENDLY;
+  }
+
+  const kunlunCode = raw.match(/\bKUNLUN_[A-Z_]+\b/)?.[0];
+  if (
+    kunlunCode &&
+    Object.prototype.hasOwnProperty.call(KUNLUN_ERROR_MESSAGES, kunlunCode)
+  ) {
+    return KUNLUN_ERROR_MESSAGES[kunlunCode];
   }
 
   // 网络 / 流式连接中断

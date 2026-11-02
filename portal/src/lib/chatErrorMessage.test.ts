@@ -75,3 +75,65 @@ test("runtimeErrorToFriendly maps an {code,message} object end to end", () => {
     /访问量较大/,
   );
 });
+
+test("explains Kunlun model authorization without claiming credentials expired", () => {
+  const message = toFriendlyChatError(
+    "Kunlun model request failed (KUNLUN_MODEL_UNAUTHORIZED)",
+  );
+  assert.match(message, /昆仑模型未授权/);
+  assert.match(message, /模型 ID、应用授权及模型密钥权限/);
+  assert.doesNotMatch(message, /过期|稍后重试|KUNLUN_|MODEL_EXECUTION/);
+});
+
+test("distinguishes known gateway route errors from ambiguous missing resources", () => {
+  const route = runtimeErrorToFriendly({
+    message: "Kunlun model request failed (KUNLUN_ROUTE_NOT_FOUND)",
+  });
+  assert.match(route, /昆仑接口未找到/);
+  assert.match(route, /网关转发路由/);
+  assert.doesNotMatch(route, /未授权|过期/);
+
+  const missing = runtimeErrorToFriendly({ code: "KUNLUN_NOT_FOUND" });
+  assert.match(missing, /接口或模型未找到/);
+  assert.match(missing, /模型 ID/);
+});
+
+test("gives category-specific Kunlun recovery advice across runtime error shapes", () => {
+  const cases = [
+    ["KUNLUN_AUTH_FAILED", /身份验证未通过.*不一定代表凭据已过期/],
+    ["KUNLUN_NOT_CONFIGURED", /配置不完整.*补全网关地址/],
+    ["KUNLUN_SERVICE_UNAVAILABLE", /网关或模型服务暂时不可用/],
+    ["KUNLUN_CONNECTION_FAILED", /无法连接.*SDP.*登录状态和资源访问权限/],
+    ["KUNLUN_TIMEOUT", /响应超时/],
+    ["KUNLUN_RATE_LIMITED", /请求受限.*调用额度/],
+  ] as const;
+  for (const [code, expected] of cases) {
+    for (const error of [
+      `Kunlun model request failed (${code})`,
+      { code, message: "safe failure" },
+      { content: [{ type: "text", text: `safe failure (${code})` }] },
+    ]) {
+      const message = runtimeErrorToFriendly(error);
+      assert.match(message, expected);
+      assert.doesNotMatch(message, /KUNLUN_|safe failure/);
+    }
+  }
+});
+
+test("never echoes sensitive provider detail alongside a recognized Kunlun code", () => {
+  const message = toFriendlyChatError(
+    new Error(
+      "private-model sk-private-key Bearer private-token /tmp/private.json " +
+        "(KUNLUN_MODEL_UNAUTHORIZED)",
+    ),
+  );
+  assert.match(message, /昆仑模型未授权/);
+  assert.doesNotMatch(message, /private|Bearer|\/tmp|sk-/);
+  assert.equal(
+    toFriendlyChatError(
+      "Traceback (most recent call last): (KUNLUN_MODEL_UNAUTHORIZED)",
+    ),
+    GENERIC,
+  );
+  assert.equal(toFriendlyChatError("KUNLUN_UNKNOWN_FAILURE"), GENERIC);
+});
