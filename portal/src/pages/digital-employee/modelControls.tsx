@@ -1778,14 +1778,16 @@ function ProviderConfigDialog({
                 ) : null}
               </div>
               <div className="portal-provider-config-footer-side portal-model-form-actions">
-                <button
-                  type="button"
-                  className="portal-model-btn secondary"
-                  disabled={submitting || disabled}
-                  onClick={onTestProvider}
-                >
-                  <i className="fas fa-plug-circle-check" /> 测试连接
-                </button>
+                {mode !== "add-model" ? (
+                  <button
+                    type="button"
+                    className="portal-model-btn secondary"
+                    disabled={submitting || disabled}
+                    onClick={onTestProvider}
+                  >
+                    <i className="fas fa-plug-circle-check" /> 测试连接
+                  </button>
+                ) : null}
                 <button
                   type="submit"
                   className="portal-model-btn success"
