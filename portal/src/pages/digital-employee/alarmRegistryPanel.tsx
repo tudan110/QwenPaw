@@ -319,9 +319,11 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
                 <td title={record.deviceName || ""}>{record.deviceName || "--"}</td>
                 <td>{record.manageIp || "--"}</td>
                 <td>
-                  <span className={`alarm-registry-status-badge tone-${STATUS_TONES[record.status] || "slate"}`}>
-                    {STATUS_LABELS[record.status] || record.status}
-                  </span>
+                  {record.verificationStatus !== "recovered" && (
+                    <span className={`alarm-registry-status-badge tone-${STATUS_TONES[record.status] || "slate"}`}>
+                      {STATUS_LABELS[record.status] || record.status}
+                    </span>
+                  )}
                   {record.verificationStatus ? (
                     <span
                       className={`alarm-registry-status-badge alarm-registry-verification-badge tone-${
@@ -339,7 +341,7 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
                 <td>{record.actCount || "--"}</td>
                 <td>{formatTime(record.handledAt || record.takenOverAt || record.updatedAt)}</td>
                 <td className="alarm-registry-cell-actions">
-                  {record.status !== "resolved" && (
+                  {record.status !== "resolved" && record.verificationStatus !== "recovered" && (
                     <button
                       className="alarm-registry-action-btn tone-green"
                       title="标记为已处理"
