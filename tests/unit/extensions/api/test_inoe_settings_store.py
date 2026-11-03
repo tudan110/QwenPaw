@@ -34,7 +34,16 @@ def test_defaults_then_env(
     # No override, no env -> hard-coded defaults.
     assert store.get_base_url(db_path=db) == "http://gateway:8080"
     assert store.get_timeout_seconds(db_path=db) == 30.0
-    assert store.get_token(db_path=db) == ""
+    assert store.get_token(db_path=db) == "inoe_token"
+    payload = store.build_settings_payload(db_path=db)
+    assert payload["effective"]["inoe_api_token"] == {
+        "is_set": True,
+        "masked": "****oken",
+    }
+    assert payload["env"]["inoe_api_token"] == (
+        payload["effective"]["inoe_api_token"]
+    )
+    assert payload["overrides"]["inoe_api_token"] is False
     # Env set, still no override -> env wins over default (and is normalized).
     monkeypatch.setenv("INOE_API_BASE_URL", "http://env-host:8080/")
     monkeypatch.setenv("INOE_API_TIMEOUT", "12")
@@ -56,6 +65,13 @@ def test_inoe_override_wins_over_env(
         db_path=db,
     )
     assert store.get_base_url(db_path=db) == "http://page-host:9090"
+    monkeypatch.setenv("INOE_API_TOKEN", "env-token")
+    store.apply_settings_update(
+        {"inoe_api_token": "page-token"}, db_path=db
+    )
+    assert store.get_token(db_path=db) == "page-token"
+    store.reset_setting("inoe_api_token", db_path=db)
+    assert store.get_token(db_path=db) == "env-token"
 
 
 def test_legacy_diagnosis_override_is_migrated(
@@ -121,7 +137,7 @@ def test_apply_update_empty_token_keeps_secret(
         db_path=db,
     )
     assert store.has_override("inoe_api_token", db_path=db) is False
-    assert store.get_token(db_path=db) == ""
+    assert store.get_token(db_path=db) == "inoe_token"
 
 
 def test_apply_update_rejects_unknown_key(tmp_path: Path) -> None:
@@ -182,6 +198,7 @@ def test_no_token_omits_authorization_header(
 ) -> None:
     db = _db(tmp_path)
     _clear_env(monkeypatch)
+    monkeypatch.setenv("INOE_API_TOKEN", "")
     assert "Authorization" not in store.build_headers(db_path=db)
 
 

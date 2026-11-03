@@ -49,6 +49,8 @@ _LEGACY_NAMESPACE = "diagnosis"
 _MIGRATION_FLAG = "inoe_namespace_migrated_v1"
 
 DEFAULT_INOE_API_BASE_URL = "http://gateway:8080"
+# Example only; deployments must override this with a valid credential.
+DEFAULT_INOE_API_TOKEN = "inoe_token"
 DEFAULT_INOE_API_TIMEOUT_SECONDS = 30.0
 DEFAULT_INOE_ENABLE_CURL_FALLBACK = True
 
@@ -91,7 +93,7 @@ INOE_FIELD_SPECS: dict[str, FieldSpec] = {
         FieldSpec(
             "inoe_api_token",
             "INOE_API_TOKEN",
-            "",
+            DEFAULT_INOE_API_TOKEN,
             "str",
             "inoe",
             sensitive=True,

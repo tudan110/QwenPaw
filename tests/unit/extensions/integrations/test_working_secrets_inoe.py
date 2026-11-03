@@ -89,6 +89,7 @@ def test_no_override_no_env_falls_back_to_default(
     # Nothing set anywhere -> the store default is materialised so a skill
     # still has a usable (if generic) value.
     assert os.environ["INOE_API_BASE_URL"] == store.DEFAULT_INOE_API_BASE_URL
+    assert os.environ["INOE_API_TOKEN"] == "inoe_token"
 
 
 def test_empty_token_never_clobbers_live_credential(
