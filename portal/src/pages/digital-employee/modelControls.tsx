@@ -52,6 +52,26 @@ const DEFAULT_ADD_MODEL_FORM_STATE: AddModelFormState = {
 
 const SHOW_ADD_PROVIDER = false;
 
+export function createCustomProviderId() {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === "function") {
+    return `custom-${cryptoApi.randomUUID()}`;
+  }
+
+  const bytes = new Uint8Array(16);
+  if (typeof cryptoApi?.getRandomValues === "function") {
+    cryptoApi.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `custom-${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 const PROTOCOL_OPTIONS = [
   {
     value: "OpenAIChatModel",
@@ -2091,7 +2111,7 @@ export function ModelConfigModal({
     setProviderForm((prev) => ({
       ...(provider ? buildProviderPrefill(provider) : {
         ...DEFAULT_PROVIDER_FORM_STATE,
-        providerId: `custom-${crypto.randomUUID()}`,
+        providerId: createCustomProviderId(),
       }),
       initialModelId: prev.initialModelId,
     }));
@@ -2102,7 +2122,7 @@ export function ModelConfigModal({
     setSelectedProviderId("");
     setProviderForm({
       ...DEFAULT_PROVIDER_FORM_STATE,
-      providerId: `custom-${crypto.randomUUID()}`,
+      providerId: createCustomProviderId(),
     });
     setProviderDialogMode("add-model");
     setProviderDialogOpen(true);

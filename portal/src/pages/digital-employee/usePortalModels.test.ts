@@ -234,6 +234,61 @@ test("one-step model setup preserves provider cards and global defaults", async 
       assert.match(html, />设置<\/button>/);
       assert.doesNotMatch(html, /获取 API Key|builtin-api-key|portal-demo-account/);
     });
+
+    await t.test("provider IDs work on HTTPS, HTTP and browsers without Web Crypto", async () => {
+      const { createCustomProviderId } = await server.ssrLoadModule(
+        "/src/pages/digital-employee/modelControls.tsx",
+      );
+      const descriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+      const cryptoApi = globalThis.crypto;
+      const uuid = "12345678-1234-4234-8234-123456789abc";
+      const idPattern = /^custom-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+      try {
+        Object.defineProperty(globalThis, "crypto", {
+          configurable: true,
+          value: { randomUUID: () => uuid },
+        });
+        assert.equal(createCustomProviderId(), `custom-${uuid}`);
+
+        let randomValuesCalls = 0;
+        Object.defineProperty(globalThis, "crypto", {
+          configurable: true,
+          value: {
+            getRandomValues: (bytes: Uint8Array) => {
+              randomValuesCalls += 1;
+              return cryptoApi.getRandomValues(bytes);
+            },
+          },
+        });
+        const httpIds = new Set<string>();
+        for (let index = 0; index < 1000; index += 1) {
+          const id = createCustomProviderId();
+          assert.match(id, idPattern);
+          assert.ok(id.length <= 64);
+          httpIds.add(id);
+        }
+        assert.equal(randomValuesCalls, 1000);
+        assert.equal(httpIds.size, 1000);
+
+        Object.defineProperty(globalThis, "crypto", {
+          configurable: true,
+          value: undefined,
+        });
+        const fallbackIds = new Set<string>();
+        for (let index = 0; index < 1000; index += 1) {
+          const id = createCustomProviderId();
+          assert.match(id, idPattern);
+          fallbackIds.add(id);
+        }
+        assert.equal(fallbackIds.size, 1000);
+      } finally {
+        if (descriptor) {
+          Object.defineProperty(globalThis, "crypto", descriptor);
+        } else {
+          Reflect.deleteProperty(globalThis, "crypto");
+        }
+      }
+    });
   } finally {
     await server.close();
     Object.assign(globalThis, { window: originalWindow });
