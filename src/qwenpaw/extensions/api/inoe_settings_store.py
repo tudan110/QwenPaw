@@ -50,7 +50,7 @@ _MIGRATION_FLAG = "inoe_namespace_migrated_v1"
 
 DEFAULT_INOE_API_BASE_URL = "http://gateway:8080"
 # Example only; deployments must override this with a valid credential.
-DEFAULT_INOE_API_TOKEN = "inoe_token"
+DEFAULT_INOE_API_TOKEN = "eyJhbGciOiJIUzUxMiJ9.eyJ1c2VyX2lkIjoxLCJ1c2VyX2tleSI6ImU5ZGIyMTljLTRiNmUtNGJkNS1hYmViLWExOWEyOTQ2YzQzYSIsInVzZXJuYW1lIjoieGlhb2sifQ.EpCFu6WKBPmirfqZHkBR-qPy72p9rZ8WgIPXFuDAJzg4KhH8ou88G7NvbfjwF9BN-hnRdCeh9mKJfbeuCVMetA"
 DEFAULT_INOE_API_TIMEOUT_SECONDS = 30.0
 DEFAULT_INOE_ENABLE_CURL_FALLBACK = True
 
