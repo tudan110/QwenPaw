@@ -2,11 +2,27 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   extractRuntimeErrorText,
+  persistedChatErrorToFriendly,
   runtimeErrorToFriendly,
   toFriendlyChatError,
 } from "./chatErrorMessage.ts";
 
 const GENERIC = "服务暂时遇到点问题，请稍后重试。";
+
+test("persisted errors support both session and trace metadata without exposing raw detail", () => {
+  for (const metadata of [
+    { portal_chat_error: "MODEL_API_KEY_MISSING" },
+    { metadata: { portal_chat_error: "MODEL_API_KEY_MISSING" } },
+  ]) {
+    assert.match(persistedChatErrorToFriendly(metadata)!, /对话失败：.*未收到 API Key/);
+  }
+  assert.equal(persistedChatErrorToFriendly(null), null);
+  assert.equal(persistedChatErrorToFriendly({ metadata: "invalid" }), null);
+  assert.equal(
+    persistedChatErrorToFriendly({ portal_chat_error: "private raw detail" }),
+    `对话失败：${GENERIC}`,
+  );
+});
 
 test("hides raw python tracebacks behind a generic friendly line", () => {
   const raw =

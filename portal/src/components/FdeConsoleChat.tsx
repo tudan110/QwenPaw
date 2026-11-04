@@ -13,7 +13,10 @@ import {
   stopChat,
   streamChat,
 } from "../api/copawChat";
-import { toFriendlyChatError } from "../lib/chatErrorMessage";
+import {
+  persistedChatErrorToFriendly,
+  toFriendlyChatError,
+} from "../lib/chatErrorMessage";
 import {
   extractCopawMessageText,
   mergeStreamingText,
@@ -167,6 +170,12 @@ function normalizeFdeHistory(messages: unknown): Turn[] {
       continue;
     }
     if (role === "assistant" && (!type || type === "message")) {
+      const errorText = persistedChatErrorToFriendly(m.metadata);
+      if (errorText) {
+        active.status = "error";
+        active.error = errorText;
+        continue;
+      }
       const text = extractCopawMessageText(m).trim();
       if (text) {
         active.segments.push({ msgId: String(m.id || nextId("s")), text });

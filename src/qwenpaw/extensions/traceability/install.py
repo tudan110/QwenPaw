@@ -32,9 +32,11 @@ import time
 from typing import Any
 
 from qwenpaw.extensions.runtime.chat_errors import (
+    public_chat_error_code,
     refine_kunlun_chat_error,
     refine_model_chat_error,
 )
+from qwenpaw.extensions.runtime.chat_history import persist_failed_chat_turn
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +234,7 @@ def _install_lifecycle_trace() -> None:
                     "Model failure classification failed; "
                     "retaining normalized error",
                 )
+            await persist_failed_chat_turn(ctx)
             await _emit_error(ctx)
         return result
 
@@ -296,6 +299,9 @@ async def _emit_error(ctx: Any) -> None:
             {
                 "exception_type": type(err).__name__,
                 "message": str(err)[:512],
+                "public_error_code": public_chat_error_code(
+                    ctx.extras.get("_error_text", "")
+                ),
             },
             agent_id=agent_id,
             user_id=user_id,

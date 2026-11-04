@@ -1184,13 +1184,48 @@ export function useRemoteChatSession({
         const hasFinalAgentReply =
           lastHistoryMessage?.type === "agent"
           && lastAgentContent.length > 0
-          && (lastAgentContent.includes("# PORTAL INSPECTION CARD MODE")
+          && (lastHistoryMessage.chatError
+            || lastAgentContent.includes("# PORTAL INSPECTION CARD MODE")
             || lastAgentContent.includes("# PORTAL ALARM ANALYST CARD MODE")
             || lastAgentContent.includes("# PORTAL FAULT WORKORDER MODE")
             || lastAgentContent.length > 500);
         if (!isRunningRemoteStatus(history.status) && !hasFinalAgentReply) {
           try {
             const recovery = await getChatTraceRecovery(nextRemoteAgentId, session.id);
+            if (recovery.available && recovery.is_error && recovery.message) {
+              const recoveredMessages = normalizeRemoteHistoryMessages(
+                [recovery.user_message, recovery.message].filter(Boolean),
+                nextEmployee,
+                session,
+              );
+              const recoveredUser = recoveredMessages.find((message: any) => message.type === "user");
+              const recoveredError = recoveredMessages.at(-1);
+              const lastUserIndex = nextMessages
+                .map((message: any) => message.type)
+                .lastIndexOf("user");
+              const hasAnswerAfterUser = nextMessages.slice(lastUserIndex + 1).some(
+                (message: any) => message.content || message.processBlocks?.some(
+                  (block: any) => block.kind === "response" && block.content,
+                ),
+              );
+              const matchesPendingUser = recoveredUser
+                && lastUserIndex >= 0
+                && nextMessages[lastUserIndex].content === recoveredUser.content
+                && !hasAnswerAfterUser;
+              if (matchesPendingUser && lastHistoryMessage?.type === "agent") {
+                nextMessages = nextMessages.map((message: any, index: number) =>
+                  index === nextMessages.length - 1
+                    ? { ...message, content: recoveredError.content, chatError: true }
+                    : message,
+                );
+              } else {
+                nextMessages = [
+                  ...nextMessages,
+                  ...(matchesPendingUser ? [recoveredError] : recoveredMessages),
+                ];
+              }
+              recoveredTraceReply = true;
+            }
             const recoveredContent = recovery.message?.content;
             const recoveredText = Array.isArray(recoveredContent)
               ? recoveredContent
@@ -1199,7 +1234,7 @@ export function useRemoteChatSession({
                   .join("\n")
                   .trim()
               : "";
-            if (recovery.available && recoveredText) {
+            if (recovery.available && recoveredText && !recovery.is_error) {
               recoveredTraceReply = true;
               const targetIndex = nextMessages
                 .map((message: any) => message?.type)

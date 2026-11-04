@@ -3879,7 +3879,7 @@ async def health():
 
 @router.get("/chats/{chat_id}/trace-recovery")
 async def recover_chat_trace_reply(request: Request, chat_id: str):
-    """Return the latest matching final reply from a local chat trace.
+    """Return the latest matching completed or failed turn from a chat trace.
 
     This is a display-only fallback for Portal when the stream completed but
     the upstream chat history did not persist its final assistant message.
@@ -3902,6 +3902,7 @@ async def recover_chat_trace_reply(request: Request, chat_id: str):
         return {"available": False, "reason": "trace_not_found"}
 
     latest: dict[str, Any] | None = None
+    latest_user: dict[str, Any] | None = None
     try:
         with trace_path.open("r", encoding="utf-8") as trace_file:
             for line_number, line in enumerate(trace_file, start=1):
@@ -3913,21 +3914,65 @@ async def recover_chat_trace_reply(request: Request, chat_id: str):
                     event = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(event, dict):
+                    continue
                 if (
-                    event.get("type") == "agent_reply"
-                    and event.get("agent_id") == workspace.agent_id
+                    event.get("agent_id") == workspace.agent_id
                     and event.get("session_id") == session_id
                     and event.get("user_id") in (None, chat_spec.user_id)
                     and event.get("channel") in (None, chat_spec.channel)
-                    and isinstance(event.get("text"), str)
-                    and event["text"].strip()
                 ):
-                    latest = event
+                    if event.get("type") == "user_message":
+                        latest_user = event
+                        latest = None
+                    elif event.get("type") == "error":
+                        latest = event
+                    elif (
+                        event.get("type") == "agent_reply"
+                        and isinstance(event.get("text"), str)
+                        and event["text"].strip()
+                    ):
+                        latest = event
     except OSError:
         return {"available": False, "reason": "trace_unavailable"}
 
     if not latest:
         return {"available": False, "reason": "reply_not_found"}
+    if latest.get("type") == "error":
+        from qwenpaw.extensions.runtime.chat_errors import (
+            public_chat_error_code,
+        )
+
+        code = public_chat_error_code(
+            str(latest.get("public_error_code") or latest.get("message") or "")
+        )
+        user_text = str((latest_user or {}).get("text") or "").strip()
+        return {
+            "available": True,
+            "source": "chat_trace_recovery",
+            "trace_ts": latest.get("ts"),
+            "is_error": True,
+            "user_message": (
+                {
+                    "id": f"trace-user-{(latest_user or {}).get('ts')}",
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "text", "text": user_text}],
+                }
+                if user_text
+                else None
+            ),
+            "message": {
+                "id": f"trace-error-{latest.get('ts')}",
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "本轮对话失败。"}],
+                "metadata": {
+                    "source": "chat_trace_recovery",
+                    "portal_chat_error": code,
+                },
+            },
+        }
     text = latest["text"].strip()
     if len(text) > 200_000:
         text = text[:200_000]

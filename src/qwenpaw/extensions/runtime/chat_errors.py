@@ -18,6 +18,37 @@ logger = logging.getLogger(__name__)
 
 _CHAT_PATH = "/api/portal/kunlun-adapter/v1/chat/completions"
 
+_PUBLIC_CHAT_ERROR_CODES = frozenset(
+    {
+        "MODEL_API_KEY_MISSING",
+        "MODEL_API_KEY_INVALID",
+        "MODEL_AUTH_FAILED",
+        "MODEL_ACCESS_DENIED",
+        "MODEL_EXECUTION_ERROR",
+        "MODEL_TIMEOUT",
+        "MODEL_QUOTA_EXCEEDED",
+        "MODEL_CONTEXT_LENGTH_EXCEEDED",
+        "UNAUTHORIZED_MODEL_ACCESS",
+        "KUNLUN_MODEL_UNAUTHORIZED",
+        "KUNLUN_ROUTE_NOT_FOUND",
+        "KUNLUN_NOT_FOUND",
+        "KUNLUN_AUTH_FAILED",
+        "KUNLUN_NOT_CONFIGURED",
+        "KUNLUN_SERVICE_UNAVAILABLE",
+        "KUNLUN_CONNECTION_FAILED",
+        "KUNLUN_TIMEOUT",
+        "KUNLUN_RATE_LIMITED",
+    }
+)
+
+
+def public_chat_error_code(text: str) -> str:
+    """Never persist raw provider details as a user-visible error."""
+    for token in re.findall(r"\b[A-Z][A-Z_]+\b", text):
+        if token in _PUBLIC_CHAT_ERROR_CODES:
+            return token
+    return _model_auth_code(text, None) or "UNKNOWN_AGENT_ERROR"
+
 
 def _auth_error_text(body: object) -> str:
     if isinstance(body, str):
@@ -35,6 +66,31 @@ def _auth_error_text(body: object) -> str:
     return ""
 
 
+def _model_auth_code(text: str, status: int | None) -> str | None:
+    if re.search(
+        r"no_authentication_credential|missing_api_key"
+        r"|(?:missing|no)\s+(?:api[ _-]?key|authorization\s+header)"
+        r"|(?:api[ _-]?key|authorization\s+header)\s+"
+        r"(?:is\s+)?(?:missing|not provided)"
+        r"|未携带\s*Authorization|未(?:提供|配置)\s*API\s*Key",
+        text,
+        re.IGNORECASE,
+    ):
+        return "MODEL_API_KEY_MISSING"
+    if re.search(
+        r"invalid_api_key|incorrect_api_key|expired_api_key"
+        r"|(?:invalid|incorrect|expired)\s+api[ _-]?key",
+        text,
+        re.IGNORECASE,
+    ):
+        return "MODEL_API_KEY_INVALID"
+    if status == 401:
+        return "MODEL_AUTH_FAILED"
+    if status == 403:
+        return "MODEL_ACCESS_DENIED"
+    return None
+
+
 def refine_model_chat_error(ctx: HookContext) -> None:
     """Keep model authentication causes without exposing provider details."""
     if getattr(ctx.request, "channel", None) != "console":
@@ -46,28 +102,7 @@ def refine_model_chat_error(ctx: HookContext) -> None:
         if isinstance(exc, APIError):
             text = _auth_error_text(exc.body) or str(exc)
             status = getattr(exc, "status_code", None)
-            code = None
-            if re.search(
-                r"no_authentication_credential|missing_api_key"
-                r"|(?:missing|no)\s+(?:api[ _-]?key|authorization\s+header)"
-                r"|(?:api[ _-]?key|authorization\s+header)\s+"
-                r"(?:is\s+)?(?:missing|not provided)"
-                r"|未携带\s*Authorization|未(?:提供|配置)\s*API\s*Key",
-                text,
-                re.IGNORECASE,
-            ):
-                code = "MODEL_API_KEY_MISSING"
-            elif re.search(
-                r"invalid_api_key|incorrect_api_key|expired_api_key"
-                r"|(?:invalid|incorrect|expired)\s+api[ _-]?key",
-                text,
-                re.IGNORECASE,
-            ):
-                code = "MODEL_API_KEY_INVALID"
-            elif status == 401:
-                code = "MODEL_AUTH_FAILED"
-            elif status == 403:
-                code = "MODEL_ACCESS_DENIED"
+            code = _model_auth_code(text, status)
             if code:
                 ctx.extras[
                     "_error_text"

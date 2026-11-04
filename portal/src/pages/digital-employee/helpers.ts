@@ -1,5 +1,6 @@
 import { digitalEmployees } from "../../data/portalData.ts";
 import { extractTurnUsageFromMetadata } from "../../components/turnUsage";
+import { persistedChatErrorToFriendly } from "../../lib/chatErrorMessage";
 
 const TIMEOUT_ALARM_TITLE = "应用接口响应超时";
 export const ALARM_WORKORDER_ENTRY = "alarm-workorders";
@@ -588,6 +589,12 @@ export function normalizeRemoteHistoryMessages(
     }
 
     if (message.role === "assistant" && (!message.type || message.type === "message")) {
+      const errorText = persistedChatErrorToFriendly(message.metadata);
+      if (errorText) {
+        activeAgentMessage.content = errorText;
+        activeAgentMessage.chatError = true;
+        continue;
+      }
       const textContent = extractCopawMessageText(message);
       if (!textContent) {
         continue;

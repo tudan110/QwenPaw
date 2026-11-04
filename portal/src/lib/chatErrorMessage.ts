@@ -169,3 +169,16 @@ export function toFriendlyChatError(error: unknown): string {
 export function runtimeErrorToFriendly(errorLike: unknown): string {
   return toFriendlyChatError(extractRuntimeErrorText(errorLike));
 }
+
+export function persistedChatErrorToFriendly(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const outer = metadata as Record<string, unknown>;
+  const inner = outer.metadata;
+  const code = outer.portal_chat_error ??
+    (inner && typeof inner === "object"
+      ? (inner as Record<string, unknown>).portal_chat_error
+      : undefined);
+  return typeof code === "string"
+    ? `对话失败：${toFriendlyChatError({ code })}`
+    : null;
+}

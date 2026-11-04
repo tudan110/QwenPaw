@@ -212,6 +212,8 @@ export interface ChatTraceRecovery {
   trace_ts?: number;
   reason?: string;
   message?: Record<string, unknown>;
+  is_error?: boolean;
+  user_message?: Record<string, unknown> | null;
 }
 
 export function getChatTraceRecovery(agentId: string | undefined, chatId: string) {
