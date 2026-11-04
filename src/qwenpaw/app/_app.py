@@ -48,6 +48,7 @@ from ..extensions.api.self_monitor_api import (
 )
 from ..extensions.api.traces_backend import router as traces_router
 from ..extensions.api.delete_block_middleware import DeleteBlockMiddleware
+from ..extensions.api.sso_token_middleware import SsoTokenMiddleware
 from ..envs import load_envs_into_environ
 from ..providers.provider_manager import ProviderManager
 from ..local_models.manager import LocalModelManager
@@ -846,6 +847,7 @@ app = FastAPI(
 app.add_middleware(AgentContextMiddleware)
 
 app.add_middleware(AuthMiddleware)
+app.add_middleware(SsoTokenMiddleware)
 
 # Apply CORS middleware if CORS_ORIGINS is set
 if CORS_ORIGINS:

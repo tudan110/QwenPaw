@@ -24,6 +24,7 @@ export interface SsoSession {
 const TOKEN_KEY = "qwenpaw.sso.token";
 const USER_KEY = "qwenpaw.sso.user";
 const EXPIRE_KEY = "qwenpaw.sso.expireAt";
+const TOKEN_COOKIE = "qwenpaw_sso_token";
 
 const SESSION_STORAGE_KEYS = new Set([TOKEN_KEY, USER_KEY, EXPIRE_KEY]);
 
@@ -73,6 +74,24 @@ export function getSession(): SsoSession | null {
   return { token, user, expireAt };
 }
 
+// Navigations, downloads and iframe requests cannot attach X-Inoe-Token.
+// Keep a same-origin cookie in sync; never put the token in a URL.
+export function syncSsoTokenCookie(): void {
+  if (typeof document === "undefined") return;
+  const session = getSession();
+  const expired = session && session.expireAt > 0 &&
+    Date.now() >= session.expireAt;
+  const token = !expired ? session?.token ?? "" : "";
+  const expireAt = session?.expireAt ?? 0;
+  const maxAge = !token
+    ? "; Max-Age=0"
+    : expireAt > 0
+      ? `; Max-Age=${Math.ceil((expireAt - Date.now()) / 1000)}`
+      : "";
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${TOKEN_COOKIE}=${encodeURIComponent(token)}; Path=/; SameSite=Strict${secure}${maxAge}`;
+}
+
 export function getChatUserId(): string {
   const session = getSession();
   if (!session) {
@@ -101,18 +120,21 @@ export function setSession(input: {
   safeSet(USER_KEY, JSON.stringify(input.user ?? {}));
   if (previous && previous.token === input.token && previous.expireAt > 0) {
     safeSet(EXPIRE_KEY, String(previous.expireAt));
+    syncSsoTokenCookie();
     return;
   }
   const expiresInSeconds = Number(input.expiresInSeconds || 0);
   const expireAt =
     expiresInSeconds > 0 ? Date.now() + expiresInSeconds * 1000 : 0;
   safeSet(EXPIRE_KEY, String(expireAt));
+  syncSsoTokenCookie();
 }
 
 export function clearSession(): void {
   safeRemove(TOKEN_KEY);
   safeRemove(USER_KEY);
   safeRemove(EXPIRE_KEY);
+  syncSsoTokenCookie();
 }
 
 export function isAuthenticated(): boolean {
