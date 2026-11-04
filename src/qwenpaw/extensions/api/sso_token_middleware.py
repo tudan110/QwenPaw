@@ -11,6 +11,7 @@ from qwenpaw.constant import EnvVarLoader
 _TOKEN_COOKIE = "qwenpaw_sso_token"
 _PUBLIC_ENDPOINTS = {
     ("GET", "/api/portal/health"),
+    ("GET", "/api/portal/employee-status"),
     ("GET", "/api/portal/sso/status"),
     ("POST", "/api/portal/sso/token-login"),
     ("POST", "/api/portal/sso/exchange"),

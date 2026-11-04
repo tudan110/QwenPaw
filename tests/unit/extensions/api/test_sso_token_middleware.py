@@ -35,11 +35,11 @@ def client(monkeypatch):
         "/api",
         "/api/chats",
         "/api/agents/gateway/chats",
-        "/api/portal/employee-status",
+        "/api/portal/employee-status/private",
         "/api/portal/sso/sso-settings",
         "/api/portal/sso/status/extra",
         "/api/portal/ai/system-summary",
-        "/portal-api/employee-status",
+        "/portal-api/employee-status/export",
         "/copaw-api/api/chats",
     ],
 )
@@ -94,17 +94,37 @@ def test_no_alternate_bypass(client, headers):
     ("method", "suffix"),
     [
         ("GET", "/health"),
+        ("GET", "/employee-status"),
         ("GET", "/sso/status"),
         ("POST", "/sso/token-login"),
         ("POST", "/sso/exchange"),
         ("POST", "/sso/clear-login-cookie"),
     ],
 )
-def test_only_bootstrap_and_health_are_public(client, prefix, method, suffix):
+def test_public_endpoints_are_method_scoped(client, prefix, method, suffix):
     path = prefix + suffix
     assert client.request(method, path).status_code == 200
     assert client.request(method, path + "/").status_code == 200
     assert client.put(path).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/portal-api/employee-status",
+        "/api/portal/employee-status",
+        "/copaw-api/api/portal/employee-status",
+    ],
+)
+def test_employee_status_whitelist_is_exact(client, path):
+    assert client.get(path).status_code == 200
+    assert (
+        client.get(path, params={"include_alert_count": "false"}).status_code
+        == 200
+    )
+    for method in ["POST", "PUT", "DELETE"]:
+        assert client.request(method, path).status_code == 401
+    assert client.get(path + "/private").status_code == 401
 
 
 def test_preflight_and_static_pages_still_work(client):
@@ -142,13 +162,22 @@ def test_invalid_switch_does_not_disable_gate(client, monkeypatch):
 
 def test_main_app_registers_sso_token_gate(monkeypatch):
     from qwenpaw.app._app import app
+    from qwenpaw.extensions.api import portal_backend
+
+    async def employee_statuses(request, include_alert_count):
+        return []
 
     monkeypatch.setenv("QWENPAW_SSO_TOKEN_REQUIRED", "true")
+    monkeypatch.setattr(
+        portal_backend, "collect_portal_employee_statuses", employee_statuses
+    )
     assert any(
         middleware.cls is SsoTokenMiddleware
         for middleware in app.user_middleware
     )
     main_client = TestClient(app)
     assert main_client.get("/api/chats").status_code == 401
-    assert main_client.get("/api/portal/employee-status").status_code == 401
+    response = main_client.get("/api/portal/employee-status")
+    assert response.status_code == 200
+    assert response.json()["employees"] == []
     assert main_client.get("/api/portal/health").status_code == 200
