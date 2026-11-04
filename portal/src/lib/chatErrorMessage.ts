@@ -13,6 +13,17 @@ const GENERIC_FRIENDLY = "服务暂时遇到点问题，请稍后重试。";
 const TRACEBACK_PATTERN =
   /Traceback \(most recent call last\)|File "[^"]+", line \d+|\n\s*at [\w.$<>]+ \(/i;
 
+const MODEL_AUTH_ERROR_MESSAGES: Record<string, string> = {
+  MODEL_API_KEY_MISSING:
+    "模型服务未收到 API Key，无法完成对话。请在「配置中心 → 模型配置」中为当前模型提供商填写 API Key 并保存；如已配置，请联系管理员检查鉴权信息是否正确传递。",
+  MODEL_API_KEY_INVALID:
+    "模型 API Key 校验失败，密钥可能无效或已过期。请在「配置中心 → 模型配置」中更新当前模型提供商的 API Key 并保存。",
+  MODEL_AUTH_FAILED:
+    "模型身份验证失败。请在「配置中心 → 模型配置」中检查当前模型提供商的 API Key；如已正确配置，请联系管理员检查模型服务的鉴权设置。",
+  MODEL_ACCESS_DENIED:
+    "当前调用身份无权访问所选模型。请联系管理员检查该模型的访问权限，或在「配置中心 → 模型配置」中切换到有权限的模型。",
+};
+
 const KUNLUN_ERROR_MESSAGES: Record<string, string> = {
   KUNLUN_MODEL_UNAUTHORIZED:
     "昆仑模型未授权：当前调用身份无权使用所选模型。请联系管理员核对模型 ID、应用授权及模型密钥权限。",
@@ -70,10 +81,7 @@ export function extractRuntimeErrorText(errorLike: unknown): string {
 }
 
 export function toFriendlyChatError(error: unknown): string {
-  const raw = String(
-    (error as { message?: unknown } | null)?.message ??
-      (typeof error === "string" ? error : ""),
-  ).trim();
+  const raw = extractRuntimeErrorText(error).trim();
 
   if (!raw) {
     return GENERIC_FRIENDLY;
@@ -90,6 +98,24 @@ export function toFriendlyChatError(error: unknown): string {
     Object.prototype.hasOwnProperty.call(KUNLUN_ERROR_MESSAGES, kunlunCode)
   ) {
     return KUNLUN_ERROR_MESSAGES[kunlunCode];
+  }
+
+  const authCode = raw.match(
+    /\bMODEL_(?:API_KEY_MISSING|API_KEY_INVALID|AUTH_FAILED|ACCESS_DENIED)\b/,
+  )?.[0];
+  if (authCode) {
+    return MODEL_AUTH_ERROR_MESSAGES[authCode];
+  }
+
+  if (
+    /no_authentication_credential|missing_api_key|(?:missing|no)\s+(?:api[ _-]?key|authorization\s+header)|(?:api[ _-]?key|authorization\s+header)\s+(?:is\s+)?(?:missing|not provided)|未携带\s*Authorization|未(?:提供|配置)\s*API\s*Key/i.test(raw)
+  ) {
+    return MODEL_AUTH_ERROR_MESSAGES.MODEL_API_KEY_MISSING;
+  }
+  if (
+    /invalid_api_key|incorrect_api_key|expired_api_key|(?:invalid|incorrect|expired)\s+api[ _-]?key/i.test(raw)
+  ) {
+    return MODEL_AUTH_ERROR_MESSAGES.MODEL_API_KEY_INVALID;
   }
 
   // 网络 / 流式连接中断
@@ -130,7 +156,7 @@ export function toFriendlyChatError(error: unknown): string {
       return "本轮对话内容过长，请精简后重试。";
     }
     if (/unauthorized|authentication|api key|UNAUTHORIZED/i.test(raw)) {
-      return "模型服务暂不可用，请联系管理员。";
+      return MODEL_AUTH_ERROR_MESSAGES.MODEL_AUTH_FAILED;
     }
     return "模型服务暂时不可用，请稍后重试。";
   }

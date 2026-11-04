@@ -76,6 +76,76 @@ test("runtimeErrorToFriendly maps an {code,message} object end to end", () => {
   );
 });
 
+test("missing credentials take precedence over a gateway's incorrect-key label", () => {
+  const raw = `Error code: 401 - ${JSON.stringify({
+    code: 500004,
+    detail: JSON.stringify({
+      error: {
+        message: "未携带Authorization请求头",
+        type: "authentication_error",
+        code: "no_authentication_credential",
+      },
+    }),
+    message: "INCORRECT_API_KEY_PROVIDED",
+  })}`;
+  for (const error of [raw, new Error(raw)]) {
+    const message = toFriendlyChatError(error);
+    assert.match(message, /未收到 API Key/);
+    assert.match(message, /配置中心 → 模型配置/);
+    assert.match(message, /填写 API Key 并保存/);
+    assert.doesNotMatch(message, /不可用|过期|401|500004|Authorization|authentication_error/);
+  }
+});
+
+test("model authentication categories work across all runtime error shapes", () => {
+  const cases = [
+    ["MODEL_API_KEY_MISSING", /未收到 API Key/],
+    ["MODEL_API_KEY_INVALID", /API Key 校验失败/],
+    ["MODEL_AUTH_FAILED", /身份验证失败/],
+    ["MODEL_ACCESS_DENIED", /无权访问所选模型/],
+  ] as const;
+  for (const [code, expected] of cases) {
+    for (const error of [
+      `Model authentication failed (${code})`,
+      { code, message: "safe failure" },
+      { content: [{ type: "text", text: `safe failure (${code})` }] },
+    ]) {
+      const message = toFriendlyChatError(error);
+      assert.match(message, expected);
+      assert.doesNotMatch(message, /MODEL_|safe failure|服务暂不可用/);
+    }
+  }
+});
+
+test("recognizes raw missing and invalid credentials without leaking details", () => {
+  for (const raw of [
+    "no_authentication_credential",
+    "Missing Authorization header",
+    "API key is missing",
+    "未携带Authorization请求头",
+  ]) {
+    assert.match(toFriendlyChatError(raw), /未收到 API Key/);
+  }
+  for (const raw of [
+    "INCORRECT_API_KEY_PROVIDED sk-private /tmp/private.json",
+    "invalid_api_key",
+    "Expired API key",
+  ]) {
+    const message = toFriendlyChatError(raw);
+    assert.match(message, /API Key 校验失败/);
+    assert.doesNotMatch(message, /sk-private|\/tmp|INCORRECT|invalid_api_key/);
+  }
+});
+
+test("ambiguous unauthorized model failures do not claim a missing or expired key", () => {
+  const message = toFriendlyChatError(
+    "Unauthorized access to model 'unknown' (UNAUTHORIZED_MODEL_ACCESS)",
+  );
+  assert.match(message, /身份验证失败/);
+  assert.match(message, /检查.*API Key/);
+  assert.doesNotMatch(message, /未收到|未配置|过期|不可用/);
+});
+
 test("explains Kunlun model authorization without claiming credentials expired", () => {
   const message = toFriendlyChatError(
     "Kunlun model request failed (KUNLUN_MODEL_UNAUTHORIZED)",

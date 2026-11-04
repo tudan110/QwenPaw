@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Preserve safe Kunlun failure categories after core error normalization."""
+"""Preserve safe model failure categories after core error normalization."""
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
+
+from openai import APIError
 
 if TYPE_CHECKING:
     from qwenpaw.runtime.hooks import HookContext
@@ -14,6 +17,66 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _CHAT_PATH = "/api/portal/kunlun-adapter/v1/chat/completions"
+
+
+def _auth_error_text(body: object) -> str:
+    if isinstance(body, str):
+        try:
+            parsed = json.loads(body)
+        except (ValueError, RecursionError):
+            return body
+        return _auth_error_text(parsed)
+    if isinstance(body, dict):
+        return " ".join(
+            _auth_error_text(body[key])
+            for key in ("code", "type", "message", "detail", "error")
+            if key in body
+        )
+    return ""
+
+
+def refine_model_chat_error(ctx: HookContext) -> None:
+    """Keep model authentication causes without exposing provider details."""
+    if getattr(ctx.request, "channel", None) != "console":
+        return
+    exc = ctx.error
+    seen: set[int] = set()
+    while isinstance(exc, Exception) and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, APIError):
+            text = _auth_error_text(exc.body) or str(exc)
+            status = getattr(exc, "status_code", None)
+            code = None
+            if re.search(
+                r"no_authentication_credential|missing_api_key"
+                r"|(?:missing|no)\s+(?:api[ _-]?key|authorization\s+header)"
+                r"|(?:api[ _-]?key|authorization\s+header)\s+"
+                r"(?:is\s+)?(?:missing|not provided)"
+                r"|未携带\s*Authorization|未(?:提供|配置)\s*API\s*Key",
+                text,
+                re.IGNORECASE,
+            ):
+                code = "MODEL_API_KEY_MISSING"
+            elif re.search(
+                r"invalid_api_key|incorrect_api_key|expired_api_key"
+                r"|(?:invalid|incorrect|expired)\s+api[ _-]?key",
+                text,
+                re.IGNORECASE,
+            ):
+                code = "MODEL_API_KEY_INVALID"
+            elif status == 401:
+                code = "MODEL_AUTH_FAILED"
+            elif status == 403:
+                code = "MODEL_ACCESS_DENIED"
+            if code:
+                ctx.extras[
+                    "_error_text"
+                ] = f"Model authentication failed ({code})"
+                logger.info(
+                    "Classified model authentication failure: %s", code
+                )
+                return
+        exc = exc.__cause__ or exc.__context__
 
 
 def _failure_code(exc: Exception) -> str | None:
@@ -78,9 +141,9 @@ def refine_kunlun_chat_error(ctx: HookContext) -> None:
         ):
             code = _failure_code(exc)
             if code:
-                ctx.extras["_error_text"] = (
-                    f"Kunlun model request failed ({code})"
-                )
+                ctx.extras[
+                    "_error_text"
+                ] = f"Kunlun model request failed ({code})"
                 logger.info("Classified Kunlun chat failure: %s", code)
             return
         exc = exc.__cause__ or exc.__context__

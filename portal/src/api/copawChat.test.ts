@@ -63,7 +63,7 @@ test("reconnect preserves the selected chat identity instead of the SSO viewer",
   }
 });
 
-test("HTTP 200 failed SSE preserves the safe Kunlun category for user-facing advice", async () => {
+test("HTTP 200 failed SSE preserves safe model categories for user-facing advice", async () => {
   const server = await createServer({
     root: fileURLToPath(new URL("../..", import.meta.url)),
     configFile: false,
@@ -84,6 +84,10 @@ test("HTTP 200 failed SSE preserves the safe Kunlun category for user-facing adv
       ["KUNLUN_MODEL_UNAUTHORIZED", /模型未授权/],
       ["KUNLUN_ROUTE_NOT_FOUND", /接口未找到/],
       ["KUNLUN_SERVICE_UNAVAILABLE", /网关或模型服务暂时不可用/],
+      ["MODEL_API_KEY_MISSING", /未收到 API Key/],
+      ["MODEL_API_KEY_INVALID", /API Key 校验失败/],
+      ["MODEL_AUTH_FAILED", /身份验证失败/],
+      ["MODEL_ACCESS_DENIED", /无权访问所选模型/],
     ] as const;
     for (const [code, expected] of cases) {
       globalThis.fetch = async () => {
@@ -91,7 +95,7 @@ test("HTTP 200 failed SSE preserves the safe Kunlun category for user-facing adv
           object: "response",
           status: "failed",
           output: [],
-          error: `Kunlun model request failed (${code})`,
+          error: `Model request failed (${code})`,
         };
         const bytes = new TextEncoder().encode(
           `data: ${JSON.stringify(event)}\n\n`,
@@ -117,7 +121,7 @@ test("HTTP 200 failed SSE preserves the safe Kunlun category for user-facing adv
           assert.ok(error instanceof Error);
           assert.match(error.message, new RegExp(code));
           assert.match(toFriendlyChatError(error), expected);
-          assert.doesNotMatch(toFriendlyChatError(error), /KUNLUN_/);
+          assert.doesNotMatch(toFriendlyChatError(error), /KUNLUN_|MODEL_/);
           return true;
         },
       );

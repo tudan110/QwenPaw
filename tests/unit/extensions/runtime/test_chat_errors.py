@@ -4,17 +4,36 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 import httpx
 import pytest
 from openai import APIStatusError
 
-from qwenpaw.extensions.runtime.chat_errors import refine_kunlun_chat_error
+from qwenpaw.extensions.runtime.chat_errors import (
+    refine_kunlun_chat_error,
+    refine_model_chat_error,
+)
 from qwenpaw.runtime.hooks import HookContext
 
 _URL = "http://127.0.0.1:8088/api/portal/kunlun-adapter/v1/chat/completions"
 _ORIGINAL_TEXT = "Model 'unknown' execution failed (MODEL_EXECUTION_ERROR)"
+_MODEL_URL = "https://model.example/v1/chat/completions"
+_MISSING_KEY_BODY = {
+    "code": 500004,
+    "detail": json.dumps(
+        {
+            "error": {
+                "message": "未携带Authorization请求头",
+                "type": "authentication_error",
+                "code": "no_authentication_credential",
+            }
+        },
+        ensure_ascii=False,
+    ),
+    "message": "INCORRECT_API_KEY_PROVIDED",
+}
 
 
 def _error(status, body, *, url=_URL):
@@ -42,6 +61,85 @@ def _context(exc, *, channel="console"):
         error=exc,
         extras={"_error_text": _ORIGINAL_TEXT},
     )
+
+
+@pytest.mark.parametrize(
+    "status,body,code",
+    [
+        (401, _MISSING_KEY_BODY, "MODEL_API_KEY_MISSING"),
+        (
+            401,
+            {"error": {"code": "no_authentication_credential"}},
+            "MODEL_API_KEY_MISSING",
+        ),
+        (
+            401,
+            {"error": {"message": "Missing Authorization header"}},
+            "MODEL_API_KEY_MISSING",
+        ),
+        (401, "API key is missing", "MODEL_API_KEY_MISSING"),
+        (401, "INCORRECT_API_KEY_PROVIDED", "MODEL_API_KEY_INVALID"),
+        (
+            401,
+            {"error": {"code": "invalid_api_key"}},
+            "MODEL_API_KEY_INVALID",
+        ),
+        (401, "Expired API key", "MODEL_API_KEY_INVALID"),
+        (401, {"error": "unauthorized"}, "MODEL_AUTH_FAILED"),
+        (403, {"error": "forbidden"}, "MODEL_ACCESS_DENIED"),
+    ],
+)
+def test_model_authentication_preserves_only_safe_category(status, body, code):
+    ctx = _context(_error(status, body, url=_MODEL_URL))
+
+    refine_model_chat_error(ctx)
+
+    assert ctx.extras["_error_text"] == (
+        f"Model authentication failed ({code})"
+    )
+    assert ctx.error.body == body
+
+
+@pytest.mark.parametrize(
+    "exc,channel",
+    [
+        (_error(500, {"message": "server error"}, url=_MODEL_URL), "console"),
+        (_error(429, {"message": "rate limit"}, url=_MODEL_URL), "console"),
+        (_error(401, _MISSING_KEY_BODY, url=_MODEL_URL), "dingtalk"),
+        (RuntimeError("Missing API key in unrelated tool"), "console"),
+        (asyncio.CancelledError(), "console"),
+        (None, "console"),
+    ],
+)
+def test_model_authentication_leaves_unrelated_errors_unchanged(exc, channel):
+    ctx = _context(exc, channel=channel)
+    refine_model_chat_error(ctx)
+    assert ctx.extras["_error_text"] == _ORIGINAL_TEXT
+
+
+def test_model_authentication_follows_cause_and_never_exposes_secrets():
+    underlying = _error(
+        401,
+        {
+            "error": {
+                "code": "invalid_api_key",
+                "message": "sk-private-key /tmp/private-dump.json",
+            }
+        },
+        url=_MODEL_URL + "?key=private-query-secret",
+    )
+    outer = RuntimeError("model wrapper failed")
+    outer.__cause__ = underlying
+    ctx = _context(outer)
+    refine_model_chat_error(ctx)
+    assert ctx.extras["_error_text"] == (
+        "Model authentication failed (MODEL_API_KEY_INVALID)"
+    )
+
+    outer.__cause__ = outer
+    ctx = _context(outer)
+    refine_model_chat_error(ctx)
+    assert ctx.extras["_error_text"] == _ORIGINAL_TEXT
 
 
 @pytest.mark.parametrize(
@@ -218,6 +316,8 @@ async def test_installed_lifecycle_refines_after_core_normalization(
                 url="https://other.example/v1/chat/completions",
             )
         ),
+        _context(_error(401, _MISSING_KEY_BODY, url=_MODEL_URL)),
+        _context(_error(401, {"error": "unauthorized"})),
     ]
 
     await asyncio.gather(
@@ -227,11 +327,13 @@ async def test_installed_lifecycle_refines_after_core_normalization(
     assert "KUNLUN_MODEL_UNAUTHORIZED" in contexts[0].extras["_error_text"]
     assert "KUNLUN_SERVICE_UNAVAILABLE" in contexts[1].extras["_error_text"]
     assert "KUNLUN_" not in contexts[2].extras["_error_text"]
-    assert len(emitted) == 3
+    assert "MODEL_API_KEY_MISSING" in contexts[3].extras["_error_text"]
+    assert "KUNLUN_AUTH_FAILED" in contexts[4].extras["_error_text"]
+    assert len(emitted) == 5
 
     from qwenpaw.runtime.envelope import Envelope
 
-    for ctx in contexts[:2]:
+    for ctx in contexts:
         events = [
             event.model_dump(mode="json")
             async for event in Envelope(ctx.session_id).error_envelope(
@@ -251,4 +353,4 @@ async def test_installed_lifecycle_refines_after_core_normalization(
     ctx = _context(_error(503, "upstream unavailable"))
     await registry.run(Phase.ON_ERROR, ctx)
     assert "MODEL_EXECUTION_ERROR" in ctx.extras["_error_text"]
-    assert len(emitted) == 4
+    assert len(emitted) == 6
