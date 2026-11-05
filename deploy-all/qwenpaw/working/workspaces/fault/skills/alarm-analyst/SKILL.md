@@ -283,8 +283,11 @@ description: 面向单条活动告警或单个应用故障现象的故障分析�
 // 查 CI 实例详情
 cmdb-query__getCiInstance(id=<CI_ID>)
 
-// 查 CI 关系拓扑
+// 查下游；资源实例还需下一次反向查询，不能由正向为空判定无关系
 cmdb-query__getCiRelations(root_id=<CI_ID>, level=1, count=10000)
+
+// 查资源实例上游，保留真实的父 -> 子关系方向
+cmdb-query__getCiRelations(root_id=<CI_ID>, level=1, reverse=1, count=10000)
 
 // 搜索 CI 实例（按名称模糊匹配）
 cmdb-query__searchCiInstances(q="name:xxx", page=1, count=20)
@@ -330,10 +333,10 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py \
 
 这是 RCA 完成的**必要条件**，不是可选步骤：
 
-1. 拿到根资源 resId 后，通过 `cmdb-query__getCiRelations` 查询 CMDB 拓扑关系
+1. 拿到根资源 resId 后，通过 `cmdb-query__getCiRelations` 查询 CMDB 拓扑关系；资源实例按 `zgops-cmdb` 的“查资源实例拓扑”先 `reverse=0`、再 `reverse=1`，覆盖 `level=1..3`，合并并按节点 ID / 关系 ID（或源、目标、关系类型）去重。正向为空不代表无上游；仅双向成功且为空才说明指定范围内未发现关系，任一方向失败则标注拓扑不完整，不以脚本或跨智能体绕过业务错误
 2. 从拓扑中提取**全部**关联资源 ID（根资源、节点 `_id`、关系边 `src_ci_id/dst_ci_id`）
 3. 对这些资源 ID 批量调用 `alarm__queryHistoricalAlarms` 并按 `devId` 本地过滤
-4. 如果 CMDB 拓扑为空，可从链路类告警标题中提取对端设备信息作为补充
+4. 如果 CMDB 双向查询均成功且拓扑为空，可从链路类告警标题中提取对端设备信息作为补充
 
 如果这一步没完成，不能宣称"分析完成"，报告写「分析状态：部分完成」，说明尚未覆盖的关联资源；查询状态直接写具体缺口，置信度如实保留限制。
 
@@ -477,7 +480,8 @@ cd skills/alarm-analyst && python scripts/send_analysis_report.py \
 当 CMDB 或 query 返回拓扑关系时，**必须**在报告正文中输出一个 ` ```echarts ` 代码块：
 
 - **优先使用 `series.type='tree'`**（`orient='LR'`，从左到右分层），根节点用实际应用名或核心资源名
-- 仅当拓扑呈现多对多网状依赖时，才退化使用 `series.type='graph'`
+- 多父、共享节点或环使用 `series.type='graph'`，保留全部真实边及关系类型；反向查询不反转业务边，不补造父节点间关系
+- 所有输出（含原始 JSON、错误、图表和文件）均须脱敏，不回显 `bearer_token`、`login_pwd` 等凭证
 - 禁止只用 markdown 表格或文字描述拓扑而不给 echarts 代码块
 - 保留 query 返回的 echarts 代码块，不要改写成纯文字
 

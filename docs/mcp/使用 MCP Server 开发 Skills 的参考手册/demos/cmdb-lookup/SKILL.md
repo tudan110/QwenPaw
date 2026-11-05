@@ -36,7 +36,9 @@ tags: [cmdb, example, demo]
 
 调 `cmdb-query__getCiRelations(root_id="3034", level=1, count=10000)`
 
-输出 ECharts 树状图（`series.type='tree'`，从左到右展开）。
+默认只查下游。如果 3034 是资源实例，还需调 `cmdb-query__getCiRelations(root_id="3034", level=1, reverse=1, count=10000)` 查上游，两个方向按实际 schema 覆盖 `level=1..3`。节点按 CI ID、关系按关系 ID 或源/目标/关系类型合并去重，保留真实父 -> 子边。正向为空不代表无关系；仅双向成功且为空才说明指定范围内未发现关系，任一方向失败则报告拓扑不完整，不以脚本绕过业务错误。
+
+应用输出 ECharts 树状图（`series.type='tree'`，从左到右展开）；多父资源拓扑用 `graph`，不能丢边或补造关系。所有输出（含原始 JSON 和错误）均须脱敏，不回显 `bearer_token`、`login_pwd` 等凭证。
 
 ### 查统计
 
@@ -53,7 +55,7 @@ tags: [cmdb, example, demo]
 | "查 MySQL 实例" | `cmdb-query__listCiTypes` → `cmdb-query__searchCiInstances(q="_type:mysql")` |
 | "CMDB 管理了哪些应用" | `cmdb-query__searchCiInstances(q="_type:project")` |
 | "查 CI 3034 详情" | `cmdb-query__getCiInstance(id="3034")` |
-| "查 CI 3034 拓扑" | `cmdb-query__getCiRelations(root_id="3034")` |
+| "查 CI 3034 拓扑" | 应用默认正向；资源实例 `cmdb-query__getCiRelations(root_id="3034", reverse=0)` + `cmdb-query__getCiRelations(root_id="3034", reverse=1)` |
 | "列出所有 CMDB 模型" | `cmdb-query__listCiTypes` |
 | "统计数据库资源数量" | `cmdb-query__countCiByGroup(type=5)` |
 | "查看关系类型" | `cmdb-query__listRelationTypes` |

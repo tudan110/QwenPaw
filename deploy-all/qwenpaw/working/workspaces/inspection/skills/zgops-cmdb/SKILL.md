@@ -25,7 +25,7 @@ description: 用于查询当前配置所指向的 CMDB 环境。当用户询问�
 | 查 CMDB 类型 | `cmdb-query__listCmdbTypes` | — | 返回 CMDB 类型列表 |
 | 搜索 CI 实例 | `cmdb-query__searchCiInstances` | `q`, `page`, `count` | `q=_type:<模型名>` 按类型搜索 |
 | 查 CI 实例详情 | `cmdb-query__getCiInstance` | `id` | 传 CI 的 `_id` |
-| 查 CI 关系拓扑 | `cmdb-query__getCiRelations` | `root_id`, `level`, `count` | 查上下游关系链 |
+| 查 CI 关系拓扑 | `cmdb-query__getCiRelations` | `root_id`, `level`, `count`, `reverse` | `reverse` 为可选整数，默认 `0`：root 作父节点查下游；`1`：root 作子节点查上游 |
 | 登录 | `cmdb-query__cmdbLogin` | — | 获取会话 token（通常只读查询不需要） |
 | 查用户信息 | `cmdb-query__getCmdbUserInfo` | — | — |
 | CI 数量统计 | `cmdb-query__countCi` | — | 全量 CI 数量 |
@@ -49,6 +49,16 @@ description: 用于查询当前配置所指向的 CMDB 环境。当用户询问�
 2. 唯一命中后 → 调用 `cmdb-query__getCiRelations(root_id=<应用_ci_id>, level=1, count=10000)`
 3. 输出 ECharts 从左到右树状图（`series.type='tree'`），根节点用实际应用名
 
+应用拓扑保持默认正向查询，不自动追加反向关系；旧 `app-topology` 脚本仍只接受应用名，不用于资源实例上游查询。
+
+### 查资源实例拓扑
+
+1. 已知 CI ID 时先用 `getCiInstance` 确认实例；否则先搜索并确认唯一目标，多候选让用户选择。
+2. 对同一个 `root_id` 先用 `reverse=0` 查下游，再用 `reverse=1` 查上游，`count=10000`。两方向均覆盖 `level=1..3`：按工具 schema 传层级；若 `level` 只接受整数，分别查询 `level=1`、`level=2`、`level=3`，不要传逗号字符串或未经 schema 支持的数组。
+3. 合并两方向结果：节点按 CI ID 去重；关系优先按关系 ID 去重，没有关系 ID 时按 `(源 CI ID, 目标 CI ID, 关系类型)` 去重。保留 `forward/reverse` 查询来源，不反转真实关系边。若接口只有节点列表，没有边端点/关系类型，就明确说明，不能把节点列表当完整关系图或补造边。
+4. mysql、redis 等叶子节点正向为空属正常，只能说明未查到下游，不能据此下“无关系”结论。仅当正反向都成功且为空，才说明“本次层级和数量限制内未发现关系”。这些是预先计划的互补查询，不是业务错误后的换参数重试；任一方向失败时停止并报告已取得结果及拓扑不完整，不用空列表代替错误，不转脚本绕过错误。
+5. 输出指定范围内的上下游拓扑。单父树可用 `tree`；多父、共享节点或环用 ECharts `graph` 保留全部真实边及关系类型，不为了画树丢边或补造中间关系。应用归属 `project --contain--> redis` 和集群部署 `kubernetes --deploy--> redis` 是两条独立上游边。
+
 ### 统计分析
 
 | 用户意图 | MCP 调用 | 输出 |
@@ -69,10 +79,11 @@ description: 用于查询当前配置所指向的 CMDB 环境。当用户询问�
 - 模型列表：`ID / 名称 / 别名 / 唯一键` 表格
 - 单模型：关键字段和关键关系
 - 图表：ECharts，饼图用于分布占比，柱状图用于数量对比
-- 关系拓扑：从左到右树状图，根节点放应用
+- 应用拓扑：从左到右树状图，根节点放应用；资源拓扑以实际资源为中心，保留上游到资源、资源到下游的真实方向，多父关系用 `graph`
 - 不要生成 `.html` 文件，直接输出 ```echarts 代码块
 - 回复中不要出现 `ZGOPS`、`zgops`、`OneOps` 等产品字样
 - 默认返回精简总结，只有用户明确要求时才返回原始 JSON
+- 原始 JSON、错误信息、图表和脚本输出也要脱敏；`bearer_token`、`login_pwd`、password、token、API key 等凭证不得原样回显。MCP 返回即使包含凭证，也不得复制到回复、图表、日志或文件。
 
 ## 旧脚本回退路径
 
@@ -82,6 +93,7 @@ description: 用于查询当前配置所指向的 CMDB 环境。当用户询问�
 scripts/zgops-cmdb.sh list-models
 scripts/zgops-cmdb.sh fetch "/api/v0.1/ci/s?q=_type:<name>&page=1&count=100"
 scripts/zgops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1&level=2&level=3&count=10000"
+scripts/zgops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1&level=2&level=3&count=10000&reverse=1"
 scripts/zgops-cmdb.sh find-project <应用名>
 scripts/zgops-cmdb.sh app-topology <应用名>
 scripts/zgops-cmdb.sh analyze --mode summary --output markdown

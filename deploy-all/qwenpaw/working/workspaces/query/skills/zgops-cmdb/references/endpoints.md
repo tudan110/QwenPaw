@@ -34,7 +34,7 @@
 - `POST /api/v0.1/ci` — 创建 CI
 - `PUT /api/v0.1/ci` 或 `/api/v0.1/ci/<ci_id>` — 更新 CI
 - `DELETE /api/v0.1/ci/<ci_id>` — 删除 CI
-- `GET /api/v0.1/ci_relations/s` — 从根 CI 出发查询关系图
+- `GET /api/v0.1/ci_relations/s` — 默认正向查下游；`reverse=0`（缺省）把根 CI 当父节点，`reverse=1` 把根 CI 当子节点查上游。资源实例需双向合并去重，单向为空不代表无关系；反查不改变真实父子关系方向
 - `POST /api/v0.1/ci_relations/<src_ci_id>/<dst_ci_id>` — 创建 CI 关系
 - `DELETE /api/v0.1/ci_relations/<cr_id>` — 删除 CI 关系
 

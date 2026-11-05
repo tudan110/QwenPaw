@@ -14,6 +14,8 @@ from http.cookiejar import CookieJar
 from pathlib import Path
 from typing import Any
 
+from cmdb_output import run_cli, safe_print as print
+
 
 def _resolve_zgops_env() -> dict[str, str]:
     """Resolve the shared INOE gateway connection from ``os.environ``."""
@@ -359,4 +361,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_cli(main))

@@ -10,6 +10,8 @@ read_when:
 
 ## 资源状态/性能查询规则
 
+- 资源实例拓扑按 `zgops-cmdb` 的“查资源实例拓扑”执行正反向查询；单向为空不代表无关系。应用默认正向树状图不变，资源多父、共享节点或环使用 `echarts` 的 `graph` 保留真实关系边，不受上文树状图优先规则限制。
+
 - 用户询问“数据库状态总览 / 数据库状态统计 / 数据库资源状态”时，使用 `resource-insight-query` 的 `status-overview --resource_type database`。
 - 用户询问“数据库性能 Top / 数据库磁盘使用率排行”时，使用 `resource-insight-query` 的 `top-metric --resource_type database`，默认按 `diskRate` 排序。
 - 用户询问“网络设备/操作系统/服务器性能 Top / CPU 排行”时，使用 `resource-insight-query` 的 `top-metric`，分别传 `--resource_type network/os/server`，默认按 `cpuRate` 排序。

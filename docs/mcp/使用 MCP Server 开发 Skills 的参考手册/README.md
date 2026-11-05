@@ -19,7 +19,7 @@ MCP（Model Context Protocol）是一种标准化的工具调用协议。平台�
 | `listCiTypes` | 查询 CI 类型列表 | page, per_page |
 | `searchCiInstances` | 搜索 CI 实例 | q（查询条件）, page, count |
 | `getCiInstance` | 查询 CI 实例详情 | id（CI ID） |
-| `getCiRelations` | 查询 CI 关系拓扑 | root_id, level, count |
+| `getCiRelations` | 查询 CI 关系拓扑 | root_id, level, count, reverse（可选整数，默认 0 查下游，1 查上游） |
 | `getCiTypeAttributes` | 查询 CI 类型属性 | id |
 | `listCiTypeRelations` | 查询 CI 类型之间的关系 | ci_type_id |
 | `listCiTypeGroups` | 查看 CI 类型分组目录 | — |
@@ -40,8 +40,11 @@ MCP（Model Context Protocol）是一种标准化的工具调用协议。平台�
 查 MySQL 实例 → cmdb-query__searchCiInstances(q="_type:mysql")
 查 CI 详情    → cmdb-query__getCiInstance(id=3034)
 查拓扑关系    → cmdb-query__getCiRelations(root_id=3034)
+查资源上游    → cmdb-query__getCiRelations(root_id=3034, reverse=1)
 查应用列表    → cmdb-query__searchCiInstances(q="_type:project")
 ```
+
+资源实例拓扑需要合并正向下游和反向上游结果；单向为空不代表无关系。节点按 CI ID、关系按关系 ID 或源/目标/关系类型去重，保留真实父子边方向。多父拓扑用 ECharts `graph`，应用默认正向树状图不变。所有输出（含原始 JSON、错误和文件）均须脱敏，不回显 `bearer_token`、`login_pwd` 等凭证。
 
 <details>
 <summary>导入 JSON</summary>

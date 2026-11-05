@@ -10,6 +10,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from cmdb_output import run_cli, safe_print as print
 from find_project import (
     CmdbHttpClient,
     _clean_text,
@@ -544,4 +545,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_cli(main))

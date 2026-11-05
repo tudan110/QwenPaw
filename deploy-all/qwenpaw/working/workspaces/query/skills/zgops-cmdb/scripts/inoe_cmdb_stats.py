@@ -16,6 +16,8 @@ from urllib.parse import urlencode
 
 import requests
 
+from cmdb_output import redact_output, run_cli, safe_print as print
+
 
 RESOURCE_TYPE_MAP = {
     "database": {"type_id": "5", "label": "数据库"},
@@ -478,6 +480,7 @@ def main() -> int:
             args.attr,
             dynamic_type=not args.no_dynamic_type,
         )
+    payload = redact_output(payload)
     if args.output == "json":
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
@@ -486,4 +489,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_cli(main))

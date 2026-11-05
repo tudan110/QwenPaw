@@ -10,6 +10,8 @@ from urllib.parse import urljoin
 
 import requests
 
+from cmdb_output import redact_output, run_cli, safe_print as print
+
 
 def normalize_api_path(path: str) -> str:
     path = path.strip()
@@ -169,7 +171,10 @@ def parse_body(response: requests.Response) -> Any:
 
 
 def envelope(response: requests.Response) -> dict[str, Any]:
-    return {"状态码": response.status_code, "响应体": parse_body(response)}
+    return {
+        "状态码": response.status_code,
+        "响应体": redact_output(parse_body(response)),
+    }
 
 
 def _is_html_response(response: requests.Response | FallbackResponse) -> bool:
@@ -266,4 +271,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_cli(main))

@@ -118,6 +118,36 @@ def build_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     return source, builtin_root, output
 
 
+def test_cmdb_skill_output_guard_is_packaged_with_integrity_hashes(
+    tmp_path: Path,
+) -> None:
+    source_root = (
+        Path(__file__).parents[3] / "deploy-all/qwenpaw/working/workspaces"
+    )
+    seed = tmp_path / "seed"
+    for workspace in ("fault", "gateway", "inspection", "query", "resource"):
+        relative = Path("workspaces") / workspace / "skills/zgops-cmdb"
+        source = source_root / workspace / "skills/zgops-cmdb"
+        seed_builder.copy_managed_tree(source, seed / relative)
+
+    manifest = seed_builder.build_sync_manifest(seed)
+    for workspace in ("fault", "gateway", "inspection", "query", "resource"):
+        relative = Path("workspaces") / workspace / "skills/zgops-cmdb"
+        helper = relative / "scripts/cmdb_output.py"
+        expected_hash = seed_builder.sha256(seed / helper)
+        assert manifest["managed_files"][str(helper)] == {
+            "kind": "skill_file",
+            "sha256": expected_hash,
+        }
+        assert (
+            manifest["managed_skills"][str(relative)]["files"][str(helper)]
+            == expected_hash
+        )
+        assert "reverse=1" in (seed / relative / "SKILL.md").read_text(
+            encoding="utf-8",
+        )
+
+
 def test_builds_sanitized_seed_with_builtin_and_retired_skill_handling(
     tmp_path: Path,
 ) -> None:

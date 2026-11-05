@@ -30,6 +30,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from zgops_http import build_url, configure_bearer, create_session, request_with_fallback  # noqa: E402
+from cmdb_output import redact_output, run_cli, safe_print as print  # noqa: E402
 
 ALLOWED_MODES = {"summary", "model-groups", "relation-types", "app-relations"}
 ALLOWED_OUTPUTS = {"json", "markdown", "markdown-echarts-only"}
@@ -414,6 +415,7 @@ def analyze(mode: str, skill_root: Path, env: Dict[str, str]) -> Dict[str, Any]:
 
 
 def print_result(result: Dict[str, Any], output_format: str) -> None:
+    result = redact_output(result)
     if result.get("code") != 200:
         print(
             "\n".join(
@@ -473,4 +475,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_cli(main))

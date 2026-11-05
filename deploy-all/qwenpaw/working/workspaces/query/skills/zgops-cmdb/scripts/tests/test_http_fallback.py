@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import sys
 from pathlib import Path
 import unittest
 from types import SimpleNamespace
@@ -18,6 +19,7 @@ def _load_module(module_name: str, path: Path):
 
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPT_DIR))
 ZGOPS_HTTP = _load_module("zgops_http_fallback_test", SCRIPT_DIR / "zgops_http.py")
 FIND_PROJECT = _load_module("zgops_find_project_fallback_test", SCRIPT_DIR / "find_project.py")
 
