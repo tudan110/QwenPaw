@@ -96,6 +96,7 @@ def test_no_alternate_bypass(client, headers):
         ("GET", "/health"),
         ("GET", "/employee-status"),
         ("GET", "/sso/status"),
+        ("POST", "/knowledge-base/query"),
         ("POST", "/sso/token-login"),
         ("POST", "/sso/exchange"),
         ("POST", "/sso/clear-login-cookie"),
@@ -125,6 +126,32 @@ def test_employee_status_whitelist_is_exact(client, path):
     for method in ["POST", "PUT", "DELETE"]:
         assert client.request(method, path).status_code == 401
     assert client.get(path + "/private").status_code == 401
+
+
+@pytest.mark.parametrize(
+    "prefix", ["/api/portal", "/portal-api", "/copaw-api/api/portal"]
+)
+def test_knowledge_query_whitelist_is_exact(client, prefix):
+    path = prefix + "/knowledge-base/query"
+    for suffix in ["", "/"]:
+        response = client.post(
+            path + suffix,
+            json={"query": "CPU usage threshold", "filters": {}},
+        )
+        assert response.status_code == 200
+        for method in ["GET", "PUT", "DELETE"]:
+            assert client.request(method, path + suffix).status_code == 401
+    for suffix in [
+        "/query/private",
+        "/query-extra",
+        "/health",
+        "/rag-synthesize",
+        "/sources",
+        "/sources/1",
+    ]:
+        protected_path = prefix + "/knowledge-base" + suffix
+        for method in ["GET", "POST"]:
+            assert client.request(method, protected_path).status_code == 401
 
 
 def test_preflight_and_static_pages_still_work(client):
@@ -171,6 +198,20 @@ def test_main_app_registers_sso_token_gate(monkeypatch):
     monkeypatch.setattr(
         portal_backend, "collect_portal_employee_statuses", employee_statuses
     )
+    query_payload = {"query": "CPU usage threshold", "filters": {}}
+    query_result = {
+        "query_id": "public-query",
+        "relevant_evidence": [],
+        "flags": {"insufficient_evidence": True},
+    }
+
+    def query_knowledge(payload):
+        assert payload == query_payload
+        return query_result
+
+    monkeypatch.setattr(
+        portal_backend.knowledge_base, "query_knowledge", query_knowledge
+    )
     assert any(
         middleware.cls is SsoTokenMiddleware
         for middleware in app.user_middleware
@@ -181,3 +222,12 @@ def test_main_app_registers_sso_token_gate(monkeypatch):
     assert response.status_code == 200
     assert response.json()["employees"] == []
     assert main_client.get("/api/portal/health").status_code == 200
+    response = main_client.post(
+        "/api/portal/knowledge-base/query", json=query_payload
+    )
+    assert response.status_code == 200
+    assert response.json() == query_result
+    assert (
+        main_client.get("/api/portal/knowledge-base/sources").status_code
+        == 401
+    )

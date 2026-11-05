@@ -173,6 +173,14 @@ helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
 如果同时还需要跳到非同主机或非标准登录页，再额外设置
 `PORTAL_SSO_LOGIN_URL="http://<ip>:<port>/login"`。
 
+知识库检索 `POST /api/portal/knowledge-base/query` 对外开放，列入 SSO
+免登录白名单；外部调用方和告警分析 Skill 不需要携带 SSO Token 或登录 Cookie。
+兼容路径 `/portal-api/knowledge-base/query` 和
+`/copaw-api/api/portal/knowledge-base/query` 使用相同规则。白名单仅放行该路径的
+POST 请求，知识库来源列表、详情、管理及 `rag-synthesize` 等其他接口仍要求 SSO
+登录凭证；不会关闭全局 SSO 校验。若额外启用了独立的 QwenPaw 账号鉴权
+（`QWENPAW_AUTH_ENABLED`），该鉴权仍按其自身规则执行。
+
 ### 常用环境变量设置
 
 部署时可通过 `--set-string` 覆盖环境变量，格式为 `<子chart名>.env.<变量名>=<值>`：

@@ -13,6 +13,7 @@ _PUBLIC_ENDPOINTS = {
     ("GET", "/api/portal/health"),
     ("GET", "/api/portal/employee-status"),
     ("GET", "/api/portal/sso/status"),
+    ("POST", "/api/portal/knowledge-base/query"),
     ("POST", "/api/portal/sso/token-login"),
     ("POST", "/api/portal/sso/exchange"),
     ("POST", "/api/portal/sso/clear-login-cookie"),
