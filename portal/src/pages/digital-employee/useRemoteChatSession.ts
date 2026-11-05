@@ -16,6 +16,7 @@ import {
   streamChat,
 } from "../../api/copawChat";
 import { getFaultDisposalHistory } from "../../api/faultDisposalBridge";
+import { withManualFaultGuidance } from "../../fault-scenario/manualGuidance";
 import {
   buildAlarmAnalystCardRequest,
   getAlarmAnalystReportMarkdown,
@@ -1539,7 +1540,10 @@ export function useRemoteChatSession({
       scheduleRemoteWaitNotices(waitingAssistantMessageId);
 
       let ensuredChat;
-      if (!forceNewChat && currentChatIdRef.current && currentSessionIdRef.current) {
+      const reusingChat = Boolean(
+        !forceNewChat && currentChatIdRef.current && currentSessionIdRef.current,
+      );
+      if (reusingChat) {
         ensuredChat = {
           id: currentChatIdRef.current,
           session_id: currentSessionIdRef.current,
@@ -1570,7 +1574,9 @@ export function useRemoteChatSession({
       currentSessionIdRef.current = ensuredChat.session_id;
       currentChatUserIdRef.current = ensuredChat.user_id;
       currentChatChannelRef.current = ensuredChat.channel || COPAW_CHANNEL;
-      currentChatMetaRef.current = chatMeta || ensuredChat.meta || currentChatMetaRef.current || null;
+      currentChatMetaRef.current = chatMeta
+        || ensuredChat.meta
+        || (reusingChat ? currentChatMetaRef.current : null);
 
       await streamChat(
         nextRemoteAgentId,
@@ -1582,7 +1588,7 @@ export function useRemoteChatSession({
               content: [
                 {
                   type: "text",
-                  text: content,
+                  text: withManualFaultGuidance(content, currentChatMetaRef.current),
                   status: "created",
                 },
               ],

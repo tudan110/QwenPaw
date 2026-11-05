@@ -7038,6 +7038,67 @@
   gap: 16px;
 }
 
+.manual-operation-guide {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color, #dbe3ee);
+  min-width: 0;
+}
+
+.manual-operation-guide-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.manual-operation-guide-header h4 {
+  margin: 0 0 6px;
+  color: var(--text-primary, #1e293b);
+}
+
+.manual-operation-guide-header p {
+  margin: 0;
+  color: var(--text-secondary, #64748b);
+  font-size: 13px;
+}
+
+.manual-operation-guide-header button {
+  flex-shrink: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border-color, #dbe3ee);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary, #1e293b);
+  cursor: pointer;
+}
+
+.manual-operation-guide-header button:focus-visible {
+  outline: 2px solid var(--accent-color, #2563eb);
+  outline-offset: 2px;
+}
+
+.manual-operation-guide .portal-qwenpaw-markdown-host,
+.alarm-analyst-tier-list .portal-qwenpaw-markdown-host {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.manual-operation-guide pre,
+.alarm-analyst-tier-list pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+@media (max-width: 640px) {
+  .manual-operation-guide-header {
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+
 .portal-digital-employee .fault-scenario-eyebrow,
 .portal-digital-employee .fault-scenario-section-label {
   display: inline-flex;

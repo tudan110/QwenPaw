@@ -578,7 +578,9 @@ function buildPriorityActionText(card: AlarmAnalystCardV1) {
   }
 
   const title = stripMarkdownInline(primaryRecommendation.title || "");
-  const description = stripMarkdownInline(primaryRecommendation.description || "");
+  const description = stripMarkdownInline(
+    String(primaryRecommendation.description || "").split("\n", 1)[0],
+  );
   const merged = title && description && title !== description && !description.includes(title)
     ? `${title}：${description}`
     : (description || title);
@@ -844,16 +846,17 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
   };
 
   for (const rec of card.recommendations) {
-    const rawContent = stripMarkdownInline(rec.description || rec.title || "");
-    if (!rawContent || isJunkValue(rawContent)) {
+    const rawContent = String(rec.description || rec.title || "").trim();
+    const labelContent = stripMarkdownInline(rawContent.split("\n", 1)[0]);
+    if (!rawContent || isJunkValue(labelContent)) {
       continue;
     }
 
     let stage = rec.stage;
     if (!stage) {
-      if (rawContent.startsWith("🚑") || /紧急|止血|切备|主备倒换|隔离|降级|限流|回滚/u.test(rawContent)) {
+      if (labelContent.startsWith("🚑") || /紧急|止血|切备|主备倒换|隔离|降级|限流|回滚/u.test(labelContent)) {
         stage = "emergency";
-      } else if (/预防|中长期|长期|基线|纳管|CMDB|cmdb|阈值|监控|巡检|备件/u.test(rawContent)) {
+      } else if (/预防|中长期|长期|基线|纳管|CMDB|cmdb|阈值|监控|巡检|备件/u.test(labelContent)) {
         stage = "prevention";
       } else {
         stage = "repair";
@@ -869,7 +872,7 @@ function buildDisplayModel(card: AlarmAnalystCardV1, showConfidence: boolean) {
 
   const tierRows: { tier: "emergency" | "repair" | "prevention"; label: string; items: string[] }[] = [];
   if (groups.emergency.length) {
-    tierRows.push({ tier: "emergency", label: "紧急止血（立即执行）", items: groups.emergency });
+    tierRows.push({ tier: "emergency", label: "紧急止血（人工确认后执行）", items: groups.emergency });
   }
   if (groups.repair.length) {
     tierRows.push({ tier: "repair", label: "根因修复（计划内操作 / 短期）", items: groups.repair });
@@ -1089,7 +1092,7 @@ export const AlarmAnalystCardPanel = memo(function AlarmAnalystCardPanel({
                   <h5 className="alarm-analyst-tier-label">{row.label}</h5>
                   <ol className="alarm-analyst-tier-list">
                     {row.items.map((item, idx) => (
-                      <li key={idx}>{item}</li>
+                      <li key={idx}><AlarmAnalystMarkdown content={item} /></li>
                     ))}
                   </ol>
                 </div>

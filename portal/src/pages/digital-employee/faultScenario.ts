@@ -2,6 +2,7 @@ import { diagnoseFaultScenario } from "../../api/faultScenario";
 import {
   getFaultScenarioResult,
   getFaultScenarioSummary,
+  getManualOperationGuide,
   type FaultScenarioResult,
 } from "../../fault-scenario/shared";
 import { createAgentMessage, createUserMessage } from "./helpers";
@@ -54,6 +55,7 @@ export function normalizeFaultScenarioResult(result: any) {
     steps: Array.isArray(result?.steps) ? result.steps : [],
     logEntries: Array.isArray(result?.logEntries) ? result.logEntries : [],
     actions: Array.isArray(result?.actions) ? result.actions : [],
+    manualGuide: getManualOperationGuide(result?.manualGuide),
   };
 }
 

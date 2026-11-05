@@ -23,6 +23,24 @@ seed_builder = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(seed_builder)
 
 
+def test_all_runtime_agents_share_the_same_manual_guidance_boundaries():
+    workspaces = BUILDER_PATH.parent.parent / "working/workspaces"
+    policies = []
+    for agent in (
+        "gateway", "fault", "query", "inspection", "resource",
+        "order", "operator", "knowledge", "fde",
+    ):
+        text = (workspaces / agent / "AGENTS.md").read_text(encoding="utf-8")
+        policies.append(
+            text.split("<!-- cmdb-manual-guidance:start -->", 1)[1]
+            .split("<!-- cmdb-manual-guidance:end -->", 1)[0]
+        )
+    assert len(set(policies)) == 1
+    assert "不新增远程执行" in policies[0]
+    assert "不默认" in policies[0]
+    assert "缺登录信息不阻断" in policies[0]
+
+
 def write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")

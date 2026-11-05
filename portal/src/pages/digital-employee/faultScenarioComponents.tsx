@@ -1,5 +1,6 @@
 import { Drawer } from "antd";
 import { useState } from "react";
+import { ManualOperationGuidePanel } from "../../components/ManualOperationGuidePanel";
 
 import {
   getFaultScenarioDrawerClassName,
@@ -62,6 +63,8 @@ export function FaultScenarioResultCard({
           )}
         </ul>
       </div>
+
+      {result.manualGuide ? <ManualOperationGuidePanel guide={result.manualGuide} /> : null}
 
       <div className="fault-scenario-actions">
         <button

@@ -7,6 +7,8 @@ import sys
 import importlib.util
 from pathlib import Path
 from typing import Any
+from .alarm_analyst_card_models import ManualOperationGuide
+from .cmdb_manual_guidance import build_manual_operation_guide
 
 
 ALARM_ANALYST_SCRIPT_TIMEOUT_SECONDS = 180
@@ -172,7 +174,7 @@ def _build_alarm_analyst_result(
     )
     if topology_collected <= 0:
         topology_status = "blocked"
-    elif topology_expected > topology_collected:
+    elif topology_expected > topology_collected or execution_topology.get("queryComplete") is False or topology.get("queryComplete") is False:
         topology_status = "partial"
     else:
         topology_status = "success"
@@ -244,11 +246,21 @@ def _build_alarm_analyst_result(
             ),
         },
     ]
+    manual_guide = context.get("manualGuide")
+    if manual_guide is None:
+        manual_guide = build_manual_operation_guide(
+            topology, alarm_title=dispatch_context.get("alarm_title", ""),
+        )
+    if manual_guide is not None:
+        manual_guide = ManualOperationGuide.model_validate(manual_guide).model_dump(
+            by_alias=True, mode="json",
+        )
     return {
         "summary": summary,
         "rootCause": root_cause,
         "steps": steps,
         "logEntries": log_entries,
+        "manualGuide": manual_guide,
         "actions": [
             {
                 "type": "alarm-analyst-context",
@@ -281,6 +293,7 @@ def _build_partial_alarm_analyst_result(
     summary = (
         "已进入 alarm-analyst 分析流程，但当前消息缺少可直接执行的资源 ID，"
         "无法完成根资源详情、拓扑扩散、拓扑告警 fan-out 与指标采集的全链路分析。"
+        "请补充应用名或资源 ID，不需要提供登录凭据。"
     )
     return {
         "summary": summary,
@@ -403,22 +416,34 @@ def _select_root_resource_candidate(
     relation_rows: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
     normalized = str(content or "").lower()
+    requested_models = {
+        model
+        for model in ("mysql", "postgresql", "redis", "kafka", "elasticsearch")
+        if model in normalized
+    }
+    if len(requested_models) > 1:
+        return None
     candidates = []
+    seen_ids = set()
     for item in relation_rows:
-        ci_type = str(item.get("ci_type") or "").strip()
-        if not ci_type:
+        ci_type = str(item.get("ci_type") or "").strip().lower()
+        resource_id = str(item.get("_id") or item.get("id") or "")
+        if not ci_type or not resource_id or resource_id in seen_ids:
             continue
+        if requested_models and ci_type.lower() not in requested_models:
+            continue
+        seen_ids.add(resource_id)
         score = 0
         if ci_type == "mysql":
             score += 100
-        elif ci_type in {"database", "PostgreSQL"}:
+        elif ci_type in {"database", "postgresql"}:
             score += 90
-        elif ci_type in {"redis", "Kafka", "elasticsearch"}:
+        elif ci_type in {"redis", "kafka", "elasticsearch"}:
             score += 60
         elif ci_type in {"docker", "vserver"}:
             score += 30
         if any(keyword in normalized for keyword in DATABASE_HINT_KEYWORDS):
-            if ci_type in {"mysql", "database", "PostgreSQL"}:
+            if ci_type in {"mysql", "database", "postgresql"}:
                 score += 50
         if score > 0:
             candidates.append((score, item))
@@ -430,12 +455,7 @@ def _select_root_resource_candidate(
     top_items = [item for score, item in candidates if score == top_score]
     if len(top_items) == 1:
         return top_items[0]
-    mysql_items = [
-        item for item in top_items if str(item.get("ci_type")) == "mysql"
-    ]
-    if len(mysql_items) == 1:
-        return mysql_items[0]
-    return top_items[0]
+    return None
 
 
 def _run_alarm_analyst_context_from_application(
@@ -443,6 +463,8 @@ def _run_alarm_analyst_context_from_application(
     dispatch_context: dict[str, str],
 ) -> dict:
     app_keyword = dispatch_context.get("app_keyword", "")
+    if not app_keyword:
+        return _build_partial_alarm_analyst_result(dispatch_context, payload.get("content"))
     find_project, app_topology = _load_zgops_modules()
     client = _load_zgops_client(find_project)
     projects = client.list_projects()
@@ -450,20 +472,6 @@ def _run_alarm_analyst_context_from_application(
         projects,
         app_keyword,
     )  # noqa: SLF001
-
-    if not app_keyword:
-        if len(projects) == 1:
-            matched_projects = [projects[0]]
-        else:
-            candidates = [
-                find_project._project_summary(item) for item in projects[:10]
-            ]  # noqa: SLF001
-            return _build_application_partial_result(
-                dispatch_context=dispatch_context,
-                app_keyword=app_keyword,
-                candidates=candidates,
-                reason="当前消息未提供可唯一识别的应用名，无法直接查询对应应用拓扑，请补充应用名或资源 ID。",
-            )
 
     if not matched_projects:
         return _build_application_partial_result(
@@ -505,7 +513,7 @@ def _run_alarm_analyst_context_from_application(
     )
     if not root_candidate:
         return {
-            "summary": f"已匹配应用 `{project_name}` 并查询到拓扑，但暂未能自动选出合适的根资源继续做指标分析。",
+            "summary": f"已匹配应用 `{project_name}` 并查询到拓扑，但未能唯一确认故障资源。请补充目标资源 ID 或明确实例后继续分析，不需要提供登录凭据。",
             "rootCause": {"type": "待分析", "object": project_name},
             "steps": [
                 {"id": "match-application", "status": "success"},

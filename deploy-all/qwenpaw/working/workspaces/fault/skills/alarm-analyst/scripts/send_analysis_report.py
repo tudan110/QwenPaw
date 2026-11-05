@@ -110,18 +110,24 @@ def _join_suggestions(value: Any) -> str:
     return _safe_str(value)
 
 
-def _build_grouped_suggestion_lines(suggestions_str: str) -> list[str]:
+def _build_grouped_suggestion_lines(suggestions_str: str | list[str]) -> list[str]:
     """Build suggestion lines with optional 3-tier group headers.
 
     When detail mode is on, the suggestions list contains group-header
-    sentinels (e.g. ``🚨 紧急止血（立即执行）``) interleaved with the actual
+    sentinels (e.g. ``🚨 紧急止血（人工确认后执行）``) interleaved with the actual
     item texts.  This function detects those sentinels and emits them as
     bold group titles, then emits the subsequent items as numbered lines
     (resetting the counter per group).  When no group headers are present
     (flat mode), it just numbers all items.
     """
     GROUP_PREFIXES = ("🚨", "🔧", "🛡️")
-    raw_items = [item.strip() for item in suggestions_str.split("；") if item.strip()]
+    if isinstance(suggestions_str, list):
+        items = suggestions_str
+    elif re.search(r"(?m)^\s*(?:`{3,}|~{3,})", suggestions_str):
+        items = [suggestions_str]
+    else:
+        items = suggestions_str.split("；")
+    raw_items = [item.strip() for item in items if item.strip()]
     if not raw_items:
         return ["暂无处置建议"]
     has_groups = any(
@@ -157,7 +163,7 @@ def _build_notification_summary(*, visible_content: str, analysis_summary: str, 
 
 def _build_notification_context(
     payload: dict[str, Any],
-) -> dict[str, str]:
+) -> dict[str, Any]:
     analysis = payload.get("analysis") or {}
     alarm = payload.get("alarm") or {}
 
@@ -180,11 +186,15 @@ def _build_notification_context(
         "level": _normalize_severity(alarm.get("level", "")),
         "root_cause": root_cause,
         "suggestions": suggestions,
+        "suggestion_items": [
+            _safe_str(item) for item in analysis.get("suggestions", [])
+            if _safe_str(item)
+        ] if isinstance(analysis.get("suggestions"), list) else suggestions,
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
-def _build_notification_markdown_lines(context: dict[str, str], abnormal_metrics: list[dict[str, str]] | None = None) -> list[str]:
+def _build_notification_markdown_lines(context: dict[str, Any], abnormal_metrics: list[dict[str, str]] | None = None) -> list[str]:
     lines = [
         "**AI告警分析报告**",
         "",
@@ -205,7 +215,7 @@ def _build_notification_markdown_lines(context: dict[str, str], abnormal_metrics
             reason = f"（{m['reason']}）" if m.get("reason") else ""
             lines.append(f"  {idx}. {m['name']}：{m['value']}{unit}{reason}")
         lines.append("")
-    suggestion_text = "\n".join(_build_grouped_suggestion_lines(context["suggestions"]))
+    suggestion_text = "\n".join(_build_grouped_suggestion_lines(context.get("suggestion_items", context["suggestions"])))
     lines.append(f"- **根因方向**：{context['root_cause']}")
     lines.extend([
         f"- **处置建议**：\n{suggestion_text}",
@@ -216,11 +226,11 @@ def _build_notification_markdown_lines(context: dict[str, str], abnormal_metrics
     return lines
 
 
-def _build_notification_markdown_text(context: dict[str, str]) -> str:
+def _build_notification_markdown_text(context: dict[str, Any]) -> str:
     return "\n".join(_build_notification_markdown_lines(context))
 
 
-def _build_notification_plain_text_lines(context: dict[str, str], abnormal_metrics: list[dict[str, str]] | None = None) -> list[str]:
+def _build_notification_plain_text_lines(context: dict[str, Any], abnormal_metrics: list[dict[str, str]] | None = None) -> list[str]:
     lines = [
         "AI告警分析报告",
         f"标题：{context['title']}",
@@ -236,7 +246,7 @@ def _build_notification_plain_text_lines(context: dict[str, str], abnormal_metri
             lines.append(f"  {idx}. {m['name']}：{m['value']}{unit}{reason}")
     lines.append(f"根因方向：{context['root_cause']}")
     lines.append("处置建议：")
-    lines.extend(_build_grouped_suggestion_lines(context["suggestions"]))
+    lines.extend(_build_grouped_suggestion_lines(context.get("suggestion_items", context["suggestions"])))
     lines.extend([
         f"分析时间：{context['created_at']}",
         "此报告为 AI 自动生成，请尽快跟进处置。",
@@ -244,7 +254,7 @@ def _build_notification_plain_text_lines(context: dict[str, str], abnormal_metri
     return lines
 
 
-def _build_app_notify_payload(context: dict[str, str], abnormal_metrics: list[dict[str, str]] | None = None) -> dict[str, Any]:
+def _build_app_notify_payload(context: dict[str, Any], abnormal_metrics: list[dict[str, str]] | None = None) -> dict[str, Any]:
     return {
         "title": "AI告警分析报告",
         "content": "\n".join(_build_notification_plain_text_lines(context, abnormal_metrics)),
@@ -252,7 +262,7 @@ def _build_app_notify_payload(context: dict[str, str], abnormal_metrics: list[di
     }
 
 
-def _build_dingtalk_notify_payload(context: dict[str, str], abnormal_metrics: list[dict[str, str]] | None = None) -> dict[str, Any]:
+def _build_dingtalk_notify_payload(context: dict[str, Any], abnormal_metrics: list[dict[str, str]] | None = None) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "msgtype": "markdown",
         "markdown": {
@@ -265,8 +275,8 @@ def _build_dingtalk_notify_payload(context: dict[str, str], abnormal_metrics: li
     return payload
 
 
-def _build_feishu_notify_payload(context: dict[str, str], abnormal_metrics: list[dict[str, str]] | None = None) -> dict[str, Any]:
-    suggestion_lines = _build_grouped_suggestion_lines(context["suggestions"])
+def _build_feishu_notify_payload(context: dict[str, Any], abnormal_metrics: list[dict[str, str]] | None = None) -> dict[str, Any]:
+    suggestion_lines = _build_grouped_suggestion_lines(context.get("suggestion_items", context["suggestions"]))
     elements: list[dict[str, Any]] = []
     if _get_notify_mention_all():
         elements.append(
@@ -746,7 +756,7 @@ def build_report_payload(args: argparse.Namespace) -> dict[str, Any]:
     if detail_mode:
         suggestions: list[str] = []
         if emergency_texts:
-            suggestions.append("🚨 紧急止血（立即执行）")
+            suggestions.append("🚨 紧急止血（人工确认后执行）")
             for text in emergency_texts:
                 suggestions.append(f"🚑 {text}")
         if repair_texts or other_texts:

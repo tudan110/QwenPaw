@@ -1,6 +1,7 @@
 import { digitalEmployees } from "../../data/portalData.ts";
 import { extractTurnUsageFromMetadata } from "../../components/turnUsage";
 import { persistedChatErrorToFriendly } from "../../lib/chatErrorMessage";
+import { MANUAL_FAULT_GUIDANCE_INSTRUCTIONS } from "../../fault-scenario/manualGuidance";
 
 const TIMEOUT_ALARM_TITLE = "应用接口响应超时";
 export const ALARM_WORKORDER_ENTRY = "alarm-workorders";
@@ -369,12 +370,13 @@ export function buildFaultWorkbenchContextPayload(
 export function buildFaultWorkbenchDiagnosePrompt(workorder: any, workorders: any[]) {
   return [
     PORTAL_FAULT_WORKORDER_MARKER,
-    "请按标准故障处置流程继续当前工单分析，优先调用 fault-disposal skill。",
-    "要求：保持在当前聊天会话中完成，不要创建子会话；先完成根因分析与处置建议，暂时不要直接执行动作；输出精炼 markdown，并保留 portal-action 代码块。",
-    "强约束：如果结论是存在可执行的下一步动作，最终回复末尾必须追加唯一一个 ```portal-action 代码块；不要只写“请回复执行建议动作”这类文字而不附 action。",
+    "请按标准故障处置流程继续当前工单分析，使用当前工作区已启用的故障分析/处置能力，不指定未安装或已退役的 skill。",
+    "要求：保持在当前聊天会话中完成，不要创建子会话；先完成根因分析与处置建议，不直接执行动作。主分析保持精炼，人工操作指南和多行命令完整保留；只有已接入可执行动作才附 portal-action。",
+    "只有已接入业务接口、真实目标参数和现有审批流程支持的执行动作，才在最终回复末尾追加唯一一个 ```portal-action 代码块；人工指南、只读建议和未确认目标不能生成自动执行 action。",
     "portal-action 必须是合法 JSON，至少包含：id、type、title、summary、status、riskLevel、sessionId、sqlId、sourceWorkorderNo、rootCauseWorkorderNo、deviceName、manageIp、locateName。",
-    "如果建议动作是终止异常慢 SQL 会话，则 type 固定为 kill-slow-sql，title 固定使用“建议执行：终止异常慢 SQL 会话”。缺少 portal-action 视为无效回复，需要先补齐再输出。",
-    "执行约束：不要把脚本命令原样回复给用户；如果已识别为工单驱动故障处置，直接进入 skill 分析；不要先查询实时告警列表或重复做无关信息收集。",
+    "仅当具体会话、异常依据、业务影响和已接入处置能力均已确认时，才可建议 kill-slow-sql；不要为了生成 action 填造 sqlId，也不要把慢 SQL 默认当成需要终止的会话。",
+    "执行约束：不把内部 skill 脚本调用当作用户建议；用户手动操作所需的 shell/SQL 命令必须完整展示。直接进入已启用能力分析，不重复做无关信息收集。",
+    MANUAL_FAULT_GUIDANCE_INSTRUCTIONS,
     "",
     "【工单上下文(JSON)】",
     "```json",
@@ -389,9 +391,9 @@ export function buildFaultWorkbenchDiagnosePrompt(workorder: any, workorders: an
 export function buildFaultWorkbenchExecutePrompt(workorder: any, workorders: any[], action: any) {
   return [
     PORTAL_FAULT_WORKORDER_MARKER,
-    "请按标准故障处置流程继续当前工单，并执行已经确认的建议动作，优先调用 fault-disposal skill。",
+    "请按标准故障处置流程继续当前工单，通过当前已启用、已接入且符合原有审批的业务接口执行已经确认的动作，不指定未安装或退役的 skill。",
     "要求：保持在当前聊天会话中执行，不要创建子会话；完成动作后返回恢复验证结论，正文保持精炼 markdown。",
-    "执行约束：不要把脚本命令原样回复给用户；不要重复查询无关告警列表；基于下方建议动作和工单上下文完成执行与验证。",
+    "执行约束：不自行执行报告中的 SSH、kubectl exec 或数据库人工命令，不索要登录凭据；现有已授权业务接口流程不扩大。不要重复查询无关告警列表，用户手动步骤仍完整展示，未执行不写成功。",
     "",
     "【建议动作(JSON)】",
     "```json",

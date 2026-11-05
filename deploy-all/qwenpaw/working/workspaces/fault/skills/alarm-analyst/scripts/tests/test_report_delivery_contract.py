@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import re
 from pathlib import Path
 from unittest.mock import Mock
@@ -248,6 +249,42 @@ def test_unconfigured_notification_skips_without_network_and_keeps_card(
     assert build_card(report).raw_report_markdown.endswith(
         "- 通知状态：未配置"
     )
+
+
+def test_notification_preserves_multiline_commands_and_chinese_semicolons():
+    suggestion = (
+        "人工核对环境；不能直接执行未填模板。\n\n"
+        "```bash\nkubectl get pods\nkubectl get services\n```\n\n"
+        "```sql\nSHOW FULL PROCESSLIST;\n```"
+    )
+    context = notification._build_notification_context({
+        "analysis": {"suggestions": [suggestion, "人工核对恢复状态"]},
+    })
+    lines = notification._build_grouped_suggestion_lines(context["suggestion_items"])
+    assert lines == [f"1. {suggestion}", "2. 人工核对恢复状态"]
+    assert suggestion in "\n".join(notification._build_notification_markdown_lines(context))
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+def test_all_notification_payloads_keep_complete_manual_commands(as_list):
+    suggestion = (
+        "人工核对参数；确认后执行。\n\n"
+        "```sql\nSELECT '保留；分号';\nSHOW FULL PROCESSLIST;\n```"
+    )
+    context = notification._build_notification_context({
+        "analysis": {"suggestions": [suggestion] if as_list else suggestion},
+    })
+    for builder in (
+        notification._build_app_notify_payload,
+        notification._build_dingtalk_notify_payload,
+        notification._build_feishu_notify_payload,
+    ):
+        payload = builder(context)
+        encoded = json.dumps(payload, ensure_ascii=False)
+        assert json.dumps(suggestion, ensure_ascii=False)[1:-1] in encoded
+        assert "保留；分号" in encoded
+    assert notification._build_grouped_suggestion_lines("甲；乙") == ["1. 甲", "2. 乙"]
+    assert notification._build_grouped_suggestion_lines("甲\n乙；丙") == ["1. 甲\n乙", "2. 丙"]
 
 
 def test_export_trigger_contract_is_explicit_and_preserves_inline_report():

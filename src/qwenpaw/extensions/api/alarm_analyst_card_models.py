@@ -32,6 +32,43 @@ class AlarmAnalystCardProcessBlock(BaseModel):
     content: str = ""
 
 
+class ManualOperationGuide(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: Literal["cmdb-only"] = "cmdb-only"
+    execution_mode: Literal["manual-only"] = Field(
+        default="manual-only",
+        validation_alias=AliasChoices("execution_mode", "executionMode"),
+        serialization_alias="executionMode",
+    )
+    deployment_kind: Literal["kubernetes", "docker", "host", "unknown"] = Field(
+        default="unknown",
+        validation_alias=AliasChoices("deployment_kind", "deploymentKind"),
+        serialization_alias="deploymentKind",
+    )
+    deployment_confirmed: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("deployment_confirmed", "deploymentConfirmed"),
+        serialization_alias="deploymentConfirmed",
+    )
+    related_platforms: list[dict[str, str]] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("related_platforms", "relatedPlatforms"),
+        serialization_alias="relatedPlatforms",
+    )
+    known_parameters: dict[str, str] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("known_parameters", "knownParameters"),
+        serialization_alias="knownParameters",
+    )
+    missing_parameters: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("missing_parameters", "missingParameters"),
+        serialization_alias="missingParameters",
+    )
+    markdown: str = Field(min_length=1)
+
+
 class AlarmAnalystCardSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

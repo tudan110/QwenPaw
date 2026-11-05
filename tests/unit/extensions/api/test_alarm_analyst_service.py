@@ -131,6 +131,31 @@ def test_build_alarm_analyst_result_maps_partial_execution_to_steps_and_logs() -
     assert "5002" in result["logEntries"][2]["summary"]
     assert "失败 2 个" in result["logEntries"][3]["summary"]
 
+def test_topology_partial_state_is_not_hidden_by_collected_id_counts():
+    result = _build_alarm_analyst_result({
+        "topology": {
+            "queryComplete": False, "resourceCount": 1,
+            "rootResource": {
+                "resId": "1", "ciType": "mysql", "name": "db",
+                "publicAttributes": {"deployment_kind": "k3s"},
+            },
+        },
+        "execution": {
+            "status": "partial",
+            "topology": {
+                "queryComplete": False,
+                "resourceIdsExpected": 1, "resourceIdsCollected": 1,
+            },
+        },
+    }, {"res_id": "1"})
+    statuses = {item["id"]: item["status"] for item in result["steps"]}
+    assert statuses["cmdb-topology"] == "partial"
+    guide = result["manualGuide"]
+    assert guide["deploymentKind"] == "kubernetes"
+    assert guide["executionMode"] == "manual-only"
+    assert "查询范围尚不完整" in guide["markdown"]
+    assert all(action.get("type") != "kill-slow-sql" for action in result["actions"])
+
 
 def test_build_alarm_analyst_result_blocks_steps_when_execution_is_blocked() -> (
     None
@@ -321,3 +346,43 @@ def test_run_alarm_analyst_context_from_application_selects_single_matching_proj
         action["type"] == "alarm-analyst-application-topology"
         for action in result["actions"]
     )
+
+
+def test_root_selection_does_not_bind_an_arbitrary_database():
+    rows = [
+        {"_id": 1, "ci_type": "mysql", "name": "primary"},
+        {"_id": 2, "ci_type": "mysql", "name": "replica"},
+    ]
+    assert (
+        alarm_analyst_service._select_root_resource_candidate("慢 SQL", rows)
+        is None
+    )
+
+
+def test_root_selection_matches_the_requested_component_and_deduplicates():
+    rows = [
+        {"_id": 1, "ci_type": "mysql"},
+        {"_id": 2, "ci_type": "redis"},
+        {"_id": 2, "ci_type": "redis"},
+    ]
+    candidate = alarm_analyst_service._select_root_resource_candidate(
+        "Redis 故障分析", rows
+    )
+    assert candidate["_id"] == 2
+
+
+def test_root_selection_handles_model_case_and_multiple_component_anchors():
+    rows = [
+        {"_id": 1, "ci_type": "MySQL"},
+        {"_id": 2, "ci_type": "postgresql"},
+        {"_id": 3, "ci_type": "Kafka"},
+    ]
+    assert alarm_analyst_service._select_root_resource_candidate(
+        "PostgreSQL 故障分析", rows
+    )["_id"] == 2
+    assert alarm_analyst_service._select_root_resource_candidate(
+        "kafka 故障分析", rows
+    )["_id"] == 3
+    assert alarm_analyst_service._select_root_resource_candidate(
+        "MySQL 和 PostgreSQL 都有问题", rows
+    ) is None

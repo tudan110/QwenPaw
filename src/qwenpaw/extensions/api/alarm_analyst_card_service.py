@@ -327,9 +327,7 @@ def _build_workorder_proposal(
         cleaned
         for item in recommendations
         if (
-            cleaned := _sanitize_inline_text(
-                item.description or item.title or ""
-            )
+            cleaned := str(item.description or item.title or "").strip()
         )
     ]
     if not suggestions:
@@ -1009,39 +1007,73 @@ def _dedupe_entities(
 def _extract_recommendations(text: str) -> list[AlarmAnalystCardRecommendation]:
     recommendations: list[AlarmAnalystCardRecommendation] = []
     heading_stage: str | None = None
-    index = 0
+    pending: list[str] = []
+    pending_stage: str | None = None
+    pending_indent = 0
+    pending_content_indent = 0
+    fence: str | None = None
 
-    for line in str(text or "").splitlines():
-        heading_match = re.match(r"^\s*#{2,6}\s*(.+?)\s*$", line)
-        if heading_match:
-            heading_stage = _detect_recommendation_stage(
-                heading_match.group(1), heading_stage
-            )
-            continue
-        bullet_match = re.match(r"^\s*(?:[-*+]\s+|\d+\.\s+)(.+?)\s*$", line)
-        if not bullet_match:
-            continue
-        content = _sanitize_inline_text(bullet_match.group(1))
-        if not content:
-            continue
-        stage = _detect_bullet_stage(content, heading_stage)
-        priority = (
-            "p0"
-            if stage == "emergency"
-            else _detect_priority(content, fallback=index)
-        )
-        title = _extract_brief_title(content, fallback=f"建议 {index + 1}")
-        recommendations.append(
-            AlarmAnalystCardRecommendation(
-                title=title,
-                priority=priority,
+    def flush() -> None:
+        nonlocal pending
+        if not pending:
+            return
+        while len(pending) > 1 and not pending[-1].strip():
+            pending.pop()
+        first = _sanitize_inline_text(pending[0])
+        content = "\n".join(pending).strip() if len(pending) > 1 else first
+        if content:
+            stage = _detect_bullet_stage(first, pending_stage)
+            index = len(recommendations)
+            recommendations.append(AlarmAnalystCardRecommendation(
+                title=_extract_brief_title(first, fallback=f"建议 {index + 1}"),
+                priority="p0" if stage == "emergency" else _detect_priority(first, fallback=index),
                 description=content,
                 risk=_extract_risk(content),
                 action_type=_detect_action_type(content),
                 stage=stage,
-            )
+            ))
+        pending = []
+
+    for line in str(text or "").splitlines():
+        continuation = (
+            line[pending_content_indent:]
+            if pending and line.startswith(" " * pending_content_indent)
+            else line
         )
-        index += 1
+        fence_match = re.match(r"^\s*(`{3,}|~{3,})", continuation)
+        if fence is not None:
+            if pending:
+                pending.append(continuation)
+            closing_fence = re.match(r"^\s*(`{3,}|~{3,})\s*$", continuation)
+            if closing_fence and closing_fence.group(1)[0] == fence[0] and len(closing_fence.group(1)) >= len(fence):
+                fence = None
+            continue
+        if fence_match:
+            fence = fence_match.group(1)
+            if pending:
+                pending.append(continuation)
+            continue
+        heading_match = re.match(r"^\s*#{2,6}\s*(.+?)\s*$", line)
+        if heading_match:
+            if pending and len(line) - len(line.lstrip()) > pending_indent:
+                pending.append(continuation)
+                continue
+            flush()
+            heading_stage = _detect_recommendation_stage(
+                heading_match.group(1), heading_stage
+            )
+            continue
+        bullet_match = re.match(r"^(\s*)(?:[-*+]\s+|\d+\.\s+)(.+?)\s*$", line)
+        if bullet_match and (not pending or len(bullet_match.group(1)) <= pending_indent):
+            flush()
+            pending = [bullet_match.group(2)]
+            pending_indent = len(bullet_match.group(1))
+            pending_content_indent = bullet_match.start(2)
+            pending_stage = heading_stage
+            continue
+        if pending:
+            pending.append(continuation)
+    flush()
 
     if recommendations:
         return recommendations
@@ -1165,6 +1197,8 @@ def _extract_risk(text: str) -> str | None:
 
 def _detect_action_type(text: str) -> str:
     normalized = str(text or "").lower()
+    if any(keyword in normalized for keyword in ("人工执行", "手动执行", "人工操作", "manual-only")):
+        return "manual"
     if any(keyword in normalized for keyword in ("脚本", "sql", "命令", "执行")):
         return "script"
     if any(keyword in normalized for keyword in ("观察", "监控", "收敛", "确认恢复")):

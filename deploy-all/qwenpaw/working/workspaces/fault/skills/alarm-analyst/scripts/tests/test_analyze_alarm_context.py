@@ -109,6 +109,35 @@ class AnalyzeAlarmContextTests(unittest.TestCase):
         self.assertEqual(summary["rootResource"]["ciType"], "mysql")
         self.assertEqual(summary["resources"][0]["ciType"], "mysql")
 
+    def test_topology_preserves_public_placement_but_not_login_fields(self):
+        summary = _build_topology_summary(
+            root_res_id="1",
+            root_resource={
+                "_id": 1, "ci_type": "mysql", "namespace": "database",
+                "pod_name": "mysql-0", "db_port": 3307,
+                "login_user": "private-user", "login_pwd": "private-password",
+            },
+            resource_rows=[{
+                "relation": "deploy",
+                "source": {
+                    "_id": 2, "ci_type": "kubernetes",
+                    "kube_context": "test-cluster", "bearer_token": "private-token",
+                },
+                "target": {"_id": 1, "ci_type": "mysql"},
+            }],
+        )
+        self.assertEqual(summary["rootResource"]["publicAttributes"]["db_port"], "3307")
+        self.assertEqual(summary["edges"], [{
+            "src_ci_id": "2", "dst_ci_id": "1", "relation_type": "deploy",
+        }])
+        guide = alarm_context_module.MANUAL_GUIDANCE.build_manual_operation_guide(summary)
+        self.assertTrue(guide["deploymentConfirmed"])
+        self.assertEqual(guide["knownParameters"]["KUBE_CONTEXT"], "test-cluster")
+        self.assertEqual(guide["knownParameters"]["MYSQL_POD"], "mysql-0")
+        for value in ("private-user", "private-password", "private-token"):
+            self.assertNotIn(value, str(summary))
+            self.assertNotIn(value, str(guide))
+
     def test_root_detail_uses_current_ci_wrapper_and_numeric_type_metadata(self):
         class Client:
             def _request_json(self, path):

@@ -53,6 +53,39 @@ def _make_request(manager: _FakeManager):
     )
 
 
+def test_fault_result_preserves_complete_manual_guide_without_execution_action():
+    from qwenpaw.extensions.api.cmdb_manual_guidance import (
+        build_manual_operation_guide,
+    )
+
+    guide = build_manual_operation_guide({
+        "rootResource": {
+            "resId": "fixture-mysql",
+            "ciType": "mysql",
+            "publicAttributes": {"deployment_kind": "k3s"},
+        },
+    })
+    result = portal_backend._shape_fault_scenario_result({
+        "summary": "待人工执行",
+        "manualGuide": guide,
+    })
+    assert result["manualGuide"] == guide
+    assert result["actions"] == []
+    assert "kubectl --context" in result["manualGuide"]["markdown"]
+    assert "SHOW FULL PROCESSLIST;" in result["manualGuide"]["markdown"]
+
+
+def test_fault_result_rejects_automatic_guide_protocol():
+    with pytest.raises(ValueError, match="manual-only"):
+        portal_backend._shape_fault_scenario_result({
+            "manualGuide": {
+                "executionMode": "auto",
+                "deploymentKind": "kubernetes",
+                "markdown": "invalid automatic guide",
+            },
+        })
+
+
 def test_platform_ai_model_settings_api_is_separate_from_agent_models(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -278,6 +311,16 @@ def test_alarm_analyst_diagnose_route_returns_structured_result(
 def test_alarm_analyst_diagnose_route_persists_history_with_unique_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from qwenpaw.extensions.api.cmdb_manual_guidance import (
+        build_manual_operation_guide,
+    )
+
+    guide = build_manual_operation_guide({
+        "rootResource": {
+            "resId": "3094", "ciType": "mysql",
+            "publicAttributes": {"deployment_kind": "k3s"},
+        },
+    })
     client = TestClient(portal_backend.app)
     history_store: dict[str, list[dict]] = {"alarm-analyst-1": []}
 
@@ -292,6 +335,7 @@ def test_alarm_analyst_diagnose_route_persists_history_with_unique_ids(
             },
             "result": {
                 "summary": "存在拓扑伴随告警扩散。",
+                "manualGuide": guide,
                 "rootCause": {"type": "数据库异常", "object": "db_mysql_001"},
                 "steps": [{"id": "related-alarms-recent", "status": "partial"}],
                 "logEntries": [{"stage": "related-alarms", "summary": "recent 失败资源: 5002"}],
@@ -325,11 +369,13 @@ def test_alarm_analyst_diagnose_route_persists_history_with_unique_ids(
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
+    assert second_response.json()["result"]["manualGuide"] == guide
     assert len(history_store["alarm-analyst-1"]) == 4
 
     message_ids = [message["id"] for message in history_store["alarm-analyst-1"]]
     assert len(message_ids) == len(set(message_ids))
     assert history_store["alarm-analyst-1"][-1]["faultScenarioResult"]["steps"][0]["status"] == "partial"
+    assert history_store["alarm-analyst-1"][-1]["faultScenarioResult"]["manualGuide"] == guide
 
 
 def test_alarm_analyst_diagnose_route_shapes_partial_result_for_history_replay(

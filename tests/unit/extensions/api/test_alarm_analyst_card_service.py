@@ -30,6 +30,36 @@ def _build_table_test_card(sections: str) -> AlarmAnalystCard:
         process_blocks=[],
     )
 
+def test_recommendations_preserve_complete_multiline_manual_commands():
+    card = _build_table_test_card(
+        "## 根因判断\n待核验。\n"
+        "## 处置建议\n"
+        "### 根因修复\n"
+        "1. 人工执行：在已授权 K3s 环境定位并登录目标。\n"
+        "   前提：现场确认 Namespace、Pod 和容器，不能默认取第一条。\n"
+        "   ```bash\n"
+        '   kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" get pods\n'
+        "   # 1. 此代码行不是新建议\n"
+        '   kubectl exec -it "$MYSQL_POD" -- mysql --user="$DB_USER" --password\n'
+        "   ```\n"
+        "   ```sql\n"
+        "   SHOW FULL PROCESSLIST;\n"
+        "   SELECT DIGEST_TEXT FROM performance_schema.events_statements_summary_by_digest;\n"
+        "   ```\n"
+        "   风险：未确认参数不得执行。\n"
+        "2. 人工执行：核验恢复后的业务请求。\n"
+        "## 📊 总结\n- 通知状态：未执行\n"
+    )
+    assert len(card.recommendations) == 2
+    first = card.recommendations[0]
+    assert "```bash" in first.description and "```sql" in first.description
+    assert 'kubectl --context "$KUBE_CONTEXT"' in first.description
+    assert "events_statements_summary_by_digest" in first.description
+    assert first.action_type == "manual"
+    assert first.risk and "未确认参数" in first.risk
+    assert card.workorder_proposal
+    assert "```bash" in card.workorder_proposal.suggestions[0]
+
 
 @pytest.mark.parametrize("score", [90, 100])
 def test_v2_scoped_score_survives_card_and_registry_display(score: int) -> None:
@@ -1048,3 +1078,51 @@ def test_extract_display_fields_omits_empty_disposal_suggestions() -> None:
     )
 
     assert "disposalSuggestions" not in display
+
+
+def test_recommendation_fences_are_dedented_after_removing_the_list_marker():
+    from qwenpaw.extensions.api.alarm_analyst_card_service import (
+        _extract_recommendations,
+    )
+
+    recommendations = _extract_recommendations(
+        "10. 人工执行，先核对目标。\n\n"
+        "    ```bash\n"
+        "    kubectl get pods\n"
+        "    ```\n"
+    )
+    assert len(recommendations) == 1
+    assert "\n```bash\nkubectl get pods\n```" in recommendations[0].description
+
+
+def test_fence_with_an_info_string_does_not_close_a_command_block():
+    from qwenpaw.extensions.api.alarm_analyst_card_service import (
+        _extract_recommendations,
+    )
+
+    recommendations = _extract_recommendations(
+        "1. 人工查看示例。\n\n"
+        "```text\n"
+        "```bash\n"
+        "1. 这是代码内容，不是新建议\n"
+        "```\n\n"
+        "2. 人工核对恢复状态。\n"
+    )
+    assert len(recommendations) == 2
+    assert "1. 这是代码内容" in recommendations[0].description
+
+
+def test_indented_subheadings_remain_with_their_manual_recommendation():
+    from qwenpaw.extensions.api.alarm_analyst_card_service import (
+        _extract_recommendations,
+    )
+
+    recommendations = _extract_recommendations(
+        "1. 人工核对环境。\n\n"
+        "   ### 参数准备\n\n"
+        "   ```bash\n   kubectl get pods\n   ```\n\n"
+        "2. 人工核对恢复状态。\n"
+    )
+    assert len(recommendations) == 2
+    assert "### 参数准备" in recommendations[0].description
+    assert "\n```bash\nkubectl get pods\n```" in recommendations[0].description

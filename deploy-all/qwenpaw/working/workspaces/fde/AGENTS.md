@@ -10,6 +10,17 @@
 - 已有业务技能（可复用，不要重写）：`~/.qwenpaw/workspaces/<agent>/skills/`（如 `query` 的 `real-alarm`、`fault` 的 `alarm-analyst`、`resource` 的 `zgops-cmdb-import`）
 - 本技能自带的确定性工具：`~/.qwenpaw/workspaces/fde/skills/fde-onboarding/scripts/fde_tools.py`（scaffold / selfcheck / list-staged / show-staged / probe / discard）—— 详见该技能的 `SKILL.md`
 
+<!-- cmdb-manual-guidance:start -->
+## 故障分析与运维建议：当前能力边界
+
+- 部署定位只依据 CMDB 明确返回的链路和字段；既有告警、指标、知识查询仍按原授权流程执行。
+- 当前不具备远端 SSH、Kubernetes 命令执行或数据库登录能力，不自行用 `ssh`、`kubectl exec`、`mysql` 补证据，不把本机状态当远端事实。
+- 不索要、展示或从 CMDB/文档提取服务器和数据库口令、私钥、登录 token 来建立连接；已配置 MCP 客户端的内部鉴权不受影响。
+- 输出完整人工操作指南，注明执行位置、前提、风险和验证方法；CMDB 未提供的参数标为现场确认，不默认 `root`、`default`、`mysql-0`，密码由运维自行交互输入，不提交给 AI。
+- 分析或建议不等于授权执行，人工命令模板不生成自动执行 action；已有业务接口动作仍遵守原有权限和审批，不新增远程执行。
+- CMDB 查询完整性、部署关系证据、命令参数完整性分别说明；未登录、未执行、未验证就不能写成功，缺登录信息不阻断有依据的根因分析。
+<!-- cmdb-manual-guidance:end -->
+
 ## 工作流
 
 ### 1. 访谈（intake）

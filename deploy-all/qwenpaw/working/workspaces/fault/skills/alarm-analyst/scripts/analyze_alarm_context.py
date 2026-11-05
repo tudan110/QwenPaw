@@ -93,6 +93,17 @@ from cmdb_contract import ci_detail, fetch_catalog_pages, fetch_relations, merge
 from cmdb_output import safe_print as print  # noqa: E402
 
 
+def _manual_guidance_helpers():
+    spec = importlib.util.find_spec("qwenpaw")
+    if spec is None or spec.origin is None:
+        raise RuntimeError("QwenPaw package is required for CMDB operation guidance")
+    path = Path(spec.origin).parent / "extensions/api/cmdb_manual_guidance.py"
+    return _load_module("alarm_cmdb_manual_guidance", path)
+
+
+MANUAL_GUIDANCE = _manual_guidance_helpers()
+
+
 def _safe_str(value: Any) -> str:
     if value is None:
         return ""
@@ -319,6 +330,7 @@ def _build_topology_summary(
             "ciType": _resource_ci_type(root_resource),
             "ciTypeAlias": _resource_ci_type_alias(root_resource),
             "isRoot": True,
+            "publicAttributes": MANUAL_GUIDANCE.public_deployment_attributes(root_resource),
         }
         seen.add(normalized_root_resource["resId"])
         normalized_resources.append(normalized_root_resource)
@@ -336,6 +348,7 @@ def _build_topology_summary(
                 "ciTypeAlias": _resource_ci_type_alias(item),
                 "isRoot": res_id == _safe_str(root_res_id),
                 "queryDirections": item.get("_query_directions", []),
+                "publicAttributes": MANUAL_GUIDANCE.public_deployment_attributes(item),
             }
         )
 
@@ -357,6 +370,7 @@ def _build_topology_summary(
         "resourceIds": resource_ids,
         "ciTypeCounts": dict(Counter(item["ciType"] or "unknown" for item in normalized_resources)),
         "resources": normalized_resources,
+        "edges": MANUAL_GUIDANCE.deployment_edges(resource_rows),
     }
 
 
@@ -920,6 +934,7 @@ def analyze_alarm_context(
         },
         "cmdbAccessMode": cmdb_access_mode,
         "topology": topology_summary,
+        "manualGuide": MANUAL_GUIDANCE.build_manual_operation_guide(topology_summary, alarm_title=alarm_title),
         "relatedAlarms": {
             "recent": {
                 **merged_recent_alarms,

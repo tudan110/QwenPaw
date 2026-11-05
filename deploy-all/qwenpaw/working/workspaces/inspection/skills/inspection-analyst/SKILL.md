@@ -113,6 +113,8 @@ cd skills/inspection-analyst && python scripts/inspect_resource_metrics.py \
 
 ## CMDB MCP 优先原则
 
+建议如涉及组件操作，应结合 CMDB 明确部署路径给人工访问、排查、处置和验证步骤；系统不 SSH、执行容器命令或登录数据库补字段，不索要口令。缺 Namespace/Pod/账号时列待现场确认，指标有值不代表已验证登录或处置成功，不能只给组件内部命令。
+
 查 CMDB / 拓扑时，`inspection-analyst` 默认优先使用当前工作区已启用的 `cmdb-query` MCP Tools。只有 CMDB MCP Driver 未加载、客户端/工具不可用或协议无法解析时，才一次性回退本地 `zgops-cmdb`；只有本地回退也缺失、未配置、不可用或用户明确要求时，才使用 multi_agent_collaboration 协同 query。涉及应用或资源拓扑时，CMDB MCP 或回退路径都必须返回可直接渲染的 `echarts` 代码块；应用用树状图，资源多父关系用 `graph` 保留真实边，不能只保留文字版拓扑摘要。所有输出（含原始 JSON 和错误）均须脱敏，不回显 `bearer_token`、`login_pwd` 等凭证。
 
 回退时必须在过程说明中写出回退原因。

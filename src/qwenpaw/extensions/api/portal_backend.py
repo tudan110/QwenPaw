@@ -32,6 +32,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from qwenpaw.extensions.api.alarm_analyst_card_models import (
+    ManualOperationGuide,
     AlarmAnalystCard,
     AlarmAnalystCardCreateRequest,
     AlarmAnalystCardCreateResponse,
@@ -3237,6 +3238,10 @@ def _shape_fault_scenario_result(result: Any) -> dict | None:
         if isinstance(payload.get("actions"), list)
         else []
     )
+    if payload.get("manualGuide") is not None:
+        shaped["manualGuide"] = ManualOperationGuide.model_validate(
+            payload["manualGuide"],
+        ).model_dump(by_alias=True, mode="json")
     return shaped
 
 

@@ -28,12 +28,39 @@ export interface FaultScenarioAction {
   [key: string]: unknown;
 }
 
+export interface ManualOperationGuide {
+  source: "cmdb-only";
+  executionMode: "manual-only";
+  deploymentKind: "kubernetes" | "docker" | "host" | "unknown";
+  deploymentConfirmed: boolean;
+  relatedPlatforms: Array<{ id: string; name: string; type: string }>;
+  knownParameters: Record<string, string>;
+  missingParameters: string[];
+  markdown: string;
+}
+
 export interface FaultScenarioResult {
   summary?: string;
   rootCause?: FaultScenarioRootCause;
   steps?: FaultScenarioStep[];
   logEntries?: FaultScenarioLogEntry[];
   actions?: FaultScenarioAction[];
+  manualGuide?: ManualOperationGuide | null;
+}
+
+export function getManualOperationGuide(
+  guide?: ManualOperationGuide | null,
+): ManualOperationGuide | null {
+  if (guide == null) return null;
+  if (
+    guide.source !== "cmdb-only" ||
+    guide.executionMode !== "manual-only" ||
+    typeof guide.markdown !== "string" ||
+    !guide.markdown.trim()
+  ) {
+    throw new Error("人工操作指南协议无效，不能作为自动执行动作展示。");
+  }
+  return guide;
 }
 
 export interface FaultScenarioDiagnosisResponse {
