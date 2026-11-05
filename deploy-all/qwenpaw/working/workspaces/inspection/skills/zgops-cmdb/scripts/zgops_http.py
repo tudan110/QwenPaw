@@ -5,10 +5,15 @@ import os
 import subprocess
 import tempfile
 import sys
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
 
 import requests
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
 from cmdb_output import redact_output, run_cli, safe_print as print
 
@@ -254,6 +259,7 @@ def main() -> int:
             path=args.path,
             timeout=30,
         )
+        response.raise_for_status()
         print(json.dumps(envelope(response), ensure_ascii=False, indent=2))
         return 0
     except requests.HTTPError as exc:

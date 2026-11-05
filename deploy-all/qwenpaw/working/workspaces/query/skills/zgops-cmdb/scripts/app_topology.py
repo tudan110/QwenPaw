@@ -5,14 +5,21 @@ import argparse
 import json
 import os
 import sys
+import urllib.error
 import urllib.parse
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
 from cmdb_output import run_cli, safe_print as print
+from cmdb_contract import ci_detail, ci_identity, fetch_catalog_pages, fetch_ci_pages, fetch_relations, merge_cis
 from find_project import (
     CmdbHttpClient,
+    CmdbHttpStatusError,
     _clean_text,
     _match_projects,
     _normalize_token,
@@ -120,30 +127,14 @@ def _split_values(value: Any) -> list[str]:
 
 
 def _fetch_relations(client: CmdbHttpClient, root_id: Any) -> list[dict[str, Any]]:
-    payload = client._request_json(  # noqa: SLF001 - skill local helper reuse
-        f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(str(root_id))}&level=1&level=2&level=3&count=10000"
-    )
-    if isinstance(payload, dict):
-        result = payload.get("result")
-        if isinstance(result, list):
-            return result
-    return []
+    return fetch_relations(client._request_json, root_id)
 
 
 def _fetch_ci_detail(client: CmdbHttpClient, ci_id: Any) -> dict[str, Any]:
     """Fetch the full CI document so inline relation attributes are visible."""
-    try:
-        payload = client._request_json(  # noqa: SLF001
-            f"/api/v0.1/ci/{urllib.parse.quote(str(ci_id))}"
-        )
-    except Exception:
-        return {}
-    if isinstance(payload, dict):
-        result = payload.get("result")
-        if isinstance(result, dict):
-            return result
-        return payload
-    return {}
+    return ci_detail(client._request_json(
+        f"/api/v0.1/ci/{urllib.parse.quote(str(ci_id), safe='')}"
+    ))
 
 
 def _fetch_ci_type_catalog(client: CmdbHttpClient) -> dict[str, str]:
@@ -154,19 +145,15 @@ def _fetch_ci_type_catalog(client: CmdbHttpClient) -> dict[str, str]:
     """
     catalog: dict[str, str] = {}
     try:
-        payload = client._request_json("/api/v0.1/ci_types?per_page=200")  # noqa: SLF001
-    except Exception:
+        payload = fetch_catalog_pages(client._request_json, "/api/v0.1/ci_types")
+    except (urllib.error.HTTPError, CmdbHttpStatusError) as error:
+        status = error.code if isinstance(error, urllib.error.HTTPError) else error.status_code
+        if status != 404:
+            raise
+        print("模型元数据接口不可用（HTTP 404），使用旧版内联模型名称目录。", file=sys.stderr)
         payload = None
 
-    type_items: list[Any] = []
-    if isinstance(payload, dict):
-        for key in ("result", "ci_types", "items"):
-            value = payload.get(key)
-            if isinstance(value, list):
-                type_items = value
-                break
-    elif isinstance(payload, list):
-        type_items = payload
+    type_items = payload if payload is not None else []
 
     for entry in type_items:
         if not isinstance(entry, dict):
@@ -185,20 +172,10 @@ def _fetch_ci_type_catalog(client: CmdbHttpClient) -> dict[str, str]:
 
 
 def _fetch_cis_by_type(client: CmdbHttpClient, ci_type: str) -> list[dict[str, Any]]:
-    query = urllib.parse.quote(f"_type:{ci_type}", safe=":_")
-    try:
-        payload = client._request_json(  # noqa: SLF001
-            f"/api/v0.1/ci/s?q={query}&count=10000&page=1"
-        )
-    except Exception:
-        return []
-    if isinstance(payload, dict):
-        result = payload.get("result")
-        if isinstance(result, list):
-            return result
-    if isinstance(payload, list):
-        return payload
-    return []
+    return fetch_ci_pages(
+        client._request_json, "/api/v0.1/ci/s",
+        {"q": f"_type:{ci_type}", "count": 10000},
+    )
 
 
 def _candidate_name_fields(ci_type: str) -> list[str]:
@@ -262,18 +239,7 @@ def _merge_items(
     extra: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Concatenate two CI lists, deduplicated by `_id` / `id`."""
-    seen: set[Any] = set()
-    merged: list[dict[str, Any]] = []
-    for item in list(primary) + list(extra):
-        if not isinstance(item, dict):
-            continue
-        ci_id = item.get("_id") or item.get("id")
-        key = ci_id if ci_id is not None else id(item)
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(item)
-    return merged
+    return merge_cis(primary, extra)
 
 
 def _resource_label(item: dict[str, Any]) -> str:
@@ -360,63 +326,9 @@ def _bucket_sort_key(item: dict[str, Any]) -> tuple[int, str]:
 
 def _build_tree(project: dict[str, Any], items: list[dict[str, Any]]) -> dict[str, Any]:
     root_name = _project_name(project) or "应用"
-    nodes_by_id: dict[Any, dict[str, Any]] = {}
-    docker_by_ip: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    vserver_by_ip: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    vserver_nodes: list[dict[str, Any]] = []
-    software_pending: list[dict[str, Any]] = []
-    direct_children: list[dict[str, Any]] = []
-
-    filtered_items = [item for item in items if _clean_text(item.get("ci_type")) != "project"]
+    filtered_items = [item for item in items if ci_identity(item) != ci_identity(project)]
     filtered_items.sort(key=_bucket_sort_key)
-
-    for item in filtered_items:
-        node = _resource_node(item)
-        item_id = item.get("_id") or item.get("id")
-        nodes_by_id[item_id] = node
-        ci_type = _clean_text(item.get("ci_type"))
-        if ci_type == "vserver":
-            direct_children.append(node)
-            vserver_nodes.append(node)
-            for ip_value in _resource_ips(item):
-                vserver_by_ip[ip_value].append(node)
-        elif ci_type == "docker":
-            attached = False
-            for parent_ip in _split_values(item.get("AssociatedVM")) + _split_values(item.get("deploy_target")):
-                for parent_node in vserver_by_ip.get(parent_ip, []):
-                    parent_node["children"].append(node)
-                    attached = True
-            if not attached and len(vserver_nodes) == 1:
-                vserver_nodes[0]["children"].append(node)
-                attached = True
-            if not attached:
-                direct_children.append(node)
-            for ip_value in _resource_ips(item):
-                docker_by_ip[ip_value].append(node)
-        elif ci_type in SOFTWARE_TYPES:
-            software_pending.append(item)
-        else:
-            direct_children.append(node)
-
-    for item in software_pending:
-        item_id = item.get("_id") or item.get("id")
-        node = nodes_by_id[item_id]
-        attached = False
-        for parent_ip in _resource_ips(item):
-            if parent_ip in docker_by_ip:
-                for parent_node in docker_by_ip[parent_ip]:
-                    parent_node["children"].append(node)
-                    attached = True
-                break
-        if not attached:
-            for parent_ip in _resource_ips(item):
-                if parent_ip in vserver_by_ip:
-                    for parent_node in vserver_by_ip[parent_ip]:
-                        parent_node["children"].append(node)
-                        attached = True
-                    break
-        if not attached:
-            direct_children.append(node)
+    direct_children = [_resource_node(item) for item in filtered_items]
 
     root = {
         "name": root_name,
@@ -424,6 +336,7 @@ def _build_tree(project: dict[str, Any], items: list[dict[str, Any]]) -> dict[st
             "id": project.get("_id") or project.get("id"),
             "ciType": "project",
             "ciTypeAlias": _clean_text(project.get("ci_type_alias")) or "应用",
+            "relationEvidence": "queried-downstream-overview",
         },
         "children": sorted(direct_children, key=lambda node: node["name"]),
     }
@@ -470,6 +383,7 @@ def _render_markdown(project_name: str, items: list[dict[str, Any]], option: dic
     lines = [
         f"`{project_name}` 当前共发现 {len(items)} 个关联资源。",
         f"资源分布：{summary}。",
+        "以下是查询范围内的关联资源概览，不代表资源之间的直接部署关系。",
         "",
         "```echarts",
         json.dumps(option, ensure_ascii=False, indent=2),
@@ -516,7 +430,10 @@ def main() -> int:
     # in — `ci_relations` alone is not authoritative.
     project_detail = _fetch_ci_detail(client, project_id) or project
     inline_items = _resolve_inline_resources(client, project_detail)
-    items = _merge_items(items, inline_items)
+    items = [
+        item for item in _merge_items(items, inline_items)
+        if ci_identity(item) != ci_identity(project)
+    ]
 
     tree = _build_tree(project, items)
     option = _build_option(tree, f"{project_name} 应用关系拓扑")
@@ -528,6 +445,9 @@ def main() -> int:
                     "project": project_name,
                     "root_id": project.get("_id") or project.get("id"),
                     "resource_count": len(items),
+                    "view": "association-overview",
+                    "query_levels": [1, 2, 3],
+                    "query_direction": "forward",
                     "option": option,
                 },
                 ensure_ascii=False,

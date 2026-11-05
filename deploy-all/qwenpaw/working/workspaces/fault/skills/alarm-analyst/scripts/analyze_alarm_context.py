@@ -16,6 +16,7 @@ import importlib.util
 import json
 import os
 import sys
+import urllib.error
 import urllib.parse
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -82,6 +83,14 @@ def _load_module(module_name: str, path: Path):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+CMDB_SCRIPT_DIR = _zgops_find_project_path().parent
+if str(CMDB_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(CMDB_SCRIPT_DIR))
+
+from cmdb_contract import ci_detail, fetch_catalog_pages, fetch_relations, merge_cis  # noqa: E402
+from cmdb_output import safe_print as print  # noqa: E402
 
 
 def _safe_str(value: Any) -> str:
@@ -158,21 +167,28 @@ def _load_cmdb_client():
 
 def _fetch_topology_relations(root_res_id: str) -> list[dict[str, Any]]:
     client, _find_project, _login_mode = _load_cmdb_client()
-    payload = client._request_json(  # noqa: SLF001 - 复用 skill 内部 HTTP helper
-        f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(root_res_id)}&level=1&level=2&level=3&count=10000"
+    root_resource = _fetch_root_resource_detail(client, root_res_id)
+    forward = fetch_relations(client._request_json, root_res_id)
+    if _resource_ci_type(root_resource) == "project":
+        return forward
+    return merge_cis(
+        forward, fetch_relations(client._request_json, root_res_id, reverse=1)
     )
-    if isinstance(payload, dict) and isinstance(payload.get("result"), list):
-        return [item for item in payload["result"] if isinstance(item, dict)]
-    return []
 
 
 def _fetch_root_resource_detail(client: Any, root_res_id: str) -> dict[str, Any]:
     payload = client._request_json(f"/api/v0.1/ci/{urllib.parse.quote(root_res_id)}")  # noqa: SLF001
-    if isinstance(payload, dict):
-        result = payload.get("result")
-        if isinstance(result, dict):
-            return result
-    return {}
+    root = ci_detail(payload)
+    if _resource_ci_type(root) and not _resource_ci_type(root).isdigit():
+        return root
+    model_id = root.get("_type")
+    if model_id is not None:
+        for model in fetch_catalog_pages(client._request_json, "/api/v0.1/ci_types"):
+            if str(model.get("id")) == str(model_id):
+                name = _safe_str(model.get("name"))
+                if name and not name.isdigit():
+                    return dict(root, ci_type=name)
+    return root
 
 
 def _resource_res_id(item: dict[str, Any]) -> str:
@@ -230,7 +246,8 @@ def _resource_name(item: dict[str, Any]) -> str:
 
 def _resource_ci_type(item: dict[str, Any]) -> str:
     """Return ci_type from CMDB resource data, used directly as metricType for metric API."""
-    return _safe_str(item.get("ci_type"))
+    value = item.get("ci_type")
+    return value.strip() if isinstance(value, str) and not value.strip().isdigit() else ""
 
 
 _ALARM_SEVERITY_MAP = {
@@ -292,12 +309,6 @@ def _build_topology_summary(
 ) -> dict[str, Any]:
     resource_ids = _collect_related_resource_ids(root_res_id, resource_rows)
     extracted_resources = _extract_resource_dicts(resource_rows)
-    ci_type_counts = Counter(
-        _resource_ci_type(item) or "unknown"
-        for item in extracted_resources
-        if _resource_res_id(item)
-    )
-
     normalized_resources = []
     seen: set[str] = set()
     normalized_root_resource = None
@@ -324,6 +335,7 @@ def _build_topology_summary(
                 "ciType": _resource_ci_type(item),
                 "ciTypeAlias": _resource_ci_type_alias(item),
                 "isRoot": res_id == _safe_str(root_res_id),
+                "queryDirections": item.get("_query_directions", []),
             }
         )
 
@@ -343,37 +355,19 @@ def _build_topology_summary(
         "rootResource": normalized_root_resource,
         "resourceCount": len(resource_ids),
         "resourceIds": resource_ids,
-        "ciTypeCounts": dict(ci_type_counts),
+        "ciTypeCounts": dict(Counter(item["ciType"] or "unknown" for item in normalized_resources)),
         "resources": normalized_resources,
     }
 
 
 def _infer_metric_type(metric_type: str | None, topology_summary: dict[str, Any], alarm_title: str = "") -> str:
     explicit = _safe_str(metric_type)
+    root_type = _safe_str((topology_summary.get("rootResource") or {}).get("ciType"))
     if explicit:
+        if explicit.isdigit() or (root_type and explicit != root_type):
+            raise ValueError("指标模型必须是已确认的根资源模型名称，不能使用数字 ID 或其他模型")
         return explicit
-    root_resource = topology_summary.get("rootResource") or {}
-    if _safe_str(root_resource.get("ciType")):
-        return _safe_str(root_resource["ciType"])
-    for resource in topology_summary.get("resources") or []:
-        if _safe_str(resource.get("ciType")):
-            return _safe_str(resource["ciType"])
-    # Fallback: infer from alarm title keywords
-    return _infer_metric_type_from_title(alarm_title)
-
-
-def _infer_metric_type_from_title(title: str) -> str:
-    """Infer metric type from alarm title keywords as last resort."""
-    t = title.lower()
-    if any(kw in t for kw in ("丢包", "ping", "链路", "端口", "带宽", "网络", "丢包率", "设备异常")):
-        return "networkdevice"
-    if any(kw in t for kw in ("cpu", "内存", "温度", "磁盘", "服务器", "主机")):
-        return "server"
-    if any(kw in t for kw in ("死锁", "锁异常", "慢sql", "数据库", "mysql", "postgresql", "postgres")):
-        return "database"
-    if any(kw in t for kw in ("中间件", "redis", "kafka", "mq", "rabbitmq", "消息队列")):
-        return "middleware"
-    return ""
+    return root_type
 
 
 def _load_real_alarm_execute():
@@ -696,6 +690,8 @@ def _build_execution_summary(
     if not root_resolved or not metric_type_resolved:
         status = "blocked"
     elif (
+        topology_summary.get("queryComplete") is False
+        or
         recent_execution["attemptedQueries"] != recent_execution["expectedQueries"]
         or previous_execution["attemptedQueries"] != previous_execution["expectedQueries"]
         or recent_execution["failedIds"]
@@ -725,6 +721,8 @@ def _build_execution_summary(
             "skippedReason": _safe_str(metric_skipped_reason),
         },
         "topology": {
+            "queryComplete": topology_summary.get("queryComplete", True),
+            "queryErrors": topology_summary.get("queryErrors", []),
             "resourceIdsExpected": len(resource_ids),
             "resourceIdsCollected": len(resource_ids),
             "resourceIds": resource_ids,
@@ -740,11 +738,30 @@ def _fetch_topology_summary(
     root_res_id: str,
     root_resource: dict[str, Any],
 ) -> dict[str, Any]:
-    payload = client._request_json(  # noqa: SLF001 - 复用 skill 内部 HTTP helper
-        f"/api/v0.1/ci_relations/s?root_id={urllib.parse.quote(root_res_id)}&level=1&level=2&level=3&count=10000"
+    collections = []
+    directions = []
+    errors = []
+    reverse_values = (0,) if _resource_ci_type(root_resource) == "project" else (0, 1)
+    for reverse in reverse_values:
+        direction = "reverse" if reverse else "forward"
+        try:
+            rows = fetch_relations(client._request_json, root_res_id, reverse=reverse)
+        except (RuntimeError, ValueError, urllib.error.URLError, TimeoutError) as error:
+            errors.append({"direction": direction, "message": str(error)})
+            break
+        collections.append(rows)
+        directions.append(direction)
+    summary = _build_topology_summary(
+        root_res_id, merge_cis(*collections), root_resource=root_resource,
     )
-    topology_rows = [item for item in payload.get("result", []) if isinstance(item, dict)] if isinstance(payload, dict) else []
-    return _build_topology_summary(root_res_id, topology_rows, root_resource=root_resource)
+    summary.update({
+        "queryComplete": not errors,
+        "queryErrors": errors,
+        "queryDirections": directions,
+        "queryLevels": [1, 2, 3],
+        "relationEvidence": "associated-ci-list",
+    })
+    return summary
 
 
 def _fetch_metric_analysis(
@@ -892,7 +909,7 @@ def analyze_alarm_context(
 
     return {
         "code": 200,
-        "msg": "查询成功",
+        "msg": "查询成功" if execution["status"] == "success" else "查询部分完成，请查看 execution 和 topology 查询状态",
         "currentAlarm": current_alarm,
         "timeWindow": {
             "anchorEventTime": windows["anchorEventTime"],
@@ -997,6 +1014,8 @@ def render_markdown(result: dict[str, Any]) -> str:
         f"- CMDB 访问方式：`{result.get('cmdbAccessMode') or '-'}`",
         f"- 关系时间窗口：`{result.get('timeWindow', {}).get('beginTime', '-')}` ~ `{result.get('timeWindow', {}).get('endTime', '-')}`",
         f"- 关联资源数：`{topology.get('resourceCount', 0)}`",
+        f"- 查询方向：`{', '.join(topology.get('queryDirections', [])) or '-'}`；层级：1、2、3（非累计层级）",
+        f"- 拓扑查询状态：{'完整' if topology.get('queryComplete', True) else '不完整'}；资源数包含根资源，不代表关系边数。",
         f"- 资源类型分布：{ci_type_summary}",
         "",
         _render_resources_table(topology.get("resources") or []),
@@ -1019,6 +1038,11 @@ def render_markdown(result: dict[str, Any]) -> str:
         "",
         "### 初步关系判断",
     ]
+    if topology.get("queryErrors"):
+        lines.extend(
+            f"- 拓扑查询失败（{error['direction']}）：{error['message']}"
+            for error in topology["queryErrors"]
+        )
     lines.extend(f"- {item}" for item in (result.get("findings") or []))
     lines.extend(
         [

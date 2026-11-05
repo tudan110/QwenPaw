@@ -133,16 +133,17 @@ def test_cmdb_skill_output_guard_is_packaged_with_integrity_hashes(
     manifest = seed_builder.build_sync_manifest(seed)
     for workspace in ("fault", "gateway", "inspection", "query", "resource"):
         relative = Path("workspaces") / workspace / "skills/zgops-cmdb"
-        helper = relative / "scripts/cmdb_output.py"
-        expected_hash = seed_builder.sha256(seed / helper)
-        assert manifest["managed_files"][str(helper)] == {
-            "kind": "skill_file",
-            "sha256": expected_hash,
-        }
-        assert (
-            manifest["managed_skills"][str(relative)]["files"][str(helper)]
-            == expected_hash
-        )
+        for name in ("cmdb_output.py", "cmdb_contract.py"):
+            helper = relative / "scripts" / name
+            expected_hash = seed_builder.sha256(seed / helper)
+            assert manifest["managed_files"][str(helper)] == {
+                "kind": "skill_file",
+                "sha256": expected_hash,
+            }
+            assert (
+                manifest["managed_skills"][str(relative)]["files"][str(helper)]
+                == expected_hash
+            )
         assert "reverse=1" in (seed / relative / "SKILL.md").read_text(
             encoding="utf-8",
         )

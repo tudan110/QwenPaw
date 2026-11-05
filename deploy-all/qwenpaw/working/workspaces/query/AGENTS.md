@@ -22,7 +22,7 @@ read_when:
 - 用户询问“某个应用/项目/系统名的应用拓扑、业务拓扑、资源依赖关系”时，才使用 `zgops-cmdb` 的 `find-project` + `app-topology`；不要把“简易拓扑/全局拓扑/系统拓扑”误判成应用拓扑。
 - 用户询问“资产总览 / 监控资产总览 / 监控总览概况”时，使用 `monitoring-overview-query` 的 `asset-overview`。
 - 不要把资源状态/性能接口加入 `real-alarm`；不要把 CMDB count/group 类接口迁出 `zgops-cmdb`。
-- 用户询问“制造商分布 / 厂商分布 / 厂家统计 / 按 vendor 分组 / CMDB count/group”时，使用 `zgops-cmdb` 的 `scripts/zgops-cmdb.sh inoe-stat`。例如“查询中间件制造商分布统计”必须执行 `scripts/zgops-cmdb.sh inoe-stat group --resource_type middleware --attr vendor --output markdown`，不要在老 `/api/v0.1` 路径上反复尝试。
+- 用户询问“制造商分布 / 厂商分布 / 厂家统计 / 按 vendor 分组 / CMDB count/group”时，使用 `zgops-cmdb`，先根据当前元数据区分模型分组与具体模型，MCP 优先并检查属性参数 schema；不能固定分组 ID、把纯资源数量当告警事件数或绕过 schema 不兼容。仅符合技能规定的 MCP 回退条件时才运行既有 `inoe-stat`；分组属性统计逐个查询成员模型并合并，不反复试接口或旧环境 ID。
 - `zgops-cmdb` 的 `inoe-stat` 会优先从当前环境 CMDB 元数据动态解析资源类型；如果用户问“有哪些资源类型 / type 怎么对应 / 模型分组”，执行 `scripts/zgops-cmdb.sh inoe-stat types --output markdown`，不要手写静态 type 对照表。
 
 ## 告警查询硬规则

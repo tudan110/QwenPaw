@@ -1,4 +1,5 @@
 import unittest
+from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
 
 import analyze_alarm_context as alarm_context_module
@@ -107,6 +108,88 @@ class AnalyzeAlarmContextTests(unittest.TestCase):
         self.assertEqual(summary["rootResource"]["resId"], "3094")
         self.assertEqual(summary["rootResource"]["ciType"], "mysql")
         self.assertEqual(summary["resources"][0]["ciType"], "mysql")
+
+    def test_root_detail_uses_current_ci_wrapper_and_numeric_type_metadata(self):
+        class Client:
+            def _request_json(self, path):
+                if path.endswith("/ci/99"):
+                    return {"ci_id": 99, "ci": {"_id": 99, "_type": 77, "name": "db"}}
+                return {"ci_types": [{"id": 77, "name": "mysql"}]}
+
+        root = alarm_context_module._fetch_root_resource_detail(Client(), "99")
+        self.assertEqual(root["ci_type"], "mysql")
+        self.assertEqual(root["_type"], 77)
+
+    def test_resource_topology_is_bidirectional_paginated_and_deduplicated(self):
+        paths = []
+
+        class Client:
+            def _request_json(self, path):
+                paths.append(path)
+                query = parse_qs(urlsplit(path).query)
+                self_test.assertEqual(query["level"], ["1,2,3"])
+                rows = [{"_id": 101, "ci_type": "docker", "name": "container"}]
+                if query.get("reverse") == ["1"]:
+                    rows.append({"_id": 102, "ci_type": "project", "name": "app"})
+                return {"numfound": len(rows), "result": rows}
+
+        self_test = self
+        summary = alarm_context_module._fetch_topology_summary(
+            client=Client(), root_res_id="99",
+            root_resource={"_id": 99, "ci_type": "mysql", "name": "db"},
+        )
+        self.assertTrue(summary["queryComplete"])
+        self.assertEqual(summary["resourceIds"], ["99", "101", "102"])
+        self.assertEqual(len(paths), 2)
+        node = next(node for node in summary["resources"] if node["resId"] == "101")
+        self.assertEqual(node["queryDirections"], ["forward", "reverse"])
+
+    def test_reverse_failure_keeps_forward_resources_and_marks_partial(self):
+        class Client:
+            def _request_json(self, path):
+                if parse_qs(urlsplit(path).query).get("reverse") == ["1"]:
+                    raise RuntimeError("upstream query failed")
+                return {"numfound": 1, "result": [{"_id": 101, "ci_type": "docker"}]}
+
+        summary = alarm_context_module._fetch_topology_summary(
+            client=Client(), root_res_id="99",
+            root_resource={"_id": 99, "ci_type": "mysql", "name": "db"},
+        )
+        self.assertFalse(summary["queryComplete"])
+        self.assertEqual(summary["resourceIds"], ["99", "101"])
+        self.assertEqual(summary["queryErrors"][0]["direction"], "reverse")
+        alarms = [{"resId": value, "code": 200} for value in summary["resourceIds"]]
+        execution = alarm_context_module._build_execution_summary(
+            res_id="99", event_time="", device_name="", manage_ip="",
+            topology_summary=summary,
+            metric_analysis={"metricType": "mysql"},
+            recent_alarm_results=alarms, previous_alarm_results=alarms,
+        )
+        self.assertEqual(execution["status"], "partial")
+
+    def test_application_topology_stays_forward_only(self):
+        paths = []
+
+        class Client:
+            def _request_json(self, path):
+                paths.append(path)
+                return {"numfound": 0, "result": []}
+
+        summary = alarm_context_module._fetch_topology_summary(
+            client=Client(), root_res_id="99",
+            root_resource={"_id": 99, "ci_type": "project"},
+        )
+        self.assertEqual(len(paths), 1)
+        self.assertNotIn("reverse=", paths[0])
+        self.assertEqual(summary["queryDirections"], ["forward"])
+
+    def test_metric_model_is_not_guessed_from_alarm_title_or_related_nodes(self):
+        summary = {"rootResource": {"ciType": ""}, "resources": [{"ciType": "docker"}]}
+        self.assertEqual(alarm_context_module._infer_metric_type("", summary, "mysql deadlock"), "")
+        with self.assertRaises(ValueError):
+            alarm_context_module._infer_metric_type(
+                "redis", {"rootResource": {"ciType": "mysql"}}
+            )
 
     def test_build_alarm_comparison_summary_reports_growth(self):
         summary = _build_alarm_comparison_summary(

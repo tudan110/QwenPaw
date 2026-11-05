@@ -279,6 +279,8 @@ description: 面向单条活动告警或单个应用故障现象的故障分析�
 
 ### CMDB 查询
 
+详情解包当前响应的 `ci`，旧版 `result` 仅作兼容。`_id` 是实例 ID，数字 `_type` 是模型 ID，`ci_type` 是真实模型名称；根资源模型未确认时标记 blocked，不从告警标题或其他关联资源猜 `metricType`。已知 CI ID 直接确认详情，批量补齐已确认节点可用分号分隔 `_id:(ID1;ID2;ID3)`。
+
 ```json
 // 查 CI 实例详情
 cmdb-query__getCiInstance(id=<CI_ID>)
@@ -289,12 +291,14 @@ cmdb-query__getCiRelations(root_id=<CI_ID>, level=1, count=10000)
 // 查资源实例上游，保留真实的父 -> 子关系方向
 cmdb-query__getCiRelations(root_id=<CI_ID>, level=1, reverse=1, count=10000)
 
-// 搜索 CI 实例（按名称模糊匹配）
-cmdb-query__searchCiInstances(q="name:xxx", page=1, count=20)
+// 搜索 CI 实例（等值属性查询，字段来自模型元数据）
+cmdb-query__searchCiInstances(q="<实际名称属性>:<名称>", page=1, count=20)
 
 // 搜索 CI 实例（按 IP）
 cmdb-query__searchCiInstances(q="manage_ip:172.27.34.1", page=1, count=20)
 ```
+
+搜索 `numfound` 是总匹配 CI 数，`total` 是本页数，需要分页去重。`level=2` 仅第二层，MCP 分别查询 1、2、3；HTTP 回退使用单个 `level=1,2,3`，重复参数只会取第一个值。未暴露的 MCP 分页/字段参数不要强传，截断或任一方向失败时报告拓扑不完整。
 
 ### 告警查询
 
@@ -327,13 +331,15 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py \
 
 回退时必须在过程说明中写明回退原因（如 `cmdb-query-mcp-unavailable`）。
 
+聚合脚本会解包根 CI、按需要查询三层正反向并分页去重；应用仍默认正向。返回 `topology.queryComplete/queryErrors/queryDirections`，`execution.status` 的 partial/blocked 不能被 `code=200` 掩盖为完整成功；已取得的结果保留，失败方向不换参数重试。
+
 ## 关键步骤详解
 
 ### 拓扑关联资源告警查询（硬约束）
 
 这是 RCA 完成的**必要条件**，不是可选步骤：
 
-1. 拿到根资源 resId 后，通过 `cmdb-query__getCiRelations` 查询 CMDB 拓扑关系；资源实例按 `zgops-cmdb` 的“查资源实例拓扑”先 `reverse=0`、再 `reverse=1`，覆盖 `level=1..3`，合并并按节点 ID / 关系 ID（或源、目标、关系类型）去重。正向为空不代表无上游；仅双向成功且为空才说明指定范围内未发现关系，任一方向失败则标注拓扑不完整，不以脚本或跨智能体绕过业务错误
+1. 拿到根资源 resId 后，通过 `cmdb-query__getCiRelations` 查询 CMDB 拓扑关系；资源实例按 `zgops-cmdb` 的“查资源实例拓扑”先 `reverse=0`、再 `reverse=1`，覆盖独立的 `level=1..3`，合并并按节点 ID / 已返回的关系 ID 去重。正向为空不代表无上游；仅双向成功且为空才说明指定范围内未发现关系，任一方向失败则标注拓扑不完整，不以脚本或跨智能体绕过业务错误
 2. 从拓扑中提取**全部**关联资源 ID（根资源、节点 `_id`、关系边 `src_ci_id/dst_ci_id`）
 3. 对这些资源 ID 批量调用 `alarm__queryHistoricalAlarms` 并按 `devId` 本地过滤
 4. 如果 CMDB 双向查询均成功且拓扑为空，可从链路类告警标题中提取对端设备信息作为补充
@@ -484,6 +490,7 @@ cd skills/alarm-analyst && python scripts/send_analysis_report.py \
 - 所有输出（含原始 JSON、错误、图表和文件）均须脱敏，不回显 `bearer_token`、`login_pwd` 等凭证
 - 禁止只用 markdown 表格或文字描述拓扑而不给 echarts 代码块
 - 保留 query 返回的 echarts 代码块，不要改写成纯文字
+- 当前关系搜索只返回 CI 列表时画“关联资源概览”，不能把概览连接线称为部署链；同 IP、模型允许的类型关系、资源位于第二层都不能证明具体实例边。资源数含根节点，不等于关系边数。
 
 ---
 

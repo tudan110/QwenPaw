@@ -21,6 +21,7 @@ import hashlib
 import hmac
 import html
 import importlib.util
+from urllib.parse import parse_qsl, urlsplit
 import json
 import os
 import re
@@ -110,24 +111,31 @@ def _resolve_metric_type_from_id(
     resolved_timeout = _get_timeout(timeout_seconds)
     inoe_base = _ALARM_METRIC_HELPERS._normalize_base_url(api_base_url)  # noqa: SLF001
     inoe_token = _ALARM_METRIC_HELPERS._get_token(token)  # noqa: SLF001
-    url = f"{inoe_base}/cmdb/api/v0.1/ci_types?per_page=200"
+    cmdb_base = inoe_base if inoe_base.endswith("/cmdb") else inoe_base + "/cmdb"
+    url = f"{cmdb_base}/api/v0.1/ci_types"
     headers = {
         "Accept": "application/json",
         "Authorization": f"Bearer {inoe_token}",
     }
-    try:
+    contract = _load_module(
+        "inspection_cmdb_contract",
+        Path(__file__).resolve().parents[2] / "zgops-cmdb/scripts/cmdb_contract.py",
+    )
+    def request_catalog(uri: str):
+        params = dict(parse_qsl(urlsplit(uri).query))
         payload, _ = _get_json_with_fallback(
-            url=url,
+            url=f"{url}?per_page={params['per_page']}&page={params['page']}",
             headers=headers,
             timeout_seconds=resolved_timeout,
         )
-        ci_types = payload.get("ci_types") or []
-        for item in ci_types:
-            if str(item.get("id")) == numeric_id:
-                return _safe_str(item.get("name"))
-    except Exception:
-        pass
+        return payload
 
+    for item in contract.fetch_catalog_pages(request_catalog, "/api/v0.1/ci_types"):
+        if str(item["id"]) == numeric_id:
+            name = _safe_str(item.get("name"))
+            if not name or name.isdigit():
+                raise contract.CmdbContractError("CMDB 模型目录没有有效模型名称")
+            return name
     return ""
 
 

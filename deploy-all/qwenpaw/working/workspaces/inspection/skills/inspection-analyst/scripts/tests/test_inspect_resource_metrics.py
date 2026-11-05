@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 from unittest.mock import patch
+import pytest
 
 
 def _load_module(module_name: str, path: Path):
@@ -17,6 +18,42 @@ INSPECTION_MODULE = _load_module(
     "inspection_metric_test_module",
     SCRIPT_DIR / "inspect_resource_metrics.py",
 )
+
+
+def test_cmdb_numeric_model_resolution_reads_all_pages():
+    responses = [
+        ({"ci_types": [{"id": 61, "name": "redis"}], "numfound": 2}, "requests"),
+        ({"ci_types": [{"id": 77, "name": "mysql"}], "numfound": 2}, "requests"),
+    ]
+    with patch.object(INSPECTION_MODULE, "_get_json_with_fallback", side_effect=responses) as fetch:
+        name = INSPECTION_MODULE._resolve_metric_type_from_id(
+            "77", api_base_url="http://gateway.example/cmdb", token="fixture-token",
+        )
+    assert name == "mysql"
+    assert fetch.call_count == 2
+    assert "/cmdb/cmdb/" not in fetch.call_args.kwargs["url"]
+    assert "page=2" in fetch.call_args.kwargs["url"]
+
+
+def test_cmdb_numeric_model_resolution_does_not_hide_business_errors():
+    with patch.object(
+        INSPECTION_MODULE, "_get_json_with_fallback",
+        return_value=({"code": 403, "msg": "denied"}, "requests"),
+    ):
+        with pytest.raises(RuntimeError, match="denied"):
+            INSPECTION_MODULE._resolve_metric_type_from_id(
+                "77", api_base_url="http://gateway.example", token="fixture-token",
+            )
+
+
+def test_cmdb_numeric_model_resolution_accepts_legacy_result_wrapper():
+    with patch.object(
+        INSPECTION_MODULE, "_get_json_with_fallback",
+        return_value=({"result": [{"id": 77, "name": "mysql"}]}, "requests"),
+    ):
+        assert INSPECTION_MODULE._resolve_metric_type_from_id(
+            "77", api_base_url="http://gateway.example", token="fixture-token",
+        ) == "mysql"
 
 
 def test_fetch_all_metric_definitions_paginates_and_dedupes():

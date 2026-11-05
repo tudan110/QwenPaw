@@ -6,9 +6,9 @@
 
 | MCP Tool | 用途 | 调用约束 |
 |---|---|---|
-| `cmdb-query__listCiTypes` | 查询 CI 类型/模型 | 分页取全；模型 `name` 是唯一可用于 `metricType` 的真实来源，不能猜测或直接使用数字类型 ID |
+| `cmdb-query__listCiTypes` | 查询 CI 类型/模型 | 根据 `ci_types/numfound` 判断是否已取全；模型 `name` 是指标模型来源，不反复翻页取相同目录 |
 | `cmdb-query__searchCiInstances` | 搜索 CI 实例 | 使用 `_type:<模型 name>`；完整处理分页；多候选必须让用户选择 |
-| `cmdb-query__getCiInstance` | 确认单个 CI 详情 | `id` 必须为选中候选的真实 `_id`；确认后的 `_id` 才能作为 `resId` |
+| `cmdb-query__getCiInstance` | 确认单个 CI 详情 | 按 schema 传实例 ID，读取 `ci`（兼容旧 `result`）；`_id` 才是 `resId`，`_type` 是数字模型 ID，`ci_type` 是模型名 |
 | `cmdb-query__getCiRelations` | 查询 CI 关系拓扑 | 仅用户需要依赖/影响面/拓扑或异常分析需要时查询；默认 `reverse=0` 查下游，资源实例还需 `reverse=1` 查上游，双向合并去重，单向为空不代表无关系 |
 
 ## MCP Tools
@@ -22,9 +22,9 @@
 
 ## 调用顺序
 
-1. 调用 `cmdb-query__listCiTypes`，分页确认目标模型的真实 `name`。
+1. 无唯一 CI ID 时调用 `cmdb-query__listCiTypes`，确认目标模型的真实 `name`；已有 CI ID 先直接读详情。
 2. 以该模型 `name` 调用 `cmdb-query__searchCiInstances`，完整处理分页；零候选直接说明无法确认资源，多候选等待用户选择。
-3. 对选中候选调用 `cmdb-query__getCiInstance`，确认真实 `_id`、展示名和类型；使用确认后的 `_id` 作为 `resId`，模型 `name` 作为 `metricType`。
+3. 对选中候选调用 `cmdb-query__getCiInstance`，解包 `ci`，确认真实 `_id`、展示名和类型；使用确认后的 `_id` 作为 `resId`，模型 `name` 作为 `metricType`，不能从告警标题或其他关联节点猜类型。
 4. 仅在需要依赖、影响面或拓扑时调用 `cmdb-query__getCiRelations(root_id=<确认的 _id>)`（应用默认正向）；资源实例按 `zgops-cmdb` 指引补充 `reverse=1`，两方向均覆盖 `level=1..3`，按实际 schema 传层级。节点按 CI ID、边按关系 ID 或源/目标/关系类型去重，保留真实边方向；仅双向成功且为空才说明指定范围内未发现关系，任一方向失败则报告拓扑不完整。
 5. 调用 `inspection__getMetricDefinitions`，获取全部指标定义与指标编码。
 6. 调用 `inspection__getMetricData`，批量获取全部指标的最近值或指定时间范围值。
@@ -34,6 +34,8 @@
 ## 关键规则
 
 - CMDB 与指标 MCP Tool 返回上游错误、协议错误或不可解析结果时 fail-fast，不更换参数反复重试。
+- 搜索 `numfound` 是总匹配数，`total` 是本页数；实例分页按 ID 去重。`level=2` 只查第二层；当前 MCP 分别传整数 1、2、3，HTTP 回退使用单个 `level=1,2,3`，重复 level 参数只取第一个值。
+- MCP 未暴露 `page/fl/excludes` 的关系查询不能强传这些参数，达到数量限制时说明截断。只有 CI 列表时展示关联概览，不称为完整实例部署链；CMDB 资源状态计数不能当作巡检指标或告警事件条数。
 - 双向查询是预先计划的互补查询，不是错误后的换参数重试；多父资源拓扑用 `graph`，不为树状展示丢边。原始 JSON、图表、错误和文件均须脱敏，不回显 `bearer_token`、`login_pwd` 等凭证。
 - 仅当对应 MCP Driver 未加载、客户端/工具不可用或协议无法解析时，才能使用脚本回退；CMDB 回退只允许一次调用 `zgops-cmdb`，并记录 `zgops-cmdb-script-fallback` 与原因。
 - 指标查询成功但最近值全空是合法的“无实时监控数据”结论，不重复调用或回退。

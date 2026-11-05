@@ -32,21 +32,23 @@ tags: [cmdb, example, demo]
 
 ### 查拓扑
 
+实例详情解包 `ci`，数字 `_type` 是模型 ID，`ci_type` 是模型名称；示例 CI ID 必须换成当前环境已确认的真实值。搜索分页按 `numfound` 判断全量，不能把本页 `total` 当全量数量。
+
 用户说"查 CI 3034 的拓扑"时：
 
 调 `cmdb-query__getCiRelations(root_id="3034", level=1, count=10000)`
 
 默认只查下游。如果 3034 是资源实例，还需调 `cmdb-query__getCiRelations(root_id="3034", level=1, reverse=1, count=10000)` 查上游，两个方向按实际 schema 覆盖 `level=1..3`。节点按 CI ID、关系按关系 ID 或源/目标/关系类型合并去重，保留真实父 -> 子边。正向为空不代表无关系；仅双向成功且为空才说明指定范围内未发现关系，任一方向失败则报告拓扑不完整，不以脚本绕过业务错误。
 
-应用输出 ECharts 树状图（`series.type='tree'`，从左到右展开）；多父资源拓扑用 `graph`，不能丢边或补造关系。所有输出（含原始 JSON 和错误）均须脱敏，不回显 `bearer_token`、`login_pwd` 等凭证。
+`level=2` 仅第二层，当前 MCP 分别传整数 1、2、3；HTTP 回退使用一个 `level=1,2,3`，不重复 level。只有 CI 列表时输出关联资源概览（`series.type='tree'`，从左到右），不能冒充部署链；有已确认实例边/路径时，多父拓扑才用 `graph` 保留真实边。所有输出（含原始 JSON 和错误）均须脱敏，不回显 `bearer_token`、`login_pwd` 等凭证。
 
 ### 查统计
 
 用户说"统计数据库资源类型分布"时：
 
-调 `cmdb-query__countCiByGroup(type=5)`（`5` 是数据库分组 ID）
+先从模型/分组目录确认真实 ID，再用 `countCiByGroup(type=<分组ID>)`；单模型用 `countChildCi(type=<模型ID>)` 避免同号分组歧义，不固定数据库分组 ID。
 
-输出饼图或表格。
+输出资源状态分布图或表格，不把它称为告警事件数量。纯属性数量分布用 `countCiByAttribute`，读取 `count`；先核对 `attr` schema 能否表达属性名，不绕过错误声明。
 
 ## 自然语言映射
 

@@ -229,7 +229,7 @@ class WorkspaceRegressionTests(unittest.TestCase):
                     client.paths,
                     [
                         "/api/v0.1/ci_relations/s?root_id=10251"
-                        "&level=1&level=2&level=3&count=10000",
+                        "&level=1,2,3&count=10000&page=1",
                     ],
                 )
 
@@ -240,7 +240,7 @@ class WorkspaceRegressionTests(unittest.TestCase):
                 with self.subTest(workspace=workspace, root_id=root_id):
                     path = (
                         f"/api/v0.1/ci_relations/s?root_id={root_id}"
-                        "&level=1&level=2&level=3"
+                        "&level=1,2,3"
                         "&count=10000&reverse=1"
                     )
                     response = http.FallbackResponse(
@@ -270,7 +270,7 @@ class WorkspaceRegressionTests(unittest.TestCase):
                     query = parse_qs(urlsplit(request.call_args.args[2]).query)
                     self.assertEqual(query["root_id"], [str(root_id)])
                     self.assertEqual(query["reverse"], ["1"])
-                    self.assertEqual(query["level"], ["1", "2", "3"])
+                    self.assertEqual(query["level"], ["1,2,3"])
                     body = json.loads(output.getvalue())["响应体"]
                     self.assertEqual(body["numfound"], 2)
                     self.assertEqual(

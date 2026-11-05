@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import unittest
+import urllib.error
 from pathlib import Path
 from typing import Any
 
@@ -53,12 +54,12 @@ class AppTopologyInlineFallbackTests(unittest.TestCase):
     def _make_client(self) -> _StubClient:
         return _StubClient(
             {
-                "/api/v0.1/ci_types?per_page=200": {
+                "/api/v0.1/ci_types?per_page=200&page=1": {
                     "result": [
-                        {"name": "Kafka", "alias": "Kafka"},
-                        {"name": "mysql", "alias": "MySQL"},
-                        {"name": "redis", "alias": "Redis"},
-                        {"name": "operatingsystem", "alias": "操作系统"},
+                        {"id": 11, "name": "Kafka", "alias": "Kafka"},
+                        {"id": 12, "name": "mysql", "alias": "MySQL"},
+                        {"id": 13, "name": "redis", "alias": "Redis"},
+                        {"id": 14, "name": "operatingsystem", "alias": "操作系统"},
                     ]
                 },
                 "/api/v0.1/ci/4310": {
@@ -160,7 +161,7 @@ class AppTopologyInlineFallbackTests(unittest.TestCase):
     def test_inline_resolution_skips_project_self_reference(self) -> None:
         client = _StubClient(
             {
-                "/api/v0.1/ci_types?per_page=200": {"result": []},
+                "/api/v0.1/ci_types?per_page=200&page=1": {"result": []},
                 "/api/v0.1/ci/s?q=_type:project&count=10000&page=1": {"result": []},
             }
         )
@@ -176,12 +177,14 @@ class AppTopologyInlineFallbackTests(unittest.TestCase):
             client.requested_paths,
         )
 
-    def test_catalog_falls_back_when_metadata_unreachable(self) -> None:
+    def test_catalog_falls_back_only_when_metadata_endpoint_is_missing(self) -> None:
         class _BoomClient(_StubClient):
             def _request_json(self, path: str, **_: Any) -> Any:
                 self.requested_paths.append(path)
-                if path == "/api/v0.1/ci_types?per_page=200":
-                    raise RuntimeError("metadata endpoint down")
+                if path == "/api/v0.1/ci_types?per_page=200&page=1":
+                    raise urllib.error.HTTPError(
+                        "http://cmdb.example/ci_types", 404, "not found", None, None
+                    )
                 return super()._request_json(path)
 
         client = _BoomClient(
@@ -202,6 +205,34 @@ class AppTopologyInlineFallbackTests(unittest.TestCase):
             {"_id": 9, "ci_type": "project", "Kafka": "kafka-web01"},
         )
         self.assertEqual([item["_id"] for item in items], [1001])
+
+    def test_current_ci_detail_wrapper_is_unwrapped(self) -> None:
+        client = _StubClient({
+            "/api/v0.1/ci/9": {"ci_id": 9, "ci": {
+                "_id": 9, "ci_type": "project", "project_name": "demo",
+            }},
+        })
+        self.assertEqual(APP_TOPOLOGY._fetch_ci_detail(client, 9)["_id"], 9)
+
+    def test_metadata_business_error_is_not_a_silent_catalog_fallback(self) -> None:
+        client = _StubClient({
+            "/api/v0.1/ci_types?per_page=200&page=1": {"code": 403, "msg": "denied"},
+        })
+        with self.assertRaises(RuntimeError):
+            APP_TOPOLOGY._fetch_ci_type_catalog(client)
+
+    def test_overview_does_not_invent_deployment_edges_from_shared_ip(self) -> None:
+        tree = APP_TOPOLOGY._build_tree(
+            {"_id": 1, "ci_type": "project", "name": "demo"},
+            [
+                {"_id": 2, "ci_type": "vserver", "name": "vm", "manage_ip": "10.0.0.1"},
+                {"_id": 3, "ci_type": "docker", "name": "container", "deploy_target": "10.0.0.1"},
+                {"_id": 4, "ci_type": "redis", "name": "cache", "manage_ip": "10.0.0.1"},
+            ],
+        )
+        self.assertEqual({node["value"]["id"] for node in tree["children"]}, {2, 3, 4})
+        self.assertTrue(all(not node["children"] for node in tree["children"]))
+        self.assertEqual(tree["value"]["relationEvidence"], "queried-downstream-overview")
 
 
 if __name__ == "__main__":

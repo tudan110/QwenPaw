@@ -14,7 +14,12 @@ from http.cookiejar import CookieJar
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
 from cmdb_output import run_cli, safe_print as print
+from cmdb_contract import ensure_success, fetch_ci_pages
 
 
 def _resolve_zgops_env() -> dict[str, str]:
@@ -52,7 +57,11 @@ class CmdbHttpStatusError(RuntimeError):
 
 class CmdbHttpClient:
     def __init__(self, base_url: str, token: str) -> None:
-        self.base_url = f"{base_url.rstrip('/')}/cmdb"
+        if not base_url.strip():
+            raise ValueError("未配置 INOE_API_BASE_URL（请在设置页「平台」配置）")
+        self.base_url = base_url.rstrip("/")
+        if not self.base_url.endswith("/cmdb"):
+            self.base_url += "/cmdb"
         self.token = token.strip()
         self.jar = CookieJar()
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
@@ -93,7 +102,7 @@ class CmdbHttpClient:
                 return json.load(response)
         except urllib.error.HTTPError:
             raise
-        except Exception:
+        except (urllib.error.URLError, TimeoutError, OSError):
             return self._curl_request_json(path, method=method, payload=payload, headers=req_headers)
 
     def _request_json(
@@ -104,31 +113,12 @@ class CmdbHttpClient:
         payload: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> Any:
-        try:
-            return self._request_json_once(
-                path,
-                method=method,
-                payload=payload,
-                headers=headers,
-            )
-        except urllib.error.HTTPError as error:
-            if error.code in {401, 403} and not self._authenticated and self.try_login():
-                return self._request_json_once(
-                    path,
-                    method=method,
-                    payload=payload,
-                    headers=headers,
-                )
-            raise
-        except CmdbHttpStatusError as error:
-            if error.status_code in {401, 403} and not self._authenticated and self.try_login():
-                return self._request_json_once(
-                    path,
-                    method=method,
-                    payload=payload,
-                    headers=headers,
-                )
-            raise
+        return ensure_success(self._request_json_once(
+            path,
+            method=method,
+            payload=payload,
+            headers=headers,
+        ))
 
     def _curl_request_json(
         self,
@@ -204,15 +194,10 @@ class CmdbHttpClient:
             return False
 
     def list_projects(self) -> list[dict[str, Any]]:
-        query = urllib.parse.quote("_type:project", safe=":_")
-        payload = self._request_json(f"/api/v0.1/ci/s?q={query}&count=200&page=1")
-        if isinstance(payload, dict):
-            result = payload.get("result")
-            if isinstance(result, list):
-                return result
-        if isinstance(payload, list):
-            return payload
-        return []
+        return fetch_ci_pages(
+            self._request_json, "/api/v0.1/ci/s",
+            {"q": "_type:project", "count": 200},
+        )
 
 
 def _project_name(project: dict[str, Any]) -> str:
@@ -313,7 +298,7 @@ def _render_markdown(
             f"已匹配到应用：`{item['name']}`（ID: `{item['id']}`）",
             "",
             "后续拓扑查询请只针对该应用执行：",
-            f"`scripts/zgops-cmdb.sh fetch \"/api/v0.1/ci_relations/s?root_id={item['id']}&level=1&level=2&level=3&count=10000\"`",
+            f"`scripts/zgops-cmdb.sh fetch \"/api/v0.1/ci_relations/s?root_id={item['id']}&level=1,2,3&count=10000&page=1\"`",
         ]
     )
 

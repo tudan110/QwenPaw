@@ -25,12 +25,14 @@ bigscreen:
 
 1. **识别巡检对象**：用户指定的资源（数据库、中间件、主机等）
 2. **CMDB MCP 确认**：本工作区已启用 `cmdb-query` MCP Server。必须优先直接调用以下只读 Tools；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC，也不要为此编写额外 MCP 客户端：
-   - `cmdb-query__listCiTypes`：分页确认目标模型的真实 `name`（如 `redis`、`mysql`）。模型名必须来自返回值；数字类型 ID 只能用于展示或关联，不能直接作为 `metricType`。
+   - `cmdb-query__listCiTypes`：按响应判断是否已取全，确认目标模型的真实 `name`（如 `redis`、`mysql`），不要反复翻页取相同完整目录。模型名必须来自返回值；数字类型 ID 只能用于展示或关联，不能直接作为 `metricType`。
    - `cmdb-query__searchCiInstances`：以 `_type:<模型 name>` 搜索实例并完整处理分页。零候选时直接说明无法确认资源；多候选时列出候选让用户选择，禁止自动任选。
-   - `cmdb-query__getCiInstance`：对选中候选的真实 `_id` 做二次确认。只将确认后的 `_id` 作为 `resId`，模型 `name` 作为 `ciType` / `metricType`。
+   - `cmdb-query__getCiInstance`：对选中候选的真实 `_id` 做二次确认。读取当前响应的 `ci`（兼容旧 `result`），只将确认后的 `_id` 作为 `resId`，模型 `name` 作为 `ciType` / `metricType`；数字 `_type` 是模型 ID，不是指标模型名称。
    - `cmdb-query__getCiRelations`：仅当用户要求依赖、影响面、拓扑，或指标异常确有必要时，以确认后的 `_id` 查询关系。资源实例按 `zgops-cmdb` 的“查资源实例拓扑”先正向 `reverse=0`、再反向 `reverse=1`，覆盖 `level=1..3` 并合并去重；单向为空不代表无关系，两向成功且为空才说明指定范围内未发现关系。任一方向失败则标注拓扑不完整，不伪造关系或用脚本绕过业务错误。
    - 仅当 CMDB MCP Driver 未加载、客户端或 Tool 不可用、或协议响应无法解析时，才允许一次性回退 `../zgops-cmdb/scripts/zgops-cmdb.sh list-models` 与 `fetch`；过程说明必须标记 `zgops-cmdb-script-fallback` 和具体原因。可解析的业务 4xx/5xx、鉴权、参数或上游错误必须 fail-fast，不换参数重试。
 3. **查询指标**：完成 CMDB MCP 确认后，优先直接调用已注册的 `inspection` MCP Server，按“指标 MCP 调用”章节获取指标定义、指标值、阈值规则与操作符字典。
+   - CMDB 搜索的 `numfound` 是总匹配数，`total` 是本页数量；完整分页并按 CI ID 去重。`level=2` 只查第二层，当前 MCP 分别传整数 1、2、3；HTTP 回退传单个 `level=1,2,3`，不重复 level 参数。
+   - 已知 CI ID 直接确认详情；批量补齐已确认关联资源可用 `_id:(ID1;ID2;ID3)`。只有 CI 列表时展示关联概览，不补造实例部署边；MCP 没暴露分页时报告截断，不传未声明参数或转脚本绕过成功结果。
 4. **输出结果**：按既有规则完成阈值判定，包含按需查询的真实拓扑关系、指标数据表、巡检结论。
 5. **通知推送**：只读 MCP Tools 不发送通知；仅在执行现有脚本回退路径时，才保留脚本按配置推送的行为。
 
@@ -121,7 +123,7 @@ cd skills/inspection-analyst && python scripts/inspect_resource_metrics.py \
 - **不能假装查询成功**：接口失败直接报错，不返回假数据
 - **Fail Fast，单次尝试即可下结论**：CMDB / MCP 指标查询接口失败（超时、401/403/404/5xx、连接错误）或返回不可解析结果时，按失败处理，不做二次三次重试，不切换参数硬凑结果；只有 MCP Driver 未加载、不可用或协议无法解析时，才按“旧脚本回退路径”执行一次回退。
 - **指标值为空是合法结论**：MCP 指标查询成功但指标最近值全空（采集链路无数据 / `originalDatas: []`），**直接如实产出“无实时监控数据”报告即可**。不要为“证明真的没数据”绕去 alarm-analyst / resource-insight-query 等其他 skill 反复验证，也不要重复调用 MCP Tool 或回退脚本。
-- **必须展示拓扑**：最终输出中显式展示 CMDB 拓扑关系，不能省略成"拓扑已确认"
+- **按需展示拓扑**：实际查询了拓扑时展示真实结果和缺口，不能省略成“拓扑已确认”；未请求且无分析必要时注明未查询，不为凑报告增加调用。CI 列表只能画关联概览，不能补造部署边。
 - **阈值判定**：满足规则 = 正常，不满足 = 异常；无规则的标注"需大模型判断"
 - **通知**：MCP 只读查询不发送通知，报告中明确写出“通知未配置”；只有旧脚本回退路径才按其现有配置处理通知。
 
