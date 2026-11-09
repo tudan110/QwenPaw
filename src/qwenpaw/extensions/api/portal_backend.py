@@ -3456,6 +3456,7 @@ def _persist_alarm_analyst_card_from_report(
     employee_id: str,
     report_markdown: str,
     process_blocks: list[Any],
+    manual_advice_only: bool = False,
 ) -> tuple[bool, AlarmAnalystCard | None, bool]:
     existing_card = _load_existing_alarm_analyst_card(
         chat_id=chat_id,
@@ -3520,6 +3521,10 @@ def _persist_alarm_analyst_card_from_report(
         session_id=session_id,
         card=card,
     )
+    if manual_advice_only and not _is_alarm_bound_fault_session(
+        session_id=session_id, employee_id=employee_id,
+    ):
+        card.workorder_proposal = None
     card_payload = card.model_dump(by_alias=True)
     _save_card_to_db(
         chat_id=chat_id,
@@ -4762,6 +4767,7 @@ async def create_portal_alarm_analyst_card(
             employee_id=parsed.employee_id,
             report_markdown=parsed.report_markdown,
             process_blocks=list(parsed.process_blocks),
+            manual_advice_only=parsed.manual_advice_only,
         )
         if not matched or card is None:
             return AlarmAnalystCardCreateResponse(matched=False).model_dump(

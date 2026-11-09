@@ -28,6 +28,9 @@ export function ManualOperationGuidePanel({ guide }: { guide: ManualOperationGui
         <div>
           <h4>按部署环境处置</h4>
           <p>仅依据 CMDB，供运维人工执行。系统未登录或执行以下命令。</p>
+          {guide.deploymentKind === "kubernetes" || guide.deploymentKind === "docker" ? (
+            <p>先核验以下管理入口和容器访问路径；原报告的直连示例不等同于容器内连接命令。</p>
+          ) : null}
         </div>
         <button type="button" onClick={copyGuide} disabled={copying}>
           {copying ? "正在复制…" : "复制完整指南"}

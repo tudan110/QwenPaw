@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useState, type ComponentPropsWithoutRef } from "react";
 
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
+import { ManualOperationGuidePanel } from "../../components/ManualOperationGuidePanel";
 import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
 import {
   formatAlarmAnalystConfidence as mapConfidenceLabel,
@@ -572,6 +573,16 @@ function buildFaultNatureText(card: AlarmAnalystCardV1) {
 }
 
 function buildPriorityActionText(card: AlarmAnalystCardV1) {
+  if (card.manualGuide?.deploymentKind === "kubernetes") {
+    return card.manualGuide.deploymentConfirmed
+      ? "先进入授权的集群管理环境，定位 Namespace、Pod 和容器，再访问目标组件。"
+      : "先核验集群承载关系；如由集群部署，再进入管理环境定位 Pod/容器。";
+  }
+  if (card.manualGuide?.deploymentKind === "docker") {
+    return card.manualGuide.deploymentConfirmed
+      ? "先进入授权的 Docker 宿主环境，核对目标容器，再访问目标组件。"
+      : "先核验是否为裸 Docker 部署，再进入授权宿主环境定位容器。";
+  }
   const primaryRecommendation = card.recommendations[0];
   if (!primaryRecommendation) {
     return "";
@@ -1077,6 +1088,8 @@ export const AlarmAnalystCardPanel = memo(function AlarmAnalystCardPanel({
             </ol>
           </div>
         ) : null}
+
+        {card.manualGuide ? <ManualOperationGuidePanel guide={card.manualGuide} /> : null}
 
         {display.hasDetailTiers && display.tierRows.length ? (
           <div className="alarm-analyst-tier-grid">

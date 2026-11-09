@@ -325,6 +325,11 @@ class AlarmAnalystCard(BaseModel):
     topology: AlarmAnalystCardTopology
     recommendations: list[AlarmAnalystCardRecommendation] = Field(default_factory=list)
     evidence: list[AlarmAnalystCardEvidence] = Field(default_factory=list)
+    manual_guide: ManualOperationGuide | None = Field(
+        default=None,
+        validation_alias=AliasChoices("manual_guide", "manualGuide"),
+        serialization_alias="manualGuide",
+    )
     workorder_proposal: AlarmAnalystCardWorkorderProposal | None = Field(
         default=None,
         validation_alias=AliasChoices("workorder_proposal", "workorderProposal"),
@@ -343,6 +348,11 @@ class AlarmAnalystCard(BaseModel):
 
 class AlarmAnalystCardCreateRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
+    manual_advice_only: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("manual_advice_only", "manualAdviceOnly"),
+        serialization_alias="manualAdviceOnly",
+    )
 
     session_id: str = Field(
         ...,

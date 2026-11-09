@@ -82,7 +82,7 @@ def test_association_is_only_a_conditional_kubernetes_candidate():
     assert not guide["deploymentConfirmed"]
     assert "关联到平台不等于部署" in guide["markdown"]
     assert "NAMESPACE" not in guide["knownParameters"]
-    assert guide["knownParameters"]["DB_PORT"] == "3307"
+    assert "DB_PORT" in guide["missingParameters"]
 
 
 def test_deploy_edges_can_confirm_a_placement_chain_but_contain_cannot():
@@ -281,3 +281,42 @@ def test_non_ascii_database_ports_are_unknown_instead_of_crashing():
             "DB_PORT"
             in build_manual_operation_guide(topology)["missingParameters"]
         )
+
+
+def test_management_access_precedes_parameter_setup_and_mysql_login():
+    guide = build_manual_operation_guide(_topology("k3s"))
+    text = guide["markdown"]
+    assert text.index('ssh "${SSH_USER}@${SSH_TARGET}"') < text.index(
+        "KUBE_CONTEXT="
+    )
+    assert text.index("KUBE_CONTEXT=") < text.index(
+        "kubectl config get-contexts"
+    )
+    assert text.index("kubectl config get-contexts") < text.index("exec -it")
+    assert "部署宿主机不自动等于" in text
+    assert "无需额外 SSH" in text
+
+
+def test_container_login_does_not_reuse_cmdb_endpoint_port_or_account():
+    for kind in ("k3s", "docker"):
+        topology = _topology(kind)
+        topology["rootResource"]["publicAttributes"].update(
+            {
+                "db_port": "30306",
+                "login_user": "root",
+            }
+        )
+        guide = build_manual_operation_guide(topology)
+        assert "DB_PORT" in guide["missingParameters"]
+        assert "DB_USER" in guide["missingParameters"]
+        assert "DB_PORT=30306" not in guide["markdown"]
+        assert "--user=root" not in guide["markdown"]
+        topology["rootResource"]["publicAttributes"]["db_listen_port"] = "3306"
+        assert (
+            build_manual_operation_guide(topology)["knownParameters"][
+                "DB_PORT"
+            ]
+            == "3306"
+        )
+    guide = build_manual_operation_guide(_topology("host"))
+    assert guide["knownParameters"]["DB_PORT"] == "3307"

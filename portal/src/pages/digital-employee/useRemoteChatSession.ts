@@ -16,7 +16,7 @@ import {
   streamChat,
 } from "../../api/copawChat";
 import { getFaultDisposalHistory } from "../../api/faultDisposalBridge";
-import { withManualFaultGuidance } from "../../fault-scenario/manualGuidance";
+import { isManualFaultAdviceOnly, withManualFaultGuidance } from "../../fault-scenario/manualGuidance";
 import {
   buildAlarmAnalystCardRequest,
   getAlarmAnalystReportMarkdown,
@@ -161,6 +161,7 @@ export function useRemoteChatSession({
   const currentChatChannelRef = useRef(COPAW_CHANNEL);
   const currentChatStatusRef = useRef(currentChatStatus);
   const currentChatMetaRef = useRef<any>(null);
+  const manualAdviceOnlyRef = useRef(false);
   const isStreamingRef = useRef(isStreaming);
   const isCreatingChatRef = useRef(isCreatingChat);
   const remoteAgentIdRef = useRef(remoteAgentId);
@@ -871,6 +872,7 @@ export function useRemoteChatSession({
         processBlocks: streamProcessBlocksRef.current.get(frontendMessageId) || [],
         backendMessageId,
         enhancementSourceMessageId: backendMessageId,
+        manualAdviceOnly: manualAdviceOnlyRef.current,
       },
     });
     if (!payload) {
@@ -1577,6 +1579,7 @@ export function useRemoteChatSession({
       currentChatMetaRef.current = chatMeta
         || ensuredChat.meta
         || (reusingChat ? currentChatMetaRef.current : null);
+      manualAdviceOnlyRef.current = isManualFaultAdviceOnly(content, currentChatMetaRef.current);
 
       await streamChat(
         nextRemoteAgentId,

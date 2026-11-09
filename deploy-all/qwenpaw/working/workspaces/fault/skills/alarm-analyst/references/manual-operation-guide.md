@@ -10,11 +10,23 @@
 
 命名空间、Pod、容器、端口等只能绑定本次 CMDB 已确认值。多个候选、字段冲突或没有字段时保留待现场确认，不默认 `default/mysql-0/root/3306`。集群名不是 kubeconfig context，容器节点名不是 Pod 名。
 
-用户名及密码不要求提交给 AI。运维在自己的授权环境中填账号，密码自行交互输入；不从 CMDB、文档或配置提取登录 token/密码来拼命令。
+账号由运维在自己的授权环境中选择和填写，不回显或复用 CMDB login_user，即使它是 root；密码自行交互输入，不要求提交给 AI。不从 CMDB、文档或配置提取登录 token/密码来拼命令。
+
+首轮处置必须从 Step 0 给出实际操作位置和进入方法，不能只在环境表提到部署或在流程图写“确认环境”。禁止系统远程登录不等于禁止向运维提供人工 SSH、kubectl、mysql 命令。宿主阈值告警和配置容量只是待核验线索，不能直接写成慢 SQL 根因或资源耗尽。
 
 ## MySQL 部署于 K3s/Kubernetes：完整路径
 
 以下是人工模板，不是已执行证据；仅在 CMDB 已确认对应部署后使用。占位符未填写时不得复制执行。
+
+0. **进入实际管理环境**：已有授权 kubeconfig 的终端可直接操作，无需 SSH。若现场流程要求从服务器操作，先核对管理机角色、已有权限和 CLI，再由运维执行下面的模板；部署宿主机不自动等于控制平面，不默认 host-1 或数据库 IP 就是管理机。
+
+   ```bash
+   SSH_TARGET='<现场确认的已授权管理机地址>'
+   SSH_USER='<运维在本地填写的账号，不提交给 AI>'
+   ssh "${SSH_USER}@${SSH_TARGET}"
+   ```
+
+   不输出或读取 kubeconfig、私钥、密码内容。若选择服务器路径，登录后再在该服务器设置下面的变量；不能在本机设变量后假定远端自动继承。
 
 1. **授权环境与参数准备**：由运维使用现有授权管理入口，核对集群/目标 CI；系统不获取 SSH 登录信息。
 
@@ -23,7 +35,7 @@
    NAMESPACE='<CMDB 已确认或现场核对的 Namespace>'
    MYSQL_POD='<确认属于目标实例的 Pod>'
    MYSQL_CONTAINER='<目标 MySQL 容器>'
-   DB_PORT='<已确认数据库端口>'
+   DB_PORT='<现场核验的容器内 MySQL 监听端口>'
    DB_USER='<运维本地填写，不要求提交给 AI>'
    ```
 
@@ -35,7 +47,9 @@
    kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" get pod "$MYSQL_POD" -o jsonpath='{.spec.containers[*].name}'
    ```
 
-   已授权 K3s 管理机使用原有 CLI 时可采用 `sudo k3s kubectl` 前缀，不向 AI 提供 sudo/SSH 密码。上述命令由运维人工执行，不能写成系统已核验。
+   只有现场确认该管理机角色、现有权限及 CLI 后，才可用 `sudo k3s kubectl` 替换 kubectl 前缀；不能默认每个工作节点都有管理 kubeconfig，也不向 AI 提供 sudo/SSH 密码。上述命令由运维人工执行，不能写成系统已核验。
+
+   CMDB `db_ip/db_port` 可能记录 Service/NodePort/宿主映射入口。即使入口为 `10.2.0.15:30306`，也不能据此填成容器内 `127.0.0.1:30306`；只有明确的 `db_listen_port/container_port` 或现场监听配置才支持绑定内部端口，不默认 3306。
 
 3. **容器内访问 MySQL**：确认镜像有客户端、目标及端口正确。
 

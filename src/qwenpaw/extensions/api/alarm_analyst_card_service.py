@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from datetime import datetime
 from typing import Any, Iterable
@@ -21,6 +22,13 @@ from qwenpaw.extensions.api.alarm_analyst_card_models import (
     AlarmAnalystCardWorkorderProposal,
     AlarmAnalystCardWorkorderStatus,
 )
+from .cmdb_manual_guidance import (
+    build_manual_operation_guide,
+    deployment_edges,
+    public_deployment_attributes,
+)
+
+logger = logging.getLogger(__name__)
 
 SECTION_HEADING_RE = re.compile(r"^#{1,6}\s*(.+?)\s*$", re.MULTILINE)
 BULLET_LINE_RE = re.compile(r"^\s*(?:[-*+]\s+|\d+\.\s+)(.+?)\s*$", re.MULTILINE)
@@ -60,6 +68,7 @@ def is_alarm_analyst_card_candidate(
     if str(employee_id or "").strip() != "fault":
         return False
 
+    process_blocks = list(process_blocks or [])
     raw_report_text = str(report_markdown or "").strip()
     report_text = _unwrap_portal_alarm_analyst_card_content(raw_report_text)
     if len(report_text) < 20:
@@ -75,6 +84,18 @@ def is_alarm_analyst_card_candidate(
 
     if _matches_portal_alarm_analyst_protocol(raw_report_text, report_text):
         return True
+    if (
+        re.search(r"慢\s*sql", report_text, flags=re.IGNORECASE)
+        and "处置建议" in report_text
+        and re.search(r"CMDB|部署|拓扑", report_text, flags=re.IGNORECASE)
+    ):
+        guide = _manual_guide_from_cmdb_tools(
+            process_blocks,
+            root_id=_extract_resource_id(report_text),
+            root_name=_extract_root_resource_name(report_text),
+        )
+        if guide is not None:
+            return True
 
     marker_count = sum(
         1
@@ -124,6 +145,7 @@ def build_alarm_analyst_card(
     if str(employee_id or "").strip() != "fault":
         raise ValueError("alarm analyst cards are only supported for employee_id='fault'")
 
+    process_blocks = list(process_blocks or [])
     raw_report_text = str(report_markdown or "").strip()
     report_text = _unwrap_portal_alarm_analyst_card_content(raw_report_text)
     root_section = _extract_named_section(
@@ -158,6 +180,9 @@ def build_alarm_analyst_card(
     nodes, edges = _extract_topology_payload(process_blocks)
     highlighted_node_ids = [item for item in (resource_id, resource_name) if item]
     recommendations = _extract_recommendations(recommendation_section or report_text)
+    manual_guide = _manual_guide_from_cmdb_tools(
+        process_blocks, root_id=resource_id, root_name=resource_name,
+    )
     evidence = _extract_evidence(
         evidence_section=evidence_section,
         conclusion=conclusion,
@@ -176,6 +201,16 @@ def build_alarm_analyst_card(
         recommendations=recommendations,
     )
     workorder_status = _build_workorder_status(raw_report_text)
+    if (
+        manual_guide is not None
+        and not _matches_portal_alarm_analyst_protocol(raw_report_text, report_text)
+        and re.search(r"慢\s*sql", report_text, flags=re.IGNORECASE)
+        and not re.search(r"告警分析报告|完整故障分析报告", report_text)
+        and not _extract_labeled_value(report_text, ("告警编号", "告警ID", "alarmId"))
+    ):
+        workorder_proposal = None
+    if manual_guide is not None and workorder_proposal is not None:
+        workorder_proposal.suggestions.insert(0, manual_guide["markdown"])
 
     return AlarmAnalystCard(
         source=AlarmAnalystCardSource(
@@ -211,6 +246,7 @@ def build_alarm_analyst_card(
         ),
         recommendations=recommendations,
         evidence=evidence,
+        manual_guide=manual_guide,
         workorder_proposal=workorder_proposal,
         workorder_status=workorder_status,
         raw_report_markdown=raw_report_text,
@@ -1354,7 +1390,187 @@ def _iter_json_payloads(text: str) -> Iterable[dict[str, Any]]:
             continue
         if isinstance(parsed, dict):
             payloads.append(parsed)
+        elif isinstance(parsed, list):
+            payloads.append({"result": parsed})
     return payloads
+
+
+def _manual_guide_from_cmdb_tools(
+    process_blocks: Iterable[dict[str, Any] | AlarmAnalystCardProcessBlock],
+    *,
+    root_id: str,
+    root_name: str,
+) -> dict[str, Any] | None:
+    models: dict[str, str] = {}
+    records: list[dict[str, Any]] = []
+    edges: list[dict[str, str]] = []
+
+    def collect(value: Any, *, catalog: bool) -> None:
+        if isinstance(value, list):
+            for item in value:
+                collect(item, catalog=catalog)
+            return
+        if not isinstance(value, dict):
+            return
+        if value.get("isError") or (
+            "code" in value
+            and not value.get("_id")
+            and str(value["code"]) != "200"
+        ):
+            logger.warning(
+                "CMDB result contains a failed response; ignoring its deployment data"
+            )
+            return
+        kind = (
+            value.get("relation_type")
+            or value.get("relationType")
+            or value.get("relation")
+        )
+        if not catalog and isinstance(kind, str) and kind.lower() == "deploy":
+            source = (
+                value.get("src_ci_id")
+                or value.get("source")
+                or value.get("parent")
+            )
+            target = (
+                value.get("dst_ci_id")
+                or value.get("target")
+                or value.get("child")
+            )
+            source = (
+                source.get("_id") or source.get("id")
+                if isinstance(source, dict)
+                else source
+            )
+            target = (
+                target.get("_id") or target.get("id")
+                if isinstance(target, dict)
+                else target
+            )
+            edges.extend(
+                deployment_edges(
+                    {
+                        "relation_type": kind,
+                        "src_ci_id": source,
+                        "dst_ci_id": target,
+                    }
+                )
+            )
+        identity = value.get("_id") or value.get("id")
+        if identity and not isinstance(identity, bool):
+            if catalog and isinstance(value.get("name"), str):
+                models[str(identity)] = value["name"]
+            elif not catalog and (value.get("ci_type") or value.get("_type")):
+                records.append(
+                    {
+                        "resId": str(identity),
+                        "ciType": (
+                            value["ci_type"]
+                            if isinstance(value.get("ci_type"), str)
+                            and not value["ci_type"].isdigit()
+                            else ""
+                        ),
+                        "modelId": str(value.get("_type") or ""),
+                        "name": str(
+                            value.get("name") or value.get("db_instance") or ""
+                        ),
+                        "publicAttributes": public_deployment_attributes(
+                            value
+                        ),
+                    }
+                )
+        if value.get("type") == "text" and isinstance(value.get("text"), str):
+            for payload in _iter_json_payloads(value["text"]):
+                collect(payload, catalog=catalog)
+        for key in (
+            "ci",
+            "ci_types",
+            "result",
+            "data",
+            "items",
+            "content",
+            "structuredContent",
+            "source",
+            "target",
+            "parent",
+            "child",
+        ):
+            if key in value:
+                collect(value[key], catalog=catalog)
+
+    for block in process_blocks:
+        name = str(_get_block_value(block, "tool_name", "toolName") or "")
+        match = re.search(
+            r"(?:^|[_:/.-])(getCiInstance|getCiRelations|searchCiInstances|listCiTypes)$",
+            name,
+        )
+        if not match or (
+            name != match.group(1) and "cmdb" not in name.lower()
+        ):
+            continue
+        output = (
+            _get_block_value(block, "output_content", "outputContent") or ""
+        )
+        payloads = list(_iter_json_payloads(output))
+        if output and not payloads:
+            logger.warning(
+                "CMDB tool output cannot be parsed for manual guidance"
+            )
+        for payload in payloads:
+            if payload.get("isError") or (
+                "code" in payload
+                and not payload.get("_id")
+                and str(payload["code"]) != "200"
+            ):
+                logger.warning(
+                    "CMDB tool reported a failure; not using it as deployment evidence"
+                )
+                continue
+            collect(payload, catalog=match.group(1) == "listCiTypes")
+
+    nodes: dict[str, dict[str, Any]] = {}
+    conflicts: set[tuple[str, str]] = set()
+    for record in records:
+        record["ciType"] = record["ciType"] or models.get(
+            record["modelId"], ""
+        )
+        identity = record["resId"]
+        if identity not in nodes:
+            nodes[identity] = record
+            continue
+        node = nodes[identity]
+        node["name"] = node["name"] or record["name"]
+        node["ciType"] = node["ciType"] or record["ciType"]
+        for key, value in record["publicAttributes"].items():
+            if (identity, key) in conflicts:
+                continue
+            if (
+                key in node["publicAttributes"]
+                and node["publicAttributes"][key] != value
+            ):
+                node["publicAttributes"].pop(key)
+                conflicts.add((identity, key))
+            else:
+                node["publicAttributes"][key] = value
+    if root_id:
+        root = nodes.get(root_id)
+    else:
+        matches = [
+            node
+            for node in nodes.values()
+            if root_name and node["name"] == root_name
+        ]
+        root = matches[0] if len(matches) == 1 else None
+    if root is None:
+        return None
+    return build_manual_operation_guide(
+        {
+            "rootResource": root,
+            "resources": list(nodes.values()),
+            "edges": edges,
+            "queryComplete": False,
+        }
+    )
 
 
 def _get_block_value(

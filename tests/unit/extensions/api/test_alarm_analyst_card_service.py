@@ -61,6 +61,90 @@ def test_recommendations_preserve_complete_multiline_manual_commands():
     assert "```bash" in card.workorder_proposal.suggestions[0]
 
 
+def test_ordinary_fault_card_uses_cmdb_tool_results_for_the_access_guide():
+    import json
+
+    root = {
+        "_id": 7961, "_type": 77, "name": "天翼智观mysql-01",
+        "db_ip": "10.2.0.15", "db_port": 30306,
+        "login_user": "root", "login_pwd": "not-for-output",
+    }
+    blocks = [
+        {"toolName": "cmdb-query__listCiTypes",
+         "outputContent": json.dumps({"ci_types": [{"id": 77, "name": "mysql"}]})},
+        {"toolName": "cmdb-query__getCiInstance",
+         "outputContent": json.dumps({"content": [{
+             "type": "text", "text": json.dumps({"ci": root}),
+         }]})},
+        {"toolName": "cmdb-query__getCiRelations",
+         "outputContent": json.dumps({"result": [
+             {"_id": 7995, "ci_type": "kubernetes", "name": "k3s-SYM01"},
+             {"_id": 7, "ci_type": "physicalmachine", "name": "host-1"},
+         ]})},
+    ]
+    card = build_alarm_analyst_card(
+        chat_id="chat", message_id="report", employee_id="fault",
+        report_markdown=(
+            "## 告警分析报告：慢 SQL\n"
+            "| 资源名称 | 天翼智观mysql-01 |\n"
+            "## 处置建议\n1. 登录 MySQL。\n"
+            "```bash\nmysql -h 10.2.0.15 -P 30306 -u root -p\n```\n"
+        ),
+        process_blocks=iter(blocks),
+    )
+    assert card.manual_guide is not None
+    guide = card.manual_guide
+    assert guide.deployment_kind == "kubernetes"
+    assert not guide.deployment_confirmed
+    assert 'ssh "${SSH_USER}@${SSH_TARGET}"' in guide.markdown
+    assert "exec -it" in guide.markdown
+    assert "DB_PORT" in guide.missing_parameters
+    assert "DB_USER" in guide.missing_parameters
+    assert "not-for-output" not in guide.markdown
+    assert AlarmAnalystCard.model_validate_json(card.model_dump_json(by_alias=True)).manual_guide == guide
+
+
+def test_report_claims_are_not_used_as_cmdb_deployment_evidence():
+    card = _build_table_test_card(
+        "## 根因判断\n资源 3094 在 K3s。\n"
+        "## 处置建议\n1. 登录 MySQL。\n"
+    )
+    assert card.manual_guide is None
+
+
+def test_slow_sql_advice_without_alarm_id_gets_a_guide_but_no_auto_workorder():
+    import json
+
+    report = (
+        "# 天翼智观mysql-01 慢 SQL 完整处置建议\n"
+        "| 资源名称 | 天翼智观mysql-01 | CMDB |\n"
+        "| 部署链路 | K3s → MySQL |\n"
+        "## 处置建议\n1. 登录数据库。\n"
+    )
+    blocks = [{
+        "toolName": "cmdb-query__getCiInstance",
+        "outputContent": json.dumps({
+            "ci": {"_id": 7961, "ci_type": "mysql", "name": "天翼智观mysql-01",
+                   "deployment_kind": "k3s", "db_port": 30306},
+        }),
+    }]
+    assert is_alarm_analyst_card_candidate(
+        employee_id="fault", report_markdown=report, process_blocks=blocks,
+    )
+    assert not is_alarm_analyst_card_candidate(
+        employee_id="fault", report_markdown=report, process_blocks=[],
+    )
+    assert not is_alarm_analyst_card_candidate(
+        employee_id="query", report_markdown=report, process_blocks=blocks,
+    )
+    card = build_alarm_analyst_card(
+        employee_id="fault", chat_id="chat", message_id="reply",
+        report_markdown=report, process_blocks=blocks,
+    )
+    assert card.manual_guide is not None
+    assert card.workorder_proposal is None
+
+
 @pytest.mark.parametrize("score", [90, 100])
 def test_v2_scoped_score_survives_card_and_registry_display(score: int) -> None:
     confidence = (

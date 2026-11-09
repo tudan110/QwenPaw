@@ -28,6 +28,8 @@ PUBLIC_DEPLOYMENT_FIELDS = (
     "NodeName",
     "service_name",
     "db_port",
+    "db_listen_port",
+    "container_port",
     "db_ip",
     "manage_ip",
     "db_version",
@@ -300,11 +302,14 @@ def build_manual_operation_guide(
         required = []
     known = {}
     for parameter in required:
+        attribute_names = _PARAMETERS.get(parameter, ())
+        if parameter == "DB_PORT" and environment in ("kubernetes", "docker"):
+            attribute_names = ("db_listen_port", "container_port")
         values = {
             attrs[key]
             for node in placement
             for attrs in [_attributes(node)]
-            for key in _PARAMETERS.get(parameter, ())
+            for key in attribute_names
             if _parameter_source(parameter, node, root)
             and key in attrs
             and _valid_parameter(parameter, attrs[key])
@@ -342,6 +347,12 @@ def build_manual_operation_guide(
             + "、".join(f"`{name}`" for name in missing)
             + "；不能直接复制未填的模板执行。"
         )
+    if environment in ("kubernetes", "docker"):
+        lines.append(
+            "- CMDB 的 db_ip/db_port 可能是 Service、NodePort 或宿主映射入口；"
+            "不把该 IP 当 SSH 管理地址，也不把入口端口当容器内监听端口。"
+            "DB_PORT 只绑定明确的 db_listen_port/container_port，否则现场核验。"
+        )
     if _model(root) != "mysql":
         lines.extend(
             [
@@ -358,6 +369,23 @@ def build_manual_operation_guide(
         f"{name}={shlex.quote(known.get(name, '<运维现场确认并填写>'))}"
         for name in required
     ]
+    lines.extend(
+        [
+            "0. **先进入实际操作的管理环境（由运维人工完成）**。"
+            "已有授权的管理终端可直接使用；若必须经服务器操作，先确认目标"
+            "管理机的角色、权限及 CLI，再在自己的终端执行下列模板。"
+            "部署宿主机不自动等于 Kubernetes 控制平面，不能把宿主机或数据库 IP "
+            "直接当成集群管理机；K3s 名称也不是登录账号或 kubeconfig context。",
+            "```bash",
+            "SSH_TARGET='<现场确认的已授权管理机/宿主机地址>'",
+            "SSH_USER='<运维在本地填写的账号，不提交给 AI>'",
+            'ssh "${SSH_USER}@${SSH_TARGET}"',
+            "```",
+            "有现成授权 kubeconfig 的终端无需额外 SSH；如采用服务器路径，"
+            "登录后再在该服务器终端设置后续变量。AI 未执行 SSH，"
+            "不读取密码、私钥或 kubeconfig 内容，不将这些内容回传给 AI。",
+        ]
+    )
     lines.extend(
         [
             "1. **准备授权环境和参数（人工，尚未执行）**。"

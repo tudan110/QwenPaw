@@ -86,6 +86,58 @@ def test_fault_result_rejects_automatic_guide_protocol():
         })
 
 
+@pytest.mark.parametrize("mode", ["plain", "protocol-advice", "protocol-existing"])
+def test_plain_slow_sql_advice_route_keeps_guide_without_creating_workorder(
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    import json
+
+    saved = []
+    report = (
+        "# 天翼智观mysql-01 慢 SQL 完整处置建议\n"
+        "| 资源名称 | 天翼智观mysql-01 | CMDB |\n"
+        "| 部署链路 | K3s → MySQL |\n"
+        "## 处置建议\n1. 登录数据库。\n"
+    )
+    if mode != "plain":
+        report = (
+            "# PORTAL ALARM ANALYST CARD MODE\n\n---\n"
+            "## 告警分析报告：慢 SQL\n"
+            "## 告警基础信息\n| 资源名称 | 天翼智观mysql-01 |\n"
+            "## 根因判断\n待核验。\n## 影响范围\n未知。\n"
+            "## 处置建议\n1. 登录数据库。\n## 总结\n未执行。\n"
+        )
+    monkeypatch.delattr(portal_backend.app.state, "multi_agent_manager", raising=False)
+    monkeypatch.setattr(portal_backend, "_load_existing_alarm_analyst_card", lambda **kwargs: None)
+    monkeypatch.setattr(portal_backend, "_load_existing_alarm_analyst_card_by_report", lambda **kwargs: None)
+    monkeypatch.setattr(portal_backend, "_save_card_to_db", lambda **kwargs: saved.append(kwargs["card"]))
+    response = TestClient(portal_backend.app).post(
+        "/api/portal/alarm-analyst/cards",
+        json={
+            "sessionId": "plain-advice", "chatId": "advice", "messageId": "first",
+            "employeeId": "fault", "manualAdviceOnly": mode != "protocol-existing",
+            "reportMarkdown": report,
+            "processBlocks": [{
+                "toolName": "cmdb-query__getCiInstance",
+                "outputContent": json.dumps({
+                    "ci": {"_id": 7961, "ci_type": "mysql",
+                           "name": "天翼智观mysql-01",
+                           "deployment_kind": "k3s", "db_port": 30306},
+                }),
+            }],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["matched"]
+    card = response.json()["card"]
+    assert (card["workorderProposal"] is None) == (mode != "protocol-existing")
+    assert card["manualGuide"]["deploymentKind"] == "kubernetes"
+    assert 'ssh "${SSH_USER}@${SSH_TARGET}"' in card["manualGuide"]["markdown"]
+    assert "DB_PORT" in card["manualGuide"]["missingParameters"]
+    assert saved[-1]["manualGuide"] == card["manualGuide"]
+
+
 def test_platform_ai_model_settings_api_is_separate_from_agent_models(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

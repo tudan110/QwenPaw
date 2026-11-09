@@ -2,6 +2,7 @@ import {
   PORTAL_ALARM_ANALYST_CARD_MARKER,
   unwrapPortalAlarmAnalystCardContent,
 } from "../pages/digital-employee/helpers.ts";
+import type { ManualOperationGuide } from "../fault-scenario/shared";
 
 export type AlarmAnalystCardPriority = "p0" | "p1" | "p2";
 export type AlarmAnalystCardEvidenceKind = "alarm" | "metric" | "cmdb" | "tool";
@@ -90,6 +91,7 @@ export type AlarmAnalystCardV1 = {
     title: string;
     summary: string;
   }>;
+  manualGuide?: ManualOperationGuide | null;
   workorderProposal?: AlarmAnalystWorkorderProposal | null;
   workorderStatus?: AlarmAnalystWorkorderStatus | null;
   rawReportMarkdown: string;
@@ -102,6 +104,7 @@ export type AlarmAnalystCardRequest = {
   employeeId: string;
   reportMarkdown: string;
   processBlocks: Array<Record<string, unknown>>;
+  manualAdviceOnly?: boolean;
 };
 
 export function formatAlarmAnalystConfidence(value: unknown): string {
@@ -249,6 +252,11 @@ export function shouldAttemptAlarmAnalystCardByContent(value: unknown) {
   return (
     normalizedText.includes(PORTAL_ALARM_ANALYST_CARD_MARKER)
     || (
+      /慢\s*sql/iu.test(normalizedText)
+      && normalizedText.includes("处置建议")
+      && /CMDB|部署|拓扑/iu.test(normalizedText)
+    )
+    || (
       normalizedText.includes("告警分析报告")
       && normalizedText.includes("影响范围")
       && normalizedText.includes("处置建议")
@@ -313,6 +321,7 @@ export function buildAlarmAnalystCardRequest({
     employeeId,
     reportMarkdown,
     processBlocks: serializeAlarmAnalystProcessBlocks(message?.processBlocks),
+    ...(message?.manualAdviceOnly === true ? { manualAdviceOnly: true } : {}),
   };
 }
 

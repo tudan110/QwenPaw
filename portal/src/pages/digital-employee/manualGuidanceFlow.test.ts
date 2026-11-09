@@ -55,6 +55,17 @@ test("fault policy stays scoped to the actual chat and does not alter scenario r
     const { useRemoteChatSession } = await server.ssrLoadModule(
       "/src/pages/digital-employee/useRemoteChatSession.ts",
     );
+    const { shouldAttemptAlarmAnalystCardByContent, buildAlarmAnalystCardRequest } = await server.ssrLoadModule(
+      "/src/alarm-analyst/shared.ts",
+    );
+    assert.equal(shouldAttemptAlarmAnalystCardByContent(
+      "# MySQL 慢 SQL 完整处置建议\nCMDB 部署 K3s\n## 处置建议\n登录数据库",
+    ), true);
+    assert.equal(buildAlarmAnalystCardRequest({
+      chatId: "advice", sessionId: "advice", employeeId: "fault",
+      message: { backendMessageId: "first", content: "慢 SQL 处置建议",
+        manualAdviceOnly: true },
+    }).manualAdviceOnly, true);
     for (const agent of ["query", "fault"]) {
       let remote: ReturnType<typeof useRemoteChatSession>;
       let messages: any[] = [];
