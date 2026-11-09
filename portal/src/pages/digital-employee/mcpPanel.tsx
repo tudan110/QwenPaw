@@ -142,7 +142,7 @@ function buildEditableJson(client: McpClientInfo) {
   );
 }
 
-function parseEditableJson(value: string, clientKey?: string): McpClientCreateRequest | McpClientUpdateRequest {
+function parseEditableJson(value: string, clientKey?: string): McpClientUpdateRequest {
   let parsed: unknown;
   try {
     parsed = JSON.parse(value);
@@ -167,6 +167,29 @@ function parseEditableJson(value: string, clientKey?: string): McpClientCreateRe
   }
 
   const updates: McpClientUpdateRequest = {};
+  for (const key of ["key", "name", "description", "url", "command", "cwd"] as const) {
+    if (source[key] !== undefined && typeof source[key] !== "string") {
+      throw new Error(`JSON 中 ${key} 必须是字符串`);
+    }
+  }
+  if (source.enabled !== undefined && typeof source.enabled !== "boolean") {
+    throw new Error("JSON 中 enabled 必须是布尔值");
+  }
+  for (const key of ["args", "tools"] as const) {
+    const value = source[key];
+    if (value === undefined || (key === "tools" && value === null)) continue;
+    if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+      throw new Error(`JSON 中 ${key} 必须是字符串数组${key === "tools" ? "或 null" : ""}`);
+    }
+  }
+  for (const key of ["headers", "env"] as const) {
+    const value = source[key];
+    if (value === undefined) continue;
+    if (!value || typeof value !== "object" || Array.isArray(value)
+      || Object.values(value).some((item) => typeof item !== "string")) {
+      throw new Error(`JSON 中 ${key} 必须是字符串键值对象`);
+    }
+  }
   for (const key of [
     "name",
     "description",
@@ -188,6 +211,69 @@ function parseEditableJson(value: string, clientKey?: string): McpClientCreateRe
 }
 
 export { parseEditableJson };
+
+function formDraftClient(form: FormState, tools: string[] | null = null): McpClientInfo {
+  return {
+    key: form.clientKey,
+    name: form.name,
+    description: form.description,
+    enabled: form.enabled,
+    transport: form.transport,
+    url: form.url,
+    headers: parseKeyValueLines(form.headersText, "Headers"),
+    command: form.command,
+    args: parseLines(form.argsText),
+    env: parseKeyValueLines(form.envText, "Env"),
+    cwd: form.cwd,
+    tools,
+  };
+}
+
+export function buildFormDraftJson(form: FormState, tools?: string[] | null): string {
+  return JSON.stringify({ ...formDraftClient(form, tools ?? null), tools }, null, 2);
+}
+
+export function parseJsonFormDraft(
+  value: string,
+  form: FormState = EMPTY_FORM,
+  editingClient?: McpClientInfo | null,
+): FormState {
+  if (!value.trim()) return { ...form };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("JSON 格式无效，请修正后再切换");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("JSON 必须是一个 MCP 配置对象");
+  }
+  const source = parsed as Record<string, unknown>;
+  if (!editingClient && (
+    source.mcpServers !== undefined
+    || (Object.keys(source).length > 0
+      && !["key", "name", "description", "enabled", "transport", "url",
+        "headers", "command", "args", "env", "cwd", "tools"].some((key) => key in source))
+  )) {
+    const entries = parseMcpImportText(value);
+    if (entries.length !== 1) {
+      throw new Error("表单模式仅支持一个 MCP 配置；多个配置请保留 JSON 模式创建");
+    }
+    const { clientKey, payload } = entries[0];
+    return formatFormState({
+      ...formDraftClient(EMPTY_FORM),
+      ...payload,
+      key: clientKey,
+    });
+  }
+  const updates = parseEditableJson(value, editingClient?.key);
+  return formatFormState({
+    ...formDraftClient(form, editingClient?.tools ?? null),
+    ...updates,
+    key: editingClient?.key
+      || (typeof source.key === "string" ? source.key : form.clientKey),
+  });
+}
 
 function getTransportIcon(transport: McpTransport) {
   if (transport === "stdio") {
@@ -472,18 +558,11 @@ export function McpPanel() {
     }
     if (nextMode === "json") {
       try {
-        if (editingClient) {
-          const { clientKey, payload } = buildPayload(form);
-          setEditJson(
-            JSON.stringify(
-              { key: clientKey, ...payload, tools: editingClient.tools ?? null },
-              null,
-              2,
-            ),
-          );
-        } else {
-          setEditJson("");
-        }
+        const previous = editingClient && editJson.trim()
+          ? parseEditableJson(editJson, editingClient.key)
+          : undefined;
+        const tools = previous?.tools !== undefined ? previous.tools : editingClient?.tools;
+        setEditJson(buildFormDraftJson(form, tools));
         setEditJsonError("");
         setEditMode("json");
       } catch (error) {
@@ -493,17 +572,7 @@ export function McpPanel() {
     }
 
     try {
-      const updates = parseEditableJson(editJson, editingClient?.key);
-      const clientKey = typeof JSON.parse(editJson).key === "string"
-        ? JSON.parse(editJson).key
-        : "";
-      setForm(
-        formatFormState({
-          ...editingClient,
-          ...updates,
-          key: editingClient?.key || clientKey,
-        } as McpClientInfo),
-      );
+      setForm(parseJsonFormDraft(editJson, form, editingClient));
       setEditJsonError("");
       setEditMode("form");
     } catch (error) {
@@ -544,7 +613,7 @@ export function McpPanel() {
       throw new Error("JSON 必须是一个 MCP 配置对象");
     }
     const source = parsed as Record<string, unknown>;
-    if (source.mcpServers !== undefined || !source.key) {
+    if (source.mcpServers !== undefined || source.key === undefined) {
       return parseMcpImportText(editJson);
     }
     return [parseCreateJson()];
@@ -560,6 +629,10 @@ export function McpPanel() {
               payload: parseEditableJson(editJson, editingClient.key),
             }
           : buildPayload(form);
+        if (editMode === "form" && editJson.trim()) {
+          const jsonTools = parseEditableJson(editJson, editingClient.key).tools;
+          if (jsonTools !== undefined) Object.assign(payload, { tools: jsonTools });
+        }
         await mcpApi.updateClient(clientKey, payload, agentId);
         setNotice({ type: "success", message: `已更新 MCP：${payload.name || editingClient.name}` });
       } else {
@@ -900,9 +973,8 @@ export function McpPanel() {
                   <span className="mcp-form-hint">
                     {editingClient
                       ? "MCP Key 仅供查看，保存时不可修改；Header 与 Env 的掩码值保持原样即可保留现有凭证。"
-                      : "支持单个 MCP 配置或 QwenPaw 标准 { \"mcpServers\": { ... } } 格式；可一次创建多个配置。"}
+                      : "切换模式保留草稿，保存时校验必填项。支持单个配置或 { \"mcpServers\": { ... } }；多个配置请在 JSON 模式创建。"}
                   </span>
-                  {editJsonError ? <div className="mcp-panel-notice error">{editJsonError}</div> : null}
                 </div>
               ) : (
                 <div className="mcp-form-grid">
@@ -1042,6 +1114,7 @@ export function McpPanel() {
                 </div>
               )}
 
+              {editJsonError ? <div className="mcp-panel-notice error">{editJsonError}</div> : null}
               <div className="mcp-form-actions">
                 <button type="button" className="mcp-form-cancel" onClick={closeModal}>
                   取消
