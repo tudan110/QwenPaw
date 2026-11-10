@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from qwenpaw.extensions.api import settings_store
@@ -282,7 +282,7 @@ def test_get_request_cookie_falls_back_to_raw_cookie_header() -> None:
     app = FastAPI()
 
     @app.get("/cookie")
-    async def cookie_echo(request):
+    async def cookie_echo(request: Request):
         return {
             "token": _get_request_cookie(request, "Cnos-Inoe-Admin-Token"),
             "expires": _get_request_cookie(
@@ -387,5 +387,5 @@ def test_token_login_keeps_cookie_fallback_disabled_when_same_token(
     )
 
     assert response.status_code == 401
-    assert response.json() == {"detail": "登录状态已过期"}
+    assert response.json() == {"detail": "INOE 登录态无效或已过期"}
     assert seen == ["same-token"]

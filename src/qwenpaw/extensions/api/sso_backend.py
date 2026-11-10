@@ -29,6 +29,11 @@ import httpx
 from fastapi import APIRouter, Body, HTTPException, Request, Response
 
 from qwenpaw.extensions.api import sso_settings_store
+from qwenpaw.extensions.api.sso_auth import (
+    extract_user as _extract_user,
+    parse_userinfo_response,
+    validate_userinfo,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,16 +109,7 @@ async def _validate_inoe_token(
         logger.warning("SSO 网关连接失败: %s", exc)
         raise HTTPException(status_code=502, detail="SSO 网关连接失败")
 
-    # RuoYi getInfo replies HTTP 200 even on an invalid token, signalling the
-    # real status in the body ``code`` (e.g. 401 令牌不能为空). Treat any
-    # non-200 body code as an auth failure.
-    body_code = user_body.get("code")
-    if body_code is not None and str(body_code) != "200":
-        raise HTTPException(
-            status_code=401,
-            detail=str(user_body.get("msg") or "INOE 登录态校验失败"),
-        )
-    return user_body
+    return validate_userinfo(user_body)
 
 
 def _canonical(params: dict[str, str]) -> str:
@@ -206,6 +202,8 @@ def _parse_idp_response(
     on failure. We surface ``error_description`` (never the secret) and keep
     the upstream status code so the frontend can tell the user what to do.
     """
+    if endpoint == "userinfo":
+        return parse_userinfo_response(resp)
     try:
         body = resp.json()
     except ValueError:
@@ -226,36 +224,6 @@ def _parse_idp_response(
     # Map upstream 5xx to 502 (bad gateway) but keep client errors as-is.
     status = resp.status_code if resp.status_code < 500 else 502
     raise HTTPException(status_code=status, detail=detail)
-
-
-def _extract_user(body: dict[str, Any]) -> dict[str, Any]:
-    """Pull the whitelisted user fields, tolerant of both response shapes.
-
-    INOE's getInfo wraps the user in ``{"code":200,"user":{...}}`` with
-    RuoYi field names (``userName``); the OAuth2 ``/userinfo`` is flat
-    (``username``). We read from the nested object when present and accept
-    either spelling. The whitelist is the security boundary: it drops
-    getInfo's ``password`` hash, ``roles``, ``dept`` and anything else, so
-    only these six fields ever reach the browser.
-    """
-    src = body.get("user") if isinstance(body.get("user"), dict) else body
-
-    def pick(*keys: str) -> Any:
-        for key in keys:
-            value = src.get(key)
-            if value not in (None, ""):
-                return value
-        return None
-
-    user = {
-        "userId": pick("userId", "user_id"),
-        "username": pick("username", "userName"),
-        "nickName": pick("nickName", "nick_name"),
-        "phonenumber": pick("phonenumber", "phone"),
-        "deptId": pick("deptId", "dept_id"),
-        "email": pick("email"),
-    }
-    return {key: value for key, value in user.items() if value is not None}
 
 
 @router.get("/status")

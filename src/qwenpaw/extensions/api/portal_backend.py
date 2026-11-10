@@ -5897,7 +5897,9 @@ def register_app_routes(fastapi_app) -> None:
             # reflect that user's own INOE/CMDB permissions. Absent for
             # background tasks and non-SSO setups, which keep using the
             # configured token via inoe_settings_store.get_token().
-            token = request.headers.get("X-Inoe-Token")
+            token = getattr(
+                request.state, "inoe_token", None
+            ) or request.headers.get("X-Inoe-Token")
             ctx_token = inoe_settings_store.CURRENT_REQUEST_TOKEN.set(
                 token or None,
             )

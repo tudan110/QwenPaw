@@ -1,18 +1,32 @@
-"""Contract for the temporary, deliberately presence-only SSO gate."""
+"""Protected HTTP APIs require a genuinely validated INOE login."""
 
 import pytest
-from fastapi import FastAPI, Request
+import asyncio
+import httpx
+from unittest.mock import AsyncMock
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 
 from qwenpaw.extensions.api.sso_token_middleware import SsoTokenMiddleware
+from qwenpaw.extensions.api import inoe_settings_store
+from qwenpaw.extensions.api.sso_auth import InoeTokenValidator
 
 
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("QWENPAW_SSO_TOKEN_REQUIRED", "true")
     app = FastAPI()
-    app.add_middleware(SsoTokenMiddleware)
+
+    async def validate(token, url, *, use_cache):
+        if token.startswith("invalid"):
+            raise HTTPException(401, "INOE 登录态无效或已过期")
+        return {"userId": 7, "username": "test-user"}
+
+    validator = AsyncMock()
+    validator.validate.side_effect = validate
+    app.state.validator = validator
+    app.add_middleware(SsoTokenMiddleware, validator=validator)
 
     @app.api_route(
         "/{path:path}",
@@ -20,10 +34,25 @@ def client(monkeypatch):
     )
     async def endpoint(request: Request, path: str):
         if path == "api/console/chat":
+
+            async def events():
+                assert request.state.inoe_token == "test-token"
+                assert request.state.sso_user["userId"] == 7
+                assert (
+                    inoe_settings_store.CURRENT_REQUEST_TOKEN.get()
+                    == "test-token"
+                )
+                yield "data: ready\n\n"
+
             return StreamingResponse(
-                iter(["data: ready\n\n"]),
+                events(),
                 media_type="text/event-stream",
             )
+        if path == "api/identity":
+            return {
+                "user": request.state.sso_user,
+                "token": inoe_settings_store.CURRENT_REQUEST_TOKEN.get(),
+            }
         return {"method": request.method, "path": path}
 
     return TestClient(app)
@@ -67,13 +96,101 @@ def test_empty_header_token_is_rejected(client, token):
     ],
 )
 @pytest.mark.parametrize("method", ["GET", "POST", "PUT", "DELETE"])
-def test_nonempty_token_is_accepted_without_validation(
-    client, headers, method
-):
+def test_validated_token_is_accepted(client, headers, method):
     assert (
         client.request(method, "/api/chats", headers=headers).status_code
         == 200
     )
+    client.app.state.validator.validate.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"X-Inoe-Token": "invalid-token"},
+        {"Cookie": "qwenpaw_sso_token=invalid-token"},
+        {
+            "X-Inoe-Token": "invalid-token",
+            "Cookie": "qwenpaw_sso_token=valid-cookie",
+        },
+    ],
+)
+def test_invalid_token_cannot_pass_gate(client, headers):
+    response = client.get("/api/chats", headers=headers)
+    assert response.status_code == 401
+    assert response.json()["code"] == "SSO_TOKEN_INVALID"
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_empty_explicit_header_does_not_fall_back_to_cookie(client):
+    response = client.get(
+        "/api/chats",
+        headers={
+            "X-Inoe-Token": "",
+            "Cookie": "qwenpaw_sso_token=valid-cookie",
+        },
+    )
+    assert response.status_code == 401
+    client.app.state.validator.validate.assert_not_awaited()
+
+
+@pytest.mark.parametrize("status", [502, 503, 504])
+def test_validation_failure_never_reaches_endpoint(client, status):
+    client.app.state.validator.validate.side_effect = HTTPException(
+        status, "SSO validation unavailable"
+    )
+    response = client.get(
+        "/api/chats", headers={"X-Inoe-Token": "valid-token"}
+    )
+    assert response.status_code == status
+    assert response.json()["code"] == "SSO_VALIDATION_UNAVAILABLE"
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "cached"),
+    [
+        ("GET", "/api/chats", True),
+        ("POST", "/api/console/chat/task", True),
+        ("POST", "/api/agents/gateway/console/chat/task", True),
+        ("POST", "/copaw-api/api/console/chat/task", True),
+        ("POST", "/api/approval/approve", False),
+        ("POST", "/api/agents/gateway/approval/approve", False),
+        ("POST", "/api/chats/batch-delete", False),
+        ("PUT", "/portal-api/inoe-settings", False),
+        ("DELETE", "/api/chats/1", False),
+    ],
+)
+def test_only_queries_and_chat_entries_use_cache(client, method, path, cached):
+    response = client.request(
+        method, path, headers={"X-Inoe-Token": "valid-token"}
+    )
+    assert response.status_code == 200
+    assert (
+        client.app.state.validator.validate.await_args.kwargs["use_cache"]
+        is cached
+    )
+
+
+def test_cookie_identity_and_token_reach_downstream(client):
+    response = client.get(
+        "/api/identity",
+        headers={"Cookie": "qwenpaw_sso_token=valid%2Fcookie%3Dtoken"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "user": {"userId": 7, "username": "test-user"},
+        "token": "valid/cookie=token",
+    }
+    assert inoe_settings_store.CURRENT_REQUEST_TOKEN.get() is None
+
+
+def test_validator_is_closed_at_app_shutdown(client):
+    with client:
+        response = client.get(
+            "/api/chats", headers={"X-Inoe-Token": "valid-token"}
+        )
+        assert response.status_code == 200
+    client.app.state.validator.aclose.assert_awaited_once()
 
 
 @pytest.mark.parametrize(
@@ -231,3 +348,123 @@ def test_main_app_registers_sso_token_gate(monkeypatch):
         main_client.get("/api/portal/knowledge-base/sources").status_code
         == 401
     )
+
+
+async def test_real_cache_and_legacy_passthrough_preserve_cookie_identity(
+    monkeypatch,
+):
+    from qwenpaw.extensions.api import portal_backend, sso_settings_store
+
+    monkeypatch.setenv("QWENPAW_SSO_TOKEN_REQUIRED", "true")
+    monkeypatch.setattr(
+        sso_settings_store,
+        "get_userinfo_url",
+        lambda: "http://gateway:8080/admin/user/getInfo",
+    )
+    calls = []
+
+    def handler(request):
+        calls.append(request.headers["Authorization"])
+        if calls[-1] == "Bearer invalid-token":
+            return httpx.Response(401)
+        return httpx.Response(200, json={"code": 200, "user": {"userId": 7}})
+
+    validator = InoeTokenValidator(
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    )
+    app = FastAPI()
+    app.add_middleware(SsoTokenMiddleware, validator=validator)
+    portal_backend.register_app_routes(app)
+
+    @app.get("/api/test/identity")
+    async def identity(request: Request):
+        threaded_token = await asyncio.to_thread(
+            inoe_settings_store.CURRENT_REQUEST_TOKEN.get
+        )
+        return {
+            "token": request.state.inoe_token,
+            "threaded_token": threaded_token,
+            "user": request.state.sso_user,
+        }
+
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url="http://test"
+        ) as client:
+            headers = {"Cookie": "qwenpaw_sso_token=valid%2Fcookie%3D"}
+            for _ in range(2):
+                response = await client.get(
+                    "/api/test/identity", headers=headers
+                )
+                assert response.status_code == 200
+                assert response.json() == {
+                    "token": "valid/cookie=",
+                    "threaded_token": "valid/cookie=",
+                    "user": {"userId": 7},
+                }
+            assert calls == ["Bearer valid/cookie="]
+            response = await client.get(
+                "/api/test/identity",
+                headers={**headers, "X-Inoe-Token": "invalid-token"},
+            )
+            assert response.status_code == 401
+            assert calls[-1] == "Bearer invalid-token"
+        assert inoe_settings_store.CURRENT_REQUEST_TOKEN.get() is None
+    finally:
+        await validator.aclose()
+
+
+async def test_concurrent_streams_keep_separate_verified_credentials(
+    monkeypatch,
+):
+    from qwenpaw.extensions.api import sso_settings_store
+
+    monkeypatch.setenv("QWENPAW_SSO_TOKEN_REQUIRED", "true")
+    monkeypatch.setattr(
+        sso_settings_store,
+        "get_userinfo_url",
+        lambda: "http://gateway:8080/admin/user/getInfo",
+    )
+
+    def handler(request):
+        token = request.headers["Authorization"].removeprefix("Bearer ")
+        return httpx.Response(
+            200, json={"code": 200, "user": {"userName": token}}
+        )
+
+    validator = InoeTokenValidator(
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    )
+    app = FastAPI()
+    app.add_middleware(SsoTokenMiddleware, validator=validator)
+
+    @app.post("/api/console/chat")
+    async def stream(request: Request):
+        async def events():
+            for _ in range(2):
+                await asyncio.sleep(0)
+                token = inoe_settings_store.CURRENT_REQUEST_TOKEN.get()
+                assert token == request.state.sso_user["username"]
+                yield f"data: {token}\n\n"
+
+        return StreamingResponse(events(), media_type="text/event-stream")
+
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url="http://test"
+        ) as client:
+            responses = await asyncio.gather(
+                client.post(
+                    "/api/console/chat",
+                    headers={"X-Inoe-Token": "user-one"},
+                ),
+                client.post(
+                    "/api/console/chat",
+                    headers={"X-Inoe-Token": "Bearer user-two"},
+                ),
+            )
+        assert responses[0].text == "data: user-one\n\n" * 2
+        assert responses[1].text == "data: user-two\n\n" * 2
+        assert inoe_settings_store.CURRENT_REQUEST_TOKEN.get() is None
+    finally:
+        await validator.aclose()
