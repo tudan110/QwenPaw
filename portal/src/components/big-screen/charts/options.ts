@@ -12,6 +12,7 @@ import {
   withAlpha,
   type ResolvedChartStyle,
 } from "./chartStyle.ts";
+import { buildTopologySeries } from "../../topologyLayout.ts";
 
 const DARK_BG = "transparent";
 const SPLIT_LINE_COLOR = "rgba(255,255,255,.08)";
@@ -353,14 +354,10 @@ export function buildGraphOption(
     color: palette,
     series: [
       {
-        type: "graph",
-        layout: "force",
-        roam: true,
-        nodes,
-        links: edges,
-        lineStyle: { color: `rgba(255,255,255,${linkAlpha})`, width: 1 },
-        label: { show: true, color: style.labelColor },
-        force: { repulsion: 120 },
+        ...buildTopologySeries(nodes, edges, {
+          lineStyle: { color: `rgba(255,255,255,${linkAlpha})`, width: 1 },
+          label: { color: style.labelColor },
+        }),
       },
     ],
   };

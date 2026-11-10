@@ -196,7 +196,7 @@ helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
   --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_ROUTE_TIMEOUT="5" \
   --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_CACHE_TTL="30" \
   --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_DEGRADED_COOLDOWN="30" \
-  --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED="true" \
+  --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED="false" \
   --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL="300" \
   --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT="20" \
   --set-string qwenpaw.env.QWENPAW_PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES="1"
@@ -217,10 +217,14 @@ helm install cnos-inoe-agent ./cnos-inoe-agent-1.0.0.tgz -n cnos-iomp \
 | `QWENPAW_PORTAL_REAL_ALARM_ROUTE_TIMEOUT` | Portal 告警列表前台等待超时(秒) | `5` |
 | `QWENPAW_PORTAL_REAL_ALARM_CACHE_TTL` | 告警列表缓存 TTL(秒) | `30` |
 | `QWENPAW_PORTAL_REAL_ALARM_DEGRADED_COOLDOWN` | 告警后端异常降级冷却(秒) | `30` |
-| `QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED` | 是否启用告警自动接管分析 | `true` |
+| `QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED` | 是否启用告警自动接管分析 | `false` |
 | `QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_INTERVAL` | 自动接管轮询间隔(秒) | `300` |
 | `QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_LIMIT` | 单次轮询最大处理告警数 | `20` |
 | `QWENPAW_PORTAL_REAL_ALARM_MAX_ACTIVE_ANALYSES` | 同时进行的最大分析任务数 | `1` |
+
+实时告警分析默认暂停，可在“配置中心 → 设置 → 告警/巡检”中手动开启。
+已保存的页面设置优先于环境变量，环境变量优先于默认值；已有的显式开启配置
+不会因默认值调整而被覆盖。
 
 ## 相关文档
 

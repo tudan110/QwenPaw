@@ -3,6 +3,7 @@ import { memo, useEffect, useMemo, useState, type ComponentPropsWithoutRef } fro
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
 import { ManualOperationGuidePanel } from "../../components/ManualOperationGuidePanel";
 import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
+import { buildTopologySeries } from "../../components/topologyLayout";
 import {
   formatAlarmAnalystConfidence as mapConfidenceLabel,
   type AlarmAnalystCardV1,
@@ -150,16 +151,7 @@ function buildStructuredTopologyChart(card: AlarmAnalystCardV1, highlightTokens:
     animationDurationUpdate: 300,
     series: [
       {
-        type: "graph",
-        layout: "force",
-        roam: true,
-        draggable: true,
-        label: { show: true },
-        force: {
-          repulsion: 260,
-          edgeLength: 120,
-        },
-        data: nodes.map((node: any) => ({
+        ...buildTopologySeries(nodes.map((node: any) => ({
           ...node,
           value: node?.value || 1,
           category: node?.category || 0,
@@ -169,11 +161,10 @@ function buildStructuredTopologyChart(card: AlarmAnalystCardV1, highlightTokens:
             || shouldHighlightNode(node?.id || node?.name || "", highlightTokens)
             ? { color: "#ef4444", borderColor: "#991b1b", borderWidth: 2 }
             : node?.itemStyle,
-        })),
-        links: edges.map((edge: any) => ({
+        })), edges.map((edge: any) => ({
           ...edge,
           lineStyle: edge?.lineStyle || { opacity: 0.8, width: 2 },
-        })),
+        }))),
       },
     ],
   });

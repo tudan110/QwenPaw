@@ -528,6 +528,27 @@
   min-height: 420px;
 }
 
+.resource-topology-legend {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  color: #9fb3c8;
+  font-size: 12px;
+}
+
+.resource-topology-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.resource-topology-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
 .resource-log-box,
 .resource-result-box {
   min-height: 220px;

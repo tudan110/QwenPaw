@@ -1,5 +1,6 @@
 import { startTransition, useEffect, useMemo, useState } from "react";
 import ReactECharts from "echarts-for-react";
+import { buildTopologySeries } from "../../components/topologyLayout";
 import {
   getResourceImportMetadata,
   previewResourceImport,
@@ -40,6 +41,13 @@ const STEP_ITEMS = [
   { id: "topology", index: 4, title: "拓扑验证", desc: "审阅 AI 推断关系" },
   { id: "import", index: 5, title: "导入 CMDB", desc: "执行落库并返回结果" },
 ] as const;
+
+const TOPOLOGY_COLORS: Record<string, string> = {
+  business: "#5dd6b3",
+  resource: "#5aa7ff",
+  dcim: "#ff9d5c",
+  ipam: "#d68bff",
+};
 
 function extractErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -131,6 +139,7 @@ export function ResourceImportPanel() {
       category: record.category,
       symbolSize: record.generated ? 36 : 44,
       value: record.ciType,
+      itemStyle: { color: TOPOLOGY_COLORS[record.category] },
     }));
     const links = relations
       .filter((relation) => relation.selected)
@@ -144,6 +153,10 @@ export function ResourceImportPanel() {
           width: relation.confidence === "high" ? 2 : 1,
         },
       }));
+    const series = buildTopologySeries(nodes, links, {
+      label: { color: "#d8e5f2", fontSize: 12 },
+      lineStyle: { color: "rgba(159,179,200,.65)", curveness: 0.12 },
+    });
 
     return {
       backgroundColor: "transparent",
@@ -154,44 +167,26 @@ export function ResourceImportPanel() {
             ? `${params.data.value}: ${recordMap.get(params.data.source)?.name || params.data.source} → ${recordMap.get(params.data.target)?.name || params.data.target}`
             : `${params.data.name}<br/>${params.data.value}`,
       },
-      legend: [
+      legend: series.type === "graph" ? [
         {
           bottom: 0,
           textStyle: { color: "#9fb3c8" },
           data: ["business", "resource", "dcim", "ipam"],
         },
-      ],
+      ] : [],
       series: [
         {
-          type: "graph",
-          layout: "force",
-          roam: true,
-          draggable: true,
-          force: {
-            repulsion: 260,
-            edgeLength: 130,
-          },
+          ...series,
           categories: [
             { name: "business" },
             { name: "resource" },
             { name: "dcim" },
             { name: "ipam" },
           ],
-          label: {
-            show: true,
-            color: "#d8e5f2",
-            fontSize: 12,
-          },
           itemStyle: {
             borderColor: "rgba(255,255,255,0.16)",
             borderWidth: 1,
           },
-          lineStyle: {
-            color: "source",
-            curveness: 0.12,
-          },
-          data: nodes,
-          links,
         },
       ],
       color: ["#5dd6b3", "#5aa7ff", "#ff9d5c", "#d68bff"],
@@ -705,6 +700,16 @@ export function ResourceImportPanel() {
                   <div className="resource-empty-state">完成预解析后展示拓扑图</div>
                 )}
               </div>
+              {resourceGroups.length > 0 && chartOption.series[0].type === "tree" && (
+                <div className="resource-topology-legend" aria-label="资源类型图例">
+                  {Object.entries(TOPOLOGY_COLORS).map(([category, color]) => (
+                    <span key={category}>
+                      <i style={{ backgroundColor: color }} />
+                      {category}
+                    </span>
+                  ))}
+                </div>
+              )}
             </section>
           </div>
 

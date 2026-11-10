@@ -19,6 +19,62 @@ def _db(tmp_path: Path) -> Path:
     return tmp_path / "diagnosis_settings.db"
 
 
+def test_realtime_analysis_defaults_to_paused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for prefix in ("QWENPAW", "COPAW"):
+        monkeypatch.delenv(
+            f"{prefix}_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED",
+            raising=False,
+        )
+    payload = store.build_settings_payload(db_path=_db(tmp_path))
+    assert payload["effective"]["auto_takeover_enabled"] is False
+    assert payload["env"]["auto_takeover_enabled"] is False
+    assert payload["overrides"]["auto_takeover_enabled"] is False
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_realtime_analysis_preserves_explicit_choices(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    enabled: bool,
+) -> None:
+    db = _db(tmp_path)
+    monkeypatch.setenv(
+        "QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED",
+        str(not enabled).lower(),
+    )
+    store.apply_settings_update(
+        {"auto_takeover_enabled": enabled},
+        db_path=db,
+    )
+    payload = store.build_settings_payload(db_path=db)
+    assert payload["effective"]["auto_takeover_enabled"] is enabled
+    assert payload["env"]["auto_takeover_enabled"] is not enabled
+    assert payload["overrides"]["auto_takeover_enabled"] is True
+
+
+def test_reset_realtime_analysis_restores_paused_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for prefix in ("QWENPAW", "COPAW"):
+        monkeypatch.delenv(
+            f"{prefix}_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED",
+            raising=False,
+        )
+    db = _db(tmp_path)
+    store.apply_settings_update(
+        {"auto_takeover_enabled": True},
+        db_path=db,
+    )
+    store.reset_setting("auto_takeover_enabled", db_path=db)
+    payload = store.build_settings_payload(db_path=db)
+    assert payload["effective"]["auto_takeover_enabled"] is False
+    assert payload["overrides"]["auto_takeover_enabled"] is False
+
+
 def test_resolve_falls_back_to_default_then_env(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

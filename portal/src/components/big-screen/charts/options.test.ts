@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildBarOption,
+  buildGraphOption,
   buildLineOption,
   buildMapFlyOption,
   buildRadarOption,
@@ -45,6 +46,33 @@ test("inferAxisKeys: name/value rows chart without explicit bindings", () => {
   };
   assert.deepEqual(option.xAxis.data, ["硬件设备", "软件服务-虚拟机"]);
   assert.deepEqual(option.series[0].data, [1, 3]);
+});
+
+test("big-screen topology prefers a left-to-right tree for directed hierarchies", () => {
+  const option = buildGraphOption({
+    nodes: [{ id: "app" }, { id: "db" }],
+    links: [{ source: "app", target: "db" }],
+  });
+  assert.ok(Array.isArray(option.series));
+  const series = option.series[0];
+  assert.equal(series.type, "tree");
+  assert.equal(series.orient, "LR");
+  assert.equal(series.data[0].children[0].id, "db");
+  assert.equal(series.force, undefined);
+});
+
+test("big-screen topology preserves multi-parent row links as a static graph", () => {
+  const option = buildGraphOption({
+    nodes: [{ id: "a" }, { id: "b" }, { id: "db" }],
+    rows: [{ source: "a", target: "db" }, { source: "b", target: "db" }],
+  });
+  assert.ok(Array.isArray(option.series));
+  const series = option.series[0];
+  assert.equal(series.type, "graph");
+  assert.equal(series.layout, "none");
+  assert.equal(series.data.length, 3);
+  assert.equal(series.links.length, 2);
+  assert.equal(series.force, undefined);
 });
 
 test("inferAxisKeys: explicit bindings still win when present in rows", () => {

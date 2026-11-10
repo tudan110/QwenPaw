@@ -53,6 +53,28 @@ def _make_request(manager: _FakeManager):
     )
 
 
+def test_real_alarm_polling_defaults_to_paused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for prefix in ("QWENPAW", "COPAW"):
+        monkeypatch.delenv(
+            f"{prefix}_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED",
+            raising=False,
+        )
+    monkeypatch.setattr(
+        portal_backend.diagnosis_settings_store,
+        "get_overrides",
+        lambda **kwargs: {},
+    )
+    assert portal_backend.PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED is False
+    assert portal_backend._portal_real_alarm_auto_takeover_enabled() is False
+    monkeypatch.setenv(
+        "QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED",
+        "true",
+    )
+    assert portal_backend._portal_real_alarm_auto_takeover_enabled() is True
+
+
 def test_fault_result_preserves_complete_manual_guide_without_execution_action():
     from qwenpaw.extensions.api.cmdb_manual_guidance import (
         build_manual_operation_guide,

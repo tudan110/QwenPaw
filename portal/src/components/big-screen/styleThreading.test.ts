@@ -30,17 +30,17 @@ test("buildGraphOption honours node size / link opacity / palette", () => {
     style,
   );
   const series = opt.series[0];
-  assert.equal(series.nodes[0].symbolSize, 40, "20 * sizeScale 2");
+  assert.equal(series.data[0].symbolSize, 40, "20 * sizeScale 2");
   assert.ok(
     String(series.lineStyle.color).includes("0.9"),
     "link opacity from lineOpacity",
   );
-  assert.equal(series.nodes[0].itemStyle.color, PALETTES.warm[0]);
+  assert.equal(series.data[0].itemStyle.color, PALETTES.warm[0]);
 });
 
 test("buildGraphOption default raises the link-opacity floor to .35", () => {
   const opt: any = buildGraphOption({ nodes: [{ name: "a" }] });
-  assert.equal(opt.series[0].nodes[0].symbolSize, 20, "default scale 1");
+  assert.equal(opt.series[0].data[0].symbolSize, 20, "default scale 1");
   assert.ok(
     String(opt.series[0].lineStyle.color).includes("0.35"),
     "brighter default than the old .2",

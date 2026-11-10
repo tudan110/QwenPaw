@@ -337,7 +337,7 @@ FIELD_SPECS: dict[str, FieldSpec] = {
         FieldSpec(
             "auto_takeover_enabled",
             "QWENPAW_PORTAL_REAL_ALARM_AUTO_TAKEOVER_ENABLED",
-            True,
+            False,
             "bool",
             "polling",
         ),

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import ReactECharts from "echarts-for-react";
 import * as echarts from "echarts";
+import { normalizeTopologyOption } from "./topologyLayout";
 
 const ECHARTS_RENDER_CACHE_MAX_ENTRIES = 100;
 const ECHARTS_FUNCTION_TOKEN_PREFIX = "__ECHARTS_FUNCTION__";
@@ -777,7 +778,8 @@ export function EChartsBlock({ chart, style }: EChartsBlockProps) {
       return null;
     }
     setError("");
-    return normalizeShorthandEChartsOption(config);
+    const normalized = normalizeShorthandEChartsOption(config);
+    return normalized ? normalizeTopologyOption(normalized) : normalized;
   }, [chart]);
   const { option: baseOption, mockStream } = useMemo(
     () => stripRuntimeMeta(parsedConfig),

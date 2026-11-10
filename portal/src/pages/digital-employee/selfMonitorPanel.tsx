@@ -19,6 +19,7 @@ import {
   type SelfMonitorTopology,
 } from "../../api/selfMonitor";
 import { EChart } from "../../components/big-screen/charts/EChart";
+import { buildTopologySeries } from "../../components/topologyLayout";
 import { TracesCenterPanel } from "./tracesCenterPanel";
 import { workspaceDisplayName } from "./workspaceDisplay";
 import "../self-monitor.css";
@@ -351,14 +352,7 @@ export function SelfMonitorPanel() {
       tooltip: {},
       series: [
         {
-          type: "graph",
-          layout: "force",
-          roam: false,
-          force: { repulsion: 220, edgeLength: [60, 130], gravity: 0.12 },
-          label: { show: true, color: "#334155", fontSize: 10, position: "bottom" },
-          lineStyle: { color: "rgba(100,116,139,.35)", curveness: 0.1 },
-          emphasis: { focus: "adjacency" },
-          data: nodes.map((node) => ({
+          ...buildTopologySeries(nodes.map((node) => ({
             id: node.id,
             name: node.label,
             symbolSize: typeSize[node.type] ?? 16,
@@ -368,12 +362,14 @@ export function SelfMonitorPanel() {
               shadowColor:
                 node.status === "crit" ? "rgba(220,38,38,.8)" : "rgba(8,145,178,.35)",
             },
-          })),
-          links: edges.map((edge) => ({
+          })), edges.map((edge) => ({
             source: edge.source,
             target: edge.target,
             lineStyle: { width: Math.min(4, 1 + Math.log10(1 + (edge.value || 1))) },
-          })),
+          })), {
+            label: { color: "#334155", fontSize: 10 },
+            lineStyle: { color: "rgba(100,116,139,.35)", curveness: 0.1 },
+          }),
         },
       ],
     };
