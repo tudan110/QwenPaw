@@ -153,6 +153,49 @@ def test_only_integrity_checked_scripts_are_executable(
         execution_policy.check_shell(f"python {script} --token secret")
 
 
+def test_managed_knowledge_query_is_allowed_but_tampering_and_redirects_are_denied(
+    strict,
+    tmp_path,
+    monkeypatch,
+):
+    working = tmp_path / "working"
+    seed = tmp_path / "seed"
+    relative = (
+        "workspaces/fault/skills/alarm-analyst/scripts/query_knowledge.py"
+    )
+    source = (
+        Path(__file__).parents[4] / "deploy-all/qwenpaw/working" / relative
+    )
+    script = working / relative
+    script.parent.mkdir(parents=True)
+    script.write_bytes(source.read_bytes())
+    digest = hashlib.sha256(script.read_bytes()).hexdigest()
+    seed.mkdir()
+    (seed / "seed-manifest.json").write_text(
+        json.dumps(
+            {
+                "managed_files": {relative: {"sha256": digest}},
+                "managed_skills": {
+                    "workspaces/fault/skills/alarm-analyst": {
+                        "files": {relative: digest}
+                    }
+                },
+            }
+        )
+    )
+    monkeypatch.setattr(execution_policy, "WORKING_DIR", working)
+    monkeypatch.setenv("QWENPAW_SKILL_SEED_PATH", str(seed))
+    monkeypatch.setenv("QWENPAW_ALLOWED_SCRIPT_HASHES", "{}")
+    execution_policy.check_shell(f'python {script} --query "数据库 锁等待"')
+    with pytest.raises(PermissionError):
+        execution_policy.check_shell(
+            f"python {script} --api-base-url https://external.example --query test"
+        )
+    script.write_text("print('modified')")
+    with pytest.raises(PermissionError):
+        execution_policy.check_shell(f"python {script} --query test")
+
+
 async def test_unknown_and_write_tools_require_trusted_admin(strict):
     with pytest.raises(PermissionError):
         await execution_policy.check_tool("delete_resource", {"id": "one"})

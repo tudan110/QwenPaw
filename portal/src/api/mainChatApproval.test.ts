@@ -75,6 +75,22 @@ test("main-chat approval API scopes requests and preserves approval semantics", 
     result = {};
     await assert.rejects(api.listMainChatApprovals("agent-a", "root", signal), /格式异常/);
 
+    globalThis.fetch = async () => new Response("<html><h1>502 Bad Gateway</h1></html>", { status: 502 });
+    await assert.rejects(api.listMainChatApprovals("agent-a", "root", signal), (error: any) => {
+      assert.equal(error.status, 502);
+      assert.match(error.message, /审批服务暂时不可用/);
+      assert.ok(!error.message.includes("<html>"));
+      return true;
+    });
+    await assert.rejects(
+      api.resolveMainChatApproval("agent-a", "root", "request", "approve", signal),
+      /请稍后重试/,
+    );
+    globalThis.fetch = async (url, init) => {
+      requests.push({ url: String(url), init });
+      return new Response(JSON.stringify(result), { status });
+    };
+
     result = { stopped: false };
     await assert.rejects(api.stopMainChatApprovalTask("agent-a", "chat/1", signal), /任务未停止/);
     result = { stopped: true };

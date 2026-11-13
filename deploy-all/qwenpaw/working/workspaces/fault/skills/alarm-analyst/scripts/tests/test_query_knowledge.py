@@ -25,6 +25,8 @@ def isolate_config(monkeypatch):
         "ALARM_ANALYST_KNOWLEDGE_API_BASE_URL",
         "ALARM_ANALYST_KNOWLEDGE_API_TOKEN",
         "ALARM_ANALYST_KNOWLEDGE_TIMEOUT_SECONDS",
+        "QWENPAW_REQUEST_ACCESS_TOKEN",
+        "QWENPAW_REQUEST_INOE_TOKEN",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(knowledge, "_last_api_base_url", lambda: API_BASE)
@@ -93,6 +95,53 @@ def test_empty_result_is_not_a_transport_failure(monkeypatch, payload):
     assert result["status"] == "no_match"
     assert result["result"]["flags"]["insufficient_evidence"] is True
     assert "error" not in result
+
+
+@pytest.mark.parametrize(
+    "access,inoe,header,value",
+    [
+        (
+            "qp1.fixture",
+            "inoe-fixture",
+            "X-QwenPaw-Access-Token",
+            "qp1.fixture",
+        ),
+        ("", "inoe-fixture", "X-Inoe-Token", "inoe-fixture"),
+    ],
+)
+def test_current_request_identity_reaches_local_knowledge(
+    monkeypatch, payload, access, inoe, header, value
+):
+    monkeypatch.setenv("QWENPAW_REQUEST_ACCESS_TOKEN", access)
+    monkeypatch.setenv("QWENPAW_REQUEST_INOE_TOKEN", inoe)
+    monkeypatch.setenv(
+        "ALARM_ANALYST_KNOWLEDGE_API_TOKEN", "stale-shared-token"
+    )
+    post, _ = mock_post(monkeypatch, payload)
+    assert knowledge.query_knowledge("锁等待")["status"] == "retrieved"
+    headers = post.call_args.kwargs["headers"]
+    assert headers[header] == value
+    assert "Authorization" not in headers
+
+
+@pytest.mark.parametrize(
+    "base",
+    [
+        "https://external.example/api/portal",
+        "http://127.0.0.1:9999/api/portal",
+        "http://127.0.0.1:8088/other",
+    ],
+)
+def test_request_identity_is_never_forwarded_to_another_origin_or_path(
+    monkeypatch, payload, base
+):
+    monkeypatch.setenv("QWENPAW_REQUEST_ACCESS_TOKEN", "qp1.private-fixture")
+    post, _ = mock_post(monkeypatch, payload)
+    result = knowledge.query_knowledge("锁等待", api_base_url=base)
+    assert result["status"] == "error"
+    assert result["attempted"] is False
+    assert "private-fixture" not in json.dumps(result)
+    post.assert_not_called()
 
 
 def test_insufficient_evidence_keeps_candidates_without_claiming_reliability(

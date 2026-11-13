@@ -11,6 +11,7 @@ injects all dependencies into the agent constructor.
 from __future__ import annotations
 
 import logging
+import asyncio
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -227,7 +228,7 @@ class AgentBuilder:
         offloader = self._build_offloader(ctx, agent_config)
 
         # Optional scroll context strategy (None unless strategy="scroll").
-        scroll = self._build_scroll_components(
+        scroll = await self._prepare_scroll_components(
             ctx,
             agent_config,
             model,
@@ -250,6 +251,7 @@ class AgentBuilder:
                 "allow_unsandboxed is off) — falling back to native context "
                 "management so evicted history stays accessible",
             )
+            await asyncio.to_thread(scroll.context_manager.close)
             scroll = None
         if scroll is not None:
             extra_tools.append(
@@ -624,6 +626,33 @@ class AgentBuilder:
             )
         except Exception:
             return ContextConfig()
+
+    @staticmethod
+    async def _prepare_scroll_components(*args: Any, **kwargs: Any) -> Any:
+        """Initialize SQLite off the HTTP loop; retire abandoned results."""
+        pending = asyncio.create_task(
+            asyncio.to_thread(
+                AgentBuilder._build_scroll_components,
+                *args,
+                **kwargs,
+            )
+        )
+        try:
+            return await asyncio.shield(pending)
+        except asyncio.CancelledError:
+
+            def retire(future):
+                if not future.cancelled() and future.exception() is None:
+                    result = future.result()
+                    if result is not None:
+                        asyncio.create_task(
+                            asyncio.to_thread(
+                                result.context_manager.close,
+                            )
+                        )
+
+            pending.add_done_callback(retire)
+            raise
 
     @staticmethod
     def _build_scroll_components(

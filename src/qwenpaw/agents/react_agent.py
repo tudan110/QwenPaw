@@ -12,6 +12,7 @@ as constructor parameters and does not build them internally.
 from __future__ import annotations
 
 import logging
+import asyncio
 import uuid
 from pathlib import Path
 from typing import Any, Literal, Optional, TYPE_CHECKING
@@ -258,7 +259,10 @@ class QwenPawAgent(CodingModeMixin, Agent):
             if hasattr(cm, "purge_old"):
                 try:
                     lcc = self._agent_config.running.light_context_config
-                    cm.purge_old(lcc.scroll_config.history_retention_days)
+                    await asyncio.to_thread(
+                        cm.purge_old,
+                        lcc.scroll_config.history_retention_days,
+                    )
                 except Exception:
                     logger.debug(
                         "history retention purge failed",
@@ -266,7 +270,7 @@ class QwenPawAgent(CodingModeMixin, Agent):
                     )
             if hasattr(cm, "close"):
                 try:
-                    cm.close()
+                    await asyncio.to_thread(cm.close)
                 except Exception:
                     logger.debug(
                         "context manager close failed",
@@ -400,6 +404,9 @@ class QwenPawAgent(CodingModeMixin, Agent):
             )
             return
 
+        # Results may arrive while this turn is running, not just at its start.
+        await self._inject_pending_hints()
+
         # ── Fast-fail: break tool-call storms before model call ──
         self._maybe_inject_convergence_hint()
 
@@ -466,6 +473,13 @@ class QwenPawAgent(CodingModeMixin, Agent):
             if should_strip and self._uses_request_time_media_normalization():
                 self._set_formatter_media_strip(False)
 
+        # A model's preliminary answer must not abandon submitted peer tasks.
+        # Give their final results one bounded collection pass before exit.
+        if final_msg is not None and await self._collect_delegated_results():
+            return
+        if final_msg is not None and await self._inject_pending_hints():
+            return
+
         # ── Stop Hook: run every iteration ──
         stop_result = await self._run_stop_handlers(final_msg)
 
@@ -507,6 +521,29 @@ class QwenPawAgent(CodingModeMixin, Agent):
             return  # outer loop continues
 
         yield final_msg
+
+    async def _collect_delegated_results(self) -> bool:
+        from .delegation import pending_agent_tasks, collect_agent_tasks
+
+        context = self.state.context
+        pending = pending_agent_tasks(
+            context[self._current_turn_start(context) :]
+        )
+        collected = getattr(self, "_collected_delegations", set())
+        pending -= collected
+        if not pending:
+            return False
+        guidance = await collect_agent_tasks(pending)
+        self._collected_delegations = collected | pending
+        context.append(
+            Msg(
+                name="system",
+                role="user",
+                content=[TextBlock(text=guidance)],
+                metadata={QWENPAW_MESSAGE_TAG_KEY: "agent_task_results"},
+            )
+        )
+        return True
 
     # ------------------------------------------------------------------
     # Fast-fail: detect tool-call storms (repeated identical calls or a
@@ -769,8 +806,23 @@ class QwenPawAgent(CodingModeMixin, Agent):
         if not calls:
             return None
 
+        from .delegation import is_active_task_poll
+
+        # Poll results change over time. A prior `running` is not a cacheable
+        # answer; repeated failed/terminal checks still use the normal guard.
+        active_polls = {
+            cid
+            for cid, name, _args in calls
+            if cid in result_by_id
+            and not result_by_id[cid][0]
+            and is_active_task_poll(name, result_by_id[cid][1])
+        }
+        calls = [call for call in calls if call[0] not in active_polls]
+        if not calls:
+            return None
+
         is_zh = (self._language or "").strip().lower() == "zh"
-        recent = calls[-self._FASTFAIL_SCAN_WINDOW:]
+        recent = calls[-self._FASTFAIL_SCAN_WINDOW :]
 
         # --- Duplicate-call storm within the recent window. ---
         from collections import Counter
@@ -820,7 +872,7 @@ class QwenPawAgent(CodingModeMixin, Agent):
 
         # --- Trailing run of empty/error results. ---
         empty_streak = 0
-        for is_empty in reversed(results_seq[-self._FASTFAIL_SCAN_WINDOW:]):
+        for is_empty in reversed(results_seq[-self._FASTFAIL_SCAN_WINDOW :]):
             if is_empty:
                 empty_streak += 1
             else:
@@ -883,7 +935,8 @@ class QwenPawAgent(CodingModeMixin, Agent):
                 ),
             )
             logger.info(
-                "Fast-fail: injected convergence hint at iter=%s", cur_iter,
+                "Fast-fail: injected convergence hint at iter=%s",
+                cur_iter,
             )
         except Exception:
             logger.debug("fast-fail inject failed", exc_info=True)
@@ -970,17 +1023,18 @@ class QwenPawAgent(CodingModeMixin, Agent):
         """Return the ToolCoordinator from request_context, or None."""
         return (self._request_context or {}).get("tool_coordinator")
 
-    async def _inject_pending_hints(self) -> None:
+    async def _inject_pending_hints(self) -> bool:
         """Pop background-tool hints and append them to agent context."""
         mgr = self._get_tool_coordinator()
         if mgr is None:
-            return
+            return False
         session_id = (self._request_context or {}).get("session_id", "")
         if not session_id:
-            return
+            return False
         hints = await mgr.pop_pending_hints(session_id)
         for hint in hints:
             self.state.context.append(hint)
+        return bool(hints)
 
     async def _reply(self, **kwargs: Any) -> Any:
         """Override to inject pending background-tool hints before reply."""

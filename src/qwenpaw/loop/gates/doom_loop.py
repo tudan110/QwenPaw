@@ -4,6 +4,7 @@
 Inherits LoopGate for per-session state isolation.
 Includes inline sliding-window similarity detection.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -197,6 +198,19 @@ class DoomLoopGate(LoopGate):
             if isinstance(block, dict):
                 btype = block.get("type")
             if btype in ("tool_call", "tool_use"):
+                from ...agents.delegation import field, is_active_task_poll
+
+                call_id = field(block, "id")
+                if any(
+                    field(result, "type") == "tool_result"
+                    and field(result, "id") == call_id
+                    and is_active_task_poll(
+                        field(block, "name"), field(result, "output")
+                    )
+                    for result in content
+                ):
+                    state.history.clear()
+                    return
                 name = (
                     block.get("name", "")
                     if isinstance(block, dict)

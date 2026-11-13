@@ -62,6 +62,10 @@ test("fault policy stays scoped to the actual chat and does not alter scenario r
     );
     const restored = normalizeRemoteHistoryMessages([
       { role: "user", content: [{ type: "text", text: "帮我定位和解决" }] },
+      { role: "user", metadata: { metadata: { qwenpaw_tag: "fastfail_converge" } },
+        content: [{ type: "text", text: "<system-hint>[TASK_ID: task-one][STATUS: running]</system-hint>" }] },
+      { role: "user", metadata: { qwenpaw_tag: "agent_task_results" },
+        content: [{ type: "text", text: "内部协同结果" }] },
       { role: "system", content: [{ type: "text", text: MANUAL_FAULT_GUIDANCE_INSTRUCTIONS }] },
       { role: "user", content: [{ type: "text", text: `帮我处理这个告警\n\n${MANUAL_FAULT_GUIDANCE_INSTRUCTIONS}` }] },
     ], { id: "fault", name: "故障助手" }, {});

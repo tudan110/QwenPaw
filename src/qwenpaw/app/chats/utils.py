@@ -27,6 +27,7 @@ from qwenpaw.exceptions import (
 )
 
 from ...config import load_config
+from ...constant import QWENPAW_MESSAGE_TAG_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -438,6 +439,16 @@ def agentscope_msg_to_message(
 
     for msg in msgs:
         role = msg.role or "assistant"
+        if (
+            role == "user"
+            and isinstance(msg.metadata, dict)
+            and msg.metadata.get(
+                QWENPAW_MESSAGE_TAG_KEY,
+            )
+        ):
+            # These messages remain in model context, but are not user input.
+            continue
+
 
         ts_value = msg.timestamp
         if ts_value:

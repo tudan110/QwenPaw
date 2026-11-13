@@ -8,6 +8,7 @@ durability flag, and corruption quarantine.
 """
 
 import logging
+import asyncio
 import sqlite3
 from pathlib import Path
 
@@ -307,3 +308,61 @@ def test_corrupt_db_is_quarantined_and_recreated(tmp_path: Path):
         assert store.count("s") == 1
     finally:
         store.close()
+
+
+async def test_connection_can_handoff_from_initializer_and_serialize_writers(
+    tmp_path,
+):
+    store = await asyncio.to_thread(HistoryStore, tmp_path / "history.db")
+    try:
+        await asyncio.gather(
+            *(
+                asyncio.to_thread(
+                    store.append,
+                    session_id="s",
+                    dedup_key=f"m{i}",
+                    entry=_entry(str(i)),
+                )
+                for i in range(30)
+            )
+        )
+        assert store.count("s") == 30
+        assert (
+            store._conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        )
+    finally:
+        await asyncio.to_thread(store.close)
+
+
+def test_open_does_not_scan_the_entire_database(tmp_path, monkeypatch):
+    statements = []
+    connect = sqlite3.connect
+
+    def traced(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connection.set_trace_callback(statements.append)
+        return connection
+
+    monkeypatch.setattr(sqlite3, "connect", traced)
+    store = HistoryStore(tmp_path / "history.db")
+    store.close()
+    assert not any(
+        "quick_check" in sql.lower() or "integrity_check" in sql.lower()
+        for sql in statements
+    )
+
+
+def test_locked_store_is_never_quarantined(tmp_path):
+    path = tmp_path / "history.db"
+    store = HistoryStore(path)
+    store.close()
+    blocker = sqlite3.connect(path)
+    blocker.execute("PRAGMA journal_mode=DELETE")
+    blocker.execute("BEGIN EXCLUSIVE")
+    try:
+        with pytest.raises(sqlite3.OperationalError):
+            HistoryStore(path)
+        assert not list(tmp_path.glob("*.corrupt-*"))
+    finally:
+        blocker.rollback()
+        blocker.close()

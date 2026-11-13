@@ -37,6 +37,7 @@ _READ_TOOLS = {
     "spawn_subagent",
 }
 _READ_SCRIPT_NAMES = {
+    "query_knowledge.py",
     "get_alarms.py",
     "analyze_alarms.py",
     "analyze_alarm_context.py",

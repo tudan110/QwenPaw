@@ -115,6 +115,36 @@ def _validate_response(payload: Any) -> dict[str, Any]:
     return payload
 
 
+def _request_headers(base_url: str) -> dict[str, str]:
+    """Forward only this request's identity, to the configured local API."""
+    headers = {"Accept": "application/json", "X-Agent-Id": "fault"}
+    access = os.getenv("QWENPAW_REQUEST_ACCESS_TOKEN", "").strip()
+    inoe = os.getenv("QWENPAW_REQUEST_INOE_TOKEN", "").strip()
+    if access or inoe:
+        target = urlsplit(base_url)
+        trusted = urlsplit(_last_api_base_url())
+        loopbacks = {"localhost", "127.0.0.1", "::1"}
+        same_host = target.hostname == trusted.hostname or (
+            target.hostname in loopbacks and trusted.hostname in loopbacks
+        )
+        if not (
+            target.scheme == trusted.scheme
+            and same_host
+            and (target.port or (443 if target.scheme == "https" else 80))
+            == (trusted.port or (443 if trusted.scheme == "https" else 80))
+            and target.path.rstrip("/") == trusted.path.rstrip("/")
+        ):
+            raise ValueError("不能向非受信任知识库地址传递请求身份")
+        headers["X-QwenPaw-Access-Token" if access else "X-Inoe-Token"] = (
+            access or inoe
+        )
+    else:
+        token = os.getenv("ALARM_ANALYST_KNOWLEDGE_API_TOKEN", "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 def query_knowledge(
     query: str,
     *,
@@ -140,10 +170,7 @@ def query_knowledge(
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("知识库检索超时须为大于 0 的有限秒数")
         base_url = _resolve_base_url(api_base_url)
-        headers = {"Accept": "application/json", "X-Agent-Id": "fault"}
-        token = os.getenv("ALARM_ANALYST_KNOWLEDGE_API_TOKEN", "").strip()
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
+        headers = _request_headers(base_url)
         result["attempted"] = True
         # Do not retry or follow redirects: failures must remain visible,
         # and a redirect must not forward fault context to another service.

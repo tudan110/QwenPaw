@@ -7,6 +7,8 @@ import json
 import logging
 import sqlite3
 import sys
+from functools import wraps
+from threading import RLock
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -48,6 +50,17 @@ _INSERT_COLUMNS = (
 )
 
 
+def _serialized(method):
+    """Keep a connection's transactions atomic across worker handoffs."""
+
+    @wraps(method)
+    def locked(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return locked
+
+
 class HistoryStore:
     """Owns the *read-write* connection to the ``conversation_history`` file.
 
@@ -63,6 +76,7 @@ class HistoryStore:
     _fts_unavailable_warned = False
 
     def __init__(self, db_path: str | Path) -> None:
+        self._lock = RLock()
         self._path = Path(db_path).expanduser()
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self.quarantined_to: Path | None = None
@@ -77,6 +91,14 @@ class HistoryStore:
         try:
             self._open_and_init()
         except sqlite3.DatabaseError as exc:
+            # Busy/locked/read-only/full databases are not corrupt. Never
+            # rename a live shared store in response to an operational error.
+            if getattr(exc, "sqlite_errorcode", None) not in {
+                sqlite3.SQLITE_CORRUPT,
+                sqlite3.SQLITE_NOTADB,
+            }:
+                self.close()
+                raise
             # A corrupt / unreadable DB (truncated file, stale WAL trio, bad
             # page) would crash every task at startup. Quarantine the bad file
             # and recreate fresh, degrading "broken memory" to "lost history".
@@ -84,16 +106,14 @@ class HistoryStore:
             self._open_and_init()
 
     def _open_and_init(self) -> None:
-        self._conn = sqlite3.connect(str(self._path))
+        self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
-        # Probe for corruption that only surfaces on read.
-        row = self._conn.execute("PRAGMA quick_check").fetchone()
-        if not row or row[0] != "ok":
-            raise sqlite3.DatabaseError(
-                f"quick_check failed: {row[0] if row else None}",
-            )
+        # Reading the schema detects an invalid database header without
+        # scanning every page. Full integrity checks belong in maintenance,
+        # not in the per-request path (production histories can be GiBs).
+        self._conn.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
         self._init_schema()
 
     def _quarantine(self, exc: Exception) -> None:
@@ -218,6 +238,7 @@ class HistoryStore:
 
     # --- write path ----------------------------------------------------
 
+    @_serialized
     def append(
         self,
         *,
@@ -278,6 +299,7 @@ class HistoryStore:
                 )
             return seq
 
+    @_serialized
     def update_entry(
         self,
         seq: int,
@@ -342,6 +364,7 @@ class HistoryStore:
 
     # --- read path -----------------------------------------------------
 
+    @_serialized
     def count(self, session_id: str) -> int:
         cur = self._conn.execute(
             "SELECT COUNT(*) AS n FROM conversation_history "
@@ -371,6 +394,7 @@ class HistoryStore:
             params.extend(kinds)
         return clause, params
 
+    @_serialized
     def estimate_purge(
         self,
         *,
@@ -399,6 +423,7 @@ class HistoryStore:
             "content_bytes": int(row["content_bytes"]),
         }
 
+    @_serialized
     def purge(
         self,
         *,
@@ -447,6 +472,7 @@ class HistoryStore:
             )
             return len(doomed)
 
+    @_serialized
     def vacuum(self) -> None:
         """Rebuild the database file to reclaim space freed by ``purge``.
 
@@ -480,11 +506,12 @@ class HistoryStore:
         """True once :meth:`close` has run — the connection is gone."""
         return self._closed
 
+    @_serialized
     def close(self) -> None:
         self._closed = True
         try:
             self._conn.close()
-        except sqlite3.Error:
+        except (AttributeError, sqlite3.Error):
             pass
 
     def __repr__(self) -> str:

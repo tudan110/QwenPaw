@@ -24,6 +24,7 @@ import {
   extractCopawMessageText,
   getPortalSessionPrefix,
   isCopawReasoningMessage,
+  isInternalUserMessage,
   mergeStreamingText,
 } from "./helpers";
 import { MessageMarkdown } from "./components";
@@ -163,6 +164,7 @@ function formatSessionTime(value: string): string {
 function mapHistoryToMessages(historyMessages: any[]): ChatMessage[] {
   const out: ChatMessage[] = [];
   (Array.isArray(historyMessages) ? historyMessages : []).forEach((m, i) => {
+    if (isInternalUserMessage(m)) return;
     const id = `hist-${i}-${String(m?.id || "")}`;
 
     if (m?.role === "user" && (!m.type || m.type === "message")) {

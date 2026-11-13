@@ -544,7 +544,7 @@ export function normalizeRemoteHistoryMessages(
   let activeAgentMessage = null;
 
   for (const message of historyMessages || []) {
-    if (message.role === "system") continue;
+    if (message.role === "system" || isInternalUserMessage(message)) continue;
     if (message.role === "user" && (!message.type || message.type === "message")) {
       const rawText = sanitizeRemoteUserText(extractCopawMessageText(message));
       if (!rawText) {
@@ -623,6 +623,12 @@ export function normalizeRemoteHistoryMessages(
     }
     return Boolean(message.content || message.processBlocks?.length);
   });
+}
+
+export function isInternalUserMessage(message: any): boolean {
+  return message?.role === "user" && Boolean(
+    message?.metadata?.qwenpaw_tag || message?.metadata?.metadata?.qwenpaw_tag,
+  );
 }
 
 export function extractCopawMessageText(message: any) {

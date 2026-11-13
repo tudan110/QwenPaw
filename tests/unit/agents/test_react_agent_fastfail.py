@@ -66,13 +66,15 @@ def test_repeated_call_echoes_prior_result_for_reuse():
     hint = _agent(ctx)._detect_non_convergence()
     assert hint is not None
     assert "execute_shell_command" in hint
-    assert "复用" in hint            # reuse directive
-    assert "count = 42" in hint      # prior result echoed back
+    assert "复用" in hint  # reuse directive
+    assert "count = 42" in hint  # prior result echoed back
 
 
 def test_arg_key_reordering_still_counts_as_duplicate():
     ctx = []
-    for i, args in enumerate(('{"a":1,"b":2}', '{"b":2,"a":1}', '{"a":1, "b":2}')):
+    for i, args in enumerate(
+        ('{"a":1,"b":2}', '{"b":2,"a":1}', '{"a":1, "b":2}')
+    ):
         ctx += _pair("q", args, "some result", i=i)
     assert _agent(ctx)._detect_non_convergence() is not None
 
@@ -147,13 +149,37 @@ def test_distinct_calls_with_real_data_do_not_trigger():
 
 def test_one_empty_then_recovery_does_not_trigger():
     ctx = []
-    ctx += _pair("a", {}, '{"code":200,"data":null}', i=0)   # one empty
-    ctx += _pair("b", {}, '{"code":200,"data":[1]}', i=1)    # recovered
+    ctx += _pair("a", {}, '{"code":200,"data":null}', i=0)  # one empty
+    ctx += _pair("b", {}, '{"code":200,"data":[1]}', i=1)  # recovered
     assert _agent(ctx)._detect_non_convergence() is None
 
 
 def test_empty_context_returns_none():
     assert _agent([])._detect_non_convergence() is None
+
+
+def test_running_peer_task_poll_is_not_a_cacheable_duplicate():
+    ctx = []
+    for i in range(8):
+        ctx += _pair(
+            "check_agent_task",
+            {"task_id": "task-1"},
+            "[TASK_ID: task-1]\n[STATUS: running]",
+            i=i,
+        )
+    assert _agent(ctx)._detect_non_convergence() is None
+
+
+def test_finished_peer_task_duplicate_still_has_loop_protection():
+    ctx = []
+    for i in range(4):
+        ctx += _pair(
+            "check_agent_task",
+            {"task_id": "task-1"},
+            "[TASK_ID: task-1]\n[STATUS: finished]\nTask completed.",
+            i=i,
+        )
+    assert _agent(ctx)._detect_non_convergence() is not None
 
 
 def _user_msg(text: str):
@@ -164,8 +190,8 @@ def test_detection_scoped_to_current_turn_ignores_prior_turn_calls():
     # Turn 1: one call. Genuine user message. Turn 2: two identical calls.
     # Scoped to turn 2 (start after the user msg), only 2 dups < threshold 3.
     ctx = []
-    ctx += _pair("q", {"a": 1}, "r", i=0)          # prior turn
-    ctx.append(_user_msg("再查一次"))               # real user turn boundary
+    ctx += _pair("q", {"a": 1}, "r", i=0)  # prior turn
+    ctx.append(_user_msg("再查一次"))  # real user turn boundary
     ctx += _pair("q", {"a": 1}, "r", i=1)
     ctx += _pair("q", {"a": 1}, "r", i=2)
     agent = _agent(ctx)
@@ -177,7 +203,8 @@ def test_detection_scoped_to_current_turn_ignores_prior_turn_calls():
 
 def test_current_turn_start_skips_injected_tagged_user_msgs():
     tagged = SimpleNamespace(
-        role="user", metadata={QWENPAW_MESSAGE_TAG_KEY: "auto_continue"},
+        role="user",
+        metadata={QWENPAW_MESSAGE_TAG_KEY: "auto_continue"},
         content=[],
     )
     ctx = [_user_msg("真问题"), tagged]
@@ -192,8 +219,8 @@ def test_result_snippet_truncates_long_results():
         ctx += _pair("q", {"a": 1}, long, i=i)
     hint = _agent(ctx)._detect_non_convergence()
     assert hint is not None
-    assert "截断" in hint            # truncation marker present
-    assert len(hint) < 3000          # not the full 5000-char result
+    assert "截断" in hint  # truncation marker present
+    assert len(hint) < 3000  # not the full 5000-char result
 
 
 # --------------------------------------------------------------------------

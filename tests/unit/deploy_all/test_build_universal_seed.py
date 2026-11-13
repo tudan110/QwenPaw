@@ -112,6 +112,15 @@ def test_full_release_seed_and_upgrade_keep_fixes_and_user_model(tmp_path):
     )
     assert (target / llm_path).read_bytes() == (seed / llm_path).read_bytes()
 
+    knowledge_query = Path(
+        "workspaces/fault/skills/alarm-analyst/scripts/query_knowledge.py"
+    )
+    canonical = BUILDER_PATH.parent.parent / "working" / knowledge_query
+    assert (target / knowledge_query).read_bytes() == canonical.read_bytes()
+    assert manifest["managed_files"][str(knowledge_query)]["sha256"] == (
+        seed_builder.sha256(target / knowledge_query)
+    )
+
 
 def write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

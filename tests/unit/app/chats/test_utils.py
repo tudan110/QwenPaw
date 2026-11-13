@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from agentscope.message import Msg
+import pytest
 
 from qwenpaw.app.chats.utils import (
     _abspath_from_url,
@@ -12,7 +13,6 @@ from qwenpaw.app.chats.utils import (
     strip_injected_skill_block,
 )
 from qwenpaw.app.chats.title_generator import _clean_title
-
 
 # ---------------------------------------------------------------------------
 # _is_local_file_url
@@ -136,6 +136,38 @@ def test_msg_to_message_hides_headline_in_history_path():
     rendered = "".join(c.text for c in message.content)
     assert "⟦" not in rendered and "shipped" not in rendered
     assert "all set" in rendered
+
+
+@pytest.mark.parametrize(
+    "tag", ["fastfail_converge", "loop_continuation", "agent_task_results"]
+)
+def test_internal_user_context_never_becomes_a_chat_bubble(tag):
+    internal = Msg(
+        name="user",
+        role="user",
+        content=[
+            {
+                "type": "text",
+                "text": "<system-hint>[STATUS: running]</system-hint>",
+            }
+        ],
+        metadata={"qwenpaw_tag": tag},
+    )
+    user = Msg(
+        name="user",
+        role="user",
+        content=[{"type": "text", "text": "解释 TASK_ID 和 STATUS 的含义"}],
+    )
+    reply = Msg(
+        name="assistant",
+        role="assistant",
+        content=[{"type": "text", "text": "任务已完成"}],
+    )
+    converted = agentscope_msg_to_message([user, internal, reply])
+    assert len(converted) == 2
+    assert [m.role for m in converted] == ["user", "assistant"]
+    assert "TASK_ID" in converted[0].content[0].text
+    assert internal.content  # display filtering must not erase model context
 
 
 # ---------------------------------------------------------------------------

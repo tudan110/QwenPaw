@@ -621,6 +621,7 @@ async def submit_to_agent(
 @tool_descriptor(async_execution=True)
 async def check_agent_task(
     task_id: str,
+    wait_seconds: float = 10,
 ) -> ToolChunk:
     """Check the status of a background inter-agent task.
 
@@ -632,6 +633,9 @@ async def check_agent_task(
     Args:
         task_id (`str`):
             The background task ID returned by ``submit_to_agent``.
+        wait_seconds (`float`):
+            Wait up to 20 seconds for a terminal result (default 10).
+            Repeat checks while running; a running status is not a final answer.
 
     Returns:
         `ToolChunk`:
@@ -645,13 +649,22 @@ async def check_agent_task(
             "ERROR: 'task_id' is required to check task status",
         )
 
-    result = await asyncio.to_thread(
-        get_agent_chat_task_status,
-        None,
-        normalized_task_id,
-        to_agent=None,
-        timeout=10,
-    )
+    deadline = time.monotonic() + max(0, min(float(wait_seconds), 20))
+    while True:
+        result = await asyncio.to_thread(
+            get_agent_chat_task_status,
+            None,
+            normalized_task_id,
+            to_agent=None,
+            timeout=10,
+        )
+        remaining = deadline - time.monotonic()
+        if (
+            result.get("status") not in {"running", "pending", "submitted"}
+            or remaining <= 0
+        ):
+            break
+        await asyncio.sleep(min(2, remaining))
     return _tool_text_response(
         format_background_status_text(normalized_task_id, result),
     )

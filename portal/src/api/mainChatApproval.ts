@@ -40,12 +40,12 @@ async function approvalRequest<T>(
   });
   if (!response.ok) {
     const text = await response.text();
-    let detail = text;
+    let detail = `审批服务暂时不可用（${response.status}），${body ? "请稍后重试" : "正在重试"}。`;
     try {
       const payload = JSON.parse(text);
-      detail = typeof payload.detail === "string" ? payload.detail : text;
+      if (typeof payload.detail === "string") detail = payload.detail;
     } catch {
-      // Non-JSON errors retain the server's original message.
+      // Proxy HTML and stack traces must not become user-facing error text.
     }
     throw new MainChatApprovalApiError(
       detail || `审批请求失败（${response.status}）`,
