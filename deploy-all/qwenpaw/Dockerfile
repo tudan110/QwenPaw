@@ -37,9 +37,6 @@ ENV QWENPAW_WORKING_DIR=/app/working
 ENV QWENPAW_SECRET_DIR=/app/working.secret
 ENV QWENPAW_BACKUP_DIR=/app/working.backups
 ENV QWENPAW_RUNTIME_DIR=/app/runtime
-ENV HOME=/app/runtime/home
-ENV XDG_CACHE_HOME=/app/runtime/cache
-ENV TMPDIR=/app/runtime/tmp
 
 # Channel filtering: use QWENPAW_DISABLED_CHANNELS (exclusion, recommended)
 # or QWENPAW_ENABLED_CHANNELS (whitelist). Override at runtime with -e.
@@ -196,7 +193,8 @@ RUN set -eux; \
     echo "knowledge-base system tools OK (tesseract+chi_sim, libreoffice)"
 
 # The generated seed is the only workspace content retained in the image.
-RUN rm -rf /build/qwenpaw-working /usr/local/bin/build_universal_seed.py
+RUN chmod -R a+rX /app/share/qwenpaw-seed \
+  && rm -rf /build/qwenpaw-working /usr/local/bin/build_universal_seed.py
 
 # Installation is complete before dropping privileges. Runtime credentials
 # are provisioned separately in the target environment, never in image layers.
@@ -207,6 +205,10 @@ RUN groupadd --gid 10001 qwenpaw \
   && chown 10001:10001 /app/working /app/working.secret /app/working.backups /app/runtime \
   && chmod 750 /app/working /app/working.backups /app/runtime \
   && chmod 700 /app/working.secret
+
+ENV HOME=/app/runtime/home
+ENV XDG_CACHE_HOME=/app/runtime/cache
+ENV TMPDIR=/app/runtime/tmp
 
 # QwenPaw app port (default 8088). Override at runtime with -e QWENPAW_PORT=3000.
 ENV QWENPAW_PORT=8088

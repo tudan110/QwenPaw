@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "agentscope==2.0.2",
+    # MCP 2.x uses httpx2, incompatible with our httpx-based transports.
+    "mcp==1.26.0",
     # agentscope-runtime is no longer needed: agentscope 2.0 ships the
     # runtime (`agentscope.app`, `agentscope.session`, `agentscope.app._schema`)
     # in-tree, replacing the standalone agentscope-runtime package.

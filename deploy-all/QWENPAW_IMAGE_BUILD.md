@@ -111,6 +111,12 @@ cd deploy-all/qwenpaw && ./build-arm64.sh
   删除所有 capabilities，并继承 `RuntimeDefault` seccomp；根文件系统只读。
 - 可写状态仅在 working、secret、backups 和 `/app/runtime`、`/tmp` 挂载内。
   Supervisor 输出到容器日志，配置/PID 位于 runtime，D-Bus 使用用户会话。
+- `HOME`、`XDG_CACHE_HOME` 和 `TMPDIR` 在安装依赖后才切换到 runtime；
+  构建阶段保留系统默认目录，避免安装脚本使用尚未创建的路径。
+- 无凭据的静态 seed 在构建时统一赋予读取和目录遍历权限，避免维护源
+  的本机文件权限导致非 root 容器无法初始化或同步 Skill。
+- MCP SDK 固定为已验证的 `1.26.0`；2.x 使用 `httpx2`，与当前基于
+  `httpx` 的受控传输客户端不兼容，不能在打包时自动跨大版本升级。
 - PVC 根目录由存储驱动/kubelet 的 `fsGroup: 10001` 提供组访问；
   bootstrap 只创建目录，不使用 root、递归 chown 或 `chmod 777` 修复旧卷。
   若 CSI/NFS 不支持 fsGroup，须由存储管理员预置目录和权限。
