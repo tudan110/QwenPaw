@@ -405,3 +405,56 @@ async def test_successful_write_check_ignores_existing_cache():
         assert len(calls) == 2
     finally:
         await validator.aclose()
+
+
+async def test_userinfo_pool_never_reuses_another_users_auth_cookie():
+    seen_cookies = []
+
+    def handler(request):
+        seen_cookies.append(request.headers.get("Cookie"))
+        authorization = request.headers["Authorization"]
+        if authorization == "Bearer user-one":
+            return httpx.Response(
+                200,
+                json={"code": 200, "user": {"userId": 1}},
+                headers={"Set-Cookie": "idp_session=user-one; Path=/"},
+            )
+        if authorization == "Bearer user-two":
+            return httpx.Response(
+                200, json={"code": 200, "user": {"userId": 2}}
+            )
+        return httpx.Response(401)
+
+    validator = validator_for(handler)
+    try:
+        assert (await validator.validate("user-one", URL))["userId"] == 1
+        with pytest.raises(HTTPException) as error:
+            await validator.validate("invalid-user", URL)
+        assert error.value.status_code == 401
+        assert (await validator.validate("user-two", URL))["userId"] == 2
+        assert seen_cookies == [None, None, None]
+        assert not validator._client.cookies
+    finally:
+        await validator.aclose()
+
+
+async def test_slow_online_validation_does_not_extend_the_cache_window():
+    clock = [0.0]
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        clock[0] += 5.0
+        return httpx.Response(200, json=USERINFO)
+
+    validator = validator_for(handler, clock=lambda: clock[0])
+    try:
+        await validator.validate("token", URL)
+        clock[0] = 14.0
+        await validator.validate("token", URL)
+        assert len(calls) == 1
+        clock[0] = 15.0
+        await validator.validate("token", URL)
+        assert len(calls) == 2
+    finally:
+        await validator.aclose()

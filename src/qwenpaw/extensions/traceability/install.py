@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import time
+from functools import wraps
 from typing import Any
 
 from qwenpaw.extensions.runtime.chat_errors import (
@@ -221,6 +222,7 @@ def _install_lifecycle_trace() -> None:
 
     _orig_run = HookRegistry.run
 
+    @wraps(_orig_run)
     async def _traced_run(self: Any, phase: Any, ctx: Any) -> Any:
         if phase == Phase.PRE_DISPATCH:
             await _emit_user_message(ctx)

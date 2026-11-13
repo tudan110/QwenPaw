@@ -51,6 +51,9 @@ def _resolve_file_path(file_path: str) -> str:
     Returns:
         The resolved absolute file path as string.
     """
+    from ...extensions.security.execution_policy import check_path
+
+    check_path(file_path)
     path = Path(file_path).expanduser()
     if path.is_absolute():
         return str(path)

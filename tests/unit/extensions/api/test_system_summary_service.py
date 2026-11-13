@@ -83,7 +83,7 @@ def test_top_alarm_candidates_fall_back_from_urgent_to_severe() -> None:
     assert targets[0]["target"] == "redis-01"
 
 
-def test_fallback_summary_declares_normal_when_no_alarm_exists() -> None:
+def test_fallback_empty_window_does_not_declare_global_health() -> None:
     from qwenpaw.extensions.api import system_summary_service as service
 
     decision = service._fallback_decision(
@@ -97,7 +97,9 @@ def test_fallback_summary_declares_normal_when_no_alarm_exists() -> None:
         },
     )
 
-    assert "系统运行正常" in decision["summary"]
+    assert "系统运行正常" not in decision["summary"]
+    assert "查询窗口内" in decision["summary"]
+    assert "不能据此判定" in decision["summary"]
     assert "TOP" not in decision["summary"]
 
 
@@ -147,15 +149,60 @@ def test_model_decision_requires_ip_for_selected_urgent_resource() -> None:
     assert "10.2.0.15" in fallback["summary"]
 
 
-def test_active_alarm_health_treats_query_failure_as_normal() -> None:
+def test_active_alarm_health_treats_query_failure_as_unknown() -> None:
     from qwenpaw.extensions.api import system_summary_service as service
 
     health_status, source = service._collect_active_alarm_health(
         ConnectionError("active alarm backend down"),
     )
 
-    assert health_status == "normal"
+    assert health_status == "unknown"
     assert source["status"] == "failed"
+
+
+def test_empty_uncleared_window_cannot_prove_global_health() -> None:
+    from qwenpaw.extensions.api import system_summary_service as service
+
+    scope = {
+        "kind": "windowed_uncleared", "startTime": "2026-07-21 10:00:00",
+        "endTime": "2026-07-22 10:00:00", "timezone": "UTC+08:00",
+        "complete": False,
+    }
+    health, source = service._collect_active_alarm_health({
+        "code": 200, "total": 0, "rows": [], "queryScope": scope,
+    })
+    assert health == "unknown"
+    assert source["queryScope"] == scope
+
+
+def test_model_cannot_reclassify_window_zero_as_global_health() -> None:
+    from qwenpaw.extensions.api import system_summary_service as service
+
+    with pytest.raises(ValueError, match="全局健康"):
+        service._parse_model_decision_for_facts(
+            json.dumps({
+                "riskLevel": "low", "summary": "系统运行正常",
+                "issueKeys": [], "targetKey": "",
+            }),
+            {"alarmCountComplete": False},
+        )
+
+
+def test_model_can_explain_that_window_zero_does_not_prove_health() -> None:
+    from qwenpaw.extensions.api import system_summary_service as service
+
+    result = service._parse_model_decision_for_facts(
+        json.dumps({
+            "riskLevel": "low",
+            "summary": (
+                "查询窗口内未发现告警，不能判定系统正常；"
+                "不代表全量活动告警。"
+            ),
+            "issueKeys": [], "targetKey": "",
+        }),
+        {"alarmCountComplete": False},
+    )
+    assert "不能判定系统正常" in result["summary"]
 
 
 @pytest.mark.asyncio
@@ -623,7 +670,8 @@ async def test_system_summary_uses_model_narrative_with_fact_context(
     result = await service.build_system_summary(model=narrative_model)
 
     assert observed_query["limit"] == 1000
-    assert result["summary"] == generated_summary
+    assert result["summary"].startswith(generated_summary)
+    assert "不代表全量活动告警" in result["summary"]
     assert "TOP3至TOP5" in observed_messages[0]["content"]
     assert "mysql-01" in observed_messages[1]["content"]
 
@@ -689,7 +737,8 @@ async def test_system_summary_repairs_internal_resource_id_in_model_narrative(
 
     result = await service.build_system_summary(model=model)
 
-    assert result["summary"] == corrected_summary
+    assert result["summary"].startswith(corrected_summary)
+    assert "空结果不能证明系统健康" in result["summary"]
     assert len(calls) == 2
     assert "禁止展示内部 ID" in calls[1][-1]["content"]
 

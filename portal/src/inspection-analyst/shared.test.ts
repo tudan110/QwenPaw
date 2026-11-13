@@ -1,8 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { createServer } from "vite";
 
-import { buildInspectionDisplayModel } from "./displayModel.ts";
-import { unwrapPortalInspectionCardContent } from "../pages/digital-employee/helpers.ts";
+const server = await createServer({
+  root: fileURLToPath(new URL("../../", import.meta.url)),
+  configFile: false,
+  optimizeDeps: { noDiscovery: true, include: [] },
+  server: { middlewareMode: true, hmr: false },
+  appType: "custom",
+});
+let buildInspectionDisplayModel: typeof import("./displayModel").buildInspectionDisplayModel;
+let unwrapPortalInspectionCardContent: typeof import("../pages/digital-employee/helpers").unwrapPortalInspectionCardContent;
+try {
+  ({ buildInspectionDisplayModel } = await server.ssrLoadModule(
+    "/src/inspection-analyst/displayModel.ts",
+  ));
+  ({ unwrapPortalInspectionCardContent } = await server.ssrLoadModule(
+    "/src/pages/digital-employee/helpers.ts",
+  ));
+} finally {
+  await server.close();
+}
 
 test("unwraps inspection report instead of trailing supplement after marker", () => {
   const raw =
@@ -30,7 +49,9 @@ test("rejoins report sections when the agent puts --- between every section", ()
 
   const display = buildInspectionDisplayModel(raw);
   assert.ok(display);
-  const stats = Object.fromEntries((display.stats ?? []).map((s) => [s.label, s.value]));
+  const stats = Object.fromEntries(
+    (display.stats ?? []).map((s) => [s.label, s.value]),
+  );
   assert.equal(stats["指标总数"], "25");
   assert.equal(stats["资源类型"], "mysql");
   assert.equal(stats["巡检时间"], "2026-06-12");
@@ -45,12 +66,20 @@ test("builds per-resource metric groups for multi-resource inspection reports", 
 
   assert.ok(display);
   assert.equal(display.metricGroups.length, 2);
-  assert.equal(display.metricGroups[0]?.title, "redis-01（CI ID: 3019，IP: 10.43.33.251:6379）— 需关注");
-  assert.deepEqual(
-    display.metricGroups[0]?.metrics.map((item) => item.label),
-    ["内存碎片率", "阻塞 Key 数", "服务状态", "当前连接数"],
+  assert.equal(
+    display.metricGroups[0]?.title,
+    "redis-01（CI ID: 3019，IP: 10.43.33.251:6379）— 需关注",
   );
-  assert.equal(display.metricGroups[1]?.title, "redis-02（CI ID: 3020，IP: 10.43.95.171:30079）— 无数据");
+  assert.deepEqual(display.metricGroups[0]?.metrics.map((item) => item.label), [
+    "内存碎片率",
+    "阻塞 Key 数",
+    "服务状态",
+    "当前连接数",
+  ]);
+  assert.equal(
+    display.metricGroups[1]?.title,
+    "redis-02（CI ID: 3020，IP: 10.43.95.171:30079）— 无数据",
+  );
   assert.equal(display.metricGroups[1]?.metrics.length, 0);
   assert.match(display.metricGroups[1]?.summary || "", /无实时数据返回/u);
 });

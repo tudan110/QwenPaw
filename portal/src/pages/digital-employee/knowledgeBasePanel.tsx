@@ -728,6 +728,15 @@ export function KnowledgeBasePanel() {
           <span>Embedding</span>
           <strong>{health?.embedding?.enabled ? "开启" : "关闭"}</strong>
         </div>
+        <div>
+          <span>知识库模型</span>
+          <strong>{health?.llm?.enabled ? health.llm.model_label || health.llm.model : "未就绪"}</strong>
+          <small>
+            {health?.llm?.enabled
+              ? `${health.llm.model_source === "agent" ? "knowledge 独立配置" : health.llm.model_source === "environment" ? "已有环境配置" : "全局模型"} · 未执行连通性探测`
+              : health?.status === "ok" ? "模型增强不可用，可使用基础检索" : "请检查知识库健康状态"}
+          </small>
+        </div>
       </div>
 
       <section className="kb-primary-row">

@@ -95,3 +95,21 @@ v0 是绞杀式改造的**第一刀**,只做能**零回归**落地的部分:冻�
 
 - **v0（当前）**:冻结显示映射三表 + `SEVERITY_TO_LEVEL`;权威源 `alarm_contract.py`;parity 守护技能副本。
 - **v1（M1 计划）**:告警行标准 schema（统一 key + extras 透传）+ 双向适配层;收编技能子进程副本;智观重构为第一个 connector,输出对齐本契约。
+
+## 6. 有界查询计数（C5 P0）
+
+现有上游 `hisAlarmList` 必须提供 `beginTime` / `endTime`，没有独立于时间窗的全量活动告警 API。因此不扩展为任意过去一年，也不将该接口的 `total` 宣称为全量活动告警数。
+
+- 连接器与部署维护的三个 `get_alarms.py` 在原有行字段外增加 `queryScope`：`kind`（`windowed_uncleared` / `windowed_cleared` / `windowed_history`）、实际请求的 `startTime` / `endTime`、`timezone`、`complete: false` 和限制说明。
+- `total` 保留上游在**该查询窗口及过滤条件内**的计数，不以第一页行数代替上游总数。连接器的 `totalIsExact` 表示是否取得有效的上游计数；`windowComplete` 仅表示当前页是否覆盖该窗口的返回集合，不表示全局完整。
+- 请求失败或源不可用时，Portal 计数为 `null`，`sourceStatus` 为 `failed` / `unavailable`，前端显示“暂不可得”，不显示 0。成功返回的窗口内 0 与失败分开处理。
+- 总览展示“窗口内未清除告警”，附实际时间范围、时区和非全量说明。兼容函数 `query_active_alarm_total()` 只返回窗口计数或 `None`；完整元数据通过 `query_active_alarm_statistics()` 取得。
+- 态势摘要中的历史累计与滚动未清除窗口分别标注来源范围。`facts.activeAlarmTotal` 保留为历史累计的兼容字段，新增 `historicalAlarmTotal` / `alarmCountQueryScope` / `alarmCountComplete: false`；没有紧急告警或窗口结果为空不能判定全局健康，`healthStatus` 为 `unknown`。
+
+此变更不改变告警状态、恢复验证或业务数据。窗口之外可能仍存在长期未清除告警；扩大有限窗口也不能证明全量完整。
+
+## 7. 历史分析卡片回放
+
+回放匹配按原消息 ID、规范化报告正文优先；重建后的短报告只有在标题、
+根因、影响和建议均有实际内容时才能参与保守兜底。多个候选不猜测绑定。
+尾部明确的引用式“补充说明”只从匹配键中剔除，历史正文和过程记录原样保留。

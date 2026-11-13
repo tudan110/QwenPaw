@@ -51,7 +51,15 @@ class DeleteBlockMiddleware(BaseHTTPMiddleware):
     """Reject every HTTP DELETE request before it reaches a router."""
 
     async def dispatch(self, request: Request, call_next):
-        if request.method.upper() != "DELETE":
+        from .access_policy import resource_path
+        from .sso_token_middleware import _canonical_path
+
+        path = resource_path(_canonical_path(request.url.path))
+        deletion = request.method.upper() == "DELETE" or (
+            request.method.upper() in {"POST", "PUT", "PATCH"}
+            and path.rsplit("/", 1)[-1] in {"delete", "batch-delete", "remove"}
+        )
+        if not deletion:
             return await call_next(request)
 
         if not _delete_ops_disabled():
@@ -59,7 +67,8 @@ class DeleteBlockMiddleware(BaseHTTPMiddleware):
 
         client_ip = request.client.host if request.client else "?"
         logger.warning(
-            "[DELETE_BLOCK] rejected DELETE %s from %s",
+            "[DELETE_BLOCK] rejected %s %s from %s",
+            request.method,
             request.url.path,
             client_ip,
         )

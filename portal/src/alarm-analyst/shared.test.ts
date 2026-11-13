@@ -1,7 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { createServer } from "vite";
 
-import {
+const server = await createServer({
+  root: fileURLToPath(new URL("../../", import.meta.url)),
+  configFile: false,
+  optimizeDeps: { noDiscovery: true, include: [] },
+  server: { middlewareMode: true, hmr: false },
+  appType: "custom",
+});
+let shared: typeof import("./shared");
+try {
+  shared = await server.ssrLoadModule("/src/alarm-analyst/shared.ts");
+} finally {
+  await server.close();
+}
+const {
   buildAlarmAnalystCardRequest,
   formatAlarmAnalystConfidence,
   getAlarmAnalystReportMarkdown,
@@ -9,12 +24,16 @@ import {
   mergeAlarmAnalystCards,
   shouldAttemptAlarmAnalystCardByContent,
   shouldEnableAlarmAnalystCards,
-} from "./shared.ts";
+} = shared;
 
 test("confidence display shows only the percentage from a verbose report value", () => {
-  const value = "90%（评分对象：CPU采样命中配置阈值而触发告警；v2得分20+50+20+0；非统计概率）";
+  const value =
+    "90%（评分对象：CPU采样命中配置阈值而触发告警；v2得分20+50+20+0；非统计概率）";
   assert.equal(formatAlarmAnalystConfidence(value), "90%");
-  assert.equal(formatAlarmAnalystConfidence("100% (all evidence supported)"), "100%");
+  assert.equal(
+    formatAlarmAnalystConfidence("100% (all evidence supported)"),
+    "100%",
+  );
   assert.equal(formatAlarmAnalystConfidence("90% 补充说明"), "90%");
   assert.equal(formatAlarmAnalystConfidence("90.5%（说明）"), "90.5%");
   assert.equal(formatAlarmAnalystConfidence("0%（根因未确定）"), "0%");
@@ -23,11 +42,21 @@ test("confidence display shows only the percentage from a verbose report value",
 
 test("confidence display preserves plain percentages and legacy values", () => {
   for (const [value, expected] of [
-    ["90%", "90%"], ["100%", "100%"], ["0%", "0%"],
-    [0, "0%"], [0.9, "90%"], [90, "90%"],
-    ["high", "90%"], ["medium", "70%"], ["low", "50%"],
-    ["高", "90%"], ["中", "70%"], ["低", "50%"],
-    ["待确认", "待确认"], [null, ""], [undefined, ""],
+    ["90%", "90%"],
+    ["100%", "100%"],
+    ["0%", "0%"],
+    [0, "0%"],
+    [0.9, "90%"],
+    [90, "90%"],
+    ["high", "90%"],
+    ["medium", "70%"],
+    ["low", "50%"],
+    ["高", "90%"],
+    ["中", "70%"],
+    ["低", "50%"],
+    ["待确认", "待确认"],
+    [null, ""],
+    [undefined, ""],
   ] as const) {
     assert.equal(formatAlarmAnalystConfidence(value), expected);
   }
@@ -45,7 +74,7 @@ test("builds alarm analyst card request from grouped response blocks", () => {
     id: "agent-1",
     enhancementSourceMessageId: "assistant-1",
     processBlocks: [
-      { kind: "tool", toolName: "read_file", outputContent: "{\"series\":[]}" },
+      { kind: "tool", toolName: "read_file", outputContent: '{"series":[]}' },
       { kind: "response", content: "## 根因分析结论\n- MySQL 锁等待放大" },
     ],
   };
@@ -65,7 +94,9 @@ test("builds alarm analyst card request from grouped response blocks", () => {
 
 test("alarm session report matcher ignores short intermediate text and accepts final report", () => {
   assert.equal(
-    looksLikeAlarmAnalystReportForAlarmSession("正在分析，请稍候，我先收集告警和拓扑信息。"),
+    looksLikeAlarmAnalystReportForAlarmSession(
+      "正在分析，请稍候，我先收集告警和拓扑信息。",
+    ),
     false,
   );
   assert.equal(
@@ -158,7 +189,10 @@ test("merges stored cards by raw report markdown when message id differs", () =>
 
   const merged = mergeAlarmAnalystCards(messages, cards);
 
-  assert.equal(merged[0].alarmAnalystCard.summary.conclusion, "历史回放兜底匹配");
+  assert.equal(
+    merged[0].alarmAnalystCard.summary.conclusion,
+    "历史回放兜底匹配",
+  );
 });
 
 test("binds a stored card to a reconstructed alarm report when ids and text changed", () => {
@@ -203,6 +237,45 @@ test("binds a stored card to a reconstructed alarm report when ids and text chan
   const merged = mergeAlarmAnalystCards(messages, cards);
 
   assert.equal(merged[0].alarmAnalystCard.summary.title, "端口异常");
+});
+
+test("short report recovery rejects section headings without actual evidence", () => {
+  assert.equal(
+    looksLikeAlarmAnalystReportForAlarmSession(
+      "## 告警分析报告：端口异常\n## 根因判断\n## 影响范围\n## 处置建议",
+    ),
+    false,
+  );
+});
+
+test("reconstructed report fallback does not guess between multiple messages", () => {
+  const report =
+    "## 告警分析报告：端口异常\n## 根因判断\n- 链路不可达\n## 影响范围\n- 业务受影响\n## 处置建议\n- 检查端口";
+  const messages = [
+    { id: "one", type: "agent", content: report },
+    { id: "two", type: "agent", content: report },
+  ];
+  const cards = [
+    { source: { messageId: "unknown" }, rawReportMarkdown: "old report" },
+  ] as any;
+  const merged = mergeAlarmAnalystCards(messages, cards);
+  assert.equal(
+    merged.some((message) => message.alarmAnalystCard),
+    false,
+  );
+  const equalCountCards = [
+    ...cards,
+    {
+      source: { messageId: "another" },
+      rawReportMarkdown: "another old report",
+    },
+  ] as any;
+  assert.equal(
+    mergeAlarmAnalystCards(messages, equalCountCards).some(
+      (message) => message.alarmAnalystCard,
+    ),
+    false,
+  );
 });
 
 test("deduplicates retry-generated cards by source message id", () => {
@@ -273,6 +346,7 @@ test("merges stored cards when report markdown differs only by alarm marker wrap
   const merged = mergeAlarmAnalystCards(messages, cards);
 
   assert.equal(merged[0].alarmAnalystCard.summary.title, "数据库锁异常");
+  assert.equal(merged[0].processBlocks, messages[0].processBlocks);
 });
 
 test("merges stored cards when raw report has trailing supplement after marker report", () => {
@@ -350,7 +424,10 @@ test("only enables alarm analyst cards for fault workorder sessions", () => {
   assert.equal(
     shouldEnableAlarmAnalystCards({
       employeeId: "fault",
-      session: { sessionId: "portal-fault-alarm-COMMON__1776338881568_2044739586778116096" },
+      session: {
+        sessionId:
+          "portal-fault-alarm-COMMON__1776338881568_2044739586778116096",
+      },
     }),
     true,
   );
@@ -428,6 +505,9 @@ test("merges workorder proposal and status onto alarm analyst card", () => {
 
   const merged = mergeAlarmAnalystCards(messages, cards);
 
-  assert.equal(merged[0].alarmAnalystCard.workorderProposal.proposalId, "proposal-1");
+  assert.equal(
+    merged[0].alarmAnalystCard.workorderProposal.proposalId,
+    "proposal-1",
+  );
   assert.equal(merged[0].alarmAnalystCard.workorderStatus.workorderId, "wo-1");
 });

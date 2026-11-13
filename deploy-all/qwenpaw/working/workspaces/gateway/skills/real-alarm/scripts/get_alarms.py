@@ -17,7 +17,7 @@ import os
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -83,7 +83,14 @@ def get_token() -> Optional[str]:
     Returns:
         Token 字符串，如果不存在则返回 None
     """
-    return os.getenv("INOE_API_TOKEN")
+    try:
+        from qwenpaw.extensions.api.inoe_settings_store import (
+            CURRENT_REQUEST_TOKEN,
+        )
+    except ImportError:
+        return os.getenv("INOE_API_TOKEN")
+    token = CURRENT_REQUEST_TOKEN.get()
+    return token if token is not None else os.getenv("INOE_API_TOKEN")
 
 
 def use_mock_data() -> bool:
@@ -121,7 +128,37 @@ def _load_mock_data() -> Dict[str, Any]:
 
 def _make_error(code: int, message: str) -> Dict[str, Any]:
     """构造统一错误响应。"""
-    return {"code": code, "msg": message, "total": 0, "rows": []}
+    return {
+        "code": code, "msg": message, "total": None, "rows": [],
+        "sourceStatus": "failed",
+        "queryScope": {"kind": "unavailable", "complete": False},
+        "diagnostic": {
+            "stage": "alarm_script",
+            "occurred_at": datetime.now().astimezone().isoformat(),
+            "error_code": "ALARM_SCRIPT_ERROR",
+        },
+    }
+
+
+def _gateway_result(result: Dict[str, Any], http_status: int) -> Dict[str, Any]:
+    if str(result.get("code", 200)) == "200":
+        return result
+    result = dict(result)
+    code = str(result.get("code"))
+    result["diagnostic"] = {
+        "stage": "inoe_gateway",
+        "http_status": http_status,
+        "business_code": result.get("code"),
+        "occurred_at": datetime.now().astimezone().isoformat(),
+        "error_code": (
+            "INOE_AUTH_FAILED" if code == "401"
+            else "INOE_ACCESS_DENIED" if code == "403"
+            else "INOE_GATEWAY_ERROR"
+        ),
+    }
+    if code in {"401", "403"}:
+        result["msg"] = "智观业务凭据无效或权限不足，请检查授权配置"
+    return result
 
 
 def _normalize_base_url(api_base_url: Optional[str]) -> str:
@@ -212,8 +249,10 @@ def _build_http_error(status_code: int, error_msg: str) -> Dict[str, Any]:
         403: "权限不足，无法访问该资源",
         404: "接口不存在，请检查接口地址",
     }
-    return _make_error(
-        status_code, message_map.get(status_code, f"HTTP错误: {error_msg}")
+    return _gateway_result(
+        _make_error(status_code, message_map.get(
+            status_code, f"智观网关 HTTP {status_code}"
+        )), status_code,
     )
 
 
@@ -243,14 +282,18 @@ def _curl_post_json(
         "-w",
         "%{http_code}",
     ]
-    for key, value in headers.items():
-        args.extend(["-H", f"{key}: {value}"])
+    header_config = "".join(
+        "header = " + json.dumps(f"{key}: {value}") + "\n"
+        for key, value in headers.items()
+    )
+    args.extend(["--config", "-"])
     args.extend(["--data-binary", json.dumps(data, ensure_ascii=False)])
     args.append(url)
 
     try:
         completed = subprocess.run(
             args,
+            input=header_config,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -275,7 +318,7 @@ def _curl_post_json(
             return {"code": 200, "msg": "操作成功", "data": result}
         if not isinstance(result, dict):
             return _make_error(500, "接口返回格式异常：预期为 JSON 对象")
-        return result
+        return _gateway_result(result, status_code)
     except json.JSONDecodeError as error:
         return _make_error(500, f"curl 响应解析失败: {str(error)}")
     except subprocess.TimeoutExpired:
@@ -400,8 +443,11 @@ def _curl_get_json(
         "-w",
         "%{http_code}",
     ]
-    for key, value in headers.items():
-        args.extend(["-H", f"{key}: {value}"])
+    header_config = "".join(
+        "header = " + json.dumps(f"{key}: {value}") + "\n"
+        for key, value in headers.items()
+    )
+    args.extend(["--config", "-"])
     for key, value in params.items():
         if value is None:
             continue
@@ -411,6 +457,7 @@ def _curl_get_json(
     try:
         completed = subprocess.run(
             args,
+            input=header_config,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -439,7 +486,7 @@ def _curl_get_json(
             return {"code": 200, "msg": "操作成功", "data": result}
         if not isinstance(result, dict):
             return _make_error(500, "接口返回格式异常：预期为 JSON 对象")
-        return result
+        return _gateway_result(result, status_code)
     except json.JSONDecodeError as error:
         return _make_error(500, f"curl 响应解析失败: {str(error)}")
     except subprocess.TimeoutExpired:
@@ -477,7 +524,7 @@ def execute(
     Args:
         page_num: 页码，默认为 1
         page_size: 每页数量，默认为 10
-        token: JWT 认证令牌（必填）
+        token: JWT 认证令牌（可选，未传时读取授权执行环境）
         api_base_url: API 基础地址（可选，默认从环境变量读取）
         begin_time: 开始时间，格式 YYYY-MM-DD HH:MM:SS
         end_time: 结束时间，格式 YYYY-MM-DD HH:MM:SS
@@ -506,9 +553,19 @@ def execute(
     if time_error:
         return time_error
 
-    normalized_token = (token or "").strip()
+    supplied_token = token if token is not None else get_token()
+    normalized_token = str(supplied_token or "").strip()
+    if normalized_token.lower().startswith("bearer "):
+        normalized_token = normalized_token[7:].strip()
     if not normalized_token:
-        return _make_error(401, "未设置 API Token，请检查 .env 或 --token 参数")
+        result = _make_error(401, "未设置 API Token，请检查授权执行环境")
+        result["diagnostic"] = {
+            "stage": "script_credentials",
+            "error_code": "INOE_TOKEN_MISSING",
+            "occurred_at": datetime.now().astimezone().isoformat(),
+            "credential_source": "explicit" if token is not None else "environment",
+        }
+        return result
 
     # 接口配置
     base_url = _normalize_base_url(api_base_url)
@@ -522,6 +579,15 @@ def execute(
 
     # hisAlarmList 强制要 begin/end 时间窗，未传则用默认窗口（小时）。
     # skill 读不到设置页 DB，只能取环境变量/共享 secrets。
+    try:
+        offset_h = float(
+            os.getenv("PORTAL_REAL_ALARM_TIMEZONE_OFFSET", "8") or "8"
+        )
+        if not -12 <= offset_h <= 14:
+            offset_h = 8.0
+    except ValueError:
+        offset_h = 8.0
+    query_timezone = timezone(timedelta(hours=offset_h))
     if not begin_time or not end_time:
         try:
             window_h = float(
@@ -532,11 +598,13 @@ def execute(
             )
         except ValueError:
             window_h = 24.0
-        now = datetime.now()
-        begin_time = (now - timedelta(hours=window_h)).strftime(
+        if not 1 <= window_h <= 8760:
+            window_h = 24.0
+        now = datetime.now(query_timezone)
+        begin_time = begin_time or (now - timedelta(hours=window_h)).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
-        end_time = now.strftime("%Y-%m-%d %H:%M:%S")
+        end_time = end_time or now.strftime("%Y-%m-%d %H:%M:%S")
 
     params = _build_his_alarm_params(
         page_num=page_num,
@@ -552,6 +620,33 @@ def execute(
         ci_id=ci_id,
         ne_alias=_normalize_ne_alias(ne_alias, resource_type),
     )
+    offset = datetime.now(query_timezone).strftime("%z")
+    query_scope = {
+        "kind": (
+            "windowed_uncleared"
+            if str(params.get("isClear")) == "0"
+            else "windowed_cleared"
+        ),
+        "startTime": params["beginTime"],
+        "endTime": params["endTime"],
+        "timezone": f"UTC{offset[:3]}:{offset[3:]}",
+        "complete": False,
+        "limitation": (
+            "仅覆盖查询时间范围，不代表全量活动告警；"
+            "空结果不能证明系统健康。"
+        ),
+    }
+
+    def scoped(result):
+        live = str(result.get("code", 200)) in {"0", "200"} and isinstance(
+            result.get("rows"), list
+        )
+        return {
+            **result,
+            "total": result.get("total") if live else None,
+            "sourceStatus": "live" if live else "failed",
+            "queryScope": query_scope,
+        }
 
     try:
         # 发送 GET 请求
@@ -565,28 +660,30 @@ def execute(
         # 解析响应数据 - 直接返回接口原始响应
         result = response.json()
         if not isinstance(result, dict):
-            return _make_error(500, "接口返回格式异常：预期为 JSON 对象")
-        return result
+            return scoped(_make_error(500, "接口返回格式异常：预期为 JSON 对象"))
+        return scoped(_gateway_result(result, response.status_code))
 
     except requests.exceptions.Timeout:
-        return _make_error(408, "请求超时，请检查网络连接或稍后重试")
+        return scoped(_make_error(408, "请求超时，请检查网络连接或稍后重试"))
 
     except requests.exceptions.ConnectionError:
-        return _curl_get_json(
-            url=url, headers=headers, params=params, timeout_seconds=30
+        return scoped(
+            _curl_get_json(
+                url=url, headers=headers, params=params, timeout_seconds=30
+            )
         )
 
     except requests.exceptions.HTTPError as e:
-        return _handle_http_error(e)
+        return scoped(_handle_http_error(e))
 
     except ValueError as e:
-        return _make_error(500, f"响应解析失败: {str(e)}")
+        return scoped(_make_error(500, f"响应解析失败: {str(e)}"))
 
     except requests.exceptions.RequestException as e:
-        return _make_error(500, f"请求异常: {str(e)}")
+        return scoped(_make_error(500, f"请求异常: {str(e)}"))
 
     except Exception as e:
-        return _make_error(500, f"未知错误: {str(e)}")
+        return scoped(_make_error(500, f"未知错误: {str(e)}"))
 
 
 def main():

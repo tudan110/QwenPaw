@@ -30,10 +30,14 @@ function getRuntimeFirstString(
   runtimeValue: string | undefined | null,
   envValue: string | undefined | null,
 ): string {
-  return normalizeOptionalString(runtimeValue) || normalizeOptionalString(envValue);
+  return (
+    normalizeOptionalString(runtimeValue) || normalizeOptionalString(envValue)
+  );
 }
 
-function getEnvString(key: "VITE_SSO_INOE_PORT" | "VITE_SSO_LOGIN_URL" | "VITE_SSO_ENABLED"): string {
+function getEnvString(
+  key: "VITE_SSO_INOE_PORT" | "VITE_SSO_LOGIN_URL" | "VITE_SSO_ENABLED",
+): string {
   return normalizeOptionalString(import.meta.env?.[key]);
 }
 
@@ -178,8 +182,7 @@ async function clearStaleSsoState(): Promise<void> {
   try {
     await clearSsoLoginCookie();
   } catch {
-    // Best-effort cleanup — a failed cookie clear should not block the
-    // fallback re-login flow.
+    console.warn("SSO cookie cleanup unavailable; continuing local logout");
   }
 }
 
@@ -196,18 +199,20 @@ function shouldSkipRevalidate(force: boolean): boolean {
  * valid, that login round-trips straight back and re-establishes the
  * session; if not, the user signs in again. Self-gated on SSO being enabled.
  */
-export function triggerSsoRelogin(): void {
-  if (!isSsoEnabled() || reloginTriggered) {
+export async function triggerSsoRelogin(): Promise<void> {
+  if (!isSsoEnabled()) {
     return;
   }
   if (isAllowlisted(window.location.pathname)) {
     clearSessionWithoutRedirect();
     return;
   }
+  if (reloginTriggered) {
+    return;
+  }
   reloginTriggered = true;
-  void clearStaleSsoState().finally(() => {
-    window.location.href = getSsoLoginRedirectUrl();
-  });
+  await clearStaleSsoState();
+  window.location.href = getSsoLoginRedirectUrl();
 }
 
 /**
@@ -242,7 +247,7 @@ async function revalidateSession(): Promise<boolean> {
         return true;
       } catch (retryError) {
         if ((retryError as { status?: number })?.status === 401) {
-          triggerSsoRelogin();
+          await triggerSsoRelogin();
           return false;
         }
       }
@@ -318,7 +323,7 @@ export function setupSsoSessionMonitor(): () => void {
       return;
     }
     if (!isAuthenticated()) {
-      triggerSsoRelogin();
+      void triggerSsoRelogin();
       return;
     }
     refreshInterval();

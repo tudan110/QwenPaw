@@ -28,9 +28,32 @@ export function withManualFaultGuidance(
   meta?: Record<string, unknown> | null,
 ): string {
   if (content.includes(MANUAL_FAULT_GUIDANCE_MARKER)) return content;
+  if (!needsManualFaultGuidance(content, meta)) return content;
+  return `${content}\n\n${MANUAL_FAULT_GUIDANCE_INSTRUCTIONS}`;
+}
+
+function needsManualFaultGuidance(
+  content: string,
+  meta?: Record<string, unknown> | null,
+): boolean {
   const boundAlarm = Boolean(meta?.alarmId || meta?.resId);
   const fault = /故障|告警|慢\s*sql|slow\s*sql|死锁|锁异常/iu.test(content);
   const analysis = /分析|根因|处置|建议|排查|处理|怎么|优化/iu.test(content);
-  if (!boundAlarm && !(fault && analysis)) return content;
-  return `${content}\n\n${MANUAL_FAULT_GUIDANCE_INSTRUCTIONS}`;
+  return boundAlarm || (fault && analysis);
+}
+
+export function manualFaultRequestContext(
+  content: string,
+  meta?: Record<string, unknown> | null,
+): Record<string, boolean> {
+  return needsManualFaultGuidance(content, meta)
+    ? { portal_manual_fault_guidance: true }
+    : {};
+}
+
+export function stripLegacyManualFaultGuidance(content: string): string {
+  const suffix = `\n\n${MANUAL_FAULT_GUIDANCE_INSTRUCTIONS}`;
+  return content.endsWith(suffix)
+    ? content.slice(0, -suffix.length)
+    : content;
 }

@@ -37,12 +37,26 @@ def serialize_evidence(e: Evidence) -> dict:
 
 
 def serialize_query_response(resp: QueryResponse) -> dict:
+    reasons = {
+        stage: resp.diagnostic[key]
+        for stage, key in (
+            ("hyde", "hyde_degraded_reason"),
+            ("rerank", "rerank_degraded_reason"),
+            ("embedding", "embedding_degraded_reason"),
+        )
+        if resp.diagnostic.get(key)
+    }
     return {
         "query_id": resp.query_id,
         "summary": resp.summary,
         "relevant_evidence": [serialize_evidence(e) for e in resp.relevant_evidence],
         "evidence_boundary_statement": resp.evidence_boundary_statement,
-        "flags": resp.flags,
+        "flags": {**resp.flags, "degraded": bool(reasons)},
+        "diagnostic": {
+            **resp.diagnostic,
+            "degraded_reasons": reasons,
+            "stage": "knowledge_retrieval",
+        },
     }
 
 

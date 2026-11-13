@@ -27,6 +27,8 @@ class MediaProcessHook(LifecycleHook):
     async def run(self, ctx: HookContext) -> HookResult:
         if not ctx.input_msgs:
             return HookResult()
+        from ...extensions.security.media_boundary import validate_sources
+        validate_sources(ctx.input_msgs)
         try:
             from ...agents.utils import (
                 process_file_and_media_blocks_in_message,

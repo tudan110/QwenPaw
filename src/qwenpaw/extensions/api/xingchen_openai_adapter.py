@@ -161,6 +161,15 @@ def _resolve_header_value(
     *env_names: str,
 ) -> str:
     inbound = (request.headers.get(header_name) or "").strip()
+    identity = getattr(request.state, "access_identity", None)
+    if header_name.lower() == "authorization" and identity is not None:
+        configured = _read_env(*env_names)
+        if configured:
+            return configured
+        if _normalize_authorization(inbound) == identity.inoe_token:
+            inbound = ""
+    if header_name.lower() == "authorization" and _normalize_authorization(inbound).startswith("qp1."):
+        inbound = ""
     if inbound:
         return inbound
     return _read_env(*env_names)

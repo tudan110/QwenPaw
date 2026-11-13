@@ -17,12 +17,27 @@ deploymentStrategy:
     maxSurge: 25%
     maxUnavailable: 25%
 
-# 容器安全上下文
+# Pod 身份和 PVC 组权限；旧卷需先离线迁移所有权，不能通过 root 启动修复。
 securityContext:
-  runAsNonRoot: false
-  runAsUser: 0
-  runAsGroup: 0
-  fsGroup: 0
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+initContainerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
 
 # 环境变量
 env:
@@ -34,6 +49,10 @@ env:
   QWENPAW_APP_BACKLOG: "2048"
   QWENPAW_APP_TIMEOUT_KEEP_ALIVE: "5"
   QWENPAW_DISABLED_CHANNELS: "imessage"
+  QWENPAW_SSO_TOKEN_REQUIRED: "true"
+  # 仅显式 INOE 用户 ID 可管理/执行高危写操作；普通用户不会自动成为管理员。
+  QWENPAW_ADMIN_INOE_USER_IDS: "1"
+  QWENPAW_INTERNAL_API_ORIGINS: "http://qwenpaw:8088"
   # QWENPAW_ENABLED_CHANNELS: ""
   # NB: 安全姿态（skill_scanner 模式、domain_guard、delete_ops_disabled、
   # tool_guard auto_denied_rules）放在工作目录的 config.json -> "security" 段，
@@ -52,11 +71,12 @@ env:
   # 凭据由目标环境的 Secret/设置页注入，不将 token 提交到交付 Chart。
   INOE_API_TIMEOUT: "60"
 
-# 运行时凭据由目标环境 Secret 提供；Secret 不存在时不阻断基础服务启动。
+# 目标环境必须显式创建此 Secret。仅离线基础检索场景可显式 envFrom: []；
+# 该选择不授予管理/高危权限，也不会生成 INOE 或模型凭据。
 envFrom:
   - secretRef:
       name: qwenpaw-runtime-secrets
-      optional: true
+      optional: false
 
 # 资源限制
 resources:
@@ -70,10 +90,10 @@ resources:
 # 服务端口
 service:
   name: qwenpaw
-  type: NodePort
+  type: ClusterIP
   port: 8088
   targetPort: 8088
-  nodePort: 30088
+  nodePort: null
 
 # 持久化存储
 persistence:
@@ -97,6 +117,10 @@ persistence:
     enabled: true
     mountPath: /app/working.secret
     subPath: secret
+  backupsDir:
+    enabled: true
+    mountPath: /app/working.backups
+    subPath: backups
 
 # 在 Helm 升级创建的新 Pod 中同步镜像内受管 Agent/Skill 内容到已有 PVC。
 # 同步器只处理 /app/share/qwenpaw-seed 声明的静态文件，不会触碰 secret、
@@ -113,3 +137,27 @@ skillSync:
     limits:
       cpu: 500m
       memory: 768Mi
+
+# 需要支持 NetworkPolicy 的 CNI；标准策略不支持按 FQDN 放行。
+# 不默认放行互联网或整个私网。按目标环境提供明确 selector/CIDR 和端口。
+networkPolicy:
+  enabled: true
+  portalIngress:
+    enabled: true
+  ingress: []
+  dns:
+    enabled: true
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kube-system
+    podSelector:
+      matchLabels:
+        k8s-app: kube-dns
+  # 各组是原生 NetworkPolicy egress rule 列表（to + ports）。
+  egress:
+    inoe: []
+    model: []
+    mcp: []
+    audit: []
+    retrieval: []
+    additional: []

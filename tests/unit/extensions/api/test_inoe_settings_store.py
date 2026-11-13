@@ -34,11 +34,12 @@ def test_defaults_then_env(
     # No override, no env -> hard-coded defaults.
     assert store.get_base_url(db_path=db) == "http://gateway:8080"
     assert store.get_timeout_seconds(db_path=db) == 30.0
-    assert store.get_token(db_path=db) == "inoe_token"
+    assert store.get_token(db_path=db) == ""
+    assert "Authorization" not in store.build_headers(db_path=db)
     payload = store.build_settings_payload(db_path=db)
     assert payload["effective"]["inoe_api_token"] == {
-        "is_set": True,
-        "masked": "****oken",
+        "is_set": False,
+        "masked": "",
     }
     assert payload["env"]["inoe_api_token"] == (
         payload["effective"]["inoe_api_token"]
@@ -137,7 +138,7 @@ def test_apply_update_empty_token_keeps_secret(
         db_path=db,
     )
     assert store.has_override("inoe_api_token", db_path=db) is False
-    assert store.get_token(db_path=db) == "inoe_token"
+    assert store.get_token(db_path=db) == ""
 
 
 def test_apply_update_rejects_unknown_key(tmp_path: Path) -> None:

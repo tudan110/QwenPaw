@@ -12,7 +12,7 @@ vi.mock("./authHeaders", () => ({
   buildAuthHeaders: vi.fn(() => ({})),
 }));
 
-import { clearAuthToken } from "./config";
+import { clearAuthToken, getApiToken } from "./config";
 import { buildAuthHeaders } from "./authHeaders";
 
 // Helper: create a mock Response
@@ -41,6 +41,7 @@ function mockFetch(
 
 describe("request", () => {
   beforeEach(() => {
+    vi.mocked(getApiToken).mockReturnValue("");
     vi.mocked(buildAuthHeaders).mockReturnValue({});
     Object.defineProperty(window, "location", {
       value: { pathname: "/chat", href: "" },
@@ -50,6 +51,19 @@ describe("request", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("expired federated tokens return through SSO bootstrap, not password login", async () => {
+    vi.mocked(getApiToken).mockReturnValue("qp1.expired");
+    const reload = vi.fn();
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/console/chat", href: "", reload },
+      writable: true,
+    });
+    mockFetch(401, { code: "SSO_TOKEN_INVALID" });
+    await expect(request("/chats")).rejects.toThrow("Not authenticated");
+    expect(reload).toHaveBeenCalledOnce();
+    expect(window.location.href).not.toBe("/login");
   });
 
   // ---------------------------------------------------------------------------

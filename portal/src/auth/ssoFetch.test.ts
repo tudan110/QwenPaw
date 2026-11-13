@@ -2,6 +2,25 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createSsoFetch } from "./ssoFetch.ts";
 
+test("local federation credentials are not sent as INOE business JWTs", async () => {
+  const fetchApi = createSsoFetch(
+    async (_input, init) => {
+      const headers = new Headers(init?.headers);
+      assert.equal(headers.get("X-QwenPaw-Access-Token"), "qp1.fixture");
+      assert.equal(headers.has("X-Inoe-Token"), false);
+      return new Response("data: ready\n\n");
+    },
+    "https://portal.example/",
+    ["/copaw-api"],
+    () => "qp1.fixture",
+    () => assert.fail("unexpected relogin"),
+  );
+  const response = await fetchApi("/copaw-api/api/console/chat", {
+    method: "POST", headers: { "X-Inoe-Token": "stale" },
+  });
+  assert.equal(await response.text(), "data: ready\n\n");
+});
+
 test("SSO headers cover core, portal, configured APIs and streaming without changing payloads", async () => {
   const calls: { input: RequestInfo | URL; init?: RequestInit }[] = [];
   const response = new Response("data: ready\n\n");

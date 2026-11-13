@@ -159,6 +159,10 @@ class ApprovalService:
             severity=result.max_severity.value,
             extra=dict(extra or {}),
         )
+        from ...extensions.api.access_session import CURRENT_IDENTITY
+        identity = CURRENT_IDENTITY.get()
+        if identity is not None:
+            pending.extra["auth_user_id"] = identity.user_id
 
         async with self._lock:
             self._pending[request_id] = pending

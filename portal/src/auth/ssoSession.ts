@@ -1,10 +1,9 @@
 // Portal SSO login state, persisted in localStorage.
 //
-// Phase 1 keeps the login state on the client: after the backend exchanges
-// the INOE authorization code for an access token + user info, we store both
-// here. The token is the user's own INOE credential (the same thing INOE
-// keeps in its own cookie), so holding it client-side is acceptable — what we
-// deliberately avoid is ever putting the *phone number* in a browser URL.
+// The backend validates INOE login and issues a short-lived qp1 access token.
+// Legacy sessions may still hold INOE tokens during a paired deployment.
+// Never put either credential in URLs; business INOE tokens remain server-side
+// for newly federated sessions.
 
 export interface SsoUser {
   userId?: string;

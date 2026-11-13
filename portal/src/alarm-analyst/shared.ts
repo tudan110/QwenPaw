@@ -123,9 +123,10 @@ export function formatAlarmAnalystConfidence(value: unknown): string {
 
   const numericValue = Number(normalized);
   if (Number.isFinite(numericValue)) {
-    const percent = numericValue <= 1
-      ? Math.round(numericValue * 100)
-      : Math.round(numericValue);
+    const percent =
+      numericValue <= 1
+        ? Math.round(numericValue * 100)
+        : Math.round(numericValue);
     return `${Math.max(0, Math.min(100, percent))}%`;
   }
   if (normalized === "high" || normalized === "高") {
@@ -165,13 +166,17 @@ function looksLikeAlarmAnalystHistorySession(value: unknown) {
     /^告警分析\s*[·\-]/u.test(text) ||
     /资源\s*ID（CI\s*ID）[:：]/u.test(text) ||
     /告警时间[:：]/u.test(text) ||
-    ((/告警|异常|故障/u.test(text) || /数据库锁/u.test(text)) && /CI\s*ID|资源\s*ID/u.test(text))
+    ((/告警|异常|故障/u.test(text) || /数据库锁/u.test(text)) &&
+      /CI\s*ID|资源\s*ID/u.test(text))
   );
 }
 
 function normalizeAlarmAnalystReportKey(value: unknown) {
   const text = String(value || "").trim();
-  return unwrapPortalAlarmAnalystCardContent(text).trim() || text;
+  const report = unwrapPortalAlarmAnalystCardContent(text).trim() || text;
+  return report
+    .replace(/\n\s*(?:---\s*\n\s*)?>\s*补充说明[：:][\s\S]*$/u, "")
+    .trim();
 }
 
 export function shouldEnableAlarmAnalystCards({
@@ -192,11 +197,17 @@ export function shouldEnableAlarmAnalystCards({
   if (String(meta?.workorderNo || "").trim()) {
     return true;
   }
-  if (/^portal-fault-alarm-/u.test(String(session?.sessionId || session?.session_id || "").trim())) {
+  if (
+    /^portal-fault-alarm-/u.test(
+      String(session?.sessionId || session?.session_id || "").trim(),
+    )
+  ) {
     return true;
   }
 
-  const title = String(session?.title || session?.name || meta?.title || "").trim();
+  const title = String(
+    session?.title || session?.name || meta?.title || "",
+  ).trim();
   if (/^故障处置\s*[·\-]/.test(title)) {
     return true;
   }
@@ -217,20 +228,22 @@ export function shouldEnableAlarmAnalystCards({
 
 export function getAlarmAnalystSourceMessageId(message: any) {
   return String(
-    message?.enhancementSourceMessageId ||
-      message?.backendMessageId ||
-      "",
+    message?.enhancementSourceMessageId || message?.backendMessageId || "",
   ).trim();
 }
 
 export function getAlarmAnalystReportMarkdown(message: any) {
-  const cardReport = String(message?.alarmAnalystCard?.rawReportMarkdown || "").trim();
+  const cardReport = String(
+    message?.alarmAnalystCard?.rawReportMarkdown || "",
+  ).trim();
   if (cardReport) {
     return cardReport;
   }
 
   const responseBlocks = Array.isArray(message?.processBlocks)
-    ? message.processBlocks.filter((block: any) => block?.kind === "response" && block?.content)
+    ? message.processBlocks.filter(
+        (block: any) => block?.kind === "response" && block?.content,
+      )
     : [];
   const responseText = responseBlocks
     .map((block: any) => String(block.content || "").trim())
@@ -250,24 +263,25 @@ export function shouldAttemptAlarmAnalystCardByContent(value: unknown) {
   }
 
   return (
-    normalizedText.includes(PORTAL_ALARM_ANALYST_CARD_MARKER)
-    || (
-      /慢\s*sql/iu.test(normalizedText)
-      && normalizedText.includes("处置建议")
-      && /CMDB|部署|拓扑/iu.test(normalizedText)
-    )
-    || (
-      normalizedText.includes("告警分析报告")
-      && normalizedText.includes("影响范围")
-      && normalizedText.includes("处置建议")
-    )
+    normalizedText.includes(PORTAL_ALARM_ANALYST_CARD_MARKER) ||
+    (/慢\s*sql/iu.test(normalizedText) &&
+      normalizedText.includes("处置建议") &&
+      /CMDB|部署|拓扑/iu.test(normalizedText)) ||
+    (normalizedText.includes("告警分析报告") &&
+      normalizedText.includes("影响范围") &&
+      normalizedText.includes("处置建议"))
   );
 }
 
 export function looksLikeAlarmAnalystReportForAlarmSession(value: unknown) {
   const normalizedText = String(value || "").trim();
   if (normalizedText.length < 80) {
-    return false;
+    return [
+      /^#{1,6}\s+.*告警分析报告[：:]\s*\S/mu,
+      /^#{1,6}[ \t]+.*根因(?:判断|分析)[ \t]*\n[ \t]*(?:[-*][ \t]+)?[^\s#*-]/mu,
+      /^#{1,6}[ \t]+.*影响范围[ \t]*\n[ \t]*(?:[-*][ \t]+)?[^\s#*-]/mu,
+      /^#{1,6}[ \t]+.*处置建议[ \t]*\n[ \t]*(?:[-*][ \t]+)?[^\s#*-]/mu,
+    ].every((heading) => heading.test(normalizedText));
   }
 
   const markerCount = [
@@ -338,29 +352,41 @@ export function serializeAlarmAnalystProcessBlocks(processBlocks: any[] = []) {
     }));
 }
 
-export function mergeAlarmAnalystCards(messages: any[] = [], cards: AlarmAnalystCardV1[] = []) {
-  if (!Array.isArray(messages) || !messages.length || !Array.isArray(cards) || !cards.length) {
+export function mergeAlarmAnalystCards(
+  messages: any[] = [],
+  cards: AlarmAnalystCardV1[] = [],
+) {
+  if (
+    !Array.isArray(messages) ||
+    !messages.length ||
+    !Array.isArray(cards) ||
+    !cards.length
+  ) {
     return messages;
   }
 
   // A retry can persist the same logical card more than once. Keep the last
   // payload for a source message so an older replay cannot win by accident.
-  const dedupedCards = [...cards].reduce<AlarmAnalystCardV1[]>((result, card) => {
-    const sourceMessageId = String(card?.source?.messageId || "").trim();
-    if (!sourceMessageId) {
-      result.push(card);
+  const dedupedCards = [...cards].reduce<AlarmAnalystCardV1[]>(
+    (result, card) => {
+      const sourceMessageId = String(card?.source?.messageId || "").trim();
+      if (!sourceMessageId) {
+        result.push(card);
+        return result;
+      }
+      const previousIndex = result.findIndex(
+        (candidate) =>
+          String(candidate?.source?.messageId || "").trim() === sourceMessageId,
+      );
+      if (previousIndex >= 0) {
+        result[previousIndex] = card;
+      } else {
+        result.push(card);
+      }
       return result;
-    }
-    const previousIndex = result.findIndex(
-      (candidate) => String(candidate?.source?.messageId || "").trim() === sourceMessageId,
-    );
-    if (previousIndex >= 0) {
-      result[previousIndex] = card;
-    } else {
-      result.push(card);
-    }
-    return result;
-  }, []);
+    },
+    [],
+  );
 
   const cardsByMessageId = new Map(
     dedupedCards
@@ -370,17 +396,26 @@ export function mergeAlarmAnalystCards(messages: any[] = [], cards: AlarmAnalyst
   const cardsByReportMarkdown = new Map(
     dedupedCards
       .filter((card) => card?.rawReportMarkdown)
-      .map((card) => [normalizeAlarmAnalystReportKey(card.rawReportMarkdown), card] as const),
+      .map(
+        (card) =>
+          [
+            normalizeAlarmAnalystReportKey(card.rawReportMarkdown),
+            card,
+          ] as const,
+      ),
   );
 
   const matchedCardKeys = new Set<AlarmAnalystCardV1>();
   const mergedMessages = messages.map((message) => {
     const sourceMessageId = getAlarmAnalystSourceMessageId(message);
     const reportMarkdown = getAlarmAnalystReportMarkdown(message);
-    const card = (
+    const card =
       (sourceMessageId ? cardsByMessageId.get(sourceMessageId) : null) ||
-      (reportMarkdown ? cardsByReportMarkdown.get(normalizeAlarmAnalystReportKey(reportMarkdown)) : null)
-    );
+      (reportMarkdown
+        ? cardsByReportMarkdown.get(
+            normalizeAlarmAnalystReportKey(reportMarkdown),
+          )
+        : null);
     if (!card) {
       return message;
     }
@@ -395,23 +430,26 @@ export function mergeAlarmAnalystCards(messages: any[] = [], cards: AlarmAnalyst
   // normalize the report text differently from the streaming response. In
   // that case bind remaining cards to the remaining final report messages
   // within this already-selected alarm session. This is intentionally
-  // conservative: only a one-to-one set of candidates is eligible.
-  const remainingCards = dedupedCards.filter((card) => !matchedCardKeys.has(card));
+  // conservative: only one unmatched card and one report are eligible.
+  const remainingCards = dedupedCards.filter(
+    (card) => !matchedCardKeys.has(card),
+  );
   const remainingMessageIndexes = mergedMessages
     .map((message, index) => ({ message, index }))
-    .filter(({ message }) => (
-      message?.type === "agent"
-      && !message?.alarmAnalystCard
-      && looksLikeAlarmAnalystReportForAlarmSession(getAlarmAnalystReportMarkdown(message))
-    ));
-  if (remainingCards.length === remainingMessageIndexes.length && remainingCards.length > 0) {
-    for (let index = 0; index < remainingCards.length; index += 1) {
-      const target = remainingMessageIndexes[index];
-      mergedMessages[target.index] = {
-        ...target.message,
-        alarmAnalystCard: remainingCards[index],
-      };
-    }
+    .filter(
+      ({ message }) =>
+        message?.type === "agent" &&
+        !message?.alarmAnalystCard &&
+        looksLikeAlarmAnalystReportForAlarmSession(
+          getAlarmAnalystReportMarkdown(message),
+        ),
+    );
+  if (remainingCards.length === 1 && remainingMessageIndexes.length === 1) {
+    const target = remainingMessageIndexes[0];
+    mergedMessages[target.index] = {
+      ...target.message,
+      alarmAnalystCard: remainingCards[0],
+    };
   }
 
   return mergedMessages;

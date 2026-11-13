@@ -87,7 +87,11 @@ class OpenAIProvider(Provider):
     )
 
     def _build_default_headers(self) -> dict:
-        return dict(self.custom_headers) if self.custom_headers else {}
+        from qwenpaw.extensions.api.model_access import local_model_headers
+
+        headers = dict(self.custom_headers) if self.custom_headers else {}
+        headers.update(local_model_headers(self.base_url))
+        return headers
 
     def _client(self, timeout: float = 5) -> AsyncOpenAI:
         kwargs: dict = {
@@ -98,6 +102,8 @@ class OpenAIProvider(Provider):
         headers = self._build_default_headers()
         if headers:
             kwargs["default_headers"] = headers
+        if "X-QwenPaw-Model-Key" in headers:
+            kwargs["http_client"] = httpx.AsyncClient(follow_redirects=False)
         return AsyncOpenAI(**kwargs)
 
     @staticmethod

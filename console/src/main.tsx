@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
+import { bootstrapSso } from "./api/ssoBootstrap";
 import "./i18n";
 import { installHostExternals } from "./plugins/hostExternals";
 import { installHostSdk } from "./plugins/hostSdk/install";
@@ -27,7 +28,6 @@ registerBuiltinCards();
 // the registry so `window.QwenPaw.modules.<page>` is populated soon after
 // startup without blocking the first paint (eager mode used to synchronously
 // pull all 233 page modules + transitive deps into the main thread).
-void registerHostModulesDynamic();
 
 if (typeof window !== "undefined") {
   const originalError = console.error;
@@ -54,4 +54,17 @@ if (typeof window !== "undefined") {
   };
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+const root = createRoot(document.getElementById("root")!);
+root.render(<div role="status">Authenticating…</div>);
+void bootstrapSso().then((status) => {
+  if (status === "ready") {
+    void registerHostModulesDynamic();
+    root.render(<App />);
+  } else if (status === "unavailable") {
+    root.render(
+      <div role="alert">
+        Authentication service unavailable. Please reload.
+      </div>,
+    );
+  }
+});

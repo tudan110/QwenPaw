@@ -15,6 +15,9 @@ from qwenpaw.extensions.integrations.working_secrets import (
 from qwenpaw.extensions.integrations.portal_real_alarms import (
     query_portal_real_alarms,
 )
+from qwenpaw.extensions.integrations.alarm_query_scope import (
+    build_alarm_query_scope,
+)
 
 ensure_working_secrets_loaded()
 
@@ -148,7 +151,7 @@ def query_dashboard_alarm_severity(
 ) -> dict[str, Any]:
     """Read the same severity aggregation as the monitoring dashboard."""
     begin_time, end_time = _dashboard_day_window(now)
-    return _get_envelope(
+    envelope = _get_envelope(
         DASHBOARD_SEVERITY_ENDPOINT,
         {
             "type": 1,
@@ -157,6 +160,12 @@ def query_dashboard_alarm_severity(
             "alarmClassType": 0,
         },
     )
+    return {
+        **envelope,
+        "queryScope": build_alarm_query_scope(
+            begin_time, end_time, _alarm_timezone()
+        ),
+    }
 
 
 def query_dashboard_alarm_history(
@@ -164,10 +173,10 @@ def query_dashboard_alarm_history(
     now: datetime | None = None,
     limit: int = DASHBOARD_ALARM_LIST_LIMIT,
 ) -> dict[str, Any]:
-    """Read the dashboard's complete same-day alarm history for TOP analysis."""
+    """Read one page of same-day alarm history for TOP analysis."""
     begin_time, end_time = _dashboard_day_window(now)
     page_size = max(1, min(int(limit or DASHBOARD_ALARM_LIST_LIMIT), 1000))
-    return _get_envelope(
+    envelope = _get_envelope(
         DASHBOARD_ALARM_LIST_ENDPOINT,
         {
             "beginTime": begin_time,
@@ -177,6 +186,12 @@ def query_dashboard_alarm_history(
             "pageSize": page_size,
         },
     )
+    return {
+        **envelope,
+        "queryScope": build_alarm_query_scope(
+            begin_time, end_time, _alarm_timezone()
+        ),
+    }
 
 
 def query_dashboard_active_alarm_history(
@@ -184,14 +199,14 @@ def query_dashboard_active_alarm_history(
     now: datetime | None = None,
     limit: int = DASHBOARD_ALARM_LIST_LIMIT,
 ) -> dict[str, Any]:
-    """Read the rolling 24-hour, uncleared alarm list for health status."""
+    """Read window-scoped uncleared alarms, not the full active population."""
     current = (now or datetime.now(timezone.utc)).astimezone(_alarm_timezone())
     begin_time = (current - timedelta(hours=ACTIVE_ALARM_LOOKBACK_HOURS)).strftime(
         "%Y-%m-%d %H:%M:%S",
     )
     end_time = current.strftime("%Y-%m-%d %H:%M:%S")
     page_size = max(1, min(int(limit or DASHBOARD_ALARM_LIST_LIMIT), 1000))
-    return _get_envelope(
+    envelope = _get_envelope(
         DASHBOARD_ALARM_LIST_ENDPOINT,
         {
             "beginTime": begin_time,
@@ -202,6 +217,12 @@ def query_dashboard_active_alarm_history(
             "pageSize": page_size,
         },
     )
+    return {
+        **envelope,
+        "queryScope": build_alarm_query_scope(
+            begin_time, end_time, _alarm_timezone(), is_clear=0
+        ),
+    }
 
 
 def query_cmdb_summary() -> dict[str, Any]:
@@ -215,12 +236,28 @@ def query_cmdb_summary() -> dict[str, Any]:
     return _get_envelope(f"{CMDB_STAT_SUMMARY_ENDPOINT}?{query}")
 
 
-def query_active_alarm_total() -> int:
+def query_active_alarm_statistics() -> dict[str, Any]:
+    """Return the upstream total within the configured uncleared window."""
     payload = query_portal_real_alarms(limit=1)
-    return int(payload.get("total") or 0) if isinstance(payload, dict) else 0
+    return {
+        "total": (
+            payload.get("total")
+            if payload.get("sourceStatus") == "live"
+            and payload.get("totalIsExact")
+            else None
+        ),
+        "queryScope": payload.get("queryScope"),
+        "sourceStatus": payload.get("sourceStatus", "unavailable"),
+    }
+
+
+def query_active_alarm_total() -> int | None:
+    """Compatibility accessor; this is a bounded total, never a global one."""
+    return query_active_alarm_statistics()["total"]
 
 
 def query_monitoring_overview_dashboard() -> dict[str, Any]:
+    alarms = query_active_alarm_statistics()
     return {
         "assetOverview": query_asset_overview(),
         "businessCockpit": query_business_cockpit(),
@@ -229,5 +266,7 @@ def query_monitoring_overview_dashboard() -> dict[str, Any]:
         "workorderStats": query_workorder_stats(),
         "severityTrend": query_severity_trend(),
         "cmdbSummary": query_cmdb_summary(),
-        "activeAlarmTotal": query_active_alarm_total(),
+        "activeAlarmTotal": alarms["total"],
+        "activeAlarmQueryScope": alarms["queryScope"],
+        "activeAlarmSourceStatus": alarms["sourceStatus"],
     }

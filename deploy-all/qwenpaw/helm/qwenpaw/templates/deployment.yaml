@@ -31,6 +31,8 @@ spec:
         - name: pvc-layout-bootstrap
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.initContainerSecurityContext | nindent 12 }}
           command:
             - sh
             - -ec
@@ -40,7 +42,19 @@ spec:
                 echo "PVC root contains a legacy direct working layout; migration is required before subPath deployment." >&2
                 exit 1
               fi
-              mkdir -p "$root/working" "$root/secret"
+              umask 077
+              {{- range $name := list "workingDir" "secretDir" "backupsDir" }}
+              {{- $directory := index $.Values.persistence $name }}
+              {{- if $directory.enabled }}
+              directory={{ $directory.subPath | quote }}
+              mkdir -p "$root/$directory"
+              if [ ! -w "$root/$directory" ] || [ ! -O "$root/$directory" ]; then
+                  echo "PVC $directory must be owned and writable by the runtime UID; migrate ownership offline." >&2
+                  exit 1
+              fi
+              chmod {{ if eq $name "secretDir" }}700{{ else }}750{{ end }} "$root/$directory"
+              {{- end }}
+              {{- end }}
           volumeMounts:
             - name: data
               mountPath: {{ .Values.persistence.rootBootstrap.mountPath }}
@@ -51,6 +65,8 @@ spec:
         - name: managed-seed-sync
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.initContainerSecurityContext | nindent 12 }}
           command:
             - python3
             - /usr/local/bin/sync_managed_seed.py
@@ -70,11 +86,17 @@ spec:
             - name: data
               mountPath: {{ .Values.persistence.workingDir.mountPath }}
               subPath: {{ .Values.persistence.workingDir.subPath }}
+            - name: runtime
+              mountPath: /app/runtime
+            - name: tmp
+              mountPath: /tmp
       {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           ports:
             - containerPort: {{ .Values.service.targetPort }}
           env:
@@ -88,21 +110,50 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if .Values.persistence.enabled }}
           volumeMounts:
+            - name: runtime
+              mountPath: /app/runtime
+            - name: tmp
+              mountPath: /tmp
+          {{- if .Values.persistence.enabled }}
             {{- if .Values.persistence.workingDir.enabled }}
             - name: data
               mountPath: {{ .Values.persistence.workingDir.mountPath }}
               subPath: {{ .Values.persistence.workingDir.subPath }}
+            {{- else }}
+            - name: ephemeral-working
+              mountPath: /app/working
             {{- end }}
             {{- if .Values.persistence.secretDir.enabled }}
             - name: data
               mountPath: {{ .Values.persistence.secretDir.mountPath }}
               subPath: {{ .Values.persistence.secretDir.subPath }}
+            {{- else }}
+            - name: ephemeral-secret
+              mountPath: /app/working.secret
             {{- end }}
+            {{- if .Values.persistence.backupsDir.enabled }}
+            - name: data
+              mountPath: {{ .Values.persistence.backupsDir.mountPath }}
+              subPath: {{ .Values.persistence.backupsDir.subPath }}
+            {{- else }}
+            - name: ephemeral-backups
+              mountPath: /app/working.backups
+            {{- end }}
+          {{- else }}
+            - name: ephemeral-working
+              mountPath: /app/working
+            - name: ephemeral-secret
+              mountPath: /app/working.secret
+            - name: ephemeral-backups
+              mountPath: /app/working.backups
           {{- end }}
-      {{- if .Values.persistence.enabled }}
       volumes:
+        - name: runtime
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+      {{- if .Values.persistence.enabled }}
         - name: data
           {{- if .Values.persistence.existingClaim }}
           persistentVolumeClaim:
@@ -111,5 +162,24 @@ spec:
           persistentVolumeClaim:
             claimName: {{ include "qwenpaw.fullname" . }}-data
           {{- end }}
+        {{- if not .Values.persistence.workingDir.enabled }}
+        - name: ephemeral-working
+          emptyDir: {}
+        {{- end }}
+        {{- if not .Values.persistence.secretDir.enabled }}
+        - name: ephemeral-secret
+          emptyDir: {}
+        {{- end }}
+        {{- if not .Values.persistence.backupsDir.enabled }}
+        - name: ephemeral-backups
+          emptyDir: {}
+        {{- end }}
+      {{- else }}
+        - name: ephemeral-working
+          emptyDir: {}
+        - name: ephemeral-secret
+          emptyDir: {}
+        - name: ephemeral-backups
+          emptyDir: {}
       {{- end }}
       restartPolicy: Always

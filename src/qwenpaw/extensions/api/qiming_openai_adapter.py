@@ -99,13 +99,21 @@ def _resolve_upstream_url() -> str:
 
 def _resolve_authorization(request: Request) -> str:
     inbound = (request.headers.get("Authorization") or "").strip()
+    from .sso_auth import normalize_token
+    if normalize_token(inbound).startswith("qp1."):
+        inbound = ""
+    identity = getattr(request.state, "access_identity", None)
+    if identity is not None and normalize_token(inbound) == identity.inoe_token:
+        inbound = ""
+    configured = _read_env(
+        "QWENPAW_QIMING_BEARER_TOKEN", "COPAW_QIMING_BEARER_TOKEN"
+    )
+    if identity is not None and configured:
+        return configured if configured.lower().startswith("bearer ") else f"Bearer {configured}"
     if inbound:
         return inbound
 
-    token = _read_env(
-        "QWENPAW_QIMING_BEARER_TOKEN",
-        "COPAW_QIMING_BEARER_TOKEN",
-    )
+    token = configured
     if not token:
         return ""
     if token.lower().startswith("bearer "):

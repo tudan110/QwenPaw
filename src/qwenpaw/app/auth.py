@@ -572,14 +572,33 @@ def revoke_all_tokens() -> bool:
 
 
 def _resolve_client_ip(request: Request) -> str:
-    """Return the real client IP, respecting reverse-proxy headers."""
-    forwarded_for = request.headers.get("x-forwarded-for", "")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    real_ip = request.headers.get("x-real-ip", "")
-    if real_ip:
-        return real_ip.strip()
-    return request.client.host if request.client else ""
+    """Use the socket peer unless an operator explicitly trusts the proxy."""
+    import ipaddress
+
+    peer = request.client.host if request.client else ""
+    configured = EnvVarLoader.get_str("QWENPAW_TRUSTED_PROXY_CIDRS", "")
+    try:
+        networks = [
+            ipaddress.ip_network(value.strip(), strict=False)
+            for value in configured.split(",") if value.strip()
+        ]
+        address = ipaddress.ip_address(peer)
+    except ValueError:
+        return peer
+    if not any(address in network for network in networks):
+        return peer
+    chain = [
+        value.strip() for value in request.headers.get("x-forwarded-for", "").split(",")
+        if value.strip()
+    ]
+    for value in reversed(chain):
+        try:
+            address = ipaddress.ip_address(value)
+        except ValueError:
+            return peer
+        if not any(address in network for network in networks):
+            return str(address)
+    return peer
 
 
 # Make this function available at module level so it can be
@@ -616,6 +635,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         call_next,
     ) -> Response:
         """Check Bearer token on protected API routes; skip public paths."""
+        if getattr(request.state, "access_identity", None) is not None:
+            # Unified SSO federation already authenticated this request.
+            return await call_next(request)
         if self._should_skip_auth(request):
             return await call_next(request)
 

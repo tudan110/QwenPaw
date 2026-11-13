@@ -6,6 +6,7 @@ layer (which shells out to ``skills/fde-onboarding/scripts/fde_tools.py``),
 pointing the ``fde`` workspace at the repo's deploy seed and the staged dir at
 ``tmp_path``. The lighter tests cover the FastAPI-free helpers directly.
 """
+
 from __future__ import annotations
 
 import os
@@ -90,7 +91,12 @@ def test_full_staged_skill_lifecycle(fde_env):
     assert "scripts/chat_skill_bridge.py" in paths
     skill_md = next(f for f in detail["files"] if f["path"] == "SKILL.md")
     assert "name: demo-alarm-stat" in (skill_md["content"] or "")
-    assert detail["selfcheck"]["ready_for_review"] is True
+    assert detail["selfcheck"]["ready_for_review"] is False
+    assert detail["selfcheck"]["scan"]["status"] == "skipped"
+    assert (
+        svc.selfcheck_staged_skill("demo-alarm-stat")["ready_for_review"]
+        is True
+    )
 
     bundle = svc._read_staged_bundle(fde_env / "demo-alarm-stat")
     assert "name: demo-alarm-stat" in bundle["content"]
@@ -153,7 +159,8 @@ def test_install_staged_skill_into_workspace(fde_env, monkeypatch, tmp_path):
     assert (skill_dir / "SKILL.md").exists()
     assert (skill_dir / "runtime" / "router.py").exists()
     assert (skill_dir / "scripts" / "chat_skill_bridge.py").exists()
-    assert (skill_dir / ".env.example").exists()
+    assert not (skill_dir / ".env.example").exists()
+    assert not (skill_dir / ".env").exists()
     # FDE-internal files must not be copied into the installed skill
     assert not (skill_dir / "_fde_meta.json").exists()
     assert not (skill_dir / "GENERATION.md").exists()
@@ -171,7 +178,9 @@ def test_install_staged_skill_into_workspace(fde_env, monkeypatch, tmp_path):
 
 
 def test_install_mirrors_to_gateway_by_default(
-    fde_env, monkeypatch, tmp_path,
+    fde_env,
+    monkeypatch,
+    tmp_path,
 ):
     """二开 skills install into BOTH the business agent AND gateway so the
     portal main chat box can trigger them directly without depending on
@@ -190,7 +199,9 @@ def test_install_mirrors_to_gateway_by_default(
 
     monkeypatch.setattr(svc, "_resolve_workspace_dir", fake_resolve)
     monkeypatch.setattr(
-        svc, "_target_agent_exists", lambda ws: ws in {"order", "gateway"},
+        svc,
+        "_target_agent_exists",
+        lambda ws: ws in {"order", "gateway"},
     )
 
     svc.generate_skill(
@@ -221,13 +232,17 @@ def test_install_mirrors_to_gateway_by_default(
 
 
 def test_install_skips_mirror_when_target_is_gateway(
-    fde_env, monkeypatch, tmp_path,
+    fde_env,
+    monkeypatch,
+    tmp_path,
 ):
     """If the operator chose gateway as the target, don't double-install."""
     gateway_ws = tmp_path / "gateway-ws"
     gateway_ws.mkdir()
     monkeypatch.setattr(
-        svc, "_resolve_workspace_dir", lambda ws: gateway_ws,
+        svc,
+        "_resolve_workspace_dir",
+        lambda ws: gateway_ws,
     )
     monkeypatch.setattr(svc, "_target_agent_exists", lambda ws: True)
 
@@ -255,11 +270,14 @@ def test_install_opt_out_mirror(fde_env, monkeypatch, tmp_path):
     target_ws.mkdir()
     gateway_ws.mkdir()
     monkeypatch.setattr(
-        svc, "_resolve_workspace_dir",
+        svc,
+        "_resolve_workspace_dir",
         lambda ws: target_ws if ws == "order" else gateway_ws,
     )
     monkeypatch.setattr(
-        svc, "_target_agent_exists", lambda ws: ws in {"order", "gateway"},
+        svc,
+        "_target_agent_exists",
+        lambda ws: ws in {"order", "gateway"},
     )
 
     svc.generate_skill(
@@ -273,7 +291,8 @@ def test_install_opt_out_mirror(fde_env, monkeypatch, tmp_path):
     )
     _approve_staged("demo-no-mirror", fde_env)
     result = svc.install_staged_skill(
-        "demo-no-mirror", mirror_to_gateway=False,
+        "demo-no-mirror",
+        mirror_to_gateway=False,
     )
     assert result["installed"] is True
     assert result["gateway_mirror"]["mirrored"] is False
@@ -281,7 +300,9 @@ def test_install_opt_out_mirror(fde_env, monkeypatch, tmp_path):
 
 
 def test_delete_installed_skill_cleans_gateway_mirror(
-    fde_env, monkeypatch, tmp_path,
+    fde_env,
+    monkeypatch,
+    tmp_path,
 ):
     """Deleting a 二开 skill also wipes its gateway mirror so we don't
     leave orphan code in the entry agent's workspace."""
@@ -291,11 +312,14 @@ def test_delete_installed_skill_cleans_gateway_mirror(
     gateway_ws.mkdir()
 
     monkeypatch.setattr(
-        svc, "_resolve_workspace_dir",
+        svc,
+        "_resolve_workspace_dir",
         lambda ws: gateway_ws if ws == "gateway" else target_ws,
     )
     monkeypatch.setattr(
-        svc, "_target_agent_exists", lambda ws: ws in {"order", "gateway"},
+        svc,
+        "_target_agent_exists",
+        lambda ws: ws in {"order", "gateway"},
     )
 
     svc.generate_skill(
@@ -314,7 +338,8 @@ def test_delete_installed_skill_cleans_gateway_mirror(
     assert (gateway_ws / "skills" / "demo-delete-me").is_dir()
 
     result = svc.delete_installed_skill(
-        target_workspace="order", skill_name="demo-delete-me",
+        target_workspace="order",
+        skill_name="demo-delete-me",
     )
     assert result["deleted"] is True
     assert result["gateway_mirror_removed"] is True
@@ -328,7 +353,8 @@ def test_delete_installed_skill_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(svc, "_resolve_workspace_dir", lambda ws: workspace)
     with pytest.raises(svc.FdeWorkbenchError):
         svc.delete_installed_skill(
-            target_workspace="biz", skill_name="nope",
+            target_workspace="biz",
+            skill_name="nope",
         )
 
 
@@ -349,10 +375,14 @@ def test_copy_installed_skill_move(fde_env, monkeypatch, tmp_path):
     # so we don't touch the real user config).
     workspaces = {"export": src, "order": dst}
     monkeypatch.setattr(
-        svc, "_resolve_workspace_dir", lambda ws: workspaces[ws],
+        svc,
+        "_resolve_workspace_dir",
+        lambda ws: workspaces[ws],
     )
     monkeypatch.setattr(
-        svc, "_target_agent_exists", lambda ws: ws in workspaces,
+        svc,
+        "_target_agent_exists",
+        lambda ws: ws in workspaces,
     )
 
     svc.generate_skill(
@@ -459,7 +489,9 @@ def test_list_installed_erkai_skills(monkeypatch, tmp_path):
     monkeypatch.setattr(
         config_mod,
         "load_agent_config",
-        lambda aid: _AgentCfg({"agent-a": "员工 A", "agent-b": "员工 B"}.get(aid, aid)),
+        lambda aid: _AgentCfg(
+            {"agent-a": "员工 A", "agent-b": "员工 B"}.get(aid, aid)
+        ),
     )
 
     result = svc.list_installed_erkai_skills()
@@ -550,7 +582,9 @@ def test_skill_env_rejects_unknown_skill(monkeypatch, tmp_path):
 
 
 def test_install_skip_domain_check_prewarms_cache(
-    fde_env, monkeypatch, tmp_path,
+    fde_env,
+    monkeypatch,
+    tmp_path,
 ):
     """skip_domain_check pre-warms the domain_guard verdict cache."""
     workspace = tmp_path / "ws"
@@ -651,7 +685,9 @@ def test_install_auto_creates_missing_target(fde_env, monkeypatch, tmp_path):
         return workspace
 
     monkeypatch.setattr(svc, "_target_agent_exists", fake_exists)
-    monkeypatch.setattr(svc, "create_business_agent", fake_create_business_agent)
+    monkeypatch.setattr(
+        svc, "create_business_agent", fake_create_business_agent
+    )
     monkeypatch.setattr(svc, "_resolve_workspace_dir", fake_resolve)
     # _pick_default_active_model also reads real config — stub it too.
     monkeypatch.setattr(svc, "_pick_default_active_model", lambda: None)

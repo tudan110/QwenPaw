@@ -33,7 +33,13 @@ export function createSsoFetch(
     const headers = new Headers(
       init?.headers ?? (input instanceof Request ? input.headers : undefined),
     );
-    if (token) headers.set("X-Inoe-Token", token);
+    if (token?.startsWith("qp1.")) {
+      headers.delete("X-Inoe-Token");
+      headers.set("X-QwenPaw-Access-Token", token);
+    } else if (token) {
+      headers.delete("X-QwenPaw-Access-Token");
+      headers.set("X-Inoe-Token", token);
+    }
     const response = await fetchImpl(input, { ...init, headers });
     const method = (init?.method ??
       (input instanceof Request ? input.method : "GET")).toUpperCase();

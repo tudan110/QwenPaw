@@ -153,6 +153,17 @@ def health() -> dict[str, Any]:
         os.environ.get("KNOWLEDGE_BASE_EMBEDDING_ENABLED", "").lower()
         == "false"
     )
+    llm_status = _llm.model_status()
+    deepseek_configured = _llm.is_available("deepseek")
+    if not llm_status["enabled"] and deepseek_configured:
+        llm_status = {
+            "enabled": True,
+            "provider": "deepseek",
+            "model": _llm.DEFAULT_MODEL,
+            "model_label": f"DeepSeek / {_llm.DEFAULT_MODEL}",
+            "model_source": "environment",
+            "connectivity_checked": False,
+        }
     return {
         "status": "ok" if _ENGINE_READY else "initializing",
         "storage": {
@@ -161,8 +172,9 @@ def health() -> dict[str, Any]:
             "dbPath": h["db_path"],
         },
         "llm": {
-            "enabled": _llm.is_available("deepseek"),
-            "provider": "deepseek",
+            "provider": "qwenpaw_active",
+            **llm_status,
+            "deepseek_configured": deepseek_configured,
         },
         "embedding": {
             "enabled": _is_embedding_enabled(),
@@ -235,64 +247,15 @@ async def _consume_model_text(response: Any) -> str:
 def _resolve_active_model_metadata(
     agent_id: str | None = None,
 ) -> dict[str, str]:
+    from qwenpaw.extensions.integrations.knowledge_model import (
+        KnowledgeModelUnavailable,
+        resolve_knowledge_model,
+    )
+
     try:
-        from qwenpaw.config.config import load_agent_config
-        from qwenpaw.providers import ProviderManager
-
-        manager = ProviderManager.get_instance()
-        model_slot = None
-        source = "global"
-        normalized_agent_id = str(agent_id or "").strip()
-        if normalized_agent_id:
-            try:
-                agent_config = load_agent_config(normalized_agent_id)
-                candidate = agent_config.active_model
-                if candidate and candidate.provider_id and candidate.model:
-                    model_slot = candidate
-                    source = "agent"
-            except Exception:
-                pass
-
-        if not model_slot:
-            model_slot = manager.get_active_model()
-            source = "global"
-
-        if not model_slot:
-            return {}
-
-        provider_id = str(getattr(model_slot, "provider_id", "") or "")
-        model_id = str(getattr(model_slot, "model", "") or "")
-        provider_name = provider_id
-        model_name = model_id
-        try:
-            provider = (
-                manager.get_provider(provider_id) if provider_id else None
-            )
-            if provider:
-                provider_name = str(
-                    getattr(provider, "name", "") or provider_id
-                )
-                for item in list(getattr(provider, "models", []) or []) + list(
-                    getattr(provider, "extra_models", []) or []
-                ):
-                    if str(getattr(item, "id", "") or "") == model_id:
-                        model_name = str(getattr(item, "name", "") or model_id)
-                        break
-        except Exception:
-            pass
-
-        return {
-            "provider": provider_id,
-            "provider_name": provider_name,
-            "model": model_id,
-            "model_name": model_name,
-            "model_label": " / ".join(
-                p for p in [provider_name, model_name] if p
-            ),
-            "model_source": source,
-        }
-    except Exception:
-        return {}
+        return resolve_knowledge_model(agent_id or "knowledge").metadata()
+    except KnowledgeModelUnavailable as exc:
+        return {"model_source": "unavailable", "reason": exc.reason}
 
 
 async def synthesize_answer(
@@ -354,33 +317,32 @@ async def synthesize_answer(
         f"用户问题：{query}\n\n" f"知识库证据：\n{evidence_text}\n\n" "请给出 AI 总结。"
     )
 
-    from qwenpaw.agents.model_factory import create_model_and_formatter
-    from agentscope.message import Msg, TextBlock
+    from providers import llm
 
     model_agent_id = str(agent_id or "").strip() or "knowledge"
-    model_metadata = _resolve_active_model_metadata(model_agent_id)
-    model, _ = create_model_and_formatter(agent_id=model_agent_id)
-    # agentscope's ChatModelBase expects Msg objects (it applies the formatter
-    # internally). Passing role/content dicts raises "Expected Msg object, got
-    # dict" — the same trap the big-screen pipeline hit; convert first.
-    messages = [
-        Msg(
-            name=role,
-            role=role,
-            content=[TextBlock(type="text", text=text)],
+    try:
+        result = await asyncio.to_thread(
+            llm._call_qwenpaw_active,
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            agent_id=model_agent_id,
+            timeout_s=120,
+            request_id="rag-synthesize",
         )
-        for role, text in (
-            ("system", system_prompt),
-            ("user", user_prompt),
-        )
-    ]
-    response = await model(messages)
-    answer = await asyncio.wait_for(_consume_model_text(response), timeout=120)
+    except llm.LLMError as exc:
+        logger.warning("Knowledge synthesis unavailable: %s", exc.reason)
+        return {
+            "answer": "",
+            "skipped": True,
+            "reason": exc.reason,
+            "evidence_ids": ordered_ids,
+            "created_at": _now_iso(),
+        }
     return {
-        "answer": answer,
-        **model_metadata,
+        **result,
         "evidence_ids": ordered_ids,
-        "created_at": _now_iso(),
     }
 
 

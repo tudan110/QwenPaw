@@ -6,9 +6,13 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 
+import pytest
 
 SCRIPT = (
     Path(__file__).parents[3]
@@ -68,7 +72,10 @@ def build_seed(seed: Path) -> None:
 
     files = {}
     for path in sorted(seed.rglob("*")):
-        if path.is_file() and path.name != "seed-manifest.json":
+        if path.is_file() and path.name not in {
+            "seed-manifest.json",
+            "config.json",
+        }:
             relative = str(path.relative_to(seed))
             kind = "skill_file"
             if relative.endswith("AGENTS.md"):
@@ -142,6 +149,94 @@ def build_target(target: Path) -> None:
             },
         },
     )
+
+
+@pytest.mark.parametrize("existing_working", [False, True])
+@pytest.mark.parametrize("existing_secret", [False, True])
+def test_entrypoint_preserves_live_secrets_and_syncs_existing_seed(
+    tmp_path: Path,
+    existing_working: bool,
+    existing_secret: bool,
+) -> None:
+    if not shutil.which("envsubst"):
+        pytest.skip("envsubst is not installed")
+    root = Path(__file__).parents[3]
+    seed = tmp_path / "seed"
+    working = tmp_path / "working"
+    secret = tmp_path / "secret"
+    runtime = tmp_path / "runtime"
+    build_seed(seed)
+    if existing_working:
+        build_target(working)
+    if existing_secret:
+        write(secret / ".master_key", "operator-key")
+        write(secret / "providers/custom.json", "operator-provider")
+    supervisor_stub = tmp_path / "supervisord"
+    write(supervisor_stub, '#!/bin/sh\ntest -s "$2"\n')
+    supervisor_stub.chmod(0o755)
+    template = tmp_path / "supervisord.conf.template"
+    shutil.copyfile(
+        root / "deploy-all/qwenpaw/config/supervisord.conf.template",
+        template,
+    )
+    entrypoint = (root / "deploy-all/qwenpaw/entrypoint.sh").read_text(
+        encoding="utf-8"
+    )
+    replacements = {
+        "/app/share/qwenpaw-seed": str(seed),
+        "/usr/local/bin/sync_managed_seed.py": str(SCRIPT),
+        "/etc/supervisor/conf.d/supervisord.conf.template": str(template),
+        "/usr/bin/supervisord": str(supervisor_stub),
+    }
+    for before, after in replacements.items():
+        entrypoint = entrypoint.replace(before, after)
+    script = tmp_path / "entrypoint.sh"
+    write(script, entrypoint)
+    env = {
+        **os.environ,
+        "QWENPAW_WORKING_DIR": str(working),
+        "QWENPAW_SECRET_DIR": str(secret),
+        "QWENPAW_BACKUP_DIR": str(tmp_path / "backups"),
+        "QWENPAW_RUNTIME_DIR": str(runtime),
+        "QWENPAW_PORT": "9088",
+    }
+    for _ in range(2):
+        subprocess.run(
+            ["sh", str(script)],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    if existing_secret:
+        assert (secret / ".master_key").read_text() == "operator-key"
+        assert (secret / "providers/custom.json").read_text() == (
+            "operator-provider"
+        )
+    else:
+        assert list(secret.iterdir()) == []
+    assert (working / "config.json").read_text() == (
+        json.dumps(
+            {"runtime": "target" if existing_working else "seed"},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    assert (
+        working / "workspaces/demo/skills/example/SKILL.md"
+    ).read_text() == ("# new\n")
+    if existing_working:
+        assert (
+            working / "workspaces/demo/skills/example/.env"
+        ).read_text() == ("TOKEN=keep\n")
+        assert (
+            working / "workspaces/demo/skills/user/SKILL.md"
+        ).read_text() == ("# user\n")
+    assert (working / "custom_channels/portal_api.py").is_file()
+    config = (runtime / "supervisord.conf").read_text()
+    assert "--port 9088" in config
+    assert f"pidfile={runtime}/supervisord.pid" in config
+    assert "${QWENPAW_RUNTIME_DIR}" not in config
 
 
 def test_empty_target_bootstraps_full_seed(tmp_path: Path) -> None:

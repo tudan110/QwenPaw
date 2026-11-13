@@ -19,6 +19,50 @@ class _FakeResponse:
         return self._payload
 
 
+def test_window_metadata_matches_request_and_preserves_upstream_total(
+    monkeypatch,
+) -> None:
+    captured = {}
+    tz = timezone(timedelta(hours=5, minutes=30))
+    monkeypatch.setattr(portal_real_alarms, "_get_alarm_timezone", lambda: tz)
+
+    def query(**kwargs):
+        captured.update(kwargs)
+        return {"code": 200, "total": 5954, "rows": []}
+
+    monkeypatch.setattr(portal_real_alarms, "_post_real_alarm_list", query)
+    result = query_portal_real_alarms(
+        limit=1, now=datetime(2026, 7, 22, 2, 0, tzinfo=timezone.utc),
+        lookback_minutes=60,
+    )
+    assert result["total"] == 5954
+    assert result["totalIsExact"] is True
+    assert result["windowComplete"] is False
+    scope = result["queryScope"]
+    assert scope["startTime"] == captured["begin_time"] == "2026-07-22 06:30:00"
+    assert scope["endTime"] == captured["end_time"] == "2026-07-22 07:30:00"
+    assert scope["timezone"] == "UTC+05:30"
+    assert scope["kind"] == "windowed_uncleared"
+    assert scope["complete"] is False
+
+
+def test_missing_rows_is_failed_and_missing_total_is_not_exact(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        portal_real_alarms, "_post_real_alarm_list",
+        lambda **kwargs: {"code": 200},
+    )
+    assert query_portal_real_alarms(limit=1)["total"] is None
+    monkeypatch.setattr(
+        portal_real_alarms, "_post_real_alarm_list",
+        lambda **kwargs: {"code": 200, "rows": []},
+    )
+    result = query_portal_real_alarms(limit=1)
+    assert result["totalIsExact"] is False
+    assert result["queryScope"]["complete"] is False
+
+
 def test_query_portal_real_alarms_normalizes_live_rows(monkeypatch) -> None:
     monkeypatch.setattr(
         "qwenpaw.extensions.integrations.portal_real_alarms._post_real_alarm_list",
@@ -160,10 +204,14 @@ def test_query_portal_real_alarms_returns_empty_live_payload_when_live_rows_empt
 
     payload = query_portal_real_alarms(limit=10)
 
-    assert payload == {"total": 0, "items": [], "source": "live"}
+    assert payload["total"] == 0
+    assert payload["items"] == []
+    assert payload["sourceStatus"] == "live"
+    assert payload["queryScope"]["kind"] == "windowed_uncleared"
+    assert payload["queryScope"]["complete"] is False
 
 
-def test_query_portal_real_alarms_returns_empty_live_payload_on_request_failure(
+def test_query_portal_real_alarms_reports_unknown_total_on_request_failure(
     monkeypatch,
 ) -> None:
     def _raise_request_error(
@@ -178,10 +226,13 @@ def test_query_portal_real_alarms_returns_empty_live_payload_on_request_failure(
 
     payload = query_portal_real_alarms(limit=10)
 
-    assert payload == {"total": 0, "items": [], "source": "live"}
+    assert payload["total"] is None
+    assert payload["items"] == []
+    assert payload["sourceStatus"] == "failed"
+    assert payload["queryScope"]["complete"] is False
 
 
-def test_query_portal_real_alarms_returns_empty_live_payload_when_request_failure_has_no_fallback(
+def test_query_portal_real_alarms_reports_failure_when_no_fallback(
     monkeypatch,
 ) -> None:
     def _raise_request_error(
@@ -195,7 +246,9 @@ def test_query_portal_real_alarms_returns_empty_live_payload_when_request_failur
     )
     payload = query_portal_real_alarms(limit=10)
 
-    assert payload == {"total": 0, "items": [], "source": "live"}
+    assert payload["total"] is None
+    assert payload["items"] == []
+    assert payload["source"] == "failed"
 
 
 def test_query_portal_real_alarms_applies_default_query_window(
@@ -487,7 +540,9 @@ def test_query_portal_real_alarms_sends_bearer_header_from_config(
     monkeypatch.setattr(portal_real_alarms.requests, "get", _fake_get)
     payload = query_portal_real_alarms(limit=3)
 
-    assert payload == {"total": 0, "items": [], "source": "live"}
+    assert payload["total"] == 0
+    assert payload["items"] == []
+    assert payload["sourceStatus"] == "live"
     assert captured["url"].endswith("/resource/alarm/statistics/hisAlarmList")
     assert captured["authorization"] == "Bearer demo-token"
 
@@ -511,9 +566,10 @@ def test_error_envelope_raises_for_honest_caller(monkeypatch) -> None:
         query_portal_real_alarms(limit=3, raise_on_error=True)
     assert "服务未找到" in str(excinfo.value)
 
-    # legacy/skill callers keep swallowing to an empty live payload
+    # Non-raising callers retain a structured failure, not a fake zero.
     payload = query_portal_real_alarms(limit=3, raise_on_error=False)
-    assert payload == {"total": 0, "items": [], "source": "live"}
+    assert payload["total"] is None
+    assert payload["sourceStatus"] == "failed"
 
 
 def test_parse_alarm_event_time_uses_alarm_timezone(monkeypatch) -> None:

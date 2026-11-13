@@ -1,6 +1,6 @@
 # 运行时数据迁移参考（不用于通用镜像构建）
 
-> **当前规则**：通用 QwenPaw 镜像从 `deploy-all/qwenpaw/working/` 生成无环境工作目录 seed，不读取或打包 `deploy-all/qwenpaw/data/qwenpaw/` 或 `~/.qwenpaw`。按当前发布要求，唯一例外是 `deploy-all/qwenpaw/data/qwenpaw.secret/`：它会随镜像交付已配置的大模型。请参阅 [`QWENPAW_IMAGE_BUILD.md`](QWENPAW_IMAGE_BUILD.md) 了解正式打包流程。
+> **当前规则**：通用 QwenPaw 镜像从 `deploy-all/qwenpaw/working/` 生成无环境工作目录 seed，不读取或打包 `deploy-all/qwenpaw/data/`、`qwenpaw.secret/` 或 `~/.qwenpaw`。Provider 配置和主密钥仅能由目标环境单独配置/恢复。请参阅 [`QWENPAW_IMAGE_BUILD.md`](QWENPAW_IMAGE_BUILD.md) 了解正式打包流程及非 root/PVC/网络迁移。
 >
 > 本文以下内容仅供迁移、备份或恢复某个**已明确目标环境**的运行时数据时参考。运行数据库、知识库上传文件和外部系统凭据不得将按本文步骤复制回通用镜像构建输入。
 
@@ -14,7 +14,7 @@
 | `~/.qwenpaw.secret/` | `deploy-all/qwenpaw/data/qwenpaw.secret/` | 大模型配置（API Key 等） |
 | `~/.qwenpaw/secrets/` | `deploy-all/qwenpaw/data/qwenpaw/secrets/` | 外部系统连接凭证 |
 
-> **安全提示**：按当前发布要求，`qwenpaw.secret` 会随镜像交付以提供预配置模型。该目录可能包含 API Key、`.master_key` 与 OAuth 状态，因此镜像 tar、导出目录和文件服务器均必须按密钥材料限制访问；绝不能提交到仓库或公开分发。
+> **安全提示**：`qwenpaw.secret` 可能包含 API Key、`.master_key` 与 OAuth 状态。密文与主密钥必须成对安全备份/恢复，绝不能提交到仓库或打包进镜像；旧版本曾携带凭据的镜像 tar 仍须按密钥材料限制访问并轮换相关凭据。
 
 ## 同步步骤
 

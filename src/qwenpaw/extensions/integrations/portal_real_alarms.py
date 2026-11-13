@@ -18,6 +18,9 @@ from qwenpaw.extensions.integrations.alarm_contract import (
     SEVERITY_TO_NAME,
     STATUS_TO_NAME,
 )
+from qwenpaw.extensions.integrations.alarm_query_scope import (
+    build_alarm_query_scope,
+)
 
 DEFAULT_INOE_API_BASE_URL = "http://gateway:8080"
 REAL_ALARM_LIST_ENDPOINT = "/resource/alarm/statistics/hisAlarmList"
@@ -187,17 +190,27 @@ def _build_real_alarm_payload(
     # analysis-lookback filter (which keys on first-seen time).
     try:
         resolved_total = int(total) if total is not None else len(items)
+        total_is_exact = total is not None and resolved_total >= 0
     except (TypeError, ValueError):
         resolved_total = len(items)
+        total_is_exact = False
     return {
         "total": max(0, resolved_total),
         "items": items,
         "source": source,
+        "sourceStatus": "live",
+        "totalIsExact": total_is_exact,
+        "windowComplete": total_is_exact and resolved_total <= len(items),
     }
 
 
 def build_empty_portal_real_alarms_payload(limit: int) -> dict[str, Any]:
-    return _build_real_alarm_payload([], limit=limit, source="live")
+    return {
+        **_build_real_alarm_payload([], limit=limit, source="unavailable"),
+        "total": None,
+        "sourceStatus": "unavailable",
+        "queryScope": {"kind": "unavailable", "complete": False},
+    }
 
 
 def build_real_alarm_list_query_params(
@@ -272,8 +285,8 @@ def _post_real_alarm_list(
     if not begin_time or not end_time:
         now = datetime.now(timezone.utc)
         window = timedelta(hours=_resolve_query_window_hours())
-        begin_time = _format_dt(now - window)
-        end_time = _format_dt(now)
+        begin_time = begin_time or _format_dt(now - window)
+        end_time = end_time or _format_dt(now)
     params = build_real_alarm_list_query_params(
         page_num=1,
         page_size=limit,
@@ -599,6 +612,12 @@ def query_portal_real_alarms(
         window = timedelta(hours=_resolve_query_window_hours())
     begin_time = _format_dt(current_time - window)
     end_time = _format_dt(current_time)
+    query_scope = build_alarm_query_scope(
+        begin_time,
+        end_time,
+        _get_alarm_timezone(),
+        is_clear=_alarm_status_to_is_clear(alarm_status),
+    )
 
     try:
         result = _post_real_alarm_list(
@@ -607,20 +626,30 @@ def query_portal_real_alarms(
             end_time=end_time,
             alarm_status=alarm_status,
         )
-        rows = list(result.get("rows") or [])
+        _raise_for_alarm_envelope(result)
+        if not isinstance(result, dict) or not isinstance(
+            result.get("rows"), list
+        ):
+            raise RuntimeError("告警网关响应缺少有效 rows")
+        rows = result["rows"]
     except Exception:
-        # Legacy behaviour swallows backend failures into an empty
-        # "live" payload, which makes outages indistinguishable from a
-        # genuinely quiet system. Honest consumers (AI big-screen L2)
-        # pass raise_on_error=True so failures can be adjudicated as
-        # sourceStatus="failed" instead of "no alarms".
+        # Throwing consumers retain their error path; other callers get
+        # an unknown total rather than a fake zero.
         if raise_on_error:
             raise
-        return build_empty_portal_real_alarms_payload(safe_limit)
+        return {
+            **build_empty_portal_real_alarms_payload(safe_limit),
+            "source": "failed",
+            "sourceStatus": "failed",
+            "queryScope": query_scope,
+        }
     total = result.get("total") if isinstance(result, dict) else None
-    return _build_real_alarm_payload(
-        rows,
-        limit=safe_limit,
-        source="live",
-        total=total,
-    )
+    return {
+        **_build_real_alarm_payload(
+            rows,
+            limit=safe_limit,
+            source="live",
+            total=total,
+        ),
+        "queryScope": query_scope,
+    }

@@ -523,7 +523,12 @@ async def execute_shell_command(
         working_dir = get_current_workspace_dir() or WORKING_DIR
 
     # Ensure the venv Python is on PATH for subprocesses
-    env = os.environ.copy()
+    from ...extensions.integrations.agent_api_auth import (
+        sandbox_request_environment,
+        subprocess_request_environment,
+    )
+
+    env = subprocess_request_environment(os.environ.copy())
     python_bin_dir = str(Path(sys.executable).parent)
     existing_path = env.get("PATH", "")
     if existing_path:
@@ -538,6 +543,7 @@ async def execute_shell_command(
     )
 
     if sandbox_config is not None:
+        sandbox_config = sandbox_request_environment(sandbox_config)
         result = await _execute_in_sandbox(
             cmd,
             sandbox_config,

@@ -18,7 +18,9 @@ description: 运维知识库能力。用于知识资料上传入库、手动沉�
 - 内嵌到 QwenPaw skill 的知识库引擎，不需要单独部署原项目服务，也不通过反向代理嫁接。
 - 数据默认存放在本 skill 的 `data/` 目录；容器部署可设置 `KNOWLEDGE_BASE_DATA_DIR` 或 `QWENPAW_KNOWLEDGE_BASE_DATA_DIR` 到 PVC 路径。
 - `DASHSCOPE_API_KEY` 用于 embedding（DashScope `text-embedding-v4`），同一个 key 未来可复用 reranker。
-- `DEEPSEEK_API_KEY` 用于 HyDE 查询改写和 RAG 答案合成；缺失时自动降级。
+- HyDE 和 LLM 重排优先使用 `knowledge` 的独立模型，未配置时使用现有全局模型；不自动借用 `gateway`，不写入或替用户补齐模型配置。独立配置引用的供应商失效时明确报告，不静默换成全局身份。
+- `DEEPSEEK_API_KEY` 是已配置时的检索增强备选；没有可用增强模型时回退真实基础检索。`flags.degraded` 和 `diagnostic.degraded_reasons` 说明降级原因；`insufficient_evidence` 仅表示本次真实检索证据不足，不代表模型故障。
+- `/knowledge-base/health` 展示增强模型配置和来源，不宣称上游已连通。`rag-synthesize` 模型不可用时返回 `skipped=true` 和原因，不伪造答案或引用；基础检索依赖故障返回明确服务不可用错误，不伪装成空资料。
 - `KNOWLEDGE_BASE_RERANKER` 可选 `none` / `heuristic`(默认) / `llm` / `cross_encoder`(占位)。
 - `KNOWLEDGE_BASE_HYDE_ENABLED` 默认 `true`，设 `false` 关闭。
 - OCR 引擎自动选择：优先 RapidOCR（离线 onnx，需 `rapidocr-onnxruntime`），缺失回退 pytesseract（需系统 `tesseract`），都缺则跳过图片 OCR 并记 warning。

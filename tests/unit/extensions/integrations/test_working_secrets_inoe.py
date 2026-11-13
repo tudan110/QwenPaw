@@ -86,10 +86,9 @@ def test_no_override_no_env_falls_back_to_default(
 
     working_secrets.materialize_inoe_to_environ(db_path=db)
 
-    # Nothing set anywhere -> the store default is materialised so a skill
-    # still has a usable (if generic) value.
+    # Gateway defaults remain usable, but missing credentials stay absent.
     assert os.environ["INOE_API_BASE_URL"] == store.DEFAULT_INOE_API_BASE_URL
-    assert os.environ["INOE_API_TOKEN"] == "inoe_token"
+    assert "INOE_API_TOKEN" not in os.environ
 
 
 def test_empty_token_never_clobbers_live_credential(

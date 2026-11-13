@@ -59,7 +59,10 @@ def _file_url_to_path(url: str) -> str:
     # Windows: file:///C:/path yields "/C:/path"; remove leading slash.
     if len(s) >= 3 and s.startswith("/") and s[1].isalpha() and s[2] == ":":
         s = s[1:]
-    return unquote(s)
+    from ..extensions.security.execution_policy import check_path
+    path = unquote(s)
+    check_path(path)
+    return path
 
 
 logger = logging.getLogger(__name__)
@@ -1101,15 +1104,15 @@ def create_model_and_formatter(
         except Exception:
             pass
 
-    # Try to get agent-specific model first
-    model_slot = None
+    # Preserve an explicitly selected model; otherwise resolve agent/global.
     retry_config = None
     rate_limit_config = None
     compact_threshold: Optional[float] = None
-    if model_slot is None and agent_id:
+    if agent_id:
         try:
             agent_config = load_agent_config(agent_id)
-            model_slot = agent_config.active_model
+            if model_slot is None:
+                model_slot = agent_config.active_model
             retry_config = RetryConfig(
                 enabled=agent_config.running.llm_retry_enabled,
                 max_retries=agent_config.running.llm_max_retries,

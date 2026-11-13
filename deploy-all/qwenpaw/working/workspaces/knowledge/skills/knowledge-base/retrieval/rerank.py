@@ -214,6 +214,7 @@ class LLMReranker:
     def rerank(self, query, candidates, *, top_k):
         if not candidates:
             return []
+        all_candidates = candidates
         # Trim to the highest-RRF candidates so we don't pay for the long tail.
         if len(candidates) > self.MAX_INPUT_CANDIDATES:
             candidates = sorted(
@@ -227,7 +228,10 @@ class LLMReranker:
             logger.warning(
                 "LLMReranker: no LLM provider available, falling back to heuristic"
             )
-            return HeuristicReranker().rerank(query, candidates, top_k=top_k)
+            return self._fallback(
+                query, all_candidates, top_k,
+                llm.model_status().get("reason", "model_not_configured"),
+            )
 
         docs_block = "\n".join(
             f"[{i}] {c.section_path} | {c.child_content[:self.MAX_PREVIEW_CHARS]}"
@@ -247,12 +251,14 @@ class LLMReranker:
                 "LLMReranker call (%s) failed: %s — falling back to heuristic",
                 provider, exc,
             )
-            return HeuristicReranker().rerank(query, candidates, top_k=top_k)
+            return self._fallback(query, all_candidates, top_k, exc.reason)
 
         scores_by_idx = _parse_llm_scores(result.get("answer", ""), len(candidates))
         if not scores_by_idx:
             logger.warning("LLMReranker: could not parse scores, falling back to heuristic")
-            return HeuristicReranker().rerank(query, candidates, top_k=top_k)
+            return self._fallback(
+                query, all_candidates, top_k, "invalid_response",
+            )
 
         outputs = []
         for i, c in enumerate(candidates):
@@ -266,6 +272,15 @@ class LLMReranker:
 
         outputs.sort(key=lambda o: o.score, reverse=True)
         return outputs[:top_k]
+
+    @staticmethod
+    def _fallback(query, candidates, top_k, reason):
+        outputs = HeuristicReranker().rerank(
+            query, candidates, top_k=top_k,
+        )
+        for output in outputs:
+            output.diagnostic["degraded_reason"] = reason
+        return outputs
 
 
 class CrossEncoderReranker:

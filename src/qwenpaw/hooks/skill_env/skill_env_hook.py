@@ -36,6 +36,9 @@ class SkillEnvHook(LifecycleHook):
             cm = apply_skill_config_env_overrides(wd, channel)
             cm.__enter__()
             ctx.extras[_SKILL_ENV_CM_KEY] = cm
+        except PermissionError:
+            logger.error("Skill tried to override security configuration")
+            raise
         except Exception:
             logger.debug("skill_env: override failed", exc_info=True)
         return HookResult()

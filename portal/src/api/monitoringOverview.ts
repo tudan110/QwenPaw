@@ -1,9 +1,11 @@
 import { requestPortalApi } from "./portalWorkorders";
+import type { AlarmQueryScope } from "./alarmQueryScope";
 
 export interface MonitoringEnvelope<T> {
   code: number;
   msg?: string;
   data: T | null;
+  queryScope?: AlarmQueryScope;
 }
 
 export interface AlarmTop5Item {
@@ -115,7 +117,9 @@ export interface MonitoringOverviewDashboardResponse {
   workorderStats: MonitoringEnvelope<WorkorderStatsData>;
   severityTrend: MonitoringEnvelope<SeverityTrendData>;
   cmdbSummary: MonitoringEnvelope<CmdbSummaryData>;
-  activeAlarmTotal: number;
+  activeAlarmTotal: number | null;
+  activeAlarmQueryScope?: AlarmQueryScope;
+  activeAlarmSourceStatus?: string;
 }
 
 const DASHBOARD_TIMEOUT_MS = 30000;

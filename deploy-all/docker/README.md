@@ -71,14 +71,13 @@ docker build -f deploy-all/portal/Dockerfile -t digital-workforce-portal:0.1.0 .
 
 如果镜像已经由 CI、私有仓库或 `docker load` 提供，可直接跳过这一步。
 
-### 2.2 准备 data 目录
+### 2.2 准备运行时凭据和目录
 
-QwenPaw 镜像依赖 `deploy-all/qwenpaw/data` 中的数据。打包前请先按现有流程准备：
-
-1. 执行仓库根目录的 `./sync-qwenpaw-working.sh`
-2. 按 `deploy-all/SYNC_GUIDE.md` 同步本地目录到：
-   - `deploy-all/qwenpaw/data/qwenpaw/`
-   - `deploy-all/qwenpaw/data/qwenpaw.secret/`
+通用镜像不读取 `deploy-all/qwenpaw/data`，也不携带 Provider、主密钥或
+INOE Token。仅在已确认的目标环境安全恢复匹配的 Provider 密文和主密钥，
+或启动后由授权操作员配置。最终镜像以 UID/GID 10001 运行：主机 bind mount
+必须提前提供该用户的写权限，不能依赖 root entrypoint 或 `chmod 777`。
+目录迁移和回滚见 `deploy-all/QWENPAW_IMAGE_BUILD.md`。
 
 相关文档：
 
@@ -92,8 +91,8 @@ QwenPaw 镜像依赖 `deploy-all/qwenpaw/data` 中的数据。打包前请先按
 建议在目标服务器上准备独立的持久化目录，例如：
 
 ```bash
-mkdir -p /data/qwenpaw/working
-mkdir -p /data/qwenpaw/working.secret
+sudo install -d -o 10001 -g 10001 -m 0750 /data/qwenpaw/working
+sudo install -d -o 10001 -g 10001 -m 0700 /data/qwenpaw/working.secret
 ```
 
 说明：
@@ -143,7 +142,8 @@ docker run -d \
   - **不要随便改名**
   - Portal 的 nginx 配置默认代理到 `http://qwenpaw:8088`
 - `-p 30088:8088`
-  - 对外暴露后端端口，和 Helm 方案中的 `NodePort 30088` 保持一致
+  - 显式对外暴露后端端口；Helm 默认 ClusterIP 不再暴露 30088。
+    直跑 Docker 不执行 Kubernetes NetworkPolicy，须另配受限入口和出口。
 - `-v /data/qwenpaw/working:/app/working`
   - 持久化工作目录
 - `-v /data/qwenpaw/working.secret:/app/working.secret`

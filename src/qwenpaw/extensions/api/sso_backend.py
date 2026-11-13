@@ -24,11 +24,16 @@ import logging
 import uuid
 from http.cookies import SimpleCookie
 from typing import Any
+from urllib.parse import unquote
 
 import httpx
 from fastapi import APIRouter, Body, HTTPException, Request, Response
 
 from qwenpaw.extensions.api import sso_settings_store
+from qwenpaw.constant import EnvVarLoader
+from .access_session import (
+    ACCESS_COOKIE, LOCAL_TOKEN_PREFIX, get_access_store, user_subject,
+)
 from qwenpaw.extensions.api.sso_auth import (
     extract_user as _extract_user,
     parse_userinfo_response,
@@ -237,12 +242,17 @@ async def sso_status() -> dict[str, Any]:
     return {
         "configured": sso_settings_store.is_token_login_ready(),
         "authorization_code_ready": sso_settings_store.is_configured(),
+        "sso_required": EnvVarLoader.get_str(
+            "QWENPAW_SSO_TOKEN_REQUIRED", "true"
+        ).strip().lower() not in {"false", "0", "no", "off"},
+        "login_url": EnvVarLoader.get_str("QWENPAW_INOE_LOGIN_URL", ""),
     }
 
 
 @router.post("/token-login")
 async def token_login(
     request: Request,
+    response: Response,
     body: dict[str, Any] = Body(default_factory=dict),
 ) -> dict[str, Any]:
     """Log in by validating an existing INOE login token (token pass-through).
@@ -255,6 +265,30 @@ async def token_login(
     """
     body_token = _strip_bearer(body.get("token") or "")
     cookie_token = _get_request_cookie(request, _INOE_LOGIN_COOKIE)
+    if not cookie_token:
+        cookie_token = _strip_bearer(unquote(
+            request.cookies.get("qwenpaw_sso_token", "")
+            or request.cookies.get(ACCESS_COOKIE, "")
+        ))
+        if not body_token and cookie_token.startswith(LOCAL_TOKEN_PREFIX):
+            body_token, cookie_token = cookie_token, ""
+    if body_token.startswith(LOCAL_TOKEN_PREFIX):
+        identity = get_access_store().resolve(body_token)
+        user_body = await _validate_inoe_token(
+            sso_settings_store.get_userinfo_url(), identity.inoe_token
+        )
+        user = _extract_user(user_body)
+        if user_subject(user) != user_subject(identity.user):
+            raise HTTPException(401, "登录身份已变化")
+        result = get_access_store().issue(
+            identity.inoe_token, user, family_id=identity.family_id
+        )
+        response.set_cookie(
+            ACCESS_COOKIE, result["access_token"], httponly=True,
+            secure=request.url.scheme == "https", samesite="strict",
+            max_age=result["expires_in_seconds"], path="/",
+        )
+        return result
     if not (body_token or cookie_token):
         raise HTTPException(status_code=401, detail="缺少 INOE 登录凭证")
 
@@ -287,7 +321,7 @@ async def token_login(
         )
 
     user = _extract_user(user_body)
-    if not (user.get("userId") or user.get("username")):
+    if "userId" not in user and not user.get("username"):
         raise HTTPException(
             status_code=401, detail="未能从 INOE 获取用户信息,token 可能已失效"
         )
@@ -297,23 +331,53 @@ async def token_login(
         )
     except (TypeError, ValueError):
         expires_in_minutes = 0.0
-    return {
-        "access_token": token,
-        "token_type": "Bearer",
-        "expires_in_seconds": int(expires_in_minutes * _EXPIRES_IN_UNIT_SECONDS),
-        "user": user,
-    }
+    result = get_access_store().issue(token, user)
+    response.set_cookie(
+        ACCESS_COOKIE, result["access_token"], httponly=True,
+        secure=request.url.scheme == "https", samesite="strict",
+        max_age=result["expires_in_seconds"], path="/",
+    )
+    return result
 
 
 @router.post("/clear-login-cookie")
-async def clear_login_cookie(response: Response) -> dict[str, Any]:
+async def clear_login_cookie(request: Request, response: Response) -> dict[str, Any]:
     """Clear stale INOE login cookies so portal can force a clean re-login."""
     _clear_inoe_login_cookies(response)
+    token = request.cookies.get(ACCESS_COOKIE, "")
+    if token:
+        get_access_store().revoke(token)
+    response.delete_cookie(ACCESS_COOKIE, path="/")
     return {"cleared": True}
+
+
+@router.post("/logout")
+async def logout(request: Request, response: Response) -> dict[str, bool]:
+    identity = getattr(request.state, "access_identity", None)
+    if identity is None or not identity.access_token:
+        raise HTTPException(401, "没有可撤销的本地登录会话")
+    get_access_store().revoke(identity.access_token)
+    response.delete_cookie(ACCESS_COOKIE, path="/")
+    _clear_inoe_login_cookies(response)
+    return {"logged_out": True}
+
+
+@router.get("/session")
+async def session_status(request: Request) -> dict[str, Any]:
+    identity = getattr(request.state, "access_identity", None)
+    if identity is None:
+        raise HTTPException(401, "没有可信登录身份")
+    return {
+        "user": identity.user,
+        "token_kind": identity.source,
+        "access_token": identity.access_token,
+    }
 
 
 @router.post("/exchange")
 async def exchange(
+    request: Request,
+    response: Response,
     body: dict[str, Any] = Body(default_factory=dict),
 ) -> dict[str, Any]:
     """Exchange an authorization ``code`` for portal login material.
@@ -365,13 +429,13 @@ async def exchange(
     except (TypeError, ValueError):
         expires_in_minutes = 0.0
     expires_in_seconds = int(expires_in_minutes * _EXPIRES_IN_UNIT_SECONDS)
-    return {
-        "access_token": access_token,
-        "token_type": str(token_body.get("token_type") or "Bearer"),
-        "expires_in_seconds": expires_in_seconds,
-        "scope": token_body.get("scope"),
-        "user": _extract_user(user_body),
-    }
+    result = get_access_store().issue(access_token, _extract_user(user_body))
+    response.set_cookie(
+        ACCESS_COOKIE, result["access_token"], httponly=True,
+        secure=request.url.scheme == "https", samesite="strict",
+        max_age=result["expires_in_seconds"], path="/",
+    )
+    return result
 
 
 # ---------------------------------------------------------------------------

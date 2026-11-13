@@ -15,6 +15,21 @@ from ...security.tool_guard.approval import ApprovalDecision, ApprovalScope
 
 logger = logging.getLogger(__name__)
 
+
+def _require_approval_owner(request: Request, pending) -> None:
+    from ...extensions.security.execution_policy import enabled
+
+    if not enabled():
+        return
+    identity = getattr(request.state, "access_identity", None)
+    if (
+        identity is None
+        or not identity.is_admin
+        or pending.extra.get("auth_user_id") != identity.user_id
+    ):
+        raise HTTPException(403, "仅允许授权管理员处理自己的审批请求")
+
+
 router = APIRouter(prefix="/approval", tags=["approval"])
 
 
@@ -102,6 +117,7 @@ async def post_approval_approve(
             status_code=403,
             detail="Root session mismatch: cannot approve other session trees",
         )
+    _require_approval_owner(request, pending)
 
     # Parse the approval scope. Unknown / omitted values fall back to None,
     # which the governance consumer treats as EXACT (least-privilege).
@@ -186,6 +202,7 @@ async def post_approval_deny(
             status_code=403,
             detail="Root session mismatch: cannot approve other session trees",
         )
+    _require_approval_owner(request, pending)
 
     # Resolve the Future
     resolved = await svc.resolve_request(
@@ -222,6 +239,12 @@ async def get_approval_list(
     Optionally filter by session_id.
     """
     svc = get_approval_service()
+    identity = getattr(request.state, "access_identity", None)
+    from ...extensions.security.execution_policy import enabled
+
+    strict = enabled()
+    if strict and (identity is None or not identity.is_admin):
+        raise HTTPException(403, "审批列表仅允许可信 AI 管理员访问")
 
     if session_id:
         logger.debug(
@@ -239,6 +262,8 @@ async def get_approval_list(
     # Serialize pending approvals
     result = []
     for pending in pending_list:
+        if strict and pending.extra.get("auth_user_id") != identity.user_id:
+            continue
         result.append(
             {
                 "request_id": pending.request_id,

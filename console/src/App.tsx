@@ -35,7 +35,12 @@ const LoginPage = lazyImportWithRetry("./pages/Login/index");
 import { authApi } from "./api/modules/auth";
 import { languageApi } from "./api/modules/language";
 import { useUploadLimitStore } from "./stores/uploadLimitStore";
-import { getApiUrl, getApiToken, clearAuthToken } from "./api/config";
+import {
+  getApiUrl,
+  getApiToken,
+  clearAuthToken,
+  setAuthToken,
+} from "./api/config";
 import CloseWindowPrompt from "./tauri/CloseWindowPrompt";
 import "./styles/layout.css";
 import "./styles/form-override.css";
@@ -64,14 +69,64 @@ const GlobalStyle = createGlobalStyle`
 `;
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const [status, setStatus] = useState<"loading" | "auth-required" | "ok">(
-    "loading",
-  );
+  const [status, setStatus] = useState<
+    "loading" | "auth-required" | "unavailable" | "ok"
+  >("loading");
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        const ssoResponse = await fetch(getApiUrl("/portal/sso/status"));
+        if (!ssoResponse.ok) {
+          if (!cancelled) setStatus("unavailable");
+          return;
+        }
+        const sso = await ssoResponse.json();
+        if (sso.sso_required) {
+          const stored = getApiToken();
+          const login = async (token?: string) =>
+            fetch(getApiUrl("/portal/sso/token-login"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(token ? { token } : {}),
+            });
+          let response = await login(
+            stored.startsWith("qp1.") ? stored : undefined,
+          );
+          if (response.status === 401 && stored.startsWith("qp1.")) {
+            clearAuthToken();
+            response = await login();
+          }
+          if (cancelled) return;
+          if (response.ok) {
+            const result = await response.json();
+            if (
+              typeof result.access_token !== "string" ||
+              !result.access_token.startsWith("qp1.")
+            ) {
+              setStatus("unavailable");
+              return;
+            }
+            setAuthToken(result.access_token);
+            setStatus("ok");
+          } else if (response.status === 401) {
+            const destination = new URL(
+              sso.login_url ||
+                `${window.location.protocol}//${window.location.hostname}:30081/login`,
+              window.location.href,
+            );
+            if (!["http:", "https:"].includes(destination.protocol)) {
+              setStatus("unavailable");
+              return;
+            }
+            destination.searchParams.set("redirect", window.location.href);
+            window.location.assign(destination.toString());
+          } else {
+            setStatus("unavailable");
+          }
+          return;
+        }
         const res = await authApi.getStatus();
         if (cancelled) return;
         if (!res.enabled) {
@@ -101,7 +156,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
           }
         }
       } catch {
-        if (!cancelled) setStatus("ok");
+        if (!cancelled) setStatus("unavailable");
       }
     })();
     return () => {
@@ -109,7 +164,54 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (status !== "ok") return;
+    let stopped = false;
+    let busy = false;
+    const timer = window.setInterval(async () => {
+      const token = getApiToken();
+      if (!token.startsWith("qp1.") || busy) return;
+      busy = true;
+      try {
+        const response = await fetch(getApiUrl("/portal/sso/token-login"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        if (stopped) return;
+        if (response.ok) {
+          const result = await response.json();
+          if (
+            typeof result.access_token === "string" &&
+            result.access_token.startsWith("qp1.")
+          ) {
+            setAuthToken(result.access_token);
+          } else {
+            console.error("SSO renewal returned an invalid response");
+          }
+        } else if (response.status === 401) {
+          clearAuthToken();
+          window.location.reload();
+        } else {
+          console.error("SSO renewal unavailable:", response.status);
+        }
+      } catch (error) {
+        console.error("SSO renewal failed:", error);
+      } finally {
+        busy = false;
+      }
+    }, 60_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [status]);
+
   if (status === "loading") return null;
+  if (status === "unavailable")
+    return (
+      <div role="alert">Authentication service unavailable. Please reload.</div>
+    );
   if (status === "auth-required")
     return (
       <Navigate

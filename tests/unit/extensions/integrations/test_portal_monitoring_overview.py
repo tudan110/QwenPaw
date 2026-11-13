@@ -27,7 +27,10 @@ def test_query_active_alarm_total_uses_current_list_without_status_filter(monkey
 
     def _fake_query_portal_real_alarms(*, limit):
         captured["limit"] = limit
-        return {"source": "live", "total": 5954, "items": []}
+        return {
+            "source": "live", "sourceStatus": "live", "total": 5954,
+            "totalIsExact": True, "items": [],
+        }
 
     monkeypatch.setattr(
         portal_monitoring_overview,
@@ -38,6 +41,34 @@ def test_query_active_alarm_total_uses_current_list_without_status_filter(monkey
 
     assert total == 5954
     assert captured == {"limit": 1}
+
+
+def test_active_alarm_total_failure_is_unknown_not_zero(monkeypatch) -> None:
+    monkeypatch.setattr(
+        portal_monitoring_overview, "query_portal_real_alarms",
+        lambda **kwargs: {"sourceStatus": "failed", "total": 0},
+    )
+    assert portal_monitoring_overview.query_active_alarm_total() is None
+
+
+def test_active_statistics_preserve_window_total_and_scope(monkeypatch) -> None:
+    scope = {
+        "kind": "windowed_uncleared",
+        "startTime": "2026-07-21 10:00:00",
+        "endTime": "2026-07-22 10:00:00",
+        "timezone": "UTC+08:00", "complete": False,
+    }
+    monkeypatch.setattr(
+        portal_monitoring_overview, "query_portal_real_alarms",
+        lambda **kwargs: {
+            "sourceStatus": "live", "total": 5954,
+            "totalIsExact": True, "queryScope": scope,
+        },
+    )
+    result = portal_monitoring_overview.query_active_alarm_statistics()
+    assert result == {
+        "total": 5954, "queryScope": scope, "sourceStatus": "live",
+    }
 
 
 def test_dashboard_alarm_history_uses_current_day_without_live_alarm_filter(
@@ -53,7 +84,7 @@ def test_dashboard_alarm_history_uses_current_day_without_live_alarm_filter(
         lambda path, params: captured.update(path=path, params=params) or {"code": 200},
     )
 
-    portal_monitoring_overview.query_dashboard_alarm_history(
+    result = portal_monitoring_overview.query_dashboard_alarm_history(
         now=datetime(2026, 7, 21, 8, 30, tzinfo=timezone.utc),
         limit=2000,
     )
@@ -66,6 +97,8 @@ def test_dashboard_alarm_history_uses_current_day_without_live_alarm_filter(
         "pageNum": 1,
         "pageSize": 1000,
     }
+    assert result["queryScope"]["kind"] == "windowed_history"
+    assert result["queryScope"]["complete"] is False
 
 
 def test_active_alarm_history_uses_rolling_24_hours_and_uncleared_filter(
@@ -81,7 +114,7 @@ def test_active_alarm_history_uses_rolling_24_hours_and_uncleared_filter(
         lambda path, params: captured.update(path=path, params=params) or {"code": 200},
     )
 
-    portal_monitoring_overview.query_dashboard_active_alarm_history(
+    result = portal_monitoring_overview.query_dashboard_active_alarm_history(
         now=datetime(2026, 7, 22, 2, 6, 25, tzinfo=timezone.utc),
         limit=2000,
     )
@@ -95,3 +128,8 @@ def test_active_alarm_history_uses_rolling_24_hours_and_uncleared_filter(
         "pageNum": 1,
         "pageSize": 1000,
     }
+    assert result["queryScope"]["kind"] == "windowed_uncleared"
+    assert result["queryScope"]["startTime"] == captured["params"]["beginTime"]
+    assert result["queryScope"]["endTime"] == captured["params"]["endTime"]
+    assert result["queryScope"]["timezone"] == "UTC+08:00"
+    assert result["queryScope"]["complete"] is False

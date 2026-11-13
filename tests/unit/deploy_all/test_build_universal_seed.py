@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -39,6 +41,76 @@ def test_all_runtime_agents_share_the_same_manual_guidance_boundaries():
     assert "不新增远程执行" in policies[0]
     assert "不默认" in policies[0]
     assert "缺登录信息不阻断" in policies[0]
+
+
+def test_real_alarm_credentials_reach_all_five_seed_workspaces(tmp_path):
+    workspaces = BUILDER_PATH.parent.parent / "working/workspaces"
+    output = tmp_path / "seed"
+    canonical = workspaces / "query/skills/real-alarm"
+    for workspace in ("query", "fault", "gateway", "order", "resource"):
+        target = output / f"workspaces/{workspace}/skills"
+        source = workspaces / workspace / "skills/real-alarm"
+        if source.exists():
+            seed_builder.copy_managed_tree(source, target / "real-alarm")
+        seed_builder.materialize_missing_skills(
+            workspace, {"real-alarm": {"enabled": True}}, target,
+            workspaces, {}, {"real-alarm": "query"}, set(),
+        )
+        script = target / "real-alarm/scripts/get_alarms.py"
+        assert script.read_bytes() == (
+            canonical / "scripts/get_alarms.py"
+        ).read_bytes()
+    manifest = seed_builder.build_sync_manifest(output)
+    for workspace in ("query", "fault", "gateway", "order", "resource"):
+        relative = (
+            f"workspaces/{workspace}/skills/real-alarm/scripts/get_alarms.py"
+        )
+        assert manifest["managed_files"][relative]["sha256"] == (
+            seed_builder.sha256(output / relative)
+        )
+
+
+def test_full_release_seed_and_upgrade_keep_fixes_and_user_model(tmp_path):
+    root = BUILDER_PATH.parents[3]
+    seed = tmp_path / "release-seed"
+    seed_builder.build_seed(seed_builder.argparse.Namespace(
+        source=BUILDER_PATH.parent.parent / "working",
+        builtin_root=root / "src/qwenpaw/agents/skills",
+        output=seed,
+        runtime_working_dir="/app/working",
+        manifest=None,
+    ))
+    target = tmp_path / "customer-working"
+    write_json(target / "config.json", {"custom": "customer"})
+    write_json(target / "workspaces/knowledge/agent.json", {
+        "id": "knowledge",
+        "name": "customer",
+        "active_model": {"provider_id": "customer", "model": "keep"},
+    })
+    history = target / "workspaces/knowledge/sessions/history.json"
+    write_json(history, {"user": "preserve"})
+    subprocess.run([
+        sys.executable, str(BUILDER_PATH.parent / "sync_managed_seed.py"),
+        "--apply", "--yes", "--seed", str(seed), "--target", str(target),
+    ], check=True, capture_output=True, text=True)
+    model = json.loads(
+        (target / "workspaces/knowledge/agent.json").read_text()
+    )["active_model"]
+    assert model == {"provider_id": "customer", "model": "keep"}
+    assert json.loads(history.read_text()) == {"user": "preserve"}
+    manifest = json.loads((seed / "seed-manifest.json").read_text())
+    for workspace in ("query", "fault", "gateway", "order", "resource"):
+        relative = (
+            f"workspaces/{workspace}/skills/real-alarm/scripts/get_alarms.py"
+        )
+        assert (target / relative).read_bytes() == (seed / relative).read_bytes()
+        assert manifest["managed_files"][relative]["sha256"] == (
+            seed_builder.sha256(target / relative)
+        )
+    llm_path = Path(
+        "workspaces/knowledge/skills/knowledge-base/providers/llm.py"
+    )
+    assert (target / llm_path).read_bytes() == (seed / llm_path).read_bytes()
 
 
 def write_json(path: Path, payload: dict) -> None:

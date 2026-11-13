@@ -162,6 +162,7 @@ def _collect_dashboard_severity(
             "status": "live",
             "source": "dashboard-stat-severity",
             "complete": True,
+            "queryScope": payload.get("queryScope"),
         }
 
     detail = "大屏告警等级统计接口不可用"
@@ -207,23 +208,22 @@ def _collect_dashboard_alarm_rows(
     container = payload.get("data") if isinstance(payload, Mapping) else None
     if not isinstance(container, Mapping):
         container = payload
-    rows = (
-        container.get("rows") or container.get("list") or []
-        if isinstance(container, Mapping)
-        else []
-    )
+    rows = container.get("rows", container.get("list"))
+    if not isinstance(rows, list):
+        return [], _source_failure("告警接口响应缺少有效 rows")
     alarms = [
         _normalize_dashboard_alarm_row(row)
         for row in rows
         if isinstance(row, Mapping)
     ]
     total = _as_int(container.get("total")) if isinstance(container, Mapping) else None
-    complete = total is None or total <= len(alarms)
+    complete = total is not None and total <= len(alarms)
     source: dict[str, Any] = {
         "status": "live",
         "source": "dashboard-alarm-history",
         "complete": complete,
         "analyzedRows": len(alarms),
+        "queryScope": payload.get("queryScope"),
     }
     if not complete:
         source["message"] = "大屏当天告警历史超过单次读取上限，问题归纳基于当前页面告警样本。"
@@ -231,15 +231,15 @@ def _collect_dashboard_alarm_rows(
 
 
 def _collect_active_alarm_health(payload: Any) -> tuple[str, dict[str, Any]]:
-    """Classify health from urgent alarms that are still uncleared."""
+    """Positive evidence can show risk; a bounded absence cannot prove health."""
     alarms, source = _collect_dashboard_alarm_rows(payload)
     if source.get("status") != "live":
-        return "normal", {
+        return "unknown", {
             **source,
             "source": "active-alarm-history",
         }
     return (
-        "abnormal" if any(_severity_key(alarm) == "urgent" for alarm in alarms) else "normal",
+        "abnormal" if any(_severity_key(alarm) == "urgent" for alarm in alarms) else "unknown",
         {
             **source,
             "source": "active-alarm-history",
@@ -521,7 +521,7 @@ def _fallback_decision(facts: Mapping[str, Any]) -> dict[str, Any]:
     if active_total is None:
         summary = f"当前纳管 {asset_text}，当天累计告警数量暂不可得。"
     elif int(active_total) == 0 and facts.get("alarmsAvailable"):
-        summary = f"当前纳管 {asset_text}，当天暂未发现告警，系统运行正常。"
+        summary = f"当前纳管 {asset_text}，当天查询窗口内暂未发现告警，不能据此判定系统正常。"
     else:
         summary = f"当前纳管 {asset_text}，当天累计 {int(active_total)} 条告警。"
     if issues:
@@ -596,6 +596,19 @@ def _parse_model_decision_for_facts(
 ) -> dict[str, Any]:
     """Reject public summaries that leak a selected resource's internal ID."""
     decision = _parse_model_decision(text)
+    if facts.get("alarmCountComplete") is False:
+        for clause in re.split(r"[。！？；;]", decision["summary"]):
+            claim = re.search(
+                r"系统(?:运行)?正常|全量(?:活动|活跃)告警", clause
+            )
+            disclaimer = re.search(
+                r"不代表|不能|无法|不等于|并非|不是|不宣称|未知|不可得",
+                clause,
+            )
+            if claim and not disclaimer:
+                raise ValueError(
+                    "有界告警查询不能宣称全局健康或全量活动告警"
+                )
     target_candidates = {
         str(item.get("key") or ""): item
         for item in facts.get("targetCandidates") or []
@@ -660,6 +673,9 @@ def _messages_for(facts: Mapping[str, Any]) -> list[dict[str, str]]:
     context = {
         "assetTotal": facts.get("assetTotal"),
         "activeAlarmTotal": facts.get("activeAlarmTotal"),
+        "historicalAlarmTotal": facts.get("activeAlarmTotal"),
+        "alarmCountQueryScope": facts.get("alarmCountQueryScope"),
+        "alarmCountComplete": False,
         "severity": facts.get("severity"),
         "topSeverity": facts.get("topSeverity"),
         "analysisComplete": facts.get("analysisComplete"),
@@ -678,7 +694,9 @@ def _messages_for(facts: Mapping[str, Any]) -> list[dict[str, str]]:
                 "优先级依次为紧急、严重、普通、预警。issueKeys 应选择其中 TOP3至TOP5 条"
                 "（候选不足 3 条时全部选择），不得选择候选以外的告警。若候选为空，"
                 "issueKeys 必须为空、targetKey 必须为空，不得编造 TOP 或建议处理对象；"
-                "若 activeAlarmTotal 为 0，应简洁说明当前系统运行正常、当天暂未发现告警。"
+                "activeAlarmTotal 是兼容字段，实际表示当天时间窗内的历史累计告警，"
+                "不是全量活动告警；为 0 只能说明该窗口未发现告警，不能判定系统正常。"
+                "必须明确查询时间范围及不完整性，窗口外可能存在仍未清除的告警。"
                 "summary 必须由你根据事实自行撰写为一段紧凑的中文运维摘要，不得套用或"
                 "改写提示词以外的固定文案。先说明“当前共纳管X个资产对象，当天累计Y条告警”"
                 "并在括号中带出紧急、严重数量；若有候选，再以“TOPN{topSeverity对应中文}告警”列出所选问题，"
@@ -686,7 +704,7 @@ def _messages_for(facts: Mapping[str, Any]) -> list[dict[str, str]]:
                 "最高优先级资源名称和 manageIp。"
                 "targetKey 是内部标识，仅可放在 JSON 的 targetKey 字段；summary 中禁止展示"
                 "任何内部 ID，推荐对象必须使用 targetCandidates.target 中的资源显示名称。"
-                "不得出现“分析已完整”“分析完整”“数据完整”、数据来源、缓存、模型或"
+                "不得出现“分析已完整”“分析完整”“数据完整”、缓存、模型或"
                 "接口调用等无关表述。若事实缺失，只能如实说明该项暂不可得。"
                 "输出严格 JSON：{riskLevel,summary,issueKeys,issueAnalyses,targetKey,recommendationReason}。"
                 "riskLevel 只能为 low、medium、high、critical。"
@@ -759,6 +777,24 @@ def _build_response(
     if source_statuses == {"failed"}:
         status = "failed"
     summary = str(decision["summary"])
+    def query_range(scope):
+        scope = scope or {}
+        if not scope.get("startTime") or not scope.get("endTime"):
+            return "查询时间范围未提供"
+        return (
+            f"{scope['startTime']} — {scope['endTime']} "
+            f"({scope.get('timezone') or '时区未提供'})"
+        )
+
+    history_range = query_range(facts.get("alarmCountQueryScope"))
+    active_range = query_range(
+        sources.get("activeAlarms", {}).get("queryScope")
+    )
+    summary += (
+        f" 历史累计查询范围：{history_range}；"
+        f"未清除查询范围：{active_range}；均仅覆盖各自窗口，"
+        "不代表全量活动告警；空结果不能证明系统健康。"
+    )
     return {
         "generatedAt": generated_at,
         "dataAsOf": generated_at,
@@ -780,6 +816,9 @@ def _build_response(
         "facts": {
             "assetTotal": facts["assetTotal"],
             "activeAlarmTotal": facts["activeAlarmTotal"],
+            "historicalAlarmTotal": facts["activeAlarmTotal"],
+            "alarmCountQueryScope": facts.get("alarmCountQueryScope"),
+            "alarmCountComplete": False,
             "severity": facts["severity"],
             "analysisComplete": facts["analysisComplete"],
             "analyzedAlarmRows": facts["analyzedAlarmRows"],
@@ -840,6 +879,12 @@ async def build_system_summary(
     facts = {
         "assetTotal": asset_total,
         "activeAlarmTotal": active_total,
+        "alarmCountQueryScope": (
+            severity_payload.get("queryScope")
+            if isinstance(severity_payload, Mapping)
+            else None
+        ),
+        "alarmCountComplete": False,
         "severity": severity,
         "analysisComplete": bool(alarms_source.get("complete")),
         "alarmsAvailable": (

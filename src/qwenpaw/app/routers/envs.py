@@ -59,6 +59,14 @@ async def batch_save_envs(
                 detail="Key cannot be empty",
             )
     cleaned = {k.strip(): v for k, v in body.items()}
+    from ...extensions.api.access_policy import protected_env_key
+    existing = load_envs()
+    for key in set(existing) | set(cleaned):
+        if protected_env_key(key) and existing.get(key) != cleaned.get(key):
+            raise HTTPException(
+                status_code=403,
+                detail="安全启动参数只能通过受控部署配置修改",
+            )
     save_envs(cleaned)
     return [EnvVar(key=k, value=v) for k, v in sorted(cleaned.items())]
 
@@ -70,6 +78,9 @@ async def batch_save_envs(
 )
 async def delete_env(key: str) -> List[EnvVar]:
     """Delete a single env var."""
+    from ...extensions.api.access_policy import protected_env_key
+    if protected_env_key(key):
+        raise HTTPException(403, "安全启动参数只能通过受控部署配置修改")
     envs = load_envs()
     if key not in envs:
         raise HTTPException(

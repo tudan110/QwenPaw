@@ -1,15 +1,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { createServer, type ViteDevServer } from "vite";
 
+import type * as SsoConfig from "./ssoConfig";
 import {
-  checkSsoSession,
-  getInoeFrontendOrigin,
-  getSsoLoginRedirectUrl,
-  isSsoEnabled,
-  setupSsoSessionMonitor,
-  triggerSsoRelogin,
-} from "./ssoConfig.ts";
-import { clearSession, getSession, isSessionStorageKey, setSession } from "./ssoSession.ts";
+  clearSession,
+  getSession,
+  isSessionStorageKey,
+  setSession,
+} from "./ssoSession.ts";
+
+let sso: typeof SsoConfig;
+let server: ViteDevServer;
+
+test.beforeEach(async () => {
+  server = await createServer({
+    root: fileURLToPath(new URL("../../", import.meta.url)),
+    configFile: false,
+    optimizeDeps: { noDiscovery: true, include: [] },
+    server: { middlewareMode: true, hmr: false },
+    appType: "custom",
+  });
+  sso = await server.ssrLoadModule("/src/auth/ssoConfig.ts");
+});
 
 const originalWindow = globalThis.window;
 const originalDocument = globalThis.document;
@@ -69,7 +83,11 @@ function setupBrowserEnv(options?: { pathname?: string; hidden?: boolean }) {
   const windowObj = {
     localStorage,
     location: locationState,
-    __PORTAL_RUNTIME_CONFIG__: undefined,
+    __PORTAL_RUNTIME_CONFIG__: {
+      ssoEnabled: true,
+      ssoInoePort: "30081",
+      ssoLoginUrl: "http://portal.local:30081/login",
+    },
     setInterval,
     clearInterval,
     setTimeout,
@@ -93,6 +111,10 @@ function setupBrowserEnv(options?: { pathname?: string; hidden?: boolean }) {
   globalThis.window = windowObj;
   globalThis.document = document;
   globalThis.location = locationState as any;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ cleared: true }), {
+      headers: { "Content-Type": "application/json" },
+    });
   return { windowObj, document, locationState };
 }
 
@@ -103,9 +125,10 @@ function restoreBrowserEnv() {
   globalThis.location = originalLocation;
 }
 
-test.afterEach(() => {
+test.afterEach(async () => {
   clearSession();
   restoreBrowserEnv();
+  await server.close();
 });
 
 test("isSessionStorageKey only matches portal SSO storage keys", () => {
@@ -124,17 +147,21 @@ test("runtime config can enable SSO and drive the INOE origin", () => {
     ssoLoginUrl: "http://inoe.example.com:39081/login",
   };
 
-  assert.equal(isSsoEnabled(), true);
-  assert.equal(getInoeFrontendOrigin(), "http://inoe.example.com:39081");
+  assert.equal(sso.isSsoEnabled(), true);
+  assert.equal(sso.getInoeFrontendOrigin(), "http://inoe.example.com:39081");
   assert.equal(
-    getSsoLoginRedirectUrl("http://portal.local:30083/settings"),
+    sso.getSsoLoginRedirectUrl("http://portal.local:30083/settings"),
     "http://inoe.example.com:39081/login?redirect=http%3A%2F%2Fportal.local%3A30083%2Fsettings",
   );
 });
 
 test("checkSsoSession clears the local session and redirects on 401", async () => {
   const { locationState } = setupBrowserEnv();
-  setSession({ token: "dead-token", user: { username: "zhiguan" }, expiresInSeconds: 60 });
+  setSession({
+    token: "dead-token",
+    user: { username: "zhiguan" },
+    expiresInSeconds: 60,
+  });
 
   globalThis.fetch = async () =>
     new Response(JSON.stringify({ detail: "登录状态已过期" }), {
@@ -142,7 +169,7 @@ test("checkSsoSession clears the local session and redirects on 401", async () =
       headers: { "Content-Type": "application/json" },
     });
 
-  const ok = await checkSsoSession(true);
+  const ok = await sso.checkSsoSession(true);
   assert.equal(ok, false);
   assert.equal(getSession(), null);
   assert.equal(
@@ -151,31 +178,107 @@ test("checkSsoSession clears the local session and redirects on 401", async () =
   );
 });
 
-test("triggerSsoRelogin only clears local state on allowlisted paths", () => {
-  const { locationState } = setupBrowserEnv({ pathname: "/embed/knowledge-base" });
-  setSession({ token: "alive-token", user: { username: "zhiguan" }, expiresInSeconds: 60 });
+test("triggerSsoRelogin only clears local state on allowlisted paths", async () => {
+  const { locationState } = setupBrowserEnv({
+    pathname: "/embed/knowledge-base",
+  });
+  setSession({
+    token: "alive-token",
+    user: { username: "zhiguan" },
+    expiresInSeconds: 60,
+  });
 
-  triggerSsoRelogin();
+  await sso.triggerSsoRelogin();
 
   assert.equal(getSession(), null);
-  assert.equal(locationState.href, "http://portal.local:30083/embed/knowledge-base");
+  assert.equal(
+    locationState.href,
+    "http://portal.local:30083/embed/knowledge-base",
+  );
 });
 
 test("setupSsoSessionMonitor reacts to storage logout from another tab", async () => {
   const { windowObj } = setupBrowserEnv();
-  setSession({ token: "alive-token", user: { username: "zhiguan" }, expiresInSeconds: 60 });
-
-  const teardown = setupSsoSessionMonitor();
-  clearSession();
-  windowObj.dispatch("storage", {
-    storageArea: windowObj.localStorage,
-    key: "qwenpaw.sso.token",
+  setSession({
+    token: "alive-token",
+    user: { username: "zhiguan" },
+    expiresInSeconds: 60,
   });
-  await new Promise((resolve) => setTimeout(resolve, 0));
 
-  assert.equal(
-    windowObj.location.href,
-    "http://portal.local:30081/login?redirect=http%3A%2F%2Fportal.local%3A30083%2F",
-  );
-  teardown();
+  const teardown = sso.setupSsoSessionMonitor();
+  try {
+    clearSession();
+    windowObj.dispatch("storage", {
+      storageArea: windowObj.localStorage,
+      key: "qwenpaw.sso.token",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(
+      windowObj.location.href,
+      "http://portal.local:30081/login?redirect=http%3A%2F%2Fportal.local%3A30083%2F",
+    );
+  } finally {
+    teardown();
+  }
 });
+
+test("renewal retains the local token namespace and server expiry", async () => {
+  setupBrowserEnv();
+  setSession({ token: "qp1.old", user: { userId: 7 }, expiresInSeconds: 60 });
+  globalThis.fetch = async (_url, init) => {
+    assert.equal(JSON.parse(String(init?.body)).token, "qp1.old");
+    return new Response(
+      JSON.stringify({
+        access_token: "qp1.new",
+        user: { userId: 7 },
+        expires_in_seconds: 300,
+      }),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  };
+  const before = Date.now();
+  assert.equal(await sso.checkSsoSession(true), true);
+  assert.equal(getSession()?.token, "qp1.new");
+  assert.ok(getSession()!.expireAt >= before + 300_000);
+});
+
+test("renewal outage does not logout or extend the existing expiry", async () => {
+  const { locationState } = setupBrowserEnv();
+  setSession({ token: "qp1.old", user: { userId: 7 }, expiresInSeconds: 60 });
+  const expiry = getSession()!.expireAt;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({ detail: "authentication source unavailable" }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  assert.equal(await sso.checkSsoSession(true), true);
+  assert.equal(getSession()?.token, "qp1.old");
+  assert.equal(getSession()?.expireAt, expiry);
+  assert.equal(locationState.href, "http://portal.local:30083/");
+});
+
+test(
+  "unresponsive cookie cleanup is bounded and does not stall relogin",
+  { timeout: 5_000 },
+  async (context) => {
+    const { locationState } = setupBrowserEnv();
+    setSession({ token: "qp1.old", user: { userId: 7 }, expiresInSeconds: 60 });
+    globalThis.fetch = async (_url, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        const abort = () => reject(new DOMException("aborted", "AbortError"));
+        if (init?.signal?.aborted) abort();
+        else init?.signal?.addEventListener("abort", abort, { once: true });
+      });
+    context.mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      const relogin = sso.triggerSsoRelogin();
+      context.mock.timers.tick(2_000);
+      await relogin;
+      assert.equal(getSession(), null);
+      assert.match(locationState.href, /^http:\/\/portal.local:30081\/login\?/);
+    } finally {
+      context.mock.timers.reset();
+    }
+  },
+);

@@ -159,10 +159,13 @@ def _build_alarm_query_windows(
     }
 
 
-def _load_cmdb_client():
+def _load_cmdb_client(token: str | None = None):
     find_project = _load_module("zgops_find_project", _zgops_find_project_path())
     base_url = _safe_str(os.environ.get("INOE_API_BASE_URL"))
-    token = _safe_str(os.environ.get("INOE_API_TOKEN"))
+    if token is None:
+        alarms = _load_module("real_alarm_credentials", _real_alarm_script_path())
+        token = alarms.get_token()
+    token = _safe_str(token)
     if not base_url or not token:
         raise ValueError(
             "未配置 INOE 网关地址或访问令牌（请在设置页「平台」配置）"
@@ -421,6 +424,7 @@ def _query_alarms_for_res_id(
             "msg": first_page.get("msg"),
             "total": 0,
             "rows": [],
+            "diagnostic": first_page.get("diagnostic", {}),
         }
 
     total = int(first_page.get("total") or 0)
@@ -449,6 +453,7 @@ def _query_alarms_for_res_id(
                 "msg": result.get("msg"),
                 "total": total,
                 "rows": rows,
+                "diagnostic": result.get("diagnostic", {}),
             }
         if not isinstance(page_rows, list) or not page_rows:
             break
@@ -495,6 +500,7 @@ def _merge_related_alarm_results(results: list[dict[str, Any]]) -> dict[str, Any
                 "total": int(result.get("total") or len(rows)),
                 "code": result.get("code"),
                 "msg": result.get("msg"),
+                "diagnostic": result.get("diagnostic", {}),
             }
         )
         for row in rows:
@@ -674,6 +680,14 @@ def _build_alarm_query_execution(
         "attemptedQueries": len(results),
         "successIds": success_ids,
         "failedIds": failed_ids,
+        "errors": [
+            {
+                "resId": result.get("resId"),
+                "code": result.get("code"),
+                "diagnostic": result.get("diagnostic", {}),
+            }
+            for result in results if int(result.get("code") or 0) != 200
+        ],
     }
 
 
@@ -834,7 +848,12 @@ def analyze_alarm_context(
     previous_begin_time = windows["previousBeginTime"]
     previous_end_time = windows["previousEndTime"]
 
-    client, _find_project, cmdb_access_mode = _load_cmdb_client()
+    # Capture the request credential before ThreadPoolExecutor workers, which
+    # do not inherit ContextVars automatically.
+    if token is None:
+        alarms = _load_module("real_alarm_credentials", _real_alarm_script_path())
+        token = alarms.get_token()
+    client, _find_project, cmdb_access_mode = _load_cmdb_client(token=token)
     root_resource = _fetch_root_resource_detail(client, root_res_id)
     topology_summary = _build_topology_summary(root_res_id, [], root_resource=root_resource)
     resolved_metric_type = _infer_metric_type(metric_type, topology_summary, alarm_title)

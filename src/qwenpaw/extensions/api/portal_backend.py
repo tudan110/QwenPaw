@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import subprocess
@@ -13,6 +14,7 @@ import time
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,6 +32,8 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
+
+logger = logging.getLogger(__name__)
 
 from qwenpaw.extensions.api.alarm_analyst_card_models import (
     ManualOperationGuide,
@@ -137,7 +141,7 @@ from qwenpaw.extensions.integrations.portal_real_alarms import (
     query_real_alarm_active_status,
 )
 from qwenpaw.extensions.integrations.portal_monitoring_overview import (
-    query_active_alarm_total as query_monitoring_active_alarm_total,
+    query_active_alarm_statistics as query_monitoring_active_alarm_statistics,
     query_alarm_top5 as query_monitoring_alarm_top5,
     query_asset_overview as query_monitoring_asset_overview,
     query_business_cockpit as query_monitoring_business_cockpit,
@@ -275,7 +279,7 @@ PORTAL_STATUS_ALERT_CACHE_TTL_SECONDS = float(
     os.getenv("QWENPAW_PORTAL_STATUS_ALERT_CACHE_TTL", "30").strip() or "30",
 )
 PORTAL_STATUS_ALERT_COUNT_CACHE: dict[str, Any] = {
-    "value": 0,
+    "value": None,
     "updated_at": 0.0,
 }
 PORTAL_STATUS_ALERT_COUNT_REFRESH_TASK: asyncio.Task | None = None
@@ -2425,17 +2429,17 @@ def _build_portal_employee_status_payload(
     total_chat_count: int,
     active_task_count: int,
     active_chat_count: int,
-    alert_count: int,
+    alert_count: int | None,
     latest_session_title: str,
     updated_at: str,
 ) -> dict[str, Any]:
-    urgent = alert_count > 0
+    urgent = alert_count is not None and alert_count > 0
     status = "running" if active_task_count > 0 else "idle"
     has_conversation = total_chat_count > 0
     progress = "--"
 
     if urgent:
-        current_job = f"待处理告警 {alert_count} 条"
+        current_job = f"查询窗口内待处理告警 {alert_count} 条（非全量）"
         work_status = "紧急任务"
         state_label = "紧急任务"
         progress = "0%"
@@ -2444,6 +2448,10 @@ def _build_portal_employee_status_payload(
         work_status = "运行中"
         state_label = "运行中"
         progress = "50%"
+    elif employee_id == "fault" and alert_count is None:
+        current_job = "告警统计暂不可用，不能据此判断系统健康"
+        work_status = "统计不可用"
+        state_label = "统计不可用"
     elif has_conversation and latest_session_title:
         current_job = f"最近会话：{latest_session_title}"
         work_status = "待机"
@@ -2472,6 +2480,18 @@ def _build_portal_employee_status_payload(
         "activeTaskCount": active_task_count,
         "activeChatCount": active_chat_count,
         "alertCount": alert_count,
+        **(
+            {
+                "alertQueryScope": PORTAL_STATUS_ALERT_COUNT_CACHE.get(
+                    "queryScope"
+                ),
+                "alertSourceStatus": PORTAL_STATUS_ALERT_COUNT_CACHE.get(
+                    "sourceStatus", "unavailable"
+                ),
+            }
+            if employee_id == "fault"
+            else {}
+        ),
         "latestSessionTitle": latest_session_title,
         "updatedAt": updated_at,
     }
@@ -2530,21 +2550,24 @@ def _get_cached_fault_alert_count(*, require_fresh: bool) -> int | None:
         > PORTAL_STATUS_ALERT_CACHE_TTL_SECONDS
     ):
         return None
-    return int(PORTAL_STATUS_ALERT_COUNT_CACHE.get("value") or 0)
+    value = PORTAL_STATUS_ALERT_COUNT_CACHE.get("value")
+    return int(value) if value is not None else None
 
 
-async def _refresh_fault_alert_count_cache() -> int:
+async def _refresh_fault_alert_count_cache() -> int | None:
     try:
         result = await _get_visible_portal_real_alarms(
             _portal_real_alarm_list_limit(),
             timeout_seconds=PORTAL_STATUS_ALERT_TIMEOUT_SECONDS,
             require_fresh=True,
         )
-        items = result.get("items") or []
-        count = int(result.get("total") or len(items))
+        total = result.get("total")
+        count = int(total) if total is not None else None
         PORTAL_STATUS_ALERT_COUNT_CACHE.update(
             {
                 "value": count,
+                "queryScope": result.get("queryScope"),
+                "sourceStatus": result.get("sourceStatus", "unavailable"),
                 "updated_at": time.monotonic(),
             },
         )
@@ -2554,7 +2577,10 @@ async def _refresh_fault_alert_count_cache() -> int:
             "[WARN] portal employee status alert count unavailable: "
             f"{type(exc).__name__}: {exc}",
         )
-        return int(PORTAL_STATUS_ALERT_COUNT_CACHE.get("value") or 0)
+        PORTAL_STATUS_ALERT_COUNT_CACHE.update(
+            {"value": None, "sourceStatus": "failed"}
+        )
+        return None
 
 
 def _ensure_fault_alert_count_refresh() -> asyncio.Task:
@@ -2585,7 +2611,7 @@ def _slice_portal_real_alarm_payload(
     return {
         **payload,
         "items": items,
-        "total": len(items),
+        "pageTotal": len(items),
     }
 
 
@@ -2662,6 +2688,19 @@ def _load_visible_portal_real_alarm_fallback_payload(
     return build_empty_portal_real_alarms_payload(normalized_limit)
 
 
+def _stale_or_failed_portal_real_alarms(
+    stale_cached: dict[str, Any] | None, limit: int
+) -> dict[str, Any]:
+    if stale_cached is not None:
+        return {
+            **stale_cached,
+            "source": "stale",
+            "sourceStatus": "stale",
+            "stale": True,
+        }
+    return _load_visible_portal_real_alarm_fallback_payload(limit)
+
+
 def _query_visible_portal_real_alarms(limit: int) -> dict[str, Any]:
     normalized_limit = _normalize_portal_real_alarm_limit(limit)
     raw_payload = query_portal_real_alarms(
@@ -2672,7 +2711,13 @@ def _query_visible_portal_real_alarms(limit: int) -> dict[str, Any]:
     return {
         **visible_payload,
         "items": visible_items,
-        "total": len(visible_items),
+        "total": (
+            raw_payload.get("total")
+            if raw_payload.get("totalIsExact") is True
+            else None
+        ),
+        "visibleTotal": len(visible_payload.get("items") or []),
+        "pageTotal": len(visible_items),
     }
 
 
@@ -2684,6 +2729,7 @@ async def _refresh_portal_real_alarm_payload(limit: int) -> dict[str, Any]:
     try:
         payload = await asyncio.get_running_loop().run_in_executor(
             PORTAL_REAL_ALARM_EXECUTOR,
+            copy_context().run,
             _query_visible_portal_real_alarms,
             normalized_limit,
         )
@@ -2745,14 +2791,13 @@ async def _get_visible_portal_real_alarms(
     if stale_cached is not None and not require_fresh:
         if not _portal_real_alarm_backend_is_degraded():
             _ensure_portal_real_alarm_refresh(normalized_limit)
-        return stale_cached
+        return _stale_or_failed_portal_real_alarms(
+            stale_cached, normalized_limit
+        )
 
     if _portal_real_alarm_backend_is_degraded():
-        return (
-            stale_cached
-            or _load_visible_portal_real_alarm_fallback_payload(
-                normalized_limit,
-            )
+        return _stale_or_failed_portal_real_alarms(
+            stale_cached, normalized_limit
         )
 
     task = _ensure_portal_real_alarm_refresh(normalized_limit)
@@ -2765,19 +2810,13 @@ async def _get_visible_portal_real_alarms(
         _enter_portal_real_alarm_degraded_mode(
             f"timeout after {float(timeout_seconds):.1f}s",
         )
-        return (
-            stale_cached
-            or _load_visible_portal_real_alarm_fallback_payload(
-                normalized_limit,
-            )
+        return _stale_or_failed_portal_real_alarms(
+            stale_cached, normalized_limit
         )
     except Exception as exc:
         _enter_portal_real_alarm_degraded_mode(f"{type(exc).__name__}: {exc}")
-        return (
-            stale_cached
-            or _load_visible_portal_real_alarm_fallback_payload(
-                normalized_limit,
-            )
+        return _stale_or_failed_portal_real_alarms(
+            stale_cached, normalized_limit
         )
 
     return _slice_portal_real_alarm_payload(payload, normalized_limit)
@@ -2969,7 +3008,7 @@ async def _get_employee_alert_count(
     employee_id: str,
     *,
     include_alert_count: bool = True,
-) -> int:
+) -> int | None:
     if (
         employee_id != "fault"
         or not include_alert_count
@@ -2989,8 +3028,8 @@ async def _get_employee_alert_count(
             asyncio.shield(task),
             timeout=max(0.1, PORTAL_STATUS_ALERT_FAST_TIMEOUT_SECONDS),
         )
-    except Exception:
-        return int(PORTAL_STATUS_ALERT_COUNT_CACHE.get("value") or 0)
+    except asyncio.TimeoutError:
+        return None
 
 
 async def collect_portal_employee_statuses(
@@ -4138,7 +4177,7 @@ async def get_monitoring_overview_dashboard():
         workorder_stats,
         severity_trend,
         cmdb_summary,
-        active_alarm_total,
+        active_alarm_statistics,
     ) = await asyncio.gather(
         asyncio.to_thread(query_monitoring_asset_overview),
         asyncio.to_thread(query_monitoring_business_cockpit),
@@ -4147,7 +4186,7 @@ async def get_monitoring_overview_dashboard():
         asyncio.to_thread(query_monitoring_workorder_stats),
         asyncio.to_thread(query_monitoring_severity_trend),
         asyncio.to_thread(query_monitoring_cmdb_summary),
-        asyncio.to_thread(query_monitoring_active_alarm_total),
+        asyncio.to_thread(query_monitoring_active_alarm_statistics),
     )
     return {
         "assetOverview": asset_overview,
@@ -4157,7 +4196,9 @@ async def get_monitoring_overview_dashboard():
         "workorderStats": workorder_stats,
         "severityTrend": severity_trend,
         "cmdbSummary": cmdb_summary,
-        "activeAlarmTotal": active_alarm_total,
+        "activeAlarmTotal": active_alarm_statistics["total"],
+        "activeAlarmQueryScope": active_alarm_statistics["queryScope"],
+        "activeAlarmSourceStatus": active_alarm_statistics["sourceStatus"],
     }
 
 
@@ -5196,11 +5237,17 @@ async def fault_disposal_history(
 def get_knowledge_base_health():
     try:
         return knowledge_base.health()
-    except Exception as exc:
-        error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] get_knowledge_base_health failed: {error_detail}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=error_detail) from exc
+    except Exception:
+        logger.exception("Knowledge health check failed")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "code": "KNOWLEDGE_HEALTH_UNAVAILABLE",
+                "stage": "knowledge_health",
+                "detail": "知识库依赖暂不可用",
+                "occurred_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
 
 @router.post("/knowledge-base/query")
@@ -5209,11 +5256,17 @@ def query_knowledge_base(payload: dict[str, Any] | None = Body(default=None)):
         return knowledge_base.query_knowledge(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] query_knowledge_base failed: {error_detail}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=error_detail) from exc
+    except Exception:
+        logger.exception("Knowledge retrieval failed")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "code": "KNOWLEDGE_RETRIEVAL_UNAVAILABLE",
+                "stage": "knowledge_retrieval",
+                "detail": "知识库检索暂不可用，不代表没有匹配资料",
+                "occurred_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
 
 @router.post("/knowledge-base/rag-synthesize")
@@ -5230,13 +5283,17 @@ async def synthesize_knowledge_base_answer(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:
-        error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(
-            f"[ERROR] synthesize_knowledge_base_answer failed: {error_detail}",
+    except Exception:
+        logger.exception("Knowledge synthesis failed")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "code": "KNOWLEDGE_SYNTHESIS_UNAVAILABLE",
+                "stage": "knowledge_synthesis",
+                "detail": "知识库总结暂不可用",
+                "occurred_at": datetime.now(timezone.utc).isoformat(),
+            },
         )
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
 @router.get("/knowledge-base/sources")

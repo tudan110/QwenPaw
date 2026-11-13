@@ -1,7 +1,7 @@
 import { digitalEmployees } from "../../data/portalData.ts";
 import { extractTurnUsageFromMetadata } from "../../components/turnUsage";
 import { persistedChatErrorToFriendly } from "../../lib/chatErrorMessage";
-import { MANUAL_FAULT_GUIDANCE_INSTRUCTIONS } from "../../fault-scenario/manualGuidance";
+import { MANUAL_FAULT_GUIDANCE_INSTRUCTIONS, stripLegacyManualFaultGuidance } from "../../fault-scenario/manualGuidance";
 
 const TIMEOUT_ALARM_TITLE = "应用接口响应超时";
 export const ALARM_WORKORDER_ENTRY = "alarm-workorders";
@@ -544,6 +544,7 @@ export function normalizeRemoteHistoryMessages(
   let activeAgentMessage = null;
 
   for (const message of historyMessages || []) {
+    if (message.role === "system") continue;
     if (message.role === "user" && (!message.type || message.type === "message")) {
       const rawText = sanitizeRemoteUserText(extractCopawMessageText(message));
       if (!rawText) {
@@ -909,7 +910,7 @@ function normalizeContentToText(
 }
 
 function sanitizeRemoteUserText(content: string) {
-  const normalized = String(content || "");
+  const normalized = stripLegacyManualFaultGuidance(String(content || ""));
   if (
     normalized.includes(PORTAL_FAULT_WORKORDER_MARKER) &&
     normalized.includes("\n---\n")

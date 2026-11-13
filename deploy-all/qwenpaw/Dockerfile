@@ -36,6 +36,10 @@ ENV WORKSPACE_DIR=/app
 ENV QWENPAW_WORKING_DIR=/app/working
 ENV QWENPAW_SECRET_DIR=/app/working.secret
 ENV QWENPAW_BACKUP_DIR=/app/working.backups
+ENV QWENPAW_RUNTIME_DIR=/app/runtime
+ENV HOME=/app/runtime/home
+ENV XDG_CACHE_HOME=/app/runtime/cache
+ENV TMPDIR=/app/runtime/tmp
 
 # Channel filtering: use QWENPAW_DISABLED_CHANNELS (exclusion, recommended)
 # or QWENPAW_ENABLED_CHANNELS (whitelist). Override at runtime with -e.
@@ -163,11 +167,6 @@ RUN python3 /usr/local/bin/build_universal_seed.py \
       --output /app/share/qwenpaw-seed \
       --runtime-working-dir /app/working
 
-# Product requirement: a clean deployment must have the configured models.
-# This intentionally puts encrypted Provider configuration and its master key
-# in the image. Treat every exported image tar as secret material.
-COPY deploy-all/qwenpaw/data/qwenpaw.secret/ /app/.working.secret.backup/
-
 # Bake all skill-declared Python deps into the image so OFFLINE deployments
 # can parse every knowledge-base format (doc/docx/pptx/pdf/xls/xlsx/csv/
 # images) out of the box. Never pip-install inside a running container:
@@ -199,8 +198,15 @@ RUN set -eux; \
 # The generated seed is the only workspace content retained in the image.
 RUN rm -rf /build/qwenpaw-working /usr/local/bin/build_universal_seed.py
 
-# Create empty working directories (PVC will mount over these)
-RUN mkdir -p /app/working /app/working.secret
+# Installation is complete before dropping privileges. Runtime credentials
+# are provisioned separately in the target environment, never in image layers.
+RUN groupadd --gid 10001 qwenpaw \
+  && useradd --uid 10001 --gid 10001 --home-dir /app/runtime/home \
+       --no-create-home --shell /usr/sbin/nologin qwenpaw \
+  && mkdir -p /app/working /app/working.secret /app/working.backups /app/runtime \
+  && chown 10001:10001 /app/working /app/working.secret /app/working.backups /app/runtime \
+  && chmod 750 /app/working /app/working.backups /app/runtime \
+  && chmod 700 /app/working.secret
 
 # QwenPaw app port (default 8088). Override at runtime with -e QWENPAW_PORT=3000.
 ENV QWENPAW_PORT=8088
@@ -208,10 +214,14 @@ ENV QWENPAW_PORT=8088
 ENV QWENPAW_APP_WORKERS=1
 ENV QWENPAW_APP_BACKLOG=2048
 ENV QWENPAW_APP_TIMEOUT_KEEP_ALIVE=5
+ENV QWENPAW_SSO_TOKEN_REQUIRED=true
+ENV QWENPAW_ADMIN_INOE_USER_IDS="1"
 
 COPY deploy-all/qwenpaw/config/supervisord.conf.template /etc/supervisor/conf.d/supervisord.conf.template
 COPY --chmod=755 deploy-all/qwenpaw/entrypoint.sh /entrypoint.sh
 
 EXPOSE 8088
+
+USER 10001:10001
 
 CMD ["/entrypoint.sh"]

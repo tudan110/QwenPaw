@@ -72,11 +72,16 @@ def create_agent_api_client(
     default_timeout: float = DEFAULT_AGENT_API_TIMEOUT,
 ) -> httpx.Client:
     """Create an HTTP client targeting the local agent API."""
+    from ...extensions.integrations.agent_api_auth import agent_api_headers
+
     normalized = _normalize_api_base_url(base_url)
     return httpx.Client(
         base_url=normalized,
         timeout=default_timeout,
         trust_env=trust_env_for_url(normalized),
+        headers=agent_api_headers(
+            normalized, _normalize_api_base_url(None)
+        ),
     )
 
 

@@ -358,6 +358,9 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 ContextVarsSetupHook,
             )
             from ..hooks.request_setup.media_hook import MediaProcessHook
+            from ..extensions.runtime.manual_fault_guidance import (
+                ManualFaultGuidanceHook,
+            )
             from ..hooks.error.error_hook import (
                 ErrorNormalizeHook,
                 CancelCleanupHook,
@@ -375,6 +378,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 SkillEnvCleanupHook,
                 ContextVarsSetupHook,
                 MediaProcessHook,
+                ManualFaultGuidanceHook,
                 ErrorNormalizeHook,
                 CancelCleanupHook,
             ]
@@ -852,6 +856,9 @@ app.add_middleware(SsoTokenMiddleware)
 # Apply CORS middleware if CORS_ORIGINS is set
 if CORS_ORIGINS:
     origins = [o.strip() for o in CORS_ORIGINS.split(",") if o.strip()]
+    from ..extensions.security.execution_policy import enabled as production_guards_enabled
+    if production_guards_enabled() and "*" in origins:
+        raise RuntimeError("Production credentialed CORS requires explicit trusted origins")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
@@ -1003,6 +1010,11 @@ if os.path.isdir(_CONSOLE_STATIC_DIR):
     _assets_dir = _console_path / "assets"
     if _assets_dir.is_dir():
         app.mount(
+            "/console/assets",
+            StaticFiles(directory=str(_assets_dir)),
+            name="console-assets",
+        )
+        app.mount(
             "/assets",
             StaticFiles(directory=str(_assets_dir)),
             name="assets",
@@ -1012,7 +1024,13 @@ if os.path.isdir(_CONSOLE_STATIC_DIR):
     @app.get("/console/")
     @app.get("/console/{full_path:path}")
     def _console_spa_alias(full_path: str = ""):
-        _ = full_path
+        candidate = (_console_path / full_path).resolve()
+        if (
+            full_path and ".." not in full_path
+            and candidate.is_file()
+            and candidate.is_relative_to(_console_path.resolve())
+        ):
+            return FileResponse(candidate)
         return _serve_console_index()
 
     # SPA fallback: catch-all route for frontend routing

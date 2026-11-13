@@ -1,4 +1,4 @@
-import { getApiUrl, clearAuthToken } from "./config";
+import { getApiUrl, clearAuthToken, getApiToken } from "./config";
 import { buildAuthHeaders } from "./authHeaders";
 
 function getErrorMessageFromBody(
@@ -121,8 +121,11 @@ export async function request<T = unknown>(
 
       if (!response.ok) {
         if (response.status === 401) {
+          const federation = getApiToken().startsWith("qp1.");
           clearAuthToken();
-          if (window.location.pathname !== "/login") {
+          if (federation) {
+            window.location.reload();
+          } else if (window.location.pathname !== "/login") {
             window.location.href = "/login";
           }
           throw new Error("Not authenticated");

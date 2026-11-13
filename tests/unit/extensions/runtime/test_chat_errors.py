@@ -290,7 +290,9 @@ async def test_installed_lifecycle_refines_after_core_normalization(
         "qwenpaw.app.chats.query_error_dump.write_query_error_dump",
         lambda *args, **kwargs: None,
     )
-    monkeypatch.setattr(HookRegistry, "run", HookRegistry.run)
+    from inspect import unwrap
+
+    monkeypatch.setattr(HookRegistry, "run", unwrap(HookRegistry.run))
     monkeypatch.setattr(
         HookRegistry, instrumentation._PATCH_MARK, False, raising=False
     )

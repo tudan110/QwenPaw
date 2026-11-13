@@ -4,7 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_DIR="${1:-$SCRIPT_DIR}"
-STAGE="$(mktemp -d "${TMPDIR:-/tmp}/cnos-inoe-agent.XXXXXX")"
+STAGE="$SCRIPT_DIR/.package-stage-$$"
+mkdir "$STAGE"
 trap 'rm -rf "$STAGE"' EXIT
 
 CHART_SOURCE="$REPO_ROOT/deploy-all/helm/cnos-inoe-agent"

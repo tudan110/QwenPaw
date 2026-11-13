@@ -100,7 +100,7 @@ export default function LoginPage() {
       >
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <img
-            src={isDark ? "/logo-dark.svg" : "/logo-light.svg"}
+            src={isDark ? "/console/logo-dark.svg" : "/console/logo-light.svg"}
             alt="QwenPaw"
             style={{ height: 48, marginBottom: 12 }}
           />

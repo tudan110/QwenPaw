@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
 import DigitalEmployeeAvatar from "../../components/DigitalEmployeeAvatar";
+import { alarmWindowCount, formatAlarmQueryScope } from "../../api/alarmQueryScope";
 import { digitalEmployees } from "../../data/portalData";
 import {
   getMonitoringOverviewDashboard,
@@ -202,7 +203,7 @@ function toResourceTypeStats(
 function buildKpiCards(
   asset: AssetOverviewData | null,
   employees: OverviewEmployee[],
-  activeAlarmTotal: number,
+  activeAlarmTotal: number | null,
   workorderStats: WorkorderStatsData | null,
   cmdbSummary: CmdbSummaryData | null,
 ): OverviewKpi[] {
@@ -241,12 +242,12 @@ function buildKpiCards(
       iconClass: "fa-heart-pulse",
     },
     {
-      label: "活跃告警",
-      value: String(activeAlarmTotal),
+      label: "窗口内未清除告警",
+      value: activeAlarmTotal !== null ? String(activeAlarmTotal) : "—",
       trend: "flat",
-      trendValue: "实时",
+      trendValue: activeAlarmTotal !== null ? "非全量" : "暂不可得",
       color: "#ef4444",
-      barPct: activeAlarmTotal > 0 ? Math.min(100, activeAlarmTotal) : 0,
+      barPct: activeAlarmTotal !== null && activeAlarmTotal > 0 ? Math.min(100, activeAlarmTotal) : 0,
       iconClass: "fa-triangle-exclamation",
     },
     {
@@ -307,7 +308,7 @@ function buildKpiCards(
 
 function buildAlerts(top5: AlarmTop5Item[] | null): OverviewAlert[] {
   if (!top5 || top5.length === 0) {
-    return [{ level: "暂无告警", color: "#22c55e", count: 0, pct: 0 }];
+    return [];
   }
   const sorted = top5
     .slice()
@@ -404,7 +405,9 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
   const workorderStats = envelopeData<WorkorderStatsData>(dashboard?.workorderStats);
   const severityTrend = envelopeData<SeverityTrendData>(dashboard?.severityTrend);
   const cmdbSummary = envelopeData<CmdbSummaryData>(dashboard?.cmdbSummary);
-  const activeAlarmTotal = Number(dashboard?.activeAlarmTotal ?? 0);
+  const activeAlarmTotal = alarmWindowCount(
+    dashboard?.activeAlarmTotal, dashboard?.activeAlarmSourceStatus,
+  );
 
   const assetOverviewError = dashboard?.assetOverview && dashboard.assetOverview.code !== 200
     ? dashboard.assetOverview.msg || null
@@ -556,6 +559,9 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
           </article>
         ))}
       </section>
+      <p className="overview-ref-empty">
+        告警统计范围：{formatAlarmQueryScope(dashboard?.activeAlarmQueryScope)}
+      </p>
 
       <section className="overview-ref-mid">
         <article className="overview-ref-card">
@@ -625,10 +631,15 @@ export function OverviewPanel({ pageTheme, onOpenEmployeeChat, employees }: Over
             告警分布
           </div>
           <div className="overview-ref-alert-list">
+            {alerts.length === 0 ? (
+              <div className="overview-ref-empty">
+                {alarmTop5 === null ? "告警分布暂不可得" : "当前统计未返回告警对象，不代表全局无告警"}
+              </div>
+            ) : null}
             {alerts.map((alert) => (
               <div
                 key={alert.level}
-                className={`overview-ref-alert-row${alert.level === "暂无告警" ? " is-empty" : ""}`}
+                className="overview-ref-alert-row"
               >
                 <div className="overview-ref-alert-dot" style={{ background: alert.color }} />
                 <div className="overview-ref-alert-level" style={{ color: alert.color }}>

@@ -12,6 +12,11 @@ export type KnowledgeBaseHealth = {
   llm?: {
     enabled?: boolean;
     provider?: string;
+    model?: string;
+    model_label?: string;
+    model_source?: string;
+    reason?: string;
+    connectivity_checked?: boolean;
   };
   embedding?: {
     enabled?: boolean;
@@ -56,6 +61,12 @@ export type KnowledgeQueryResponse = {
   evidence_boundary_statement?: string;
   flags?: {
     insufficient_evidence?: boolean;
+    degraded?: boolean;
+  };
+  diagnostic?: {
+    stage?: string;
+    degraded_reasons?: Record<string, string>;
+    [key: string]: unknown;
   };
 };
 

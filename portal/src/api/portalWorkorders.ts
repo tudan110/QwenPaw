@@ -99,7 +99,7 @@ export async function requestPortalApi<T = unknown>(
   if (ssoToken) {
     requestInit.headers = {
       ...(requestInit.headers as Record<string, string> | undefined),
-      "X-Inoe-Token": ssoToken,
+      [ssoToken.startsWith("qp1.") ? "X-QwenPaw-Access-Token" : "X-Inoe-Token"]: ssoToken,
     };
   }
 

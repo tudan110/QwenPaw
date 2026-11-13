@@ -71,6 +71,7 @@ def generate_hyde(
     *,
     timeout_s: float = 8.0,
     request_id: str = "hyde",
+    diagnostic: dict | None = None,
 ) -> str | None:
     """Synthesize a hypothetical answer for the query. Returns None on failure
     so callers can fall back to literal-query embedding.
@@ -85,6 +86,11 @@ def generate_hyde(
 
     provider = llm.first_available("qwenpaw_active", "deepseek")
     if provider is None:
+        if diagnostic is not None:
+            diagnostic["hyde_degraded_reason"] = llm.model_status().get(
+                "reason", "model_not_configured",
+            )
+        logger.warning("HyDE unavailable: no configured model")
         return None
 
     try:
@@ -98,8 +104,18 @@ def generate_hyde(
             request_id=request_id,
         )
     except llm.LLMError as exc:
+        if diagnostic is not None:
+            diagnostic["hyde_degraded_reason"] = exc.reason
         logger.warning("hyde generation failed (%s): %s", provider, exc)
         return None
 
     answer = (result.get("answer") or "").strip()
+    if diagnostic is not None:
+        diagnostic["hyde_model"] = {
+            key: result[key]
+            for key in ("provider", "model", "model_source")
+            if key in result
+        }
+        if not answer:
+            diagnostic["hyde_degraded_reason"] = "invalid_response"
     return answer or None

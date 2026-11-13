@@ -60,6 +60,8 @@ class MCPDriverHandler(DriverHandler):
     async def _setup(self) -> None:
         """Create and connect StdIOStatefulClient or HttpStatefulClient."""
         endpoint = self._card.endpoint
+        from ...extensions.security.mcp_boundary import validate_endpoint
+        validate_endpoint(endpoint)
         transport = str(endpoint.get("transport") or "stdio")
         credentials = await self._resolve_credentials()
 
@@ -112,6 +114,15 @@ class MCPDriverHandler(DriverHandler):
         **kwargs: Any,
     ) -> Any:
         """Call MCP tool on underlying client."""
+        from ...extensions.security.execution_policy import check_tool
+        needs_approval = await check_tool(
+            f"{self.name}__{str(kwargs['tool_name'])}",
+            dict(kwargs.get("arguments") or {}),
+        )
+        if needs_approval:
+            raise PermissionError(
+                "未接入强制审批业务连接器的 MCP 写操作已禁用"
+            )
         del credential
         del context
         if self._client is None:

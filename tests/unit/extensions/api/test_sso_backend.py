@@ -314,6 +314,13 @@ def sso_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     db = _db(tmp_path)
     monkeypatch.setattr(store, "DEFAULT_DB_PATH", db)
     monkeypatch.setattr(settings_store, "DEFAULT_DB_PATH", db)
+    from qwenpaw.app import auth
+    from qwenpaw.extensions.api import access_session
+    monkeypatch.setattr(auth, "AUTH_FILE", tmp_path / "auth.json")
+    monkeypatch.setattr(
+        access_session, "_STORE",
+        access_session.AccessSessionStore(tmp_path / "access.db"),
+    )
     app = FastAPI()
     app.include_router(router)
     return TestClient(app)
@@ -353,15 +360,12 @@ def test_token_login_retries_cookie_when_body_token_is_stale(
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "access_token": "fresh-token",
-        "token_type": "Bearer",
-        "expires_in_seconds": 43200,
-        "user": {
-            "userId": 1,
-            "username": "zhiguan",
-        },
-    }
+    result = response.json()
+    assert result["access_token"].startswith("qp1.")
+    assert result["token_kind"] == "qwenpaw"
+    assert result["expires_in_seconds"] == 600
+    assert result["user"] == {"userId": 1, "username": "zhiguan"}
+    assert "HttpOnly" in response.headers["set-cookie"]
 
 
 def test_token_login_keeps_cookie_fallback_disabled_when_same_token(

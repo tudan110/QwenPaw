@@ -15,6 +15,9 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8088"
 
 def client(base_url: str) -> httpx.Client:
     """Create HTTP client with /api prefix added to all requests."""
+    from ..agents.tools.agent_management import resolve_agent_api_base_url
+    from ..extensions.integrations.agent_api_auth import agent_api_headers
+
     # Ensure base_url ends with /api
     base = base_url.rstrip("/")
     if not base.endswith("/api"):
@@ -23,6 +26,7 @@ def client(base_url: str) -> httpx.Client:
         base_url=base,
         timeout=30.0,
         trust_env=trust_env_for_url(base),
+        headers=agent_api_headers(base, resolve_agent_api_base_url()),
     )
 
 

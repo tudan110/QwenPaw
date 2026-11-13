@@ -1,4 +1,5 @@
 import { requestPortalApi } from "./portalWorkorders";
+import type { AlarmQueryScope } from "./alarmQueryScope";
 
 export interface PortalRealAlarmItem {
   id: string;
@@ -20,9 +21,13 @@ export interface PortalRealAlarmItem {
 }
 
 export interface PortalRealAlarmListResponse {
-  total: number;
+  total: number | null;
   items: PortalRealAlarmItem[];
-  source: "live";
+  source: "live" | "failed" | "unavailable";
+  sourceStatus?: "live" | "failed" | "unavailable";
+  queryScope?: AlarmQueryScope;
+  totalIsExact?: boolean;
+  windowComplete?: boolean;
 }
 
 export async function listPortalRealAlarms(

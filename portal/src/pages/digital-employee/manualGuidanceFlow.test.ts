@@ -29,6 +29,7 @@ test("fault policy stays scoped to the actual chat and does not alter scenario r
     },
   });
   const streamedInputs: string[] = [];
+  const streamedContexts: Record<string, unknown>[] = [];
   const unexpectedRequests: string[] = [];
   let createdChats = 0;
   let scenarioCalls = 0;
@@ -37,6 +38,7 @@ test("fault policy stays scoped to the actual chat and does not alter scenario r
     if (path.endsWith("/console/chat")) {
       const body = JSON.parse(String(options?.body));
       streamedInputs.push(body.input[0].content[0].text);
+      streamedContexts.push(body.request_context ?? {});
       return new Response("", { headers: { "Content-Type": "text/event-stream" } });
     }
     if (path.endsWith("/chats") && options?.method === "POST") {
@@ -52,6 +54,22 @@ test("fault policy stays scoped to the actual chat and does not alter scenario r
     return Response.json([]);
   };
   try {
+    const { normalizeRemoteHistoryMessages } = await server.ssrLoadModule(
+      "/src/pages/digital-employee/helpers.ts",
+    );
+    const { MANUAL_FAULT_GUIDANCE_INSTRUCTIONS } = await server.ssrLoadModule(
+      "/src/fault-scenario/manualGuidance.ts",
+    );
+    const restored = normalizeRemoteHistoryMessages([
+      { role: "user", content: [{ type: "text", text: "帮我定位和解决" }] },
+      { role: "system", content: [{ type: "text", text: MANUAL_FAULT_GUIDANCE_INSTRUCTIONS }] },
+      { role: "user", content: [{ type: "text", text: `帮我处理这个告警\n\n${MANUAL_FAULT_GUIDANCE_INSTRUCTIONS}` }] },
+    ], { id: "fault", name: "故障助手" }, {});
+    assert.deepEqual(restored.map((message: any) => message.content), [
+      "帮我定位和解决", "帮我处理这个告警",
+    ]);
+    assert.ok(restored.every((message: any) => message.type === "user"));
+
     const { useRemoteChatSession } = await server.ssrLoadModule(
       "/src/pages/digital-employee/useRemoteChatSession.ts",
     );
@@ -84,7 +102,8 @@ test("fault policy stays scoped to the actual chat and does not alter scenario r
       assert.equal(await remote!.handleRemoteSendMessage("你好"), true, JSON.stringify(messages));
       assert.equal(streamedInputs[streamedInputs.length - 1], "你好");
       assert.equal(await remote!.handleRemoteSendMessage("分析 MySQL 慢 SQL"), true);
-      assert.ok(streamedInputs[streamedInputs.length - 1]?.includes("[CMDB 人工处置指南约束]"));
+      assert.equal(streamedInputs.at(-1), "分析 MySQL 慢 SQL");
+      assert.equal(streamedContexts.at(-1)?.portal_manual_fault_guidance, true);
       assert.equal(scenarioCalls, 0);
       assert.equal(
         await remote!.handleRemoteSendMessage("核对现象", {
@@ -92,12 +111,14 @@ test("fault policy stays scoped to the actual chat and does not alter scenario r
         }),
         true,
       );
-      assert.ok(streamedInputs[streamedInputs.length - 1]?.includes("[CMDB 人工处置指南约束]"));
+      assert.equal(streamedInputs.at(-1), "核对现象");
+      assert.equal(streamedContexts.at(-1)?.portal_manual_fault_guidance, true);
       assert.equal(
         await remote!.handleRemoteSendMessage("你好", { forceNewChat: true }),
         true,
       );
       assert.equal(streamedInputs[streamedInputs.length - 1], "你好");
+      assert.equal(streamedContexts.at(-1)?.portal_manual_fault_guidance, undefined);
       if (agent === "fault") {
         assert.equal(
           await remote!.handleRemoteSendMessage("cmdb 应用插入失败", {

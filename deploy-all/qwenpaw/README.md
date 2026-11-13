@@ -106,13 +106,15 @@ env:
 
 ```yaml
 service:
-  type: NodePort
+  type: ClusterIP
   port: 8088
   targetPort: 8088
-  nodePort: 30088
 ```
 
-访问地址：`http://<node-ip>:30088`
+默认仅集群内访问：`http://qwenpaw:8088`。确有外部直连需求时，须显式设置
+`type: NodePort`、`nodePort: 30088` 并配置受限入口；默认不向节点暴露后端。
+非 root、运行时 Secret、旧 PVC 和网络放行的升级要求见
+[`QWENPAW_IMAGE_BUILD.md`](../QWENPAW_IMAGE_BUILD.md#安全默认值与升级迁移bc-p0)。
 
 ### 持久化存储
 

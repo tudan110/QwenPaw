@@ -21,6 +21,7 @@ export default defineConfig(({ mode }) => {
   const apiBaseUrl = env.VITE_API_BASE_URL ?? "";
 
   return {
+    base: mode === "tauri" ? "/" : "/console/",
     define: {
       VITE_API_BASE_URL: JSON.stringify(apiBaseUrl),
       TOKEN: JSON.stringify(env.TOKEN || ""),

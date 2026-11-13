@@ -5,6 +5,8 @@ import {
   MANUAL_FAULT_GUIDANCE_INSTRUCTIONS,
   isManualFaultAdviceOnly,
   withManualFaultGuidance,
+  manualFaultRequestContext,
+  stripLegacyManualFaultGuidance,
 } from "./manualGuidance.ts";
 import { getManualOperationGuide, type ManualOperationGuide } from "./shared.ts";
 
@@ -38,6 +40,20 @@ test("alarm-bound chats apply the same policy for any configured agent", () => {
   assert.ok(
     withManualFaultGuidance("CPU 利用率超限", { alarmId: "alarm-1" })
       .includes(MANUAL_FAULT_GUIDANCE_INSTRUCTIONS),
+  );
+});
+
+test("fault request metadata contains only a policy flag, not user text", () => {
+  assert.deepEqual(manualFaultRequestContext("你好"), {});
+  assert.deepEqual(manualFaultRequestContext("帮我定位和解决", { alarmId: "a" }), {
+    portal_manual_fault_guidance: true,
+  });
+  assert.equal(stripLegacyManualFaultGuidance(
+    `帮我处理这个告警\n\n${MANUAL_FAULT_GUIDANCE_INSTRUCTIONS}`,
+  ), "帮我处理这个告警");
+  assert.equal(
+    stripLegacyManualFaultGuidance("用户讨论 [CMDB 人工处置指南约束] 的含义"),
+    "用户讨论 [CMDB 人工处置指南约束] 的含义",
   );
 });
 

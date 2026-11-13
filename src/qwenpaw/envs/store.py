@@ -113,6 +113,9 @@ def _apply_to_environ(
         overwrite: When False, existing process env values take precedence.
     """
     for key, value in envs.items():
+        from qwenpaw.extensions.api.access_policy import protected_env_key
+        if protected_env_key(key):
+            continue
         if not overwrite and key in os.environ:
             continue
         os.environ[key] = value
@@ -120,7 +123,9 @@ def _apply_to_environ(
 
 def _remove_from_environ(key: str) -> None:
     """Remove *key* from ``os.environ`` if present."""
-    os.environ.pop(key, None)
+    from qwenpaw.extensions.api.access_policy import protected_env_key
+    if not protected_env_key(key):
+        os.environ.pop(key, None)
 
 
 def _sync_environ(

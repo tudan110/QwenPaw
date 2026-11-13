@@ -16,7 +16,7 @@ import {
   streamChat,
 } from "../../api/copawChat";
 import { getFaultDisposalHistory } from "../../api/faultDisposalBridge";
-import { isManualFaultAdviceOnly, withManualFaultGuidance } from "../../fault-scenario/manualGuidance";
+import { isManualFaultAdviceOnly, manualFaultRequestContext } from "../../fault-scenario/manualGuidance";
 import {
   buildAlarmAnalystCardRequest,
   getAlarmAnalystReportMarkdown,
@@ -1591,7 +1591,7 @@ export function useRemoteChatSession({
               content: [
                 {
                   type: "text",
-                  text: withManualFaultGuidance(content, currentChatMetaRef.current),
+                  text: content,
                   status: "created",
                 },
               ],
@@ -1601,6 +1601,9 @@ export function useRemoteChatSession({
           user_id: ensuredChat.user_id,
           channel: ensuredChat.channel || COPAW_CHANNEL,
           stream: true,
+          request_context: manualFaultRequestContext(
+            content, currentChatMetaRef.current,
+          ),
         }, requestApprovalLevel),
         {
           signal: controller.signal,

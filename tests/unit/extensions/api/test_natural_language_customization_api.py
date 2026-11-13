@@ -12,7 +12,9 @@ from qwenpaw.exceptions import ProviderError
 from qwenpaw.extensions.api.natural_language_customization_api import (
     router as nl_customization_router,
 )
-from qwenpaw.extensions import natural_language_customization_registry as registry
+from qwenpaw.extensions import (
+    natural_language_customization_registry as registry,
+)
 
 
 class _FakePreviewModel:
@@ -81,12 +83,16 @@ def test_nl_customization_preview_route_builds_structured_bundle() -> None:
     assert "建议补充通知渠道" not in payload["missingInputs"]
 
 
-def test_nl_customization_preview_route_requires_default_llm(monkeypatch) -> None:
+def test_nl_customization_preview_route_requires_default_llm(
+    monkeypatch,
+) -> None:
     app = FastAPI()
     app.include_router(nl_customization_router, prefix="/api/portal")
     client = TestClient(app)
 
-    def _raise_missing_model(*args: Any, **kwargs: Any) -> tuple[object, object]:
+    def _raise_missing_model(
+        *args: Any, **kwargs: Any
+    ) -> tuple[object, object]:
         raise ProviderError("No active model configured.")
 
     monkeypatch.setattr(
@@ -113,7 +119,9 @@ def test_nl_customization_publish_route_persists_version_listing(
     registry_path = tmp_path / "nl_customization_registry.json"
     bundle_dir = tmp_path / "nl_customization_bundles"
 
-    monkeypatch.setattr(registry, "NL_CUSTOMIZATION_REGISTRY_PATH", registry_path)
+    monkeypatch.setattr(
+        registry, "NL_CUSTOMIZATION_REGISTRY_PATH", registry_path
+    )
     monkeypatch.setattr(registry, "NL_CUSTOMIZATION_BUNDLE_DIR", bundle_dir)
 
     preview_response = client.post(
@@ -143,8 +151,14 @@ def test_nl_customization_publish_route_persists_version_listing(
     assert len(versions_payload["items"]) == 1
     assert versions_payload["items"][0]["versionId"] == published["versionId"]
 
-    bundle_payload = json.loads(bundle_dir.joinpath(f"{published['versionId']}.json").read_text(encoding="utf-8"))
-    assert bundle_payload["record"]["title"] == preview_response.json()["title"]
+    bundle_payload = json.loads(
+        bundle_dir.joinpath(f"{published['versionId']}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert (
+        bundle_payload["record"]["title"] == preview_response.json()["title"]
+    )
 
     version_detail_response = client.get(
         f"/api/portal/nl-customization/versions/{published['versionId']}",
@@ -152,7 +166,9 @@ def test_nl_customization_publish_route_persists_version_listing(
     assert version_detail_response.status_code == 200
     detail_payload = version_detail_response.json()
     assert detail_payload["versionId"] == published["versionId"]
-    assert detail_payload["preview"]["title"] == preview_response.json()["title"]
+    assert (
+        detail_payload["preview"]["title"] == preview_response.json()["title"]
+    )
 
 
 def test_nl_customization_apply_route_marks_active_version(
@@ -166,7 +182,9 @@ def test_nl_customization_apply_route_marks_active_version(
     bundle_dir = tmp_path / "nl_customization_bundles"
     active_path = tmp_path / "nl_customization_active.json"
 
-    monkeypatch.setattr(registry, "NL_CUSTOMIZATION_REGISTRY_PATH", registry_path)
+    monkeypatch.setattr(
+        registry, "NL_CUSTOMIZATION_REGISTRY_PATH", registry_path
+    )
     monkeypatch.setattr(registry, "NL_CUSTOMIZATION_BUNDLE_DIR", bundle_dir)
     monkeypatch.setattr(registry, "NL_CUSTOMIZATION_ACTIVE_PATH", active_path)
 
@@ -254,7 +272,10 @@ def test_nl_customization_apply_route_marks_active_version(
     assert len(apps_payload["items"]) == 1
     assert apps_payload["items"][0]["versionId"] == published["versionId"]
     assert apps_payload["items"][0]["launchEmployeeId"] == "query"
-    assert apps_payload["items"][0]["displayTargets"] == ["portal-home", "portal-card"]
+    assert apps_payload["items"][0]["displayTargets"] == [
+        "portal-home",
+        "portal-card",
+    ]
 
     unlisting_response = client.post(
         "/api/portal/nl-customization/listing",
@@ -283,17 +304,23 @@ def test_nl_customization_delete_route_removes_non_active_version(
     bundle_dir = tmp_path / "nl_customization_bundles"
     active_path = tmp_path / "nl_customization_active.json"
 
-    monkeypatch.setattr(registry, "NL_CUSTOMIZATION_REGISTRY_PATH", registry_path)
+    monkeypatch.setattr(
+        registry, "NL_CUSTOMIZATION_REGISTRY_PATH", registry_path
+    )
     monkeypatch.setattr(registry, "NL_CUSTOMIZATION_BUNDLE_DIR", bundle_dir)
     monkeypatch.setattr(registry, "NL_CUSTOMIZATION_ACTIVE_PATH", active_path)
 
     first_preview = client.post(
         "/api/portal/nl-customization/preview",
-        json={"prompt": "首页加一个待处理工单卡片，领导只能看汇总，运维能看明细。"},
+        json={
+            "prompt": "首页加一个待处理工单卡片，领导只能看汇总，运维能看明细。"
+        },
     )
     second_preview = client.post(
         "/api/portal/nl-customization/preview",
-        json={"prompt": "给我一个 Oracle 巡检助手，每天 8 点执行，异常自动建单，但不能自动变更。"},
+        json={
+            "prompt": "给我一个 Oracle 巡检助手，每天 8 点执行，异常自动建单，但不能自动变更。"
+        },
     )
     first_publish = client.post(
         "/api/portal/nl-customization/publish",
@@ -345,25 +372,37 @@ def test_nl_customization_supports_multiple_listed_apps(
     bundle_dir = tmp_path / "nl_customization_bundles"
     active_path = tmp_path / "nl_customization_active.json"
 
-    monkeypatch.setattr(registry, "NL_CUSTOMIZATION_REGISTRY_PATH", registry_path)
+    monkeypatch.setattr(
+        registry, "NL_CUSTOMIZATION_REGISTRY_PATH", registry_path
+    )
     monkeypatch.setattr(registry, "NL_CUSTOMIZATION_BUNDLE_DIR", bundle_dir)
     monkeypatch.setattr(registry, "NL_CUSTOMIZATION_ACTIVE_PATH", active_path)
 
     dashboard_preview = client.post(
         "/api/portal/nl-customization/preview",
-        json={"prompt": "首页加一个待处理工单卡片，领导只能看汇总，运维能看明细。"},
+        json={
+            "prompt": "首页加一个待处理工单卡片，领导只能看汇总，运维能看明细。"
+        },
     )
     inspection_preview = client.post(
         "/api/portal/nl-customization/preview",
-        json={"prompt": "给我一个 Oracle 巡检助手，每天 8 点执行，异常自动建单，但不能自动变更。"},
+        json={
+            "prompt": "给我一个 Oracle 巡检助手，每天 8 点执行，异常自动建单，但不能自动变更。"
+        },
     )
     dashboard_publish = client.post(
         "/api/portal/nl-customization/publish",
-        json={"preview": dashboard_preview.json(), "requestedBy": "portal-test"},
+        json={
+            "preview": dashboard_preview.json(),
+            "requestedBy": "portal-test",
+        },
     )
     inspection_publish = client.post(
         "/api/portal/nl-customization/publish",
-        json={"preview": inspection_preview.json(), "requestedBy": "portal-test"},
+        json={
+            "preview": inspection_preview.json(),
+            "requestedBy": "portal-test",
+        },
     )
     dashboard_version_id = dashboard_publish.json()["versionId"]
     inspection_version_id = inspection_publish.json()["versionId"]
@@ -374,18 +413,29 @@ def test_nl_customization_supports_multiple_listed_apps(
     )
     apply_inspection = client.post(
         "/api/portal/nl-customization/apply",
-        json={"versionId": inspection_version_id, "requestedBy": "portal-test"},
+        json={
+            "versionId": inspection_version_id,
+            "requestedBy": "portal-test",
+        },
     )
     assert apply_dashboard.status_code == 200
     assert apply_inspection.status_code == 200
 
     list_dashboard = client.post(
         "/api/portal/nl-customization/listing",
-        json={"versionId": dashboard_version_id, "listed": True, "requestedBy": "portal-test"},
+        json={
+            "versionId": dashboard_version_id,
+            "listed": True,
+            "requestedBy": "portal-test",
+        },
     )
     list_inspection = client.post(
         "/api/portal/nl-customization/listing",
-        json={"versionId": inspection_version_id, "listed": True, "requestedBy": "portal-test"},
+        json={
+            "versionId": inspection_version_id,
+            "listed": True,
+            "requestedBy": "portal-test",
+        },
     )
     assert list_dashboard.status_code == 200
     assert list_inspection.status_code == 200
@@ -403,14 +453,10 @@ def test_nl_customization_supports_multiple_listed_apps(
     assert versions_response.status_code == 200
     versions_items = versions_response.json()["items"]
     active_versions = {
-        item["versionId"]
-        for item in versions_items
-        if item.get("isActive")
+        item["versionId"] for item in versions_items if item.get("isActive")
     }
     listed_versions = {
-        item["versionId"]
-        for item in versions_items
-        if item.get("isListed")
+        item["versionId"] for item in versions_items if item.get("isListed")
     }
     assert active_versions == {dashboard_version_id, inspection_version_id}
     assert listed_versions == {dashboard_version_id, inspection_version_id}
@@ -423,9 +469,13 @@ def test_nl_customization_registry_migrates_legacy_files(
     legacy_registry_path = tmp_path / "nl_customization_registry.json"
     legacy_bundle_dir = tmp_path / "nl_customization_bundles"
     legacy_active_path = tmp_path / "nl_customization_active.json"
-    new_registry_path = tmp_path / "extensions" / "nl_customization" / "registry.json"
+    new_registry_path = (
+        tmp_path / "extensions" / "nl_customization" / "registry.json"
+    )
     new_bundle_dir = tmp_path / "extensions" / "nl_customization" / "bundles"
-    new_active_path = tmp_path / "extensions" / "nl_customization" / "active.json"
+    new_active_path = (
+        tmp_path / "extensions" / "nl_customization" / "active.json"
+    )
 
     legacy_bundle_dir.mkdir(parents=True, exist_ok=True)
     legacy_registry_path.write_text(
@@ -455,19 +505,40 @@ def test_nl_customization_registry_migrates_legacy_files(
         encoding="utf-8",
     )
     legacy_bundle_dir.joinpath("nlc-1.json").write_text(
-        json.dumps({"versionId": "nlc-1", "preview": {"bundle": {}}}, ensure_ascii=False),
+        json.dumps(
+            {"versionId": "nlc-1", "preview": {"bundle": {}}},
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(registry, "LEGACY_NL_CUSTOMIZATION_REGISTRY_PATH", legacy_registry_path)
-    monkeypatch.setattr(registry, "LEGACY_NL_CUSTOMIZATION_BUNDLE_DIR", legacy_bundle_dir)
-    monkeypatch.setattr(registry, "LEGACY_NL_CUSTOMIZATION_ACTIVE_PATH", legacy_active_path)
-    monkeypatch.setattr(registry, "NL_CUSTOMIZATION_REGISTRY_PATH", new_registry_path)
-    monkeypatch.setattr(registry, "NL_CUSTOMIZATION_BUNDLE_DIR", new_bundle_dir)
-    monkeypatch.setattr(registry, "NL_CUSTOMIZATION_ACTIVE_PATH", new_active_path)
-    monkeypatch.setattr(registry, "DEFAULT_NL_CUSTOMIZATION_REGISTRY_PATH", new_registry_path)
-    monkeypatch.setattr(registry, "DEFAULT_NL_CUSTOMIZATION_BUNDLE_DIR", new_bundle_dir)
-    monkeypatch.setattr(registry, "DEFAULT_NL_CUSTOMIZATION_ACTIVE_PATH", new_active_path)
+    monkeypatch.setattr(
+        registry, "LEGACY_NL_CUSTOMIZATION_REGISTRY_PATH", legacy_registry_path
+    )
+    monkeypatch.setattr(
+        registry, "LEGACY_NL_CUSTOMIZATION_BUNDLE_DIR", legacy_bundle_dir
+    )
+    monkeypatch.setattr(
+        registry, "LEGACY_NL_CUSTOMIZATION_ACTIVE_PATH", legacy_active_path
+    )
+    monkeypatch.setattr(
+        registry, "NL_CUSTOMIZATION_REGISTRY_PATH", new_registry_path
+    )
+    monkeypatch.setattr(
+        registry, "NL_CUSTOMIZATION_BUNDLE_DIR", new_bundle_dir
+    )
+    monkeypatch.setattr(
+        registry, "NL_CUSTOMIZATION_ACTIVE_PATH", new_active_path
+    )
+    monkeypatch.setattr(
+        registry, "DEFAULT_NL_CUSTOMIZATION_REGISTRY_PATH", new_registry_path
+    )
+    monkeypatch.setattr(
+        registry, "DEFAULT_NL_CUSTOMIZATION_BUNDLE_DIR", new_bundle_dir
+    )
+    monkeypatch.setattr(
+        registry, "DEFAULT_NL_CUSTOMIZATION_ACTIVE_PATH", new_active_path
+    )
 
     items = registry.list_published_customizations(limit=10)
 
@@ -482,7 +553,7 @@ def test_nl_customization_registry_migrates_legacy_files(
 def test_portal_backend_registers_nl_customization_routes() -> None:
     app = FastAPI()
     app.include_router(nl_customization_router, prefix="/api/portal")
-    paths = {route.path for route in app.routes}
+    paths = set(app.openapi()["paths"])
 
     assert "/api/portal/nl-customization/preview" in paths
     assert "/api/portal/nl-customization/publish" in paths

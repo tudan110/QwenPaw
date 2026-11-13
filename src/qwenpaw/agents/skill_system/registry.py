@@ -376,6 +376,15 @@ def apply_skill_config_env_overrides(
                 config,
                 list(require_envs),
             )
+            from ...extensions.api.access_policy import protected_env_key
+            if any(
+                (protected_env_key(key) or key == "INOE_API_BASE_URL")
+                and value != os.environ.get(key)
+                for key, value in overrides.items()
+            ):
+                raise PermissionError(
+                    f"Skill '{skill_name}' cannot override security or authentication routing"
+                )
             for env_key, env_value in overrides.items():
                 if not _acquire_skill_env_key(env_key, env_value):
                     logger.warning(

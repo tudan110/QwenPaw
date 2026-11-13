@@ -83,7 +83,7 @@ kubectl -n "$NAMESPACE" rollout status deployment/cnos-iomp-digital-workforce-po
 NODE_IP="$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo '<节点IP>')"
 echo ""
 echo "✅ 部署完成："
-echo "   后端  http://$NODE_IP:30088"
+echo "   后端  http://qwenpaw.$NAMESPACE.svc.cluster.local:8088 (默认仅集群内)"
 echo "   门户  http://$NODE_IP:30083"
 echo ""
 echo "💡 受管 Agent/Skill 会由新 Pod 的 managed-seed-sync initContainer 从"

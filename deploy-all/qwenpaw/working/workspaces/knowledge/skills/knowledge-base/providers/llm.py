@@ -44,21 +44,59 @@ class LLMInvalidResponse(LLMError):
     reason = "invalid_response"
 
 
+class LLMNotConfigured(LLMError):
+    reason = "model_not_configured"
+
+
+class LLMAuthError(LLMError):
+    reason = "model_auth_failed"
+
+
+def _model_error(exc: Exception) -> LLMError:
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        status = getattr(current, "status_code", None)
+        if status is None:
+            status = getattr(getattr(current, "response", None), "status_code", None)
+        if status in (401, 403):
+            return LLMAuthError("model authentication failed")
+        if status == 429:
+            return LLMRateLimit("model rate limited")
+        if isinstance(current, TimeoutError) or "timeout" in (
+            type(current).__name__.lower()
+        ):
+            return LLMTimeout("model request timed out")
+        current = current.__cause__ or current.__context__
+    return LLMProviderError("qwenpaw active model execution failed")
+
+
+def model_status(agent_id: str = "knowledge") -> dict:
+    """Report configuration readiness, not a claim of upstream connectivity."""
+    try:
+        from qwenpaw.extensions.integrations.knowledge_model import (
+            KnowledgeModelUnavailable, resolve_knowledge_model,
+        )
+    except ImportError:
+        return {"enabled": False, "reason": "host_package_unavailable"}
+    try:
+        selection = resolve_knowledge_model(agent_id)
+    except KnowledgeModelUnavailable as exc:
+        return {"enabled": False, "reason": exc.reason}
+    return {"enabled": True, "connectivity_checked": False,
+            **selection.metadata()}
+
+
 def is_available(provider: str = "deepseek") -> bool:
     """Check whether a provider is callable in the current process.
 
-    For "qwenpaw_active" we only need the host package importable — the actual
-    model credentials live inside QwenPaw's provider config and are checked
-    lazily at call time.
+    Configuration readiness is checked without changing model selections.
     """
     if provider == "deepseek":
         return bool(os.environ.get("DEEPSEEK_API_KEY"))
     if provider in ("qwenpaw", "qwenpaw_active"):
-        try:
-            import qwenpaw.agents.model_factory  # noqa: F401
-            return True
-        except ImportError:
-            return False
+        return model_status()["enabled"]
     return False
 
 
@@ -111,24 +149,49 @@ def _call_qwenpaw_active(
 
     started = time.monotonic()
     query_hash = _user_message_hash(messages)
-    model, _ = create_model_and_formatter(agent_id=agent_id)
-
     async def _run() -> str:
-        response = await model(messages)
+        from agentscope.message import Msg, TextBlock
+        from qwenpaw.extensions.integrations.knowledge_model import (
+            resolve_knowledge_model,
+        )
+
+        selection = resolve_knowledge_model(agent_id)
+        metadata.update(selection.metadata())
+        model, _ = create_model_and_formatter(
+            agent_id=agent_id, model_slot=selection.slot,
+        )
+        normalized = [
+            Msg(name=message["role"], role=message["role"],
+                content=[TextBlock(text=message["content"])])
+            for message in messages
+        ]
+        response = await model(normalized)
         return await _drain_response(response)
 
+    metadata: dict = {}
     try:
         answer = asyncio.run(asyncio.wait_for(_run(), timeout=timeout_s))
     except asyncio.TimeoutError as exc:
         latency = _ms(started)
         _log("qwenpaw", "active", query_hash, latency, "timeout",
-             request_id, error=str(exc))
-        raise LLMTimeout(f"qwenpaw active model timeout: {exc}") from exc
+             request_id, error=type(exc).__name__)
+        raise LLMTimeout("qwenpaw active model timeout") from exc
     except Exception as exc:
+        from qwenpaw.extensions.integrations.knowledge_model import (
+            KnowledgeModelUnavailable,
+        )
+
+        if isinstance(exc, KnowledgeModelUnavailable):
+            _log("qwenpaw", "active", query_hash, _ms(started), exc.reason,
+                 request_id, error=type(exc).__name__)
+            error = LLMNotConfigured(exc.reason)
+            error.reason = exc.reason
+            raise error from exc
+        error = _model_error(exc)
         latency = _ms(started)
-        _log("qwenpaw", "active", query_hash, latency, "server_error",
-             request_id, error=f"{type(exc).__name__}: {exc}")
-        raise LLMProviderError(f"qwenpaw active model error: {exc}") from exc
+        _log("qwenpaw", "active", query_hash, latency, error.reason,
+             request_id, error=type(exc).__name__)
+        raise error from exc
 
     latency = _ms(started)
     if not answer or not answer.strip():
@@ -138,7 +201,7 @@ def _call_qwenpaw_active(
     return {
         "answer": answer,
         "provider": "qwenpaw_active",
-        "model": "active",
+        **metadata,
         "latency_ms": latency,
         "tokens_in": 0,
         "tokens_out": 0,

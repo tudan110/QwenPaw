@@ -318,6 +318,7 @@ python3 scripts/query_alarm_class_count.py --alarm_status 1 --output markdown
 ## 注意事项
 
 - 凭证由设置页统一管理，不要在对话中回显 Token
+- Python 内部调用 `execute()` 未传 token 时，依次读取当前请求上下文、授权执行环境；显式参数优先，显式无效或空 token 不换身份重试。错误中的 `diagnostic.stage` 区分脚本缺凭据与智观网关拒绝，`code != 200` 不能解释为零告警。
 - 做统计或筛选时，优先确认数据是否已全量获取
 - 百分比分布优先用饼图，数量对比优先用柱状图
 - 若用户只想快速看结果，避免输出大段原始 JSON

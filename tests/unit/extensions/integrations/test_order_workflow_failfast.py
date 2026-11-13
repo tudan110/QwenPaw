@@ -3,9 +3,10 @@
 
 覆盖两件事：
 1. integrations 层 ``query_order_workorders`` 的新可选参数只在显式传入时
-   覆盖 client config，默认路径（聊天技能）行为与 ``from_env()`` 完全一致。
+   覆盖 client config；默认路径保留环境参数并规范化 ferry 网关入口。
 2. 大屏 ``fetch_workorders`` 走的是短超时（6s）+ 禁 curl 兜底的路径。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -69,14 +70,20 @@ def fake_module(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 
 
 class TestBuildOrderClientConfig:
-    def test_no_override_returns_none(self, fake_module: SimpleNamespace) -> None:
-        # 默认（都不传）→ None，client 内部照旧 from_env()。
+    def test_default_path_normalizes_gateway(
+        self, fake_module: SimpleNamespace
+    ) -> None:
         result = order_workflow._build_order_client_config(
             fake_module,
             timeout_seconds=None,
             disable_curl_fallback=False,
         )
-        assert result is None
+        assert result.base_url == "http://example.invalid/ferry"
+        assert result.timeout_seconds == _FakeConfig.from_env().timeout_seconds
+        assert (
+            result.enable_curl_fallback
+            == _FakeConfig.from_env().enable_curl_fallback
+        )
 
     def test_overrides_only_named_fields(
         self, fake_module: SimpleNamespace
@@ -89,18 +96,19 @@ class TestBuildOrderClientConfig:
         assert config is not None
         assert config.timeout_seconds == 6
         assert config.enable_curl_fallback is False
-        # 其它字段仍是 from_env() 的值，没被顺手动过。
-        assert config.base_url == _FakeConfig.from_env().base_url
+        assert config.base_url == "http://example.invalid/ferry"
 
 
 class TestQueryOrderWorkorders:
     def test_default_path_uses_from_env(
         self, fake_module: SimpleNamespace
     ) -> None:
-        # 不传覆盖参数：client 收到 None → 其 config 恰等于 from_env()。
+        # The wrapper also normalizes legacy gateway roots to the ferry API.
         order_workflow.query_order_workorders(limit=5)
         assert len(_FakeClient.captured) == 1
-        assert _FakeClient.captured[0] == _FakeConfig.from_env()
+        assert _FakeClient.captured[0] == _FakeConfig(
+            base_url="http://example.invalid/ferry"
+        )
 
     def test_big_screen_values_shorten_timeout_and_disable_curl(
         self, fake_module: SimpleNamespace

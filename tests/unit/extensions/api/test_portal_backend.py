@@ -53,6 +53,127 @@ def _make_request(manager: _FakeManager):
     )
 
 
+@pytest.mark.parametrize("upstream_total", [5954, 0, None])
+def test_alarm_list_does_not_turn_page_size_into_window_total(
+    monkeypatch, upstream_total
+):
+    scope = {
+        "kind": "windowed_uncleared",
+        "startTime": "2026-11-12 00:00:00",
+        "endTime": "2026-11-12 12:00:00",
+        "timezone": "UTC+08:00",
+        "complete": False,
+    }
+    items = [{"id": "one"}, {"id": "two"}, {"id": "hidden"}]
+    raw = {
+        "items": items,
+        "total": upstream_total,
+        "totalIsExact": upstream_total is not None,
+        "queryScope": scope,
+        "sourceStatus": "live",
+    }
+    monkeypatch.setattr(
+        portal_backend, "query_portal_real_alarms", lambda limit: raw
+    )
+    monkeypatch.setattr(
+        portal_backend, "filter_visible_alarms",
+        lambda payload: {**payload, "items": items[:2], "total": 2},
+    )
+    result = portal_backend._query_visible_portal_real_alarms(2)
+    sliced = portal_backend._slice_portal_real_alarm_payload(result, 1)
+    assert sliced["total"] == upstream_total
+    assert sliced["visibleTotal"] == 2
+    assert sliced["pageTotal"] == 1
+    assert sliced["queryScope"] == scope
+    assert sliced["sourceStatus"] == "live"
+
+
+@pytest.mark.parametrize(
+    "total,status", [(5954, "live"), (0, "live"), (None, "failed")]
+)
+async def test_monitoring_dashboard_preserves_count_scope_and_failure(
+    monkeypatch, total, status
+):
+    scope = {"kind": "windowed_uncleared", "complete": False}
+    for name in (
+        "query_monitoring_asset_overview",
+        "query_monitoring_business_cockpit",
+        "query_monitoring_alarm_top5",
+        "query_monitoring_topology",
+        "query_monitoring_workorder_stats",
+        "query_monitoring_severity_trend",
+        "query_monitoring_cmdb_summary",
+    ):
+        monkeypatch.setattr(portal_backend, name, lambda: {})
+    monkeypatch.setattr(
+        portal_backend, "query_monitoring_active_alarm_statistics",
+        lambda: {
+            "total": total, "queryScope": scope, "sourceStatus": status
+        },
+    )
+    result = await portal_backend.get_monitoring_overview_dashboard()
+    assert result["activeAlarmTotal"] == total
+    assert result["activeAlarmQueryScope"] == scope
+    assert result["activeAlarmSourceStatus"] == status
+
+
+async def test_employee_count_failure_is_unknown_not_zero(monkeypatch):
+    async def unavailable(*args, **kwargs):
+        return {
+            "items": [], "total": None,
+            "queryScope": {"complete": False}, "sourceStatus": "failed",
+        }
+    monkeypatch.setattr(
+        portal_backend, "_get_visible_portal_real_alarms", unavailable
+    )
+    monkeypatch.setattr(
+        portal_backend, "PORTAL_STATUS_ALERT_COUNT_CACHE",
+        {"value": 7, "updated_at": 1},
+    )
+    assert await portal_backend._refresh_fault_alert_count_cache() is None
+    assert portal_backend.PORTAL_STATUS_ALERT_COUNT_CACHE["value"] is None
+    payload = portal_backend._build_portal_employee_status_payload(
+        "fault", available=True, total_chat_count=0, active_task_count=0,
+        active_chat_count=0, alert_count=None, latest_session_title="",
+        updated_at="2026-11-12T12:00:00+08:00",
+    )
+    assert payload["alertCount"] is None
+    assert payload["alertSourceStatus"] == "failed"
+    assert payload["stateLabel"] == "统计不可用"
+
+
+def test_stale_alarm_data_is_not_reported_as_live():
+    payload = {"total": 5954, "source": "live", "items": [{"id": "old"}]}
+    result = portal_backend._stale_or_failed_portal_real_alarms(payload, 1)
+    assert result["total"] == 5954
+    assert result["sourceStatus"] == result["source"] == "stale"
+    assert payload["source"] == "live"
+
+
+async def test_alarm_executor_keeps_request_identity_and_background_fallback(
+    monkeypatch,
+):
+    store = portal_backend.inoe_settings_store
+    monkeypatch.setattr(store, "get_token", lambda **kwargs: "service-fixture")
+    observed = []
+
+    def query(limit):
+        observed.append(store.get_effective_token())
+        return {"items": [], "total": 0, "source": "live"}
+
+    monkeypatch.setattr(portal_backend, "_query_visible_portal_real_alarms", query)
+    monkeypatch.setattr(
+        portal_backend, "PORTAL_REAL_ALARM_PAYLOAD_CACHE", {}
+    )
+    marker = store.CURRENT_REQUEST_TOKEN.set("request-fixture")
+    try:
+        await portal_backend._refresh_portal_real_alarm_payload(1)
+    finally:
+        store.CURRENT_REQUEST_TOKEN.reset(marker)
+    await portal_backend._refresh_portal_real_alarm_payload(1)
+    assert observed == ["request-fixture", "service-fixture"]
+
+
 def test_real_alarm_polling_defaults_to_paused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1973,7 +2094,7 @@ def test_real_alarms_trigger_sessions_route_starts_sessions_when_runtime_availab
     response = client.post("/api/portal/real-alarms/trigger-sessions?limit=8")
 
     assert response.status_code == 200
-    assert called["payload"] == payload
+    assert called["payload"] == {**payload, "pageTotal": len(payload["items"])}
     assert called["takeover_source"] == "manual-trigger"
     assert response.json()["started"] == 1
     assert response.json()["alarmSource"] == "live"

@@ -21,6 +21,7 @@ import logging
 from contextlib import AsyncExitStack
 from datetime import timedelta
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 import httpx
 from mcp import ClientSession
@@ -726,6 +727,12 @@ class HttpStatefulClient(_MCPClientMixin):
                 if isinstance(self.sse_read_timeout, timedelta)
                 else self.sse_read_timeout
             )
+            client_kwargs = dict(self.client_kwargs)
+            from ...extensions.security.execution_policy import enabled
+            if enabled():
+                hooks = dict(client_kwargs.get("event_hooks") or {})
+                hooks["request"] = [*hooks.get("request", []), self._check_request_origin]
+                client_kwargs.update(follow_redirects=False, event_hooks=hooks)
             http_client = httpx.AsyncClient(
                 headers=self.headers or {},
                 timeout=httpx.Timeout(
@@ -734,20 +741,41 @@ class HttpStatefulClient(_MCPClientMixin):
                     write=timeout_seconds,
                     pool=timeout_seconds,
                 ),
-                **self.client_kwargs,
+                **client_kwargs,
             )
             await stack.enter_async_context(http_client)
             context = await stack.enter_async_context(
                 streamable_http_client(url=self.url, http_client=http_client),
             )
         else:
+            client_kwargs = dict(self.client_kwargs)
+            from ...extensions.security.execution_policy import enabled
+            if enabled():
+                def guarded_client_factory(headers=None, timeout=None, auth=None):
+                    return httpx.AsyncClient(
+                        headers=headers, timeout=timeout, auth=auth,
+                        follow_redirects=False,
+                        event_hooks={"request": [self._check_request_origin]},
+                    )
+                client_kwargs["httpx_client_factory"] = guarded_client_factory
             context = await stack.enter_async_context(
                 sse_client(
                     url=self.url,
                     headers=self.headers,
                     timeout=self.timeout,
                     sse_read_timeout=self.sse_read_timeout,
-                    **self.client_kwargs,
+                    **client_kwargs,
                 ),
             )
         return context[0], context[1]
+
+    async def _check_request_origin(self, request: httpx.Request) -> None:
+        initial = urlsplit(self.url)
+        destination = urlsplit(str(request.url))
+        if (
+            initial.scheme != destination.scheme
+            or initial.hostname != destination.hostname
+            or (initial.port or (443 if initial.scheme == "https" else 80))
+            != (destination.port or (443 if destination.scheme == "https" else 80))
+        ):
+            raise PermissionError("MCP 传输不能向其他来源转发凭据")

@@ -71,7 +71,7 @@ def validate_userinfo(body: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(401, "INOE 登录态无效或已过期")
         raise HTTPException(502, "SSO 用户信息服务返回异常状态")
     user = extract_user(body)
-    if not (user.get("userId") or user.get("username")):
+    if "userId" not in user and not user.get("username"):
         raise HTTPException(502, "SSO 用户信息响应缺少有效身份")
     return body
 
@@ -191,6 +191,7 @@ class InoeTokenValidator:
     async def _validate_and_cache(
         self, key: tuple[str, str], token: str, userinfo_url: str
     ) -> dict[str, Any]:
+        started_at = self._clock()
         try:
             if self._client is None:
                 self._client = httpx.AsyncClient(
@@ -203,10 +204,16 @@ class InoeTokenValidator:
                 )
             try:
                 async with asyncio.timeout(_HTTP_TIMEOUT_SECONDS):
-                    response = await self._client.get(
+                    request = self._client.build_request(
+                        "GET",
                         userinfo_url,
                         headers={"Authorization": f"Bearer {token}"},
                     )
+                    request.headers.pop("Cookie", None)
+                    try:
+                        response = await self._client.send(request)
+                    finally:
+                        self._client.cookies.clear()
             except (httpx.TimeoutException, TimeoutError) as exc:
                 logger.warning("SSO online validation timed out")
                 raise HTTPException(504, "SSO 网关请求超时") from exc
@@ -215,8 +222,9 @@ class InoeTokenValidator:
                 raise HTTPException(502, "SSO 网关连接失败") from exc
 
             user = extract_user(parse_userinfo_response(response))
-            lifetime = _cache_lifetime(token, self._ttl)
             now = self._clock()
+            remaining_ttl = max(0.0, self._ttl - max(0.0, now - started_at))
+            lifetime = _cache_lifetime(token, remaining_ttl)
             for old_key, entry in list(self._cache.items()):
                 if entry.expires_at <= now:
                     self._cache.pop(old_key)

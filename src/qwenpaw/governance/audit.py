@@ -206,6 +206,12 @@ class AuditLog:
         always written.  Once the level enum is finalised, gate the
         INSERT on it (e.g. skip ALLOW events when level == "deny_only").
         """
+        from ..extensions.api.access_session import CURRENT_IDENTITY
+        identity = CURRENT_IDENTITY.get()
+        extra = (
+            {"auth_user_id": identity.user_id, "auth_source": identity.source}
+            if identity is not None else {}
+        )
         try:
             with self._lock:
                 self._conn.execute(
@@ -222,7 +228,7 @@ class AuditLog:
                         tc_spec.target,
                         str(decision.action.value),
                         decision.reason,
-                        "{}",
+                        json.dumps(extra),
                     ),
                 )
                 self._conn.commit()

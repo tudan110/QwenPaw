@@ -15,6 +15,11 @@ from qwenpaw.tauri.env import DESKTOP_CORS_ORIGINS_ENV, DESKTOP_READY_PREFIX
 
 
 def test_install_desktop_runtime_preserves_existing_cors_values(monkeypatch):
+    monkeypatch.delitem(sys.modules, "qwenpaw.app._app", raising=False)
+    monkeypatch.setitem(
+        sys.modules, "qwenpaw.constant", types.SimpleNamespace(CORS_ORIGINS="")
+    )
+    monkeypatch.delenv(entry.DESKTOP_APP_ENV, raising=False)
     monkeypatch.setenv(
         DESKTOP_CORS_ORIGINS_ENV,
         "https://example.test,tauri://localhost",
@@ -48,9 +53,9 @@ def test_sync_loaded_qwenpaw_constant_cors_origins(monkeypatch):
 def test_install_certifi_env_sets_bundle_paths(monkeypatch, tmp_path):
     cert_file = tmp_path / "cacert.pem"
     cert_file.write_text("test cert", encoding="utf-8")
-    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
-    monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
-    monkeypatch.delenv("CURL_CA_BUNDLE", raising=False)
+    for name in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"):
+        monkeypatch.setenv(name, "")
+        monkeypatch.delenv(name)
     monkeypatch.setitem(
         sys.modules,
         "certifi",

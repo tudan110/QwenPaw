@@ -8,9 +8,27 @@ import { requestPortalApi } from "./portalWorkorders";
 export interface SsoExchangeResult {
   access_token: string;
   token_type: string;
+  token_kind?: "qwenpaw";
   expires_in_seconds: number;
   scope?: string | null;
   user: SsoUser;
+}
+
+async function requestSsoApi<T>(
+  path: string,
+  init: RequestInit,
+  timeoutMs = 10_000,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await requestPortalApi<T>(path, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -22,7 +40,7 @@ export interface SsoExchangeResult {
 export async function tokenLogin(
   token?: string | null,
 ): Promise<SsoExchangeResult> {
-  return requestPortalApi<SsoExchangeResult>("/sso/token-login", {
+  return requestSsoApi<SsoExchangeResult>("/sso/token-login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(token ? { token } : {}),
@@ -30,11 +48,16 @@ export async function tokenLogin(
 }
 
 export async function clearSsoLoginCookie(): Promise<{ cleared: boolean }> {
-  return requestPortalApi<{ cleared: boolean }>("/sso/clear-login-cookie", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
-  });
+  return requestSsoApi<{ cleared: boolean }>(
+    "/sso/clear-login-cookie",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+      keepalive: true,
+    },
+    2_000,
+  );
 }
 
 /** Trade the one-time authorization code for portal login material. */

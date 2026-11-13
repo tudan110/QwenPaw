@@ -1,23 +1,27 @@
 [supervisord]
-user=root
-logfile=/var/log/supervisord.log
-pidfile=/var/log/supervisord.pid
+logfile=/dev/stdout
+logfile_maxbytes=0
+pidfile=${QWENPAW_RUNTIME_DIR}/supervisord.pid
 nodaemon=true
 
 [program:dbus]
-command=/bin/sh -c "rm -f /run/dbus/pid; mkdir -p /run/dbus; exec /usr/bin/dbus-daemon --system --nofork"
+command=/usr/bin/dbus-daemon --session --address=unix:path=${QWENPAW_RUNTIME_DIR}/dbus --nofork
 autostart=true
 autorestart=true
-stderr_logfile=/var/log/dbus.err.log
-stdout_logfile=/var/log/dbus.out.log
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
 
 [program:app]
 command=python -m qwenpaw.extensions.runtime.worker_app --host 0.0.0.0 --port ${QWENPAW_PORT}
 autostart=true
 autorestart=true
 priority=30
-stderr_logfile=/var/log/app.err.log
-stdout_logfile=/var/log/app.out.log
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
 environment=DISPLAY=":1",PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="/usr/bin/chromium",QWENPAW_RUNNING_IN_CONTAINER="1"
 
 [program:xvfb]
@@ -25,6 +29,8 @@ command=/bin/sh -c "rm -f /tmp/.X1-lock /tmp/.X11-unix/X1; mkdir -p /tmp/.X11-un
 autostart=true
 autorestart=true
 priority=10
-stderr_logfile=/var/log/xvfb.err.log
-stdout_logfile=/var/log/xvfb.out.log
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
 environment=DISPLAY=":1"

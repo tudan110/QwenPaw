@@ -75,8 +75,7 @@ def query(
     top_k: int = DEFAULT_TOP_K,
     enable_hyde: bool | None = None,
 ) -> QueryResponse:
-    """End-to-end retrieval. Always returns a QueryResponse — failures are
-    encoded as `flags.insufficient_evidence=True` plus an empty evidence list."""
+    """Retrieve real evidence; only optional enhancements may degrade."""
     started = time.monotonic()
     query_id = str(uuid.uuid4())
     query_text = (query_text or "").strip()
@@ -98,7 +97,8 @@ def query(
     hyde_text: str | None = None
     if use_hyde:
         hyde_text = query_expansion.generate_hyde(
-            query_text, timeout_s=HYDE_TIMEOUT, request_id=query_id
+            query_text, timeout_s=HYDE_TIMEOUT, request_id=query_id,
+            diagnostic=diagnostic,
         )
         diagnostic["hyde_used"] = bool(hyde_text)
 
@@ -112,6 +112,7 @@ def query(
             )
         except embedding.EmbeddingError as exc:
             logger.warning("query_id=%s query embed failed: %s", query_id, exc)
+            diagnostic["embedding_degraded_reason"] = type(exc).__name__
 
     # ----- Stage 1: recall (parallel by intent — sequential here is fine for SQLite) -----
     sparse_hits = recall_sparse.search(
@@ -175,6 +176,9 @@ def query(
     # promote that to the top-level diagnostic so observability reflects what
     # really ran, not just what was requested.
     if reranked:
+        degraded_reason = reranked[0].diagnostic.get("degraded_reason")
+        if degraded_reason:
+            diagnostic["rerank_degraded_reason"] = degraded_reason
         actual_strategy = reranked[0].diagnostic.get("strategy")
         configured = diagnostic.get("rerank_strategy")
         if actual_strategy and actual_strategy != configured:

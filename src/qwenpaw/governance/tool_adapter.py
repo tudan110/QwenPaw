@@ -196,6 +196,19 @@ async def _policy_tool_check_permissions(
         4. Map to PermissionDecision
     """
     from agentscope.permission import PermissionBehavior, PermissionDecision
+    from fastapi import HTTPException
+    from ..extensions.security.execution_policy import check_tool
+
+    self._qp_p0_approved_params = None
+    try:
+        mandatory_approval = await check_tool(
+            getattr(self, "name", ""), input_data or {}
+        )
+    except (PermissionError, ValueError, HTTPException) as exc:
+        return PermissionDecision(
+            behavior=PermissionBehavior.DENY,
+            message=str(getattr(exc, "detail", exc)),
+        )
 
     del context
 
@@ -204,7 +217,10 @@ async def _policy_tool_check_permissions(
     # ── Effective approval_level check (session > agent) ──
     request_ctx = getattr(self, "_qp_request_context", None) or {}
     effective_level = _resolve_effective_approval_level(request_ctx)
-    if effective_level is not None and effective_level.is_disabled():
+    if (
+        not mandatory_approval
+        and effective_level is not None and effective_level.is_disabled()
+    ):
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
             message="governance: approval_level=off, all tools allowed.",
@@ -217,7 +233,7 @@ async def _policy_tool_check_permissions(
 
     if governor is None:
         # Check if execution_level is "off" (dev mode) — allow pass-through
-        if _is_execution_level_off():
+        if not mandatory_approval and _is_execution_level_off():
             return PermissionDecision(
                 behavior=PermissionBehavior.ALLOW,
                 message="governance: execution_level=off (dev mode), "
@@ -242,6 +258,19 @@ async def _policy_tool_check_permissions(
     self._qp_raw_params = input_data or {}
 
     tc_spec = self._build_tc_spec()
+
+    if mandatory_approval:
+        result = await _ask_user_approval(
+            governor=governor,
+            tc_spec=tc_spec,
+            request_context=request_ctx,
+            governance_reason="生产高危操作必须管理员审批",
+            source="production_boundary",
+        )
+        if result.behavior == PermissionBehavior.ALLOW:
+            from copy import deepcopy
+            self._qp_p0_approved_params = deepcopy(input_data or {})
+        return result
 
     decision = governor.assert_policy(tc_spec)
     governor.audit(tc_spec, decision)
@@ -301,6 +330,18 @@ async def _policy_tool_call(
     If the user approves, retry without sandbox.
     """
     sandbox_mode = getattr(self, "_qp_sandbox_mode", False)
+    from ..extensions.security.execution_policy import check_tool, enabled
+
+    mandatory_approval = await check_tool(
+        getattr(self, "name", ""),
+        {key: value for key, value in kwargs.items() if key != "sandbox_config"},
+    )
+    if mandatory_approval and getattr(self, "_qp_p0_approved_params", None) != {
+        key: value for key, value in kwargs.items() if key != "sandbox_config"
+    }:
+        raise PermissionError("执行参数与已审批参数不一致")
+    if mandatory_approval:
+        self._qp_p0_approved_params = None
     if sandbox_mode:
         sandbox_config = getattr(self, "_qp_sandbox_config", None)
         if sandbox_config is not None:
@@ -317,6 +358,9 @@ async def _policy_tool_call(
         isinstance(result, ToolChunk)
         and result.state == ToolResultState.DENIED
     ):
+        return result
+    if enabled():
+        # Approval must not turn a sandbox denial into unsandboxed execution.
         return result
 
     # Extract violation message from metadata or content

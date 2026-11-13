@@ -16,6 +16,7 @@ from qwenpaw.extensions.api.sso_auth import InoeTokenValidator
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("QWENPAW_SSO_TOKEN_REQUIRED", "true")
+    monkeypatch.setenv("QWENPAW_ADMIN_INOE_USER_IDS", "7")
     app = FastAPI()
 
     async def validate(token, url, *, use_cache):
@@ -55,7 +56,7 @@ def client(monkeypatch):
             }
         return {"method": request.method, "path": path}
 
-    return TestClient(app)
+    return TestClient(app, headers={"Origin": "http://testserver"})
 
 
 @pytest.mark.parametrize(
@@ -76,6 +77,8 @@ def test_missing_token_is_rejected(client, path):
     response = client.get(path, headers={"X-Agent-Id": "gateway"})
     assert response.status_code == 401
     assert response.json()["code"] == "SSO_TOKEN_REQUIRED"
+    assert response.json()["stage"] == "request_authentication"
+    assert response.json()["occurred_at"]
     assert response.headers["cache-control"] == "no-store"
 
 
