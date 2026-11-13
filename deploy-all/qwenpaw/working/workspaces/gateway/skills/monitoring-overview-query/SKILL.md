@@ -40,10 +40,12 @@ description: 查询监控总览/运维驾驶舱页面数据。适用于用户询
 
 ## 旧脚本回退路径
 
+生产环境通过工具的 `cwd` 参数指定本技能目录，每次执行一条固定 Python 查询命令；不要拼接 `cd`、`&&` 或管道。
+
+
 仅当 monitor-overview MCP Driver 不可用时，才执行以下命令。脚本自动从环境变量读取凭证。
 
 ```bash
-cd skills/monitoring-overview-query
 python3 scripts/monitoring_overview.py alarm-top5 --output markdown
 python3 scripts/monitoring_overview.py topology --output markdown
 python3 scripts/monitoring_overview.py asset-overview --output markdown

@@ -60,6 +60,21 @@ void bootstrapSso().then((status) => {
   if (status === "ready") {
     void registerHostModulesDynamic();
     root.render(<App />);
+  } else if (status === "signed-out") {
+    root.render(
+      <div role="status">
+        已退出登录。
+        <button
+          onClick={() => {
+            const destination = new URL(window.location.href);
+            destination.searchParams.delete("signed_out");
+            window.location.assign(destination.toString());
+          }}
+        >
+          重新登录
+        </button>
+      </div>,
+    );
   } else if (status === "unavailable") {
     root.render(
       <div role="alert">

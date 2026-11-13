@@ -24,6 +24,14 @@ describe("SSO bootstrap before business components", () => {
     });
   });
 
+  it("does not silently log in again after an explicit logout", async () => {
+    window.location.href = "https://portal.example/console/chat?signed_out=1";
+    global.fetch = vi.fn();
+    expect(await bootstrapSso()).toBe("signed-out");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(setAuthToken).not.toHaveBeenCalled();
+  });
+
   it("restores an existing HttpOnly federation cookie without another login", async () => {
     global.fetch = vi
       .fn()

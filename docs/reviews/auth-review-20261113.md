@@ -2,7 +2,9 @@
 
 日期：2026-11-13。代码基线：`e1a24d1e3`，分支 `dev`。
 
-结论：联邦认证方案的主方向可保留，当前实现仍有三个应按 P0 关闭的凭据读取入口，以及两个影响业务和退出流程的 P1 问题。现有鉴权测试通过不足以确认考试环境可以恢复开放；需要先补齐实际路由和文件出口的权限边界，再进行真实业务验收。本次只核验、补充 init 和留存复现脚本，没有修复业务代码或操作考试环境。
+后续状态：下述 AUTH-01 至 AUTH-05 已完成代码整改，原独立审计 15 项全部通过。本文保留修复前证据，当前行为与发布边界见 [修复记录](auth-remediation-20261113.md)。
+
+初始核验结论（修复前基线）：联邦认证方案的主方向可保留，存在三个应按 P0 关闭的凭据读取入口，以及两个影响业务和退出流程的 P1 问题。现有鉴权测试通过不足以确认考试环境可以恢复开放；需要先补齐实际路由和文件出口的权限边界，再进行真实业务验收。初次核验只补充 init 和留存复现脚本，后续代码整改另见上方修复记录。
 
 ## 核验范围与证据边界
 
@@ -62,7 +64,7 @@
 
 位置：`src/qwenpaw/extensions/security/execution_policy.py:38`、`:115`、`:224`、`:245`，`src/qwenpaw/drivers/handlers/mcp.py:110`。
 
-默认种子授权分支只允许 `_READ_SCRIPT_NAMES` 中的十二个文件名。官方设备查询的 `get_devices.py`、`analyze_devices.py` 和概览的 `monitoring_overview.py` 不在名单中；CMDB 官方回退示例为 `.sh`，而生产检查只接受指定 Python 脚本或受控协同 CLI。
+默认种子授权分支只允许 `_READ_SCRIPT_NAMES` 中的固定文件名集合。官方设备查询的 `get_devices.py`、`analyze_devices.py` 和概览的 `monitoring_overview.py` 不在名单中；CMDB 官方回退示例为 `.sh`，而生产检查只接受指定 Python 脚本或受控协同 CLI。
 
 复现结果：构造完整、哈希一致的合成种子清单，以 `get_alarms.py` 作为对照可以通过；同条件下 `get_devices.py` 和 `monitoring_overview.py` 被拒绝。这不是缺种子文件或哈希不一致导致的误判。`scripts/zgops-cmdb.sh list-models` 则直接被解释器类型限制拒绝；管理员也没有在该分支审批放行的路径。
 

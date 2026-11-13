@@ -96,7 +96,7 @@ bigscreen:
 仅当 MCP Driver 未加载、工具不可用或 MCP 返回协议无法解析时，才执行以下命令。该脚本保留用于回退与结果基线，不作为默认指标查询方式：
 
 ```bash
-cd skills/inspection-analyst && python scripts/inspect_resource_metrics.py \
+python3 scripts/inspect_resource_metrics.py --no-notify \
   --res-id <CI_ID> --metric-type <ciType> \
   --inspection-object "<用户巡检对象>" --resource-name "<CMDB确认的资源名>" \
   --output markdown
@@ -174,3 +174,6 @@ cd skills/inspection-analyst && python scripts/inspect_resource_metrics.py \
 | `references/portal-card.md` | 需要 Portal 渲染巡检卡片时 |
 | `references/notification.md` | 需要了解通知推送格式细节时 |
 | `references/api-config.md` | 需要查看接口配置、阈值规则解码时 |
+
+
+生产只读巡检使用工具的 `cwd` 参数指定技能目录，固定入口必须携带 `--no-notify`，不执行通知推送。

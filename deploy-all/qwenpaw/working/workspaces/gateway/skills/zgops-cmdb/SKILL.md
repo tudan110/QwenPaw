@@ -109,20 +109,22 @@ description: 查询当前配置所指向的 CMDB 环境。用于模型、属性�
 
 ## 旧脚本回退路径
 
+生产环境通过工具的 `cwd` 参数选择技能目录，使用下面经过种子哈希校验的固定 Python 只读入口；不要拼接 `cd`、管道或自行执行 shell。登录和写操作不属于这个入口。
+
 仅当 cmdb-query MCP Driver 未加载、客户端/工具不可用或协议响应无法解析时，才执行以下命令。脚本自动从环境变量读取凭证（由设置页热加载）。
 
 ```bash
-scripts/zgops-cmdb.sh list-models
-scripts/zgops-cmdb.sh fetch "/api/v0.1/ci/s?q=_type:<name>&page=1&count=100"
-scripts/zgops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1,2,3&count=10000&page=1"
-scripts/zgops-cmdb.sh fetch "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1,2,3&count=10000&page=1&reverse=1"
-scripts/zgops-cmdb.sh find-project <应用名>
-scripts/zgops-cmdb.sh app-topology <应用名>
-scripts/zgops-cmdb.sh analyze --mode summary --output markdown
-scripts/zgops-cmdb.sh inoe-stat types --output markdown
-scripts/zgops-cmdb.sh inoe-stat group --resource_type middleware --attr vendor --output markdown
-scripts/zgops-cmdb.sh inoe-stat child --type_id <模型ID> --type_kind model --output markdown
-scripts/zgops-cmdb.sh inoe-stat group-attr --type_id <模型ID> --type_kind model --attr vendor --output markdown
+python3 scripts/cmdb_read.py list-models
+python3 scripts/cmdb_read.py fetch "/api/v0.1/ci/s?q=_type:<name>&page=1&count=100"
+python3 scripts/cmdb_read.py fetch "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1,2,3&count=10000&page=1"
+python3 scripts/cmdb_read.py fetch "/api/v0.1/ci_relations/s?root_id=<ci_id>&level=1,2,3&count=10000&page=1&reverse=1"
+python3 scripts/cmdb_read.py find-project <应用名>
+python3 scripts/cmdb_read.py app-topology <应用名>
+python3 scripts/cmdb_read.py analyze --mode summary --output markdown
+python3 scripts/cmdb_read.py inoe-stat types --output markdown
+python3 scripts/cmdb_read.py inoe-stat group --resource_type middleware --attr vendor --output markdown
+python3 scripts/cmdb_read.py inoe-stat child --type_id <模型ID> --type_kind model --output markdown
+python3 scripts/cmdb_read.py inoe-stat group-attr --type_id <模型ID> --type_kind model --attr vendor --output markdown
 ```
 
 回退时必须在过程说明中写明回退原因（如 `cmdb-query-mcp-unavailable`）。

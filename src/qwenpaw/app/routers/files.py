@@ -42,6 +42,32 @@ def _check_path(path: Path) -> str | None:
     The sensitive-file guard is **always** enforced.
     """
     resolved = path.resolve()
+    from ...extensions.security.execution_policy import check_path, enabled
+
+    if enabled():
+        try:
+            check_path(str(resolved))
+        except PermissionError:
+            return "SENSITIVE_FILE_BLOCKED"
+        # In production a permissive legacy preview setting cannot expose
+        # arbitrary host files. Keep media, reports and workspace artifacts.
+        roots = [
+            _ALLOWED_ROOT / "media",
+            _ALLOWED_ROOT / "workspaces",
+            _ALLOWED_ROOT / "extensions" / "reports",
+        ]
+        try:
+            from qwenpaw.config import load_config
+
+            roots.extend(
+                Path(profile.workspace_dir)
+                for profile in load_config().agents.profiles.values()
+                if profile.workspace_dir
+            )
+        except Exception:
+            pass
+        if not any(resolved.is_relative_to(root.resolve()) for root in roots):
+            return "OUTSIDE_PREVIEW_ROOTS"
     # 1. Must not be a FileGuard-sensitive path.
     normalized = _normalize_path(str(resolved))
     # pylint: disable-next=protected-access
@@ -49,9 +75,7 @@ def _check_path(path: Path) -> str | None:
         return "SENSITIVE_FILE_BLOCKED"
     # 2. Workspace scope check (skippable via config).
     if not _is_preview_outside_workspace_allowed():
-        if not (
-            resolved == _ALLOWED_ROOT or resolved.is_relative_to(_ALLOWED_ROOT)
-        ):
+        if not (resolved == _ALLOWED_ROOT or resolved.is_relative_to(_ALLOWED_ROOT)):
             return "OUTSIDE_WORKSPACE"
     return None
 
@@ -88,4 +112,4 @@ async def preview_file(
 
     if not os.access(path, os.R_OK):
         raise HTTPException(status_code=500, detail="Permission denied")
-    return FileResponse(path, filename=path.name)
+    return FileResponse(path, filename=path.name, headers={"Cache-Control": "no-store"})

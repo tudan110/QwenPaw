@@ -36,6 +36,8 @@ description: 设备管理系统查询。支持获取设备列表、统计设备�
 
 配置文件示例：
 
+生产环境通过工具的 `cwd` 参数指定本技能目录，每次执行一条固定 Python 查询命令；不要拼接 `cd`、`&&` 或管道。
+
 ```bash
 INOE_API_BASE_URL=http://192.168.130.211:30080
 INOE_API_TOKEN=your_jwt_token_here

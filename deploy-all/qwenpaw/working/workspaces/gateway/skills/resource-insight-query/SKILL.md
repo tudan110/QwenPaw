@@ -41,10 +41,12 @@ description: 查询 INOE 资源状态与性能数据。适用于用户询问设�
 
 ## 旧脚本回退路径
 
+生产环境通过工具的 `cwd` 参数指定本技能目录，每次执行一条固定 Python 查询命令；不要拼接 `cd`、`&&` 或管道。
+
+
 仅当 resource MCP Driver 不可用时，才执行以下命令。脚本自动从环境变量读取凭证。
 
 ```bash
-cd skills/resource-insight-query
 python3 scripts/resource_insight.py status-overview --resource_type database --output markdown
 python3 scripts/resource_insight.py top-metric --resource_type database --top_num 5 --output markdown
 python3 scripts/resource_insight.py summary --resource_type database --output markdown

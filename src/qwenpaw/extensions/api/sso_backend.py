@@ -70,6 +70,8 @@ _INOE_EXPIRES_IN_COOKIE = "Cnos-Inoe-Admin-Expires-In"
 
 
 def _clear_inoe_login_cookies(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+    response.delete_cookie("qwenpaw_sso_token", path="/")
     response.delete_cookie(_INOE_LOGIN_COOKIE, path="/")
     response.delete_cookie(_INOE_EXPIRES_IN_COOKIE, path="/")
 
@@ -263,6 +265,7 @@ async def token_login(
     a success both proves the token is genuine and yields the user. Returns
     the same shape as :func:`exchange` so the frontend treats both uniformly.
     """
+    response.headers["Cache-Control"] = "no-store"
     body_token = _strip_bearer(body.get("token") or "")
     cookie_token = _get_request_cookie(request, _INOE_LOGIN_COOKIE)
     if not cookie_token:
@@ -363,7 +366,8 @@ async def logout(request: Request, response: Response) -> dict[str, bool]:
 
 
 @router.get("/session")
-async def session_status(request: Request) -> dict[str, Any]:
+async def session_status(request: Request, response: Response) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
     identity = getattr(request.state, "access_identity", None)
     if identity is None:
         raise HTTPException(401, "没有可信登录身份")
@@ -386,6 +390,7 @@ async def exchange(
     ``{access_token, token_type, expires_in_seconds, user}``. The frontend
     stores this as its login state.
     """
+    response.headers["Cache-Control"] = "no-store"
     code = str(body.get("code") or "").strip()
     if not code:
         raise HTTPException(status_code=400, detail="缺少授权码 code")

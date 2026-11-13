@@ -18,9 +18,14 @@ _ADMIN_PREFIXES = (
     "/api/agent-config",
     "/api/approval",
     "/api/backup",
+    "/api/backups",
+    "/api/config",
+    "/api/tools",
+    "/api/access-control",
     "/api/local-models",
     "/api/acp",
     "/api/coding",
+    "/api/coding-mode",
     "/api/loops",
 )
 _USER_POST_PATHS = {
@@ -109,10 +114,13 @@ def resource_path(path: str) -> str:
 
 
 def requires_admin(method: str, path: str) -> bool:
+    # Complete profiles contain channel, MCP and tool credentials. Discovery
+    # and agent-scoped business APIs retain their own resource policies.
+    if path.startswith("/api/agents/") and len(path.rstrip("/").split("/")) == 4:
+        return True
     path = resource_path(path)
     if any(
-        path == prefix or path.startswith(prefix + "/")
-        for prefix in _ADMIN_PREFIXES
+        path == prefix or path.startswith(prefix + "/") for prefix in _ADMIN_PREFIXES
     ):
         return True
     if path.startswith("/api/portal/") and (
@@ -135,9 +143,7 @@ def requires_admin(method: str, path: str) -> bool:
     return True
 
 
-def authorize_request(
-    identity: AccessIdentity, method: str, path: str
-) -> None:
+def authorize_request(identity: AccessIdentity, method: str, path: str) -> None:
     from qwenpaw.extensions.security.execution_policy import enabled
 
     if not enabled():

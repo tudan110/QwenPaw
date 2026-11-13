@@ -2,8 +2,11 @@ import { clearAuthToken, getApiToken, getApiUrl, setAuthToken } from "./config";
 
 /** Authenticate before PluginProvider or any other business API mounts. */
 export async function bootstrapSso(): Promise<
-  "ready" | "redirect" | "unavailable"
+  "ready" | "redirect" | "unavailable" | "signed-out"
 > {
+  if (new URL(window.location.href).searchParams.get("signed_out") === "1") {
+    return "signed-out";
+  }
   try {
     const status = await fetch(getApiUrl("/portal/sso/status"), {
       signal: AbortSignal.timeout(10_000),

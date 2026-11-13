@@ -178,7 +178,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token }),
         });
-        if (stopped) return;
+        if (stopped || getApiToken() !== token) return;
         if (response.ok) {
           const result = await response.json();
           if (

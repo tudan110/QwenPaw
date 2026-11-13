@@ -44,6 +44,10 @@ from .schemas_config import (
     ChannelRestartResponse,
     HeartbeatBody,
 )
+from ...extensions.security.configuration_secrets import (
+    redact_configuration,
+    restore_configuration_secrets,
+)
 from ..channels.qrcode_auth_handler import (
     QRCODE_AUTH_HANDLERS,
     generate_qrcode_image,
@@ -113,7 +117,7 @@ async def list_channels(request: Request) -> dict:
             channel_data["isBuiltin"] = key in BUILTIN_CHANNEL_KEYS
         result[key] = channel_data
 
-    return result
+    return redact_configuration(result)
 
 
 @router.get(
@@ -144,13 +148,18 @@ async def put_channels(
     from ...config.config import save_agent_config
 
     agent = await get_agent_for_request(request)
-    agent.config.channels = channels_config
+    previous = agent.config.channels.model_dump() if agent.config.channels else {}
+    agent.config.channels = ChannelConfig.model_validate(
+        restore_configuration_secrets(channels_config.model_dump(), previous)
+    )
     save_agent_config(agent.agent_id, agent.config)
 
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(request, agent.agent_id)
 
-    return channels_config
+    return ChannelConfig.model_validate(
+        redact_configuration(agent.config.channels.model_dump())
+    )
 
 
 # ── Channel health check & restart ─────────────────────────────────────────
@@ -336,7 +345,11 @@ async def get_channel(
             status_code=404,
             detail=f"Channel '{channel_name}' not found",
         )
-    return single_channel_config
+    if isinstance(single_channel_config, BaseModel):
+        return type(single_channel_config).model_validate(
+            redact_configuration(single_channel_config.model_dump())
+        )
+    return redact_configuration(single_channel_config)
 
 
 @router.put(
@@ -374,6 +387,12 @@ async def put_channel(
     if agent.config.channels is None:
         agent.config.channels = ChannelConfig()
 
+    previous = getattr(agent.config.channels, channel_name, {})
+    if isinstance(previous, BaseModel):
+        previous = previous.model_dump()
+    single_channel_config = restore_configuration_secrets(
+        single_channel_config, previous
+    )
     config_class = _CHANNEL_CONFIG_CLASS_MAP.get(channel_name)
     if config_class is not None:
         channel_config = config_class(**single_channel_config)
@@ -388,7 +407,11 @@ async def put_channel(
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(request, agent.agent_id)
 
-    return channel_config
+    if isinstance(channel_config, BaseModel):
+        return type(channel_config).model_validate(
+            redact_configuration(channel_config.model_dump())
+        )
+    return redact_configuration(channel_config)
 
 
 @router.get(

@@ -8,6 +8,7 @@ import locale
 import os
 import re
 import signal
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -486,6 +487,13 @@ async def execute_shell_command(
     """
 
     cmd = _collapse_embedded_newlines((command or "").strip())
+    from ...extensions.security.execution_policy import enabled as production_enabled
+
+    if production_enabled() and sys.platform != "win32":
+        # Execute exactly the argument vector inspected by the production
+        # policy, including quoted query strings; never expand globs or shell
+        # syntax after validation. Sandboxes receive the same canonical form.
+        cmd = shlex.join(shlex.split(cmd))
 
     if _is_dangerous_self_kill(cmd):
         return ToolChunk(

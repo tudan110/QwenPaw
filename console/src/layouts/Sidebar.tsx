@@ -25,7 +25,8 @@ import {
 } from "@agentscope-ai/icons";
 import SidebarSessionList from "./SidebarSessionList";
 import SidebarSettingsPanel from "./SidebarSettingsPanel";
-import { clearAuthToken } from "../api/config";
+import { clearAuthToken, getApiUrl } from "../api/config";
+import { logoutConsole } from "../api/ssoLogout";
 import { authApi } from "../api/modules/auth";
 import api from "../api";
 import {
@@ -122,6 +123,8 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
     currentSessionId,
   );
   const [authEnabled, setAuthEnabled] = useState(false);
+  const [ssoEnabled, setSsoEnabled] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [accountLoading, setAccountLoading] = useState(false);
   const [accountForm] = Form.useForm();
@@ -168,6 +171,14 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
   // ── Effects ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    void fetch(getApiUrl("/portal/sso/status"), {
+      signal: AbortSignal.timeout(10_000),
+    })
+      .then(async (response) => {
+        if (response.ok)
+          setSsoEnabled((await response.json()).sso_required === true);
+      })
+      .catch(() => {});
     authApi
       .getStatus()
       .then((res) => setAuthEnabled(res.enabled))
@@ -581,28 +592,36 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
         </>
       )}
 
-      {authEnabled && !collapsed && (
+      {(authEnabled || ssoEnabled) && !collapsed && (
         <div className={styles.authActions}>
-          <Button
-            type="text"
-            icon={<SparkSearchUserLine size={16} />}
-            onClick={() => {
-              accountForm.resetFields();
-              setAccountModalOpen(true);
-            }}
-            block
-            className={`${styles.authBtn} ${
-              collapsed ? styles.authBtnCollapsed : ""
-            }`}
-          >
-            {!collapsed && t("account.title")}
-          </Button>
+          {!ssoEnabled && (
+            <Button
+              type="text"
+              icon={<SparkSearchUserLine size={16} />}
+              onClick={() => {
+                accountForm.resetFields();
+                setAccountModalOpen(true);
+              }}
+              block
+              className={`${styles.authBtn} ${
+                collapsed ? styles.authBtnCollapsed : ""
+              }`}
+            >
+              {!collapsed && t("account.title")}
+            </Button>
+          )}
           <Button
             type="text"
             icon={<SparkExitFullscreenLine size={16} />}
-            onClick={() => {
-              clearAuthToken();
-              window.location.href = "/login";
+            loading={loggingOut}
+            onClick={async () => {
+              setLoggingOut(true);
+              try {
+                await logoutConsole(ssoEnabled);
+              } catch {
+                message.error("退出未完成，请检查连接后重试。");
+                setLoggingOut(false);
+              }
             }}
             block
             className={`${styles.authBtn} ${

@@ -245,7 +245,11 @@ async def get_agent(agentId: str = PathParam(...)) -> AgentProfileConfig:
     """Get agent configuration."""
     try:
         agent_config = load_agent_config(agentId)
-        return agent_config
+        from ...extensions.security.configuration_secrets import redact_configuration
+
+        return AgentProfileConfig.model_validate(
+            redact_configuration(agent_config.model_dump())
+        )
     except (ValueError, AppBaseException) as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
@@ -386,16 +390,27 @@ async def update_agent(
 
     existing_config = load_agent_config(agentId)
 
-    update_data = agent_config.model_dump(exclude_unset=True)
+    from ...extensions.security.configuration_secrets import (
+        redact_configuration,
+        restore_configuration_secrets,
+    )
+
+    update_data = restore_configuration_secrets(
+        agent_config.model_dump(exclude_unset=True), existing_config.model_dump()
+    )
+    merged = existing_config.model_dump()
     for key, value in update_data.items():
         if key != "id":
-            setattr(existing_config, key, value)
+            merged[key] = value
 
-    existing_config.id = agentId
+    merged["id"] = agentId
+    existing_config = AgentProfileConfig.model_validate(merged)
     save_agent_config(agentId, existing_config)
     schedule_agent_reload(request, agentId)
 
-    return agent_config
+    return AgentProfileConfig.model_validate(
+        redact_configuration(existing_config.model_dump())
+    )
 
 
 @router.delete(
