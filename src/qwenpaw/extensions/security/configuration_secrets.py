@@ -6,6 +6,8 @@ from copy import deepcopy
 import re
 from typing import Any
 
+from ...drivers.adapters.mcp_binding import PUBLIC_HEADER_KEYS
+
 MASK = "***"
 
 
@@ -32,6 +34,8 @@ def _secret_key(key: str) -> bool:
             "_passwd",
             "_secret",
             "_api_key",
+            "_access_key",
+            "_secret_key",
             "_private_key",
             "_encrypt_key",
             "_encryption_key",
@@ -39,42 +43,80 @@ def _secret_key(key: str) -> bool:
     )
 
 
-def redact_configuration(value: Any, *, environment: bool = False) -> Any:
+def _sensitive_field(key: str, *, environment: bool, headers: bool) -> bool:
+    return (
+        environment
+        or _secret_key(key)
+        or (headers and key.strip().lower() not in PUBLIC_HEADER_KEYS)
+    )
+
+
+def redact_configuration(
+    value: Any, *, environment: bool = False, headers: bool = False
+) -> Any:
     if isinstance(value, dict):
-        return {
-            key: (
+        result = {}
+        for key, item in value.items():
+            sensitive = _sensitive_field(
+                key, environment=environment, headers=headers
+            )
+            result[key] = (
                 (MASK if item else item)
-                if isinstance(item, str) and (environment or _secret_key(key))
+                if isinstance(item, str) and sensitive
                 else redact_configuration(
-                    item, environment=environment or key == "env" or _secret_key(key)
+                    item,
+                    environment=sensitive or key == "env",
+                    headers=key.lower() == "headers",
                 )
             )
-            for key, item in value.items()
-        }
+        return result
     if isinstance(value, list):
-        return [redact_configuration(item, environment=environment) for item in value]
+        return [
+            redact_configuration(
+                item, environment=environment, headers=headers
+            )
+            for item in value
+        ]
     if environment and isinstance(value, str) and value:
         return MASK
     return value
 
 
 def restore_configuration_secrets(
-    value: Any, previous: Any, *, environment: bool = False
+    value: Any,
+    previous: Any,
+    *,
+    environment: bool = False,
+    headers: bool = False,
 ) -> Any:
     if isinstance(value, dict):
         previous = previous if isinstance(previous, dict) else {}
-        return {
-            key: (
-                deepcopy(previous.get(key, ""))
-                if item == MASK and (environment or _secret_key(key))
+        result = {}
+        for key, item in value.items():
+            sensitive = _sensitive_field(
+                key, environment=environment, headers=headers
+            )
+            prior = previous.get(key)
+            if headers and key not in previous:
+                prior = next(
+                    (
+                        v
+                        for k, v in previous.items()
+                        if k.lower() == key.lower()
+                    ),
+                    None,
+                )
+            result[key] = (
+                deepcopy(prior if prior is not None else "")
+                if item == MASK and sensitive
                 else restore_configuration_secrets(
                     item,
-                    previous.get(key),
-                    environment=environment or key == "env" or _secret_key(key),
+                    prior,
+                    environment=sensitive or key == "env",
+                    headers=key.lower() == "headers",
                 )
             )
-            for key, item in value.items()
-        }
+        return result
     if isinstance(value, list):
         old = previous if isinstance(previous, list) else []
         restored = []
@@ -100,7 +142,9 @@ def restore_configuration_secrets(
             else:
                 prior = old[index] if index < len(old) else None
             restored.append(
-                restore_configuration_secrets(item, prior, environment=environment)
+                restore_configuration_secrets(
+                    item, prior, environment=environment, headers=headers
+                )
             )
         return restored
     if environment and value == MASK:

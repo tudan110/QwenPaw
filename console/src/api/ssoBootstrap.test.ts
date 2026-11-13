@@ -2,12 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { bootstrapSso } from "./ssoBootstrap";
 import { getApiToken, setAuthToken, clearAuthToken } from "./config";
 
-vi.mock("./config", () => ({
-  getApiUrl: (path: string) => `/api${path}`,
-  getApiToken: vi.fn(() => ""),
-  setAuthToken: vi.fn(),
-  clearAuthToken: vi.fn(),
-}));
+vi.mock("./config", () => {
+  const getApiToken = vi.fn(() => "");
+  return {
+    getApiUrl: (path: string) => `/api${path}`,
+    getApiToken,
+    captureAuthState: () => ({ token: getApiToken(), revision: 0 }),
+    isAuthStateCurrent: (snapshot: { token: string }) =>
+      snapshot.token === getApiToken(),
+    setAuthToken: vi.fn(),
+    clearAuthToken: vi.fn(),
+  };
+});
 
 describe("SSO bootstrap before business components", () => {
   beforeEach(() => {

@@ -1,4 +1,11 @@
-import { clearAuthToken, getApiToken, getApiUrl, setAuthToken } from "./config";
+import {
+  clearAuthToken,
+  getApiToken,
+  getApiUrl,
+  setAuthToken,
+  captureAuthState,
+  isAuthStateCurrent,
+} from "./config";
 
 /** Authenticate before PluginProvider or any other business API mounts. */
 export async function bootstrapSso(): Promise<
@@ -8,11 +15,21 @@ export async function bootstrapSso(): Promise<
     return "signed-out";
   }
   try {
+    let snapshot = captureAuthState();
+    const signedOut = () =>
+      new URL(window.location.href).searchParams.get("signed_out") === "1";
+    const current = () => isAuthStateCurrent(snapshot) && !signedOut();
+    const superseded = () =>
+      signedOut() || !getApiToken()
+        ? ("signed-out" as const)
+        : ("unavailable" as const);
     const status = await fetch(getApiUrl("/portal/sso/status"), {
       signal: AbortSignal.timeout(10_000),
     });
+    if (!current()) return superseded();
     if (!status.ok) return "unavailable";
     const config = await status.json();
+    if (!current()) return superseded();
     if (!config.sso_required) return "ready";
     const stored = getApiToken();
     const verified = await fetch(getApiUrl("/portal/sso/session"), {
@@ -21,8 +38,10 @@ export async function bootstrapSso(): Promise<
         : {},
       signal: AbortSignal.timeout(10_000),
     });
+    if (!current()) return superseded();
     if (verified.ok) {
       const result = await verified.json();
+      if (!current()) return superseded();
       if (
         typeof result.access_token === "string" &&
         result.access_token.startsWith("qp1.")
@@ -34,6 +53,7 @@ export async function bootstrapSso(): Promise<
     } else {
       if (verified.status !== 401) return "unavailable";
       clearAuthToken();
+      snapshot = captureAuthState();
     }
     const login = await fetch(getApiUrl("/portal/sso/token-login"), {
       method: "POST",
@@ -41,8 +61,10 @@ export async function bootstrapSso(): Promise<
       body: "{}",
       signal: AbortSignal.timeout(20_000),
     });
+    if (!current()) return superseded();
     if (login.ok) {
       const result = await login.json();
+      if (!current()) return superseded();
       if (
         typeof result.access_token !== "string" ||
         !result.access_token.startsWith("qp1.")
@@ -62,8 +84,8 @@ export async function bootstrapSso(): Promise<
     url.searchParams.set("redirect", window.location.href);
     window.location.assign(url.toString());
     return "redirect";
-  } catch (error) {
-    console.error("SSO bootstrap failed:", error);
+  } catch {
+    console.error("SSO bootstrap failed");
     return "unavailable";
   }
 }

@@ -2,6 +2,17 @@ declare const VITE_API_BASE_URL: string;
 declare const TOKEN: string;
 
 const AUTH_TOKEN_KEY = "qwenpaw_auth_token";
+let authRevision = 0;
+
+export function captureAuthState() {
+  return { token: getApiToken(), revision: authRevision };
+}
+
+export function isAuthStateCurrent(
+  snapshot: ReturnType<typeof captureAuthState>,
+) {
+  return snapshot.revision === authRevision && snapshot.token === getApiToken();
+}
 
 /**
  * Get the full API URL with /api prefix
@@ -31,6 +42,7 @@ export function getApiToken(): string {
  */
 export function setAuthToken(token: string): void {
   localStorage.setItem(AUTH_TOKEN_KEY, token);
+  authRevision += 1;
 }
 
 /**
@@ -38,4 +50,5 @@ export function setAuthToken(token: string): void {
  */
 export function clearAuthToken(): void {
   localStorage.removeItem(AUTH_TOKEN_KEY);
+  authRevision += 1;
 }

@@ -60,15 +60,17 @@ def extract_user(body: dict[str, Any]) -> dict[str, Any]:
 
 def validate_userinfo(body: dict[str, Any]) -> dict[str, Any]:
     """Require a successful INOE response with a usable identity."""
+    error = body.get("error")
+    # A recognized OAuth rejection is explicit authentication evidence even
+    # when an HTTP-200 legacy envelope also carries a generic business code.
+    if error in ("invalid_token", "invalid_grant", "access_denied"):
+        raise HTTPException(401, "INOE 登录态无效或已过期")
     code = body.get("code")
     if code is not None and str(code) != "200":
         if str(code) in {"401", "403"}:
             raise HTTPException(401, "INOE 登录态无效或已过期")
         raise HTTPException(502, "SSO 用户信息服务返回异常状态")
-    error = body.get("error")
     if error:
-        if error in ("invalid_token", "invalid_grant", "access_denied"):
-            raise HTTPException(401, "INOE 登录态无效或已过期")
         raise HTTPException(502, "SSO 用户信息服务返回异常状态")
     user = extract_user(body)
     if "userId" not in user and not user.get("username"):
@@ -80,14 +82,51 @@ def parse_userinfo_response(response: httpx.Response) -> dict[str, Any]:
     if response.status_code in {401, 403}:
         raise HTTPException(401, "INOE 登录态无效或已过期")
     if not response.is_success:
+        logger.warning(
+            "SSO userinfo upstream HTTP failure: http_status=%s",
+            response.status_code,
+        )
         raise HTTPException(502, "SSO 用户信息服务调用失败")
     try:
         body = response.json()
     except ValueError as exc:
+        logger.warning(
+            "SSO userinfo invalid JSON: http_status=%s", response.status_code
+        )
         raise HTTPException(502, "SSO 用户信息响应不是有效 JSON") from exc
     if not isinstance(body, dict):
+        logger.warning(
+            "SSO userinfo invalid envelope: http_status=%s",
+            response.status_code,
+        )
         raise HTTPException(502, "SSO 用户信息响应格式异常")
-    return validate_userinfo(body)
+    try:
+        return validate_userinfo(body)
+    except HTTPException as exc:
+        # Never log response bodies, messages, URLs, identities or tokens.
+        # Keep unknown business-500 responses distinct from explicit 401s;
+        # the generic INOE 'internal server error' cannot prove expiry.
+        code = body.get("code")
+        code_text = str(code)
+        safe_code = (
+            code_text
+            if code_text.isascii()
+            and code_text.isdigit()
+            and len(code_text) <= 4
+            else ("missing" if code is None else "unexpected")
+        )
+        logger.log(
+            logging.INFO if exc.status_code == 401 else logging.WARNING,
+            "SSO userinfo rejected: http_status=%s business_code=%s classification=%s",
+            response.status_code,
+            safe_code,
+            (
+                "authentication"
+                if exc.status_code == 401
+                else "upstream_protocol"
+            ),
+        )
+        raise
 
 
 def _cache_lifetime(token: str, ttl: float) -> float:

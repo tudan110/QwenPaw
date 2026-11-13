@@ -101,6 +101,18 @@ async def test_invalid_tokens_are_never_cached(status):
         (httpx.Response(200, json={"code": 403}), 401),
         (httpx.Response(200, json={"code": 500}), 502),
         (httpx.Response(200, json={"error": "invalid_token"}), 401),
+        (
+            httpx.Response(200, json={"code": 500, "error": "invalid_token"}),
+            401,
+        ),
+        (
+            httpx.Response(200, json={"code": 500, "error": "invalid_grant"}),
+            401,
+        ),
+        (
+            httpx.Response(200, json={"code": 500, "msg": "内部服务器错误"}),
+            502,
+        ),
         (httpx.Response(200, json={"error": "server_error"}), 502),
         (httpx.Response(200, json={}), 502),
         (httpx.Response(200, json={"code": 200, "user": {}}), 502),
@@ -109,6 +121,7 @@ async def test_invalid_tokens_are_never_cached(status):
         (httpx.Response(200, text="not-json"), 502),
         (httpx.Response(302, headers={"Location": "/login"}), 502),
         (httpx.Response(500, text="upstream-secret"), 502),
+        (httpx.Response(503, json={"error": "invalid_token"}), 502),
     ],
 )
 async def test_abnormal_responses_fail_closed(response, status):
@@ -134,6 +147,36 @@ async def test_flat_oauth_userinfo_is_supported():
             "userId": "7",
             "username": "test-user",
         }
+    finally:
+        await validator.aclose()
+
+
+@pytest.mark.usefixtures("capture_qwenpaw_logs")
+@pytest.mark.parametrize(
+    "code,expected", [(500, "500"), ("private-credential-value", "unexpected")]
+)
+async def test_protocol_diagnostics_do_not_log_upstream_secrets(
+    caplog, code, expected
+):
+    validator = validator_for(
+        lambda request: httpx.Response(
+            200,
+            json={
+                "code": code,
+                "msg": "private-upstream-message",
+                "user": {"userId": "private-user"},
+            },
+        )
+    )
+    try:
+        with caplog.at_level("WARNING"):
+            with pytest.raises(HTTPException) as error:
+                await validator.validate("private-request-token", URL)
+        assert error.value.status_code == 502
+        assert f"business_code={expected}" in caplog.text
+        assert "classification=upstream_protocol" in caplog.text
+        assert "private-" not in caplog.text
+        assert "private-" not in str(error.value.detail)
     finally:
         await validator.aclose()
 

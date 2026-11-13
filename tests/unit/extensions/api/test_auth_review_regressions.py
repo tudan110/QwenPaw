@@ -14,7 +14,13 @@ from qwenpaw.app.routers import agents, backup, config, files
 from qwenpaw.backup._ops import storage
 from qwenpaw.backup._utils import constants as backup_constants
 from qwenpaw.backup.models import BackupMeta
-from qwenpaw.config.config import AgentProfileConfig, ChannelConfig, FeishuConfig
+from qwenpaw.config.config import (
+    AgentProfileConfig,
+    ChannelConfig,
+    FeishuConfig,
+    MCPConfig,
+    MCPClientConfig,
+)
 from qwenpaw.extensions.api.sso_token_middleware import SsoTokenMiddleware
 from qwenpaw.extensions.security import execution_policy
 
@@ -27,7 +33,9 @@ def routes(tmp_path, monkeypatch):
     profile = AgentProfileConfig(
         id="gateway",
         name="Gateway",
-        channels=ChannelConfig(feishu=FeishuConfig(app_secret="fixture-secret")),
+        channels=ChannelConfig(
+            feishu=FeishuConfig(app_secret="fixture-secret")
+        ),
     )
     workspace = SimpleNamespace(config=profile, agent_id="gateway")
     monkeypatch.setattr(agents, "load_agent_config", lambda _: profile)
@@ -37,12 +45,15 @@ def routes(tmp_path, monkeypatch):
         AsyncMock(return_value=workspace),
     )
     monkeypatch.setattr(config, "schedule_agent_reload", lambda *args: None)
-    monkeypatch.setattr("qwenpaw.config.config.save_agent_config", lambda *args: None)
+    monkeypatch.setattr(
+        "qwenpaw.config.config.save_agent_config", lambda *args: None
+    )
     backup_dir = tmp_path / "backups"
     backup_dir.mkdir()
     with zipfile.ZipFile(backup_dir / "fixture.zip", "w") as archive:
         archive.writestr(
-            "meta.json", BackupMeta(id="fixture", name="Fixture").model_dump_json()
+            "meta.json",
+            BackupMeta(id="fixture", name="Fixture").model_dump_json(),
         )
         archive.writestr("data/secrets/.master_key", "fixture-key")
     monkeypatch.setattr(backup_constants, "BACKUP_DIR", backup_dir)
@@ -136,7 +147,9 @@ def test_masked_channel_update_preserves_existing_secret(routes):
         "config.json",
     ],
 )
-def test_preview_blocks_configuration_and_database_sidecars(routes, method, filename):
+def test_preview_blocks_configuration_and_database_sidecars(
+    routes, method, filename
+):
     client, _, working = routes
     target = working / filename
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -194,3 +207,143 @@ def test_nested_config_redaction_preserves_secrets_by_identity_on_reorder():
     assert restored["clients"][0]["apiKey"] == "two-secret"
     assert restored["clients"][1]["env"]["CUSTOM_CREDENTIAL"] == "one-secret"
     assert previous["clients"][0]["env"]["CUSTOM_CREDENTIAL"] == "one-secret"
+
+
+def test_agent_mcp_custom_headers_mask_and_roundtrip_through_real_routes(
+    routes, monkeypatch
+):
+    client, profile, _ = routes
+    profile.mcp = MCPConfig(
+        clients={
+            name: MCPClientConfig(
+                name=name,
+                transport="streamable_http",
+                url="http://fixture.invalid/mcp",
+                headers={
+                    "X-Access-Key": f"fixture-{name}-key",
+                    "Proxy-Authorization": f"fixture-{name}-proxy",
+                    "X-Custom-Credential": f"fixture-{name}-custom",
+                    "Accept": "application/json",
+                },
+            )
+            for name in ("one", "two")
+        }
+    )
+    current = [profile]
+    monkeypatch.setattr(agents, "load_agent_config", lambda _: current[0])
+    monkeypatch.setattr(
+        agents,
+        "load_config",
+        lambda: SimpleNamespace(
+            agents=SimpleNamespace(profiles={"gateway": object()})
+        ),
+    )
+    monkeypatch.setattr(
+        agents,
+        "save_agent_config",
+        lambda _, value: current.__setitem__(0, value),
+    )
+    monkeypatch.setattr(agents, "schedule_agent_reload", lambda *args: None)
+    headers = {"X-Inoe-Token": "admin"}
+    response = client.get("/api/agents/gateway", headers=headers)
+    assert response.status_code == 200
+    assert "fixture-one-key" not in response.text
+    body = response.json()
+    assert body["mcp"]["clients"]["one"]["headers"]["X-Access-Key"] == "***"
+    assert (
+        body["mcp"]["clients"]["one"]["headers"]["Accept"]
+        == "application/json"
+    )
+    body["name"] = "Updated"
+    body["mcp"]["clients"] = dict(
+        reversed(list(body["mcp"]["clients"].items()))
+    )
+    saved = client.put("/api/agents/gateway", headers=headers, json=body)
+    assert saved.status_code == 200
+    assert "fixture-one-key" not in saved.text
+    for name in ("one", "two"):
+        assert (
+            current[0].mcp.clients[name].headers["X-Access-Key"]
+            == f"fixture-{name}-key"
+        )
+        assert (
+            current[0].mcp.clients[name].headers["Proxy-Authorization"]
+            == f"fixture-{name}-proxy"
+        )
+    body = saved.json()
+    body["mcp"]["clients"]["one"]["headers"][
+        "X-Access-Key"
+    ] = "fixture-replacement"
+    assert (
+        client.put(
+            "/api/agents/gateway", headers=headers, json=body
+        ).status_code
+        == 200
+    )
+    assert (
+        current[0].mcp.clients["one"].headers["X-Access-Key"]
+        == "fixture-replacement"
+    )
+    assert (
+        current[0].mcp.clients["two"].headers["X-Access-Key"]
+        == "fixture-two-key"
+    )
+
+    # HTTP header names are case-insensitive; case-only edits retain secrets.
+    body = client.get("/api/agents/gateway", headers=headers).json()
+    one = body["mcp"]["clients"]["one"]["headers"]
+    one["x-access-key"] = one.pop("X-Access-Key")
+    assert (
+        client.put(
+            "/api/agents/gateway", headers=headers, json=body
+        ).status_code
+        == 200
+    )
+    assert (
+        current[0].mcp.clients["one"].headers["x-access-key"]
+        == "fixture-replacement"
+    )
+
+    # An explicit empty string still clears a credential; it is not a mask.
+    body["mcp"]["clients"]["one"]["headers"]["x-access-key"] = ""
+    assert (
+        client.put(
+            "/api/agents/gateway", headers=headers, json=body
+        ).status_code
+        == 200
+    )
+    assert current[0].mcp.clients["one"].headers["x-access-key"] == ""
+
+
+def test_header_container_redaction_and_restoration_share_the_same_policy():
+    from qwenpaw.extensions.security.configuration_secrets import (
+        redact_configuration,
+        restore_configuration_secrets,
+    )
+
+    previous = {
+        "clients": [
+            {
+                "name": "one",
+                "headers": {
+                    "Unknown-Auth": "fixture-one",
+                    "content-type": "application/json",
+                },
+            },
+            {
+                "name": "two",
+                "headers": {
+                    "X-Access-Key": "fixture-two",
+                    "Accept": "text/event-stream",
+                },
+            },
+        ]
+    }
+    masked = redact_configuration(previous)
+    assert "fixture-one" not in str(masked)
+    assert "fixture-two" not in str(masked)
+    masked["clients"].reverse()
+    restored = restore_configuration_secrets(masked, previous)
+    assert restored["clients"][0]["headers"]["X-Access-Key"] == "fixture-two"
+    assert restored["clients"][1]["headers"]["Unknown-Auth"] == "fixture-one"
+    assert previous["clients"][0]["headers"]["Unknown-Auth"] == "fixture-one"
