@@ -72,9 +72,15 @@ async def test_read_declarations_do_not_grant_other_operations(name):
         await execution_policy.check_tool(name, {})
 
 
-async def test_actual_mcp_driver_calls_read_tool_without_disabling_guards():
+async def test_actual_mcp_driver_calls_read_tool_without_disabling_guards(monkeypatch):
+    monkeypatch.setenv("QWENPAW_MCP_ALLOWED_URLS", '["http://mcp.example/sse"]')
     handler = MCPDriverHandler(
-        DriverCard(name="resource", protocol="mcp", endpoint={}), MagicMock()
+        DriverCard(
+            name="resource",
+            protocol="mcp",
+            endpoint={"transport": "sse", "url": "http://mcp.example/sse"},
+        ),
+        MagicMock(),
     )
     handler._client = AsyncMock()
     handler._client.call_tool.return_value = {"rows": ["fixture"]}

@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import weakref
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Callable, Coroutine, Optional
@@ -21,6 +22,7 @@ from typing import Any, AsyncGenerator, Callable, Coroutine, Optional
 logger = logging.getLogger(__name__)
 
 _SENTINEL = None
+_TRACKERS: weakref.WeakSet = weakref.WeakSet()
 
 
 @dataclass
@@ -32,6 +34,8 @@ class _RunState:
     buffer: list[str] = field(default_factory=list)
     start_time: Optional[datetime] = None
     finish_time: Optional[datetime] = None
+    external: bool = False
+    stop_requested: bool = False
 
 
 class TaskTracker:
@@ -42,11 +46,28 @@ class TaskTracker:
     via :meth:`detach_subscriber`.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, namespace: str | None = None) -> None:
         self._lock = asyncio.Lock()
         self._runs: dict[str, _RunState] = {}
         self._global_last_run_at: Optional[datetime] = None
         self._global_last_finish_at: Optional[datetime] = None
+        self.namespace = namespace or str(uuid.uuid4())
+        _TRACKERS.add(self)
+
+    def _record_state(self, run_key: str, status: str) -> None:
+        from ..extensions.security.execution_control import get_control_store
+
+        get_control_store().task_state(self.namespace, run_key, status)
+
+    async def get_control_status(self, run_key: str) -> dict:
+        from ..extensions.security.execution_control import get_control_store
+
+        async with self._lock:
+            state = self._runs.get(run_key)
+            result = get_control_store().task_state(self.namespace, run_key)
+            if state is None and result["status"] in {"running", "stop_requested"}:
+                result["status"] = "interrupted_unknown"
+            return result
 
     @property
     def lock(self) -> asyncio.Lock:
@@ -140,6 +161,9 @@ class TaskTracker:
         Args:
             run_key: Unique identifier for the external task.
         """
+        from ..extensions.security.execution_control import assert_execution_open
+
+        assert_execution_open()
         start_time = datetime.now(timezone.utc)
         async with self._lock:
             if run_key in self._runs and not self._runs[run_key].task.done():
@@ -151,11 +175,13 @@ class TaskTracker:
             # Use an unresolved Future as the "task" — it stays not-done
             # until unregister_external_task resolves it.
             future: asyncio.Future = asyncio.get_running_loop().create_future()
+            self._record_state(run_key, "running")
             self._runs[run_key] = _RunState(
                 task=future,
                 queues=[],
                 buffer=[],
                 start_time=start_time,
+                external=True,
             )
             self._global_last_run_at = start_time
             logger.debug("Registered external task: %s", run_key)
@@ -177,6 +203,7 @@ class TaskTracker:
             state = self._runs.pop(run_key, None)
             if state is None:
                 return
+            self._record_state(run_key, "external_finished")
             # Notify any subscriber queues so consumers exit cleanly.
             for q in state.queues:
                 q.put_nowait(_SENTINEL)
@@ -241,7 +268,12 @@ class TaskTracker:
                 "[STOP] Calling task.cancel() for run_key=%s",
                 run_key,
             )
-            state.task.cancel()
+            if state.stop_requested:
+                return True
+            self._record_state(run_key, "stop_requested")
+            state.stop_requested = True
+            if not state.external:
+                state.task.cancel()
             logger.debug("[STOP] task.cancel() called for run_key=%s", run_key)
             return True
 
@@ -264,6 +296,11 @@ class TaskTracker:
                 state.queues.append(q)
                 return q, False
 
+            from ..extensions.security.execution_control import assert_execution_open
+
+            assert_execution_open()
+            self._record_state(run_key, "running")
+
             my_queue: asyncio.Queue = asyncio.Queue()
             run = _RunState(
                 task=asyncio.Future(),  # placeholder, replaced below
@@ -276,6 +313,7 @@ class TaskTracker:
 
             async def _producer() -> None:
                 start_time = datetime.now(timezone.utc)
+                terminal = "completed"
 
                 try:
                     tracker = tracker_ref()
@@ -294,8 +332,10 @@ class TaskTracker:
                             for q in run.queues:
                                 q.put_nowait(sse)
                 except asyncio.CancelledError:
+                    terminal = "cancelled"
                     logger.debug("run cancelled run_key=%s", run_key)
                 except Exception:
+                    terminal = "failed"
                     logger.exception("run error run_key=%s", run_key)
                     err_sse = (
                         "data: "
@@ -315,6 +355,12 @@ class TaskTracker:
                             run.finish_time = finish_time
                             # pylint: disable=protected-access
                             tracker._global_last_finish_at = finish_time
+                            try:
+                                tracker._record_state(run_key, terminal)
+                            except Exception:
+                                logger.error(
+                                    "Task terminal journal unavailable; terminal state remains unverified"
+                                )
                             for q in run.queues:
                                 q.put_nowait(_SENTINEL)
                             # pylint: disable=protected-access
@@ -324,6 +370,35 @@ class TaskTracker:
                             )
 
             run.task = asyncio.create_task(_producer())
+
+            def _ensure_terminal(task):
+                # cancel() before the coroutine's first step does not enter
+                # its finally block. Close subscribers and journal that case.
+                tracker = tracker_ref()
+                if tracker is None or run.finish_time is not None:
+                    return
+
+                async def cleanup_unstarted():
+                    async with tracker.lock:
+                        is_current = tracker._runs.get(run_key) is run
+                        run.finish_time = datetime.now(timezone.utc)
+                        tracker._global_last_finish_at = run.finish_time
+                        if is_current:
+                            try:
+                                tracker._record_state(
+                                    run_key,
+                                    "cancelled" if task.cancelled() else "failed",
+                                )
+                            except Exception:
+                                logger.error("Task terminal journal unavailable")
+                        for queue in run.queues:
+                            queue.put_nowait(_SENTINEL)
+                        if is_current:
+                            tracker._runs.pop(run_key, None)
+
+                asyncio.create_task(cleanup_unstarted())
+
+            run.task.add_done_callback(_ensure_terminal)
             return my_queue, True
 
     async def stream_from_queue(
@@ -347,3 +422,20 @@ class TaskTracker:
                     break
         finally:
             await self.detach_subscriber(run_key, queue)
+
+
+async def stop_all_tracked_tasks() -> list[dict]:
+    """Request cancellation across all live workspaces, retaining unknowns."""
+    results = []
+    for tracker in list(_TRACKERS):
+        for key in await tracker.list_active_tasks():
+            accepted = await tracker.request_stop(key)
+            results.append(
+                {
+                    "namespace": tracker.namespace,
+                    "run_key": key,
+                    "accepted": accepted,
+                    "status": "stop_requested",
+                }
+            )
+    return results

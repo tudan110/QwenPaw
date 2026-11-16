@@ -14,13 +14,14 @@
 基类与子类都被包装时，重复脱敏因 redactor 的幂等性而无害。包装函数带
 ``_qwenpaw_output_guard`` 标记，重复 ``install()`` 为 no-op。
 
-**fail-open**：脱敏过程任何异常都只记 ERROR 日志并放行原文，绝不让
-一条回复因脱敏器故障而发送失败。
+脱敏异常只发送固定安全提示，内容部件无法安全复制时阻断发送。
 """
+
 from __future__ import annotations
 
 import functools
 import logging
+from dataclasses import replace
 from typing import Any, Callable, List, Optional, Tuple
 
 from .redactor import OutputGuardSettings, redact
@@ -28,6 +29,7 @@ from .redactor import OutputGuardSettings, redact
 logger = logging.getLogger(__name__)
 
 _MARK = "_qwenpaw_output_guard"
+BLOCKED_TEXT = "[输出安全检查暂不可用，本次内容已阻断，请稍后重试。]"
 
 # Resolved settings provider; replaced by output_guard.install() with the
 # config.json/env-aware loader. Defaults keep the module usable standalone.
@@ -42,21 +44,34 @@ def _safe_redact(
     streaming: bool = False,
     tail_guard: bool = False,
 ) -> Tuple[Any, List[str]]:
-    """Redact ``text`` with full fail-open semantics."""
+    """Never disclose unchecked text when the redactor fails."""
     if not isinstance(text, str) or not text:
         return text, []
     try:
         cfg = _settings_loader()
+        from ..execution_policy import enabled
+
+        if enabled():
+            cfg = replace(
+                cfg,
+                enabled=True,
+                mode="mask",
+                disabled_patterns=(),
+                mask_streaming=True,
+            )
+            if streaming and tail_guard:
+                # Arbitrary business lexicon entries may span any delta.
+                # Keep channel deltas empty until the final accumulated text.
+                return "", []
         if not cfg.active:
             return text, []
         if streaming and not cfg.mask_streaming:
             return text, []
         return redact(text, cfg=cfg, streaming_tail_guard=tail_guard)
     except Exception:
-        logger.exception(
-            "output_guard: redaction failed; sending original text",
-        )
-        return text, []
+        # Exception messages may contain matched secrets; do not log them.
+        logger.error("output_guard: redaction failed; content blocked")
+        return BLOCKED_TEXT, ["guard_unavailable"]
 
 
 def _log_hits(channel: Any, where: str, hits: List[str]) -> None:
@@ -71,6 +86,14 @@ def _log_hits(channel: Any, where: str, hits: List[str]) -> None:
 
 def _redact_part(part: Any) -> Any:
     """Return a redacted copy of a text/refusal part; others pass through."""
+    if isinstance(part, dict):
+        result = dict(part)
+        all_hits = []
+        for attr in ("text", "refusal"):
+            if isinstance(result.get(attr), str):
+                result[attr], hits = _safe_redact(result[attr])
+                all_hits.extend(hits)
+        return result, all_hits
     for attr in ("text", "refusal"):
         value = getattr(part, attr, None)
         if isinstance(value, str) and value:
@@ -124,9 +147,8 @@ def _wrap_send_content_parts(fn: Callable) -> Callable:
                     args = args[:1] + (new_parts,) + args[2:]
                 _log_hits(self, "send_content_parts", hits)
         except Exception:
-            logger.exception(
-                "output_guard: part redaction failed; sending original",
-            )
+            logger.error("output_guard: part redaction failed; content blocked")
+            raise RuntimeError("输出安全检查失败，未发送内容") from None
         return await fn(self, *args, **kwargs)
 
     return wrapper
@@ -207,6 +229,10 @@ def install(
             "output_guard: channel registry unavailable; "
             "only BaseChannel wrapped",
         )
+        from ..execution_policy import enabled
+
+        if enabled():
+            raise RuntimeError("渠道目录不可用，输出防护安装失败") from None
 
     total = 0
     for cls in classes:
@@ -217,6 +243,10 @@ def install(
                 "output_guard: failed to wrap channel class %s",
                 cls,
             )
+            from ..execution_policy import enabled
+
+            if enabled():
+                raise RuntimeError("渠道输出防护安装失败") from None
     logger.info(
         "output_guard: installed on %d channel classes (%d methods)",
         len(classes),

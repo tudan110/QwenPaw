@@ -24,6 +24,7 @@ from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import httpx
+from ...extensions.security.egress_policy import controlled_async_client
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters
 from mcp.client.sse import sse_client
@@ -733,7 +734,7 @@ class HttpStatefulClient(_MCPClientMixin):
                 hooks = dict(client_kwargs.get("event_hooks") or {})
                 hooks["request"] = [*hooks.get("request", []), self._check_request_origin]
                 client_kwargs.update(follow_redirects=False, event_hooks=hooks)
-            http_client = httpx.AsyncClient(
+            http_client = controlled_async_client(
                 headers=self.headers or {},
                 timeout=httpx.Timeout(
                     connect=timeout_seconds,
@@ -752,8 +753,10 @@ class HttpStatefulClient(_MCPClientMixin):
             from ...extensions.security.execution_policy import enabled
             if enabled():
                 def guarded_client_factory(headers=None, timeout=None, auth=None):
-                    return httpx.AsyncClient(
-                        headers=headers, timeout=timeout, auth=auth,
+                    return controlled_async_client(
+                        headers=headers,
+                        timeout=timeout,
+                        auth=auth,
                         follow_redirects=False,
                         event_hooks={"request": [self._check_request_origin]},
                     )

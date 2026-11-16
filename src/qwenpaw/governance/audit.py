@@ -5,8 +5,8 @@ Storage: single-file SQLite (~/.qwenpaw/audit.db), global singleton.
 - record() writes immediately, no in-memory buffer
 - query() supports filtering by workspace / agent / tool / decision /
   time range, with pagination
-- purge() deletes expired records and VACUUMs to reclaim space
-- Auto-cleanup: when total records reach 100k, deletes the oldest 10k
+- purge() removes only archived records older than six calendar months
+- Each new event is committed with a durable archive-outbox entry
 """
 
 from __future__ import annotations
@@ -15,6 +15,9 @@ import json
 import logging
 import sqlite3
 import threading
+import calendar
+import hashlib
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,6 +48,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_events(ts);
 CREATE INDEX IF NOT EXISTS idx_audit_workspace ON audit_events(workspace_dir);
 CREATE INDEX IF NOT EXISTS idx_audit_agent ON audit_events(agent_id);
 CREATE INDEX IF NOT EXISTS idx_audit_tool ON audit_events(tool_name);
+CREATE TABLE IF NOT EXISTS audit_outbox (
+    event_id TEXT PRIMARY KEY, payload TEXT NOT NULL,
+    created_at INTEGER NOT NULL, archived_at INTEGER
+);
 """
 
 
@@ -147,9 +154,8 @@ class AuditLog:
         )
         obj._conn.row_factory = sqlite3.Row
         obj._conn.execute("PRAGMA journal_mode=WAL")
-        # Drop legacy schema where ``ts`` was TEXT (ISO 8601). Audit data
-        # written before the migration is discarded; this is acceptable
-        # while the feature is still pre-release.
+        obj._conn.execute("PRAGMA synchronous=FULL")
+        # Convert legacy timestamps without dropping historical records.
         cls._migrate_legacy_schema(obj._conn)
         obj._conn.executescript(_SCHEMA)
         obj._conn.commit()
@@ -159,13 +165,36 @@ class AuditLog:
 
     @staticmethod
     def _migrate_legacy_schema(conn: sqlite3.Connection) -> None:
-        """Drop the table if its ``ts`` column was created as TEXT."""
+        """Convert legacy timestamps transactionally without deleting evidence."""
         cursor = conn.execute("PRAGMA table_info(audit_events)")
         for row in cursor.fetchall():
             # row: (cid, name, type, notnull, dflt_value, pk)
             if row[1] == "ts" and row[2].upper() != "INTEGER":
-                conn.execute("DROP TABLE audit_events")
-                conn.commit()
+                rows = conn.execute("SELECT * FROM audit_events").fetchall()
+                with conn:
+                    conn.execute("BEGIN IMMEDIATE")
+                    conn.execute(
+                        "ALTER TABLE audit_events RENAME TO audit_events_legacy"
+                    )
+                    conn.execute(
+                        "CREATE TABLE audit_events(ts INTEGER NOT NULL,workspace_dir TEXT NOT NULL,agent_id TEXT NOT NULL,session_id TEXT NOT NULL,tool_name TEXT NOT NULL,target TEXT NOT NULL,decision TEXT NOT NULL,reason TEXT NOT NULL,extra TEXT NOT NULL)"
+                    )
+                    for item in rows:
+                        values = list(item)
+                        if isinstance(values[0], str) and not values[0].isdigit():
+                            dt = datetime.fromisoformat(
+                                values[0].replace("Z", "+00:00")
+                            )
+                            values[0] = int(
+                                dt.replace(tzinfo=dt.tzinfo or timezone.utc).timestamp()
+                                * 1000
+                            )
+                        else:
+                            values[0] = int(values[0])
+                        conn.execute(
+                            "INSERT INTO audit_events VALUES(?,?,?,?,?,?,?,?,?)", values
+                        )
+                    conn.execute("DROP TABLE audit_events_legacy")
                 break
 
     def close(self) -> None:
@@ -196,15 +225,8 @@ class AuditLog:
             workspace_dir: Workspace path this event belongs to
             tc_spec: ToolCallSpec instance
             decision: GovernanceDecision instance (action + reason)
-        Errors are caught and logged: an audit-write failure must NOT
-        propagate into ``assert_policy`` and disrupt the policy
-        decision returned to the caller.
-
-        TODO: honor ``GovernancePolicy.audit_level`` here.  The field
-        is currently declared (``"all"`` / ``"none"`` / ...) and
-        persisted in policy.yaml but ignored — every decision is
-        always written.  Once the level enum is finalised, gate the
-        INSERT on it (e.g. skip ALLOW events when level == "deny_only").
+        Audit failure raises PermissionError before execution. Production
+        evidence collection cannot be disabled by an agent policy setting.
         """
         from ..extensions.api.access_session import CURRENT_IDENTITY
         identity = CURRENT_IDENTITY.get()
@@ -212,40 +234,133 @@ class AuditLog:
             {"auth_user_id": identity.user_id, "auth_source": identity.source}
             if identity is not None else {}
         )
+        self._append(
+            workspace_dir,
+            tc_spec,
+            str(decision.action.value),
+            decision.reason,
+            {"event_type": "policy_decision", **extra},
+        )
+
+    def _append(self, workspace_dir, tc_spec, decision, reason, extra):
+        from ..extensions.security.output_guard.redactor import redact
+
+        target = tc_spec.target or ""
+        if tc_spec.tool_name == "Bash":
+            target = "sha256:" + hashlib.sha256(target.encode()).hexdigest()
+        event_id = uuid.uuid4().hex
+        payload = {
+            "ts": _now_unix_ms(),
+            "workspace_dir": workspace_dir,
+            "agent_id": tc_spec.agent_id,
+            "session_id": tc_spec.session_id,
+            "tool_name": tc_spec.tool_name,
+            "target": redact(target)[0],
+            "decision": decision,
+            "reason": redact(reason or "")[0],
+            "extra": {"event_id": event_id, **extra},
+        }
         try:
-            with self._lock:
+            with self._lock, self._conn:
+                if extra.get("outcome") == "started":
+                    from ..constant import EnvVarLoader
+
+                    maximum = max(
+                        1,
+                        int(
+                            EnvVarLoader.get_str("QWENPAW_AUDIT_MAX_PENDING", "100000")
+                        ),
+                    )
+                    pending = self._conn.execute(
+                        "SELECT COUNT(*) FROM audit_outbox WHERE archived_at IS NULL"
+                    ).fetchone()[0]
+                    if pending >= maximum:
+                        raise PermissionError("审计归档积压达到上限，已阻断新执行")
                 self._conn.execute(
-                    "INSERT INTO audit_events "
-                    "(ts, workspace_dir, agent_id, session_id, "
-                    "tool_name, target, decision, reason, extra) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO audit_events VALUES(?,?,?,?,?,?,?,?,?)",
                     (
-                        _now_unix_ms(),
+                        payload["ts"],
                         workspace_dir,
                         tc_spec.agent_id,
                         tc_spec.session_id,
                         tc_spec.tool_name,
-                        tc_spec.target,
-                        str(decision.action.value),
-                        decision.reason,
-                        json.dumps(extra),
+                        payload["target"],
+                        decision,
+                        payload["reason"],
+                        json.dumps(payload["extra"], ensure_ascii=False),
                     ),
                 )
-                self._conn.commit()
+                self._conn.execute(
+                    "INSERT INTO audit_outbox VALUES(?,?,?,NULL)",
+                    (
+                        event_id,
+                        json.dumps(payload, ensure_ascii=False, sort_keys=True),
+                        payload["ts"],
+                    ),
+                )
+        except (sqlite3.Error, TypeError, AttributeError):
+            _logger.error("Audit storage unavailable; execution must remain blocked")
+            raise PermissionError("审计存储不可用，已阻断执行") from None
+        return event_id
 
-                # Auto-cleanup check
-                self._insert_count += 1
-                if self._insert_count >= self._CHECK_INTERVAL:
-                    self._insert_count = 0
-                    if self.count >= self.MAX_RECORDS:
-                        self._auto_purge()
-        except sqlite3.Error as e:
-            _logger.error(
-                "AuditLog.record: SQLite error (tool=%s, target=%r): %s",
-                tc_spec.tool_name,
-                (tc_spec.target or "")[:120],
-                e,
-                exc_info=True,
+    def archive_status(self) -> dict:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS pending,MIN(created_at) AS oldest_at FROM audit_outbox WHERE archived_at IS NULL"
+            ).fetchone()
+            return {
+                **dict(row),
+                "minimum_retention": "six_calendar_months",
+                "external_retention_verified": False,
+            }
+
+    def execution_event(
+        self, workspace_dir, tc_spec, outcome, *, trace_id=None, error_type=""
+    ) -> str:
+        trace_id = trace_id or uuid.uuid4().hex
+        from ..extensions.api.access_session import CURRENT_IDENTITY
+
+        identity = CURRENT_IDENTITY.get()
+        from .execution_trace import CURRENT_EXECUTION_TRACE
+
+        self._append(
+            workspace_dir,
+            tc_spec,
+            "execution",
+            "",
+            {
+                "event_type": "tool_execution",
+                "trace_id": trace_id,
+                "outcome": outcome,
+                "parent_trace_id": (
+                    CURRENT_EXECUTION_TRACE.get()
+                    if CURRENT_EXECUTION_TRACE.get() != trace_id
+                    else ""
+                ),
+                "error_type": error_type,
+                "auth_user_id": identity.user_id if identity else "",
+                "params_sha256": hashlib.sha256(
+                    json.dumps(tc_spec.raw_params, sort_keys=True, default=str).encode()
+                ).hexdigest(),
+            },
+        )
+        return trace_id
+
+    def pending_archive(self, limit: int = 500) -> list[dict]:
+        with self._lock:
+            return [
+                dict(row)
+                for row in self._conn.execute(
+                    "SELECT event_id,payload,created_at FROM audit_outbox WHERE archived_at IS NULL ORDER BY created_at LIMIT ?",
+                    (min(max(limit, 1), 5000),),
+                ).fetchall()
+            ]
+
+    def acknowledge_archive(self, event_id: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                "UPDATE audit_outbox SET archived_at=? WHERE event_id=?",
+                (_now_unix_ms(), event_id),
             )
 
     def query(
@@ -333,15 +448,31 @@ class AuditLog:
         Returns:
             Number of deleted records, or ``0`` on SQLite error.
         """
+        # A record must be at least six calendar months old AND acknowledged
+        # by the archive worker. Never purge the only copy.
+        now = datetime.now(timezone.utc)
+        month_index = now.year * 12 + now.month - 1 - 6
+        year, month = divmod(month_index, 12)
+        month += 1
+        cutoff = int(
+            now.replace(
+                year=year,
+                month=month,
+                day=min(now.day, calendar.monthrange(year, month)[1]),
+            ).timestamp()
+            * 1000
+        )
+        before = min(before, cutoff)
         try:
-            cursor = self._conn.execute(
-                "DELETE FROM audit_events WHERE ts < ?",
-                (before,),
-            )
-            self._conn.commit()
-            deleted = cursor.rowcount
-            if deleted > 0:
-                self._conn.execute("VACUUM")
+            with self._lock:
+                cursor = self._conn.execute(
+                    "DELETE FROM audit_events WHERE ts < ? AND json_extract(extra,'$.event_id') IN (SELECT event_id FROM audit_outbox WHERE archived_at IS NOT NULL)",
+                    (before,),
+                )
+                self._conn.commit()
+                deleted = cursor.rowcount
+                if deleted > 0:
+                    self._conn.execute("VACUUM")
             return deleted
         except sqlite3.Error as e:
             _logger.error(
@@ -359,28 +490,5 @@ class AuditLog:
         ).fetchone()[0]
 
     def _auto_purge(self) -> None:
-        """Delete the oldest PURGE_COUNT records (caller holds ``_lock``).
-
-        VACUUM is intentionally deferred to ``close()`` to avoid blocking
-        the event loop for seconds on a large database.
-        """
-        # ``OFFSET PURGE_COUNT - 1`` returns the rowid of the PURGE_COUNT-th
-        # oldest row; ``DELETE ... WHERE rowid <= ?`` then removes exactly
-        # PURGE_COUNT rows. Using ``OFFSET PURGE_COUNT`` would have left an
-        # off-by-one bug (deleting PURGE_COUNT + 1 rows).
-        row = self._conn.execute(
-            "SELECT rowid FROM audit_events "
-            "ORDER BY rowid ASC LIMIT 1 OFFSET ?",
-            (self.PURGE_COUNT - 1,),
-        ).fetchone()
-        if row:
-            self._conn.execute(
-                "DELETE FROM audit_events WHERE rowid <= ?",
-                (row["rowid"],),
-            )
-            self._conn.commit()
-            _logger.info(
-                "AuditLog: auto-purged %d oldest records "
-                "(VACUUM deferred to close).",
-                self.PURGE_COUNT,
-            )
+        """Compatibility hook: capacity never overrides evidence retention."""
+        _logger.warning("Audit capacity threshold reached; unique evidence retained")

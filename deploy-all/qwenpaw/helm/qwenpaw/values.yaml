@@ -50,6 +50,15 @@ env:
   QWENPAW_APP_TIMEOUT_KEEP_ALIVE: "5"
   QWENPAW_DISABLED_CHANNELS: "imessage"
   QWENPAW_SSO_TOKEN_REQUIRED: "true"
+  QWENPAW_PRODUCTION_GUARDS: "true"
+  # 必须在目标环境填写精确端点和网络范围；空清单拒绝 MCP/受控外联。
+  # 示例与迁移步骤见 docs/reviews/trusted-agent-remediation-20261116.md。
+  QWENPAW_MCP_ALLOWED_URLS: "[]"
+  QWENPAW_EGRESS_RULES: "[]"
+  QWENPAW_AUDIT_ARCHIVE_URL: ""
+  # QWENPAW_AUDIT_ARCHIVE_TOKEN 只能由 Secret 注入。
+  QWENPAW_AUDIT_MAX_PENDING: "100000"
+  QWENPAW_OUTPUT_MAX_BYTES: "8388608"
   # 仅显式 INOE 用户 ID 可管理/执行高危写操作；普通用户不会自动成为管理员。
   QWENPAW_ADMIN_INOE_USER_IDS: "1"
   QWENPAW_INTERNAL_API_ORIGINS: "http://qwenpaw:8088"

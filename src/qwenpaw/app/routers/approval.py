@@ -138,6 +138,8 @@ async def post_approval_approve(
         ApprovalDecision.APPROVED,
         scope=scope,
     )
+    if resolved is None or resolved.status != ApprovalDecision.APPROVED.value:
+        raise HTTPException(409, "审批已处理或已过期，请重新申请")
 
     logger.info(
         "Approval approved: request_id=%s session=%s tool=%s",
@@ -209,6 +211,8 @@ async def post_approval_deny(
         body.request_id,
         ApprovalDecision.DENIED,
     )
+    if resolved is None:
+        raise HTTPException(409, "审批已处理")
 
     logger.info(
         "Approval denied: request_id=%s session=%s tool=%s",

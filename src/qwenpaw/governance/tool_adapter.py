@@ -156,6 +156,9 @@ def _policy_tool_init(
     self._qp_policy_decision = None  # Pre-evaluation result
     self._qp_sandbox_mode = False  # Whether to execute in sandbox
     self._qp_raw_params = {}  # Set per-call by check_permissions
+    from ..extensions.security.operation_intent import ApprovalReceipts
+
+    self._qp_receipts = ApprovalReceipts()
 
 
 def _build_tc_spec(self: Any) -> ToolCallSpec:
@@ -199,8 +202,13 @@ async def _policy_tool_check_permissions(
     from fastapi import HTTPException
     from ..extensions.security.execution_policy import check_tool
 
-    self._qp_p0_approved_params = None
+    from copy import deepcopy
+    from ..extensions.security.execution_control import assert_execution_open
+    from ..extensions.api.access_session import CURRENT_IDENTITY
+
+    params_snapshot = deepcopy(input_data or {})
     try:
+        initial_epoch = assert_execution_open()
         mandatory_approval = await check_tool(
             getattr(self, "name", ""), input_data or {}
         )
@@ -255,11 +263,17 @@ async def _policy_tool_check_permissions(
             ),
         )
 
-    self._qp_raw_params = input_data or {}
+    self._qp_raw_params = params_snapshot
 
     tc_spec = self._build_tc_spec()
 
     if mandatory_approval:
+        import time
+        from ..extensions.security.operation_intent import bind_resources
+        from ..constant import TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS
+
+        bound_intent = bind_resources(getattr(self, "name", ""), params_snapshot)
+        approval_started = time.monotonic()
         result = await _ask_user_approval(
             governor=governor,
             tc_spec=tc_spec,
@@ -268,8 +282,21 @@ async def _policy_tool_check_permissions(
             source="production_boundary",
         )
         if result.behavior == PermissionBehavior.ALLOW:
-            from copy import deepcopy
-            self._qp_p0_approved_params = deepcopy(input_data or {})
+            if assert_execution_open() != initial_epoch:
+                return PermissionDecision(
+                    behavior=PermissionBehavior.DENY,
+                    message="审批期间执行控制版本已变化",
+                )
+            identity = CURRENT_IDENTITY.get()
+            self._qp_receipts.issue(
+                getattr(self, "name", ""),
+                bound_intent,
+                identity.user_id if identity else "",
+                request_ctx.get("session_id", ""),
+                initial_epoch,
+                ttl=TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS
+                - (time.monotonic() - approval_started),
+            )
         return result
 
     decision = governor.assert_policy(tc_spec)
@@ -336,12 +363,28 @@ async def _policy_tool_call(
         getattr(self, "name", ""),
         {key: value for key, value in kwargs.items() if key != "sandbox_config"},
     )
-    if mandatory_approval and getattr(self, "_qp_p0_approved_params", None) != {
-        key: value for key, value in kwargs.items() if key != "sandbox_config"
-    }:
-        raise PermissionError("执行参数与已审批参数不一致")
+    from ..extensions.security.execution_control import assert_execution_open
+    from ..extensions.api.access_session import CURRENT_IDENTITY
+
+    epoch = assert_execution_open()
     if mandatory_approval:
-        self._qp_p0_approved_params = None
+        from ..extensions.security.operation_intent import bind_resources
+
+        identity = CURRENT_IDENTITY.get()
+        self._qp_receipts.consume(
+            getattr(self, "name", ""),
+            bind_resources(
+                getattr(self, "name", ""),
+                {
+                    key: value
+                    for key, value in kwargs.items()
+                    if key != "sandbox_config"
+                },
+            ),
+            identity.user_id if identity else "",
+            self._qp_request_context.get("session_id", ""),
+            epoch,
+        )
     if sandbox_mode:
         sandbox_config = getattr(self, "_qp_sandbox_config", None)
         if sandbox_config is not None:
@@ -351,7 +394,7 @@ async def _policy_tool_call(
     from agentscope.tool import FunctionTool
     from agentscope.message import ToolResultState
 
-    result = await FunctionTool.__call__(self, *args, **kwargs)
+    result = await _execute_observed(self, *args, **kwargs)
 
     # Check if sandbox violation was returned (state=DENIED)
     if not (
@@ -452,7 +495,7 @@ async def _policy_tool_call(
         )
         kwargs.pop("sandbox_config", None)
         self._qp_sandbox_mode = False
-        return await FunctionTool.__call__(self, *args, **kwargs)
+        return await _execute_observed(self, *args, **kwargs)
     else:
         # User denied: return the violation as DENIED
         return ToolChunk(
@@ -472,6 +515,66 @@ async def _policy_tool_call(
 # ---------------------------------------------------------------------------
 # ASK path: reuse ApprovalService
 # ---------------------------------------------------------------------------
+
+
+async def _execute_observed(self, *args, **kwargs):
+    """Journal execution, including lazy generator completion and cancellation."""
+    import asyncio
+    import inspect
+    from agentscope.tool import FunctionTool
+    from .audit import AuditLog
+    from ..extensions.security.execution_control import assert_execution_open
+
+    self._qp_raw_params = {k: v for k, v in kwargs.items() if k != "sandbox_config"}
+    spec = self._build_tc_spec()
+    governor = getattr(self, "_qp_governor", None)
+    log = governor.audit_log if governor is not None else AuditLog.get_instance()
+    workspace = str(governor.workspace_dir) if governor else ""
+    trace = log.execution_event(workspace, spec, "started")
+    from .execution_trace import CURRENT_EXECUTION_TRACE
+
+    trace_token = CURRENT_EXECUTION_TRACE.set(trace)
+    try:
+        result = await FunctionTool.__call__(self, *args, **kwargs)
+    except BaseException as exc:
+        outcome = "cancelled" if isinstance(exc, asyncio.CancelledError) else "failed"
+        log.execution_event(
+            workspace, spec, outcome, trace_id=trace, error_type=type(exc).__name__
+        )
+        raise
+    finally:
+        CURRENT_EXECUTION_TRACE.reset(trace_token)
+
+    if inspect.isasyncgen(result):
+
+        async def observed_stream():
+            outcome = "interrupted"
+            error_type = ""
+            stream_trace_token = CURRENT_EXECUTION_TRACE.set(trace)
+            try:
+                async for chunk in result:
+                    assert_execution_open()
+                    yield chunk
+                outcome = "completed"
+            except BaseException as exc:
+                error_type = type(exc).__name__
+                outcome = (
+                    "cancelled"
+                    if isinstance(exc, (asyncio.CancelledError, GeneratorExit))
+                    else "failed"
+                )
+                raise
+            finally:
+                await result.aclose()
+                CURRENT_EXECUTION_TRACE.reset(stream_trace_token)
+                log.execution_event(
+                    workspace, spec, outcome, trace_id=trace, error_type=error_type
+                )
+
+        return observed_stream()
+    state = getattr(getattr(result, "state", None), "value", "completed")
+    log.execution_event(workspace, spec, str(state), trace_id=trace)
+    return result
 
 
 async def _ask_user_approval(
@@ -515,11 +618,16 @@ async def _ask_user_approval(
 
     from .generalize import generalize_target_for_approval
 
-    generalized_target = await generalize_target_for_approval(
-        tool_name,
-        target,
-        source,
-        agent_id=agent_id,
+    production_confirmation = source == "production_boundary"
+    generalized_target = (
+        None
+        if production_confirmation
+        else await generalize_target_for_approval(
+            tool_name,
+            target,
+            source,
+            agent_id=agent_id,
+        )
     )
     display_target = generalized_target or target
 
@@ -635,6 +743,7 @@ async def _ask_user_approval(
         result=guard_result,
         timeout_seconds=TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS,
         extra={
+            "single_use": production_confirmation,
             "tool_call": {
                 "id": tool_call_id,
                 "name": tool_name,
@@ -694,10 +803,8 @@ async def _ask_user_approval(
         rule_target = (
             generalized_target if scope == ApprovalScope.SIMILAR else target
         )
-        await governor.add_approved_rule(
-            tc_spec,
-            generalized_target=rule_target,
-        )
+        if not production_confirmation:
+            await governor.add_approved_rule(tc_spec, generalized_target=rule_target)
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
             message=f"Approved by user ({scope_label}).\n{summary}",

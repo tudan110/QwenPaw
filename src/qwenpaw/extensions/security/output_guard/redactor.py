@@ -13,9 +13,9 @@
   文本被多层包装重复脱敏是无害的。
 * **只记 id 不记值**：`redact` 返回命中的 pattern id 列表供日志使用，
   绝不返回 / 记录原始敏感值；词库命中以序号代替词条本身。
-* **fail-open**：词库文件损坏 / 正则非法时记日志跳过，内置 pattern
-  照常生效。
+* 生产词库损坏或不可用时抛出安全错误，由出口阻断原文；开发模式可降级。
 """
+
 from __future__ import annotations
 
 import logging
@@ -112,6 +112,19 @@ class _Pattern:
 
 _BUILTIN_PATTERNS: Tuple[_Pattern, ...] = (
     _Pattern(
+        id="local_session",
+        regex=re.compile(r"\bqp1\.[A-Za-z0-9_-]{16,}"),
+        style="full",
+    ),
+    _Pattern(
+        id="cn_identity",
+        regex=re.compile(
+            r"(?<!\d)[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[0-9Xx](?!\w)"
+        ),
+        keep_prefix=3,
+        keep_suffix=2,
+    ),
+    _Pattern(
         id="pem_private_key",
         regex=re.compile(
             r"-----BEGIN [A-Z ]*PRIVATE KEY-----"
@@ -153,8 +166,7 @@ _BUILTIN_PATTERNS: Tuple[_Pattern, ...] = (
     _Pattern(
         id="jwt",
         regex=re.compile(
-            r"\beyJ[A-Za-z0-9_-]{10,}"
-            r"\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{10,}\b",
+            r"\beyJ[A-Za-z0-9_-]{10,}" r"\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{10,}\b",
         ),
         style="fixed",
         replacement="eyJ***.[REDACTED-JWT]",
@@ -293,6 +305,10 @@ def _compile_lexicon(data: Any) -> Tuple[_LexiconEntry, ...]:
                 if entry is not None:
                     entries.append(entry)
             except Exception as exc:
+                from ..execution_policy import enabled
+
+                if enabled():
+                    raise ValueError("输出词库包含无效规则") from None
                 logger.warning(
                     "output_guard: invalid lexicon %s entry skipped: %s",
                     kind,
@@ -322,12 +338,21 @@ def _load_lexicon(lexicon_path: str = "") -> Tuple[_LexiconEntry, ...]:
                 raw = path.read_text(encoding="utf-8")
                 entries = _compile_lexicon(yaml.safe_load(raw) or {})
             except Exception as exc:  # pragma: no cover - defensive
+                from ..execution_policy import enabled
+
+                if enabled():
+                    raise ValueError("输出词库加载失败") from None
                 logger.warning(
                     "output_guard: failed to load lexicon %s: %s",
                     key,
                     exc,
                 )
                 entries = ()
+        elif lexicon_path:
+            from ..execution_policy import enabled
+
+            if enabled():
+                raise ValueError("已配置的输出词库不可用")
         _lex_cache = (key, fp, entries)
         return entries
 

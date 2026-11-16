@@ -188,6 +188,10 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
         raise RuntimeError(f"{message} Original error: {exc}") from exc
 
     auto_register_from_env()
+    from ..extensions.security.execution_control import get_control_store
+    import uuid
+
+    get_control_store().reconcile_startup(str(uuid.uuid4()))
 
     try:
         from ..utils.telemetry import (
@@ -722,10 +726,16 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             )
 
     _bg_task = asyncio.create_task(_background_startup())
+    from ..governance.audit_forwarder import run_forwarder
+
+    _audit_forwarder_task = asyncio.create_task(run_forwarder(), name="audit-forwarder")
 
     try:
         yield
     finally:
+        _audit_forwarder_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _audit_forwarder_task
         # Cancel background startup if still in progress
         if not _bg_task.done():
             _bg_task.cancel()
@@ -849,6 +859,11 @@ app = FastAPI(
 
 # Add agent context middleware for agent-scoped routes
 app.add_middleware(AgentContextMiddleware)
+from ..extensions.security.output_guard.response_boundary import (
+    OutputBoundaryMiddleware,
+)
+
+app.add_middleware(OutputBoundaryMiddleware)
 
 app.add_middleware(AuthMiddleware)
 app.add_middleware(SsoTokenMiddleware)
@@ -985,7 +1000,7 @@ register_custom_channel_routes(app)
 # pylint: disable-next=wrong-import-position
 from ..extensions.security import install_security_hardening  # noqa: E402
 
-install_security_hardening()  # never raises; logs on failure
+install_security_hardening()  # production output-boundary failures stop startup
 
 # Traceability: re-attach Runtime 2.0 trace hooks (tool_call / user_message
 # / agent_reply / error) that the upstream refactor removed from core.

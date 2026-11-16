@@ -325,7 +325,12 @@ async def post_console_chat_stop(
         "[STOP API] task_tracker.request_stop returned: stopped=%s",
         stopped,
     )
-    return {"stopped": stopped}
+    return {
+        "stopped": stopped,  # compatibility: cancellation accepted
+        "stop_requested": stopped,
+        "status": "stop_requested" if stopped else "not_running",
+        "remote_effects": "unknown",
+    }
 
 
 @router.post("/upload", response_model=dict, summary="Upload file for chat")

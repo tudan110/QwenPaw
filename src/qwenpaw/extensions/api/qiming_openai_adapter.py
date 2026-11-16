@@ -7,6 +7,7 @@ import os
 from typing import Any
 
 import httpx
+from qwenpaw.extensions.security.egress_policy import controlled_async_client
 from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
@@ -220,7 +221,7 @@ async def _proxy_non_streaming_completion(
     timeout_seconds: float,
 ) -> Response:
     try:
-        async with httpx.AsyncClient(
+        async with controlled_async_client(
             timeout=timeout_seconds,
             trust_env=False,
         ) as client:
@@ -254,7 +255,7 @@ async def _proxy_streaming_completion(
     timeout_seconds: float,
 ) -> Response:
     try:
-        client = httpx.AsyncClient(
+        client = controlled_async_client(
             timeout=timeout_seconds,
             trust_env=False,
         )

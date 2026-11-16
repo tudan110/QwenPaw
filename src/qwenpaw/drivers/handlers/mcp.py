@@ -119,6 +119,9 @@ class MCPDriverHandler(DriverHandler):
             f"{self.name}__{str(kwargs['tool_name'])}",
             dict(kwargs.get("arguments") or {}),
         )
+        from ...extensions.security.mcp_boundary import validate_endpoint
+
+        validate_endpoint(self._card.endpoint)
         if needs_approval:
             raise PermissionError(
                 "未接入强制审批业务连接器的 MCP 写操作已禁用"

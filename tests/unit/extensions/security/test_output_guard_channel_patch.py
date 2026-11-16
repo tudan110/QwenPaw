@@ -144,6 +144,7 @@ async def test_streaming_tail_guard_on_delta_only(patched_channel):
 
 
 async def test_mask_streaming_disabled(monkeypatch, patched_channel):
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "false")
     monkeypatch.setattr(
         channel_patch,
         "_settings_loader",
@@ -161,6 +162,7 @@ async def test_mask_streaming_disabled(monkeypatch, patched_channel):
 
 
 async def test_guard_off_passthrough(monkeypatch, patched_channel):
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "false")
     monkeypatch.setattr(
         channel_patch,
         "_settings_loader",
@@ -168,6 +170,29 @@ async def test_guard_off_passthrough(monkeypatch, patched_channel):
     )
     await patched_channel.send("u1", SECRET, {})
     assert patched_channel.sent_texts[0] == SECRET
+
+
+async def test_production_cannot_turn_off_output_check(monkeypatch, patched_channel):
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
+    monkeypatch.setattr(
+        channel_patch, "_settings_loader", lambda: OutputGuardSettings(mode="off")
+    )
+    await patched_channel.send("u1", SECRET)
+    assert SECRET not in patched_channel.sent_texts[0]
+
+
+async def test_missing_production_lexicon_blocks_original(
+    monkeypatch, tmp_path, patched_channel
+):
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
+    monkeypatch.setattr(
+        channel_patch,
+        "_settings_loader",
+        lambda: OutputGuardSettings(lexicon_path=str(tmp_path / "missing.yaml")),
+    )
+    await patched_channel.send("u1", "business secret")
+    assert "business secret" not in patched_channel.sent_texts[0]
+    assert "安全检查" in patched_channel.sent_texts[0]
 
 
 # ---------------------------------------------------------------------------
@@ -203,15 +228,28 @@ async def test_double_wrap_base_and_subclass_idempotent_output():
 
 
 # ---------------------------------------------------------------------------
-# fail-open
+# fail-closed
 # ---------------------------------------------------------------------------
-async def test_redactor_error_fails_open(monkeypatch, patched_channel):
+async def test_redactor_error_fails_closed(monkeypatch, patched_channel):
     def _boom():
         raise RuntimeError("config exploded")
 
     monkeypatch.setattr(channel_patch, "_settings_loader", _boom)
     await patched_channel.send("u1", SECRET, {})
-    assert patched_channel.sent_texts[0] == SECRET  # original still sent
+    assert SECRET not in patched_channel.sent_texts[0]
+    assert "安全检查" in patched_channel.sent_texts[0]
+
+
+async def test_part_copy_failure_never_sends_original(monkeypatch, patched_channel):
+    class Uncopyable:
+        text = SECRET
+
+        def __copy__(self):
+            raise RuntimeError("sensitive error details")
+
+    with pytest.raises(RuntimeError, match="输出安全检查失败"):
+        await patched_channel.send_content_parts("u1", [Uncopyable()])
+    assert not patched_channel.sent_parts
 
 
 # ---------------------------------------------------------------------------

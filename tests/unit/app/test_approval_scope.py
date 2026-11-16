@@ -35,7 +35,7 @@ def _make_pending(request_id: str = "req-1") -> PendingApproval:
         channel="console",
         agent_id="a",
         tool_name="Bash",
-        created_at=0.0,
+        created_at=__import__("time").time(),
         future=loop.create_future(),
     )
 

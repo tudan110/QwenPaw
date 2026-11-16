@@ -37,6 +37,7 @@ import uuid
 from typing import Any
 
 import httpx
+from qwenpaw.extensions.security.egress_policy import controlled_async_client
 from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
@@ -224,7 +225,7 @@ async def _fetch_token(
 ) -> tuple[str, float]:
     timeout_seconds = _read_timeout_seconds()
     try:
-        async with httpx.AsyncClient(
+        async with controlled_async_client(
             timeout=min(timeout_seconds, 30.0),
             trust_env=False,
             verify=_read_verify_ssl(),
@@ -439,7 +440,7 @@ async def _proxy_non_streaming_completion(
             token,
         )
         try:
-            async with httpx.AsyncClient(
+            async with controlled_async_client(
                 timeout=timeout_seconds,
                 trust_env=False,
                 verify=_read_verify_ssl(),
@@ -499,7 +500,7 @@ async def _open_streaming_completion(
             payload,
             token,
         )
-        client = httpx.AsyncClient(
+        client = controlled_async_client(
             timeout=timeout_seconds,
             trust_env=False,
             verify=_read_verify_ssl(),

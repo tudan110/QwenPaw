@@ -126,6 +126,9 @@ class OpenAIResponseProvider(OpenAIProvider):
         )
 
         client_kwargs: dict[str, Any] = {}
+        from ..extensions.security.egress_policy import controlled_async_client
+
+        client_kwargs["http_client"] = controlled_async_client()
         if merged_headers:
             client_kwargs["default_headers"] = merged_headers
 

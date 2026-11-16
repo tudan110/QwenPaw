@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 import httpx
+from qwenpaw.extensions.security.egress_policy import controlled_client
+from qwenpaw.extensions.security.egress_policy import controlled_async_client
 import pandas as pd
 
 LOGGER = logging.getLogger(__name__)
@@ -1518,7 +1520,7 @@ class ZgopsCmdbClient:
         self.base_url = f"{base_url.rstrip('/')}/cmdb"
         self.token = token.strip()
         self.timeout = timeout
-        self.client = httpx.Client(
+        self.client = controlled_client(
             timeout=timeout,
             headers={
                 "Accept": "application/json, text/plain, */*",
@@ -1889,7 +1891,7 @@ class ResourceImportLLMClient:
         self.model = model
         self.vision_model = vision_model or model
         self.timeout = timeout
-        self.client = httpx.AsyncClient(
+        self.client = controlled_async_client(
             timeout=timeout,
             headers={
                 **({"Authorization": f"Bearer {api_key}"} if api_key else {}),

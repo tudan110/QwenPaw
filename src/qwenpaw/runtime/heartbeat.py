@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 
 HEARTBEAT_INTERVAL_SECONDS = 25.0
 _HEARTBEAT_TICK = object()
@@ -21,7 +22,14 @@ async def _iter_with_heartbeat(source_iter, interval: float):
     try:
         while True:
             if pending is None:
+                from ..extensions.security.execution_control import (
+                    assert_execution_open,
+                    track_execution,
+                )
+
+                assert_execution_open()
                 pending = asyncio.ensure_future(source_iter.__anext__())
+                track_execution(pending)
             try:
                 value = await asyncio.wait_for(
                     asyncio.shield(pending),
@@ -37,4 +45,10 @@ async def _iter_with_heartbeat(source_iter, interval: float):
             yield value
     finally:
         if pending is not None and not pending.done():
-            pending.cancel()
+            if not isinstance(pending, asyncio.Task) or not pending.cancelling():
+                pending.cancel()
+            with suppress(asyncio.CancelledError, StopAsyncIteration):
+                await pending
+        close = getattr(source_iter, "aclose", None)
+        if close is not None:
+            await close()

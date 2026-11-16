@@ -243,13 +243,12 @@ def test_mcp_boundaries_deny_third_party_and_unapproved_processes(
         validate_endpoint(
             {"transport": "stdio", "command": "npx", "args": ["unapproved"]}
         )
-    validate_endpoint(
-        {
-            "transport": "sse",
-            "url": "http://mcp.namespace.svc.cluster.local/sse",
-        }
-    )
+    with pytest.raises(PermissionError):
+        validate_endpoint(
+            {"transport": "sse", "url": "http://mcp.namespace.svc.cluster.local/sse"}
+        )
     monkeypatch.setenv("QWENPAW_MCP_ALLOWED_HOSTS", "higress-gateway")
+    monkeypatch.setenv("QWENPAW_MCP_ALLOWED_URLS", '["http://higress-gateway/sse"]')
     validate_endpoint(
         {"transport": "sse", "url": "http://higress-gateway/sse"}
     )
@@ -264,13 +263,13 @@ async def test_write_revalidates_before_requesting_approval(
     monkeypatch.setattr(execution_policy, "_validate_inoe_token", check)
     try:
         assert (
-            await execution_policy.check_tool("delete_resource", {"id": "one"})
+            await execution_policy.check_tool("write_file", {"file_path": "report.txt"})
             is True
         )
         check.assert_awaited_once()
         check.side_effect = HTTPException(401, "expired")
         with pytest.raises(HTTPException):
-            await execution_policy.check_tool("delete_resource", {"id": "one"})
+            await execution_policy.check_tool("write_file", {"file_path": "report.txt"})
     finally:
         CURRENT_IDENTITY.reset(reset)
 

@@ -157,6 +157,38 @@ def _download_remote_to_path(url: str, local_file_path: Path) -> None:
     """
     Download url to local_file_path via wget, curl, or urllib. Raises on fail.
     """
+    from ...extensions.security.execution_policy import enabled
+
+    if enabled():
+        from ...extensions.security.egress_policy import controlled_client
+        import tempfile
+
+        total = 0
+        temporary = None
+        try:
+            with (
+                controlled_client(timeout=60) as client,
+                client.stream("GET", url) as response,
+            ):
+                response.raise_for_status()
+                with tempfile.NamedTemporaryFile(
+                    dir=local_file_path.parent, delete=False
+                ) as output:
+                    temporary = Path(output.name)
+                    for chunk in response.iter_bytes():
+                        total += len(chunk)
+                        if total > 32 * 1024 * 1024:
+                            raise PermissionError("附件超过 32 MiB 接入上限")
+                        output.write(chunk)
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.replace(temporary, local_file_path)
+            return
+        except BaseException:
+            # Only remove a partial file created by this download.
+            if temporary is not None and temporary.exists():
+                temporary.unlink()
+            raise
     try:
         subprocess.run(
             ["wget", "-q", "-O", str(local_file_path), url],
@@ -199,6 +231,10 @@ def _guess_suffix_from_url_headers(url: str) -> Optional[str]:
     Used to fix DingTalk download URLs that always return .file extension.
     Returns None on any failure (e.g. OSS forbids HEAD or returns no type).
     """
+    from ...extensions.security.execution_policy import enabled
+
+    if enabled():
+        return None  # Use local magic bytes; no ungoverned HEAD fallback.
     try:
         req = urllib.request.Request(url, method="HEAD")
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -261,6 +297,8 @@ async def download_file_from_base64(
         The local file path.
     """
     try:
+        if len(base64_data) > 44 * 1024 * 1024:
+            raise PermissionError("附件超过接入体积上限")
         file_content = base64.b64decode(base64_data)
 
         download_path = Path(
@@ -273,6 +311,11 @@ async def download_file_from_base64(
             filename = f"file_{file_hash}"
 
         local_file_path = download_path / filename
+        if not local_file_path.resolve().is_relative_to(download_path.resolve()):
+            raise PermissionError("附件文件名超出下载目录")
+        from ...extensions.security.execution_policy import check_path
+
+        check_path(str(local_file_path))
         with open(local_file_path, "wb") as f:
             f.write(file_content)
 
@@ -324,6 +367,11 @@ async def download_file_from_url(
                 else f"file_{hashlib.md5(url.encode()).hexdigest()}"
             )
         local_file_path = download_path / filename
+        if not local_file_path.resolve().is_relative_to(download_path.resolve()):
+            raise PermissionError("附件文件名超出下载目录")
+        from ...extensions.security.execution_policy import check_path
+
+        check_path(str(local_file_path))
         _download_remote_to_path(url, local_file_path)
         if not local_file_path.exists():
             raise FileNotFoundError("Downloaded file does not exist")
@@ -349,8 +397,8 @@ async def download_file_from_url(
                 )
         return str(local_file_path.absolute())
     except subprocess.TimeoutExpired as e:
-        logger.error("Download timeout for URL: %s", url)
-        raise TimeoutError(f"Download timeout for URL: {url}") from e
+        logger.error("Attachment download timed out")
+        raise TimeoutError("Attachment download timed out") from None
     except Exception as e:
-        logger.error("Failed to download file from URL %s: %s", url, e)
+        logger.error("Attachment download failed (%s)", type(e).__name__)
         raise

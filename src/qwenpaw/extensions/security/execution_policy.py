@@ -35,6 +35,9 @@ _READ_TOOLS = {
     "send_file_to_user",
     "view_image",
     "spawn_subagent",
+    "grep_search",
+    "glob_search",
+    "memory_search",
 }
 _READ_SCRIPT_NAMES = {
     "query_knowledge.py",
@@ -86,6 +89,9 @@ def check_path(path_value: str) -> None:
         raise PermissionError("不允许多重编码的文件路径")
     candidate = Path(unicodedata.normalize("NFC", value)).expanduser()
     path = (Path(get_current_workspace_dir() or WORKING_DIR) / candidate).resolve()
+    control = Path(WORKING_DIR).resolve() / "trusted-agent"
+    if path == control or control in path.parents:
+        raise PermissionError("禁止工具访问执行控制和审计归档目录")
     secret = Path(SECRET_DIR).resolve()
     if path == secret or secret in path.parents:
         raise PermissionError("禁止工具读取或修改秘密目录")
@@ -114,7 +120,7 @@ def check_path(path_value: str) -> None:
         raise PermissionError("完整运行配置只能通过授权管理接口访问")
     if path.name == ".env" or path.suffix in {".pem", ".key", ".env"}:
         raise PermissionError("禁止工具访问凭据文件")
-    if path.name in {
+    if database_name in {
         "audit.db",
         "audit.log",
         "audit.sqlite",
@@ -299,9 +305,19 @@ def check_shell(command: str, cwd: Any = None) -> None:
 
 async def check_tool(name: str, params: dict[str, Any]) -> bool:
     """Return whether this call needs mandatory administrator approval."""
+    from .execution_control import assert_execution_open
+
+    assert_execution_open()
     if not enabled():
         return False
-    for key in ("file_path", "path", "filename"):
+    for key in (
+        "file_path",
+        "path",
+        "filename",
+        "image_path",
+        "video_path",
+        "output_path",
+    ):
         value = params.get(key)
         if not isinstance(value, str):
             continue
@@ -337,6 +353,15 @@ async def check_tool(name: str, params: dict[str, Any]) -> bool:
         or (name in configured_reads and not mutating)
     ):
         return False
+    from qwenpaw.governance.tool_registry import DEFAULT_REGISTRY
+
+    if not DEFAULT_REGISTRY.is_registered_python_name(name):
+        raise PermissionError("生产环境拒绝未登记能力；管理员审批不能新增能力")
+    if name in {"write_file", "edit_file", "append_file"}:
+        workspace = Path(get_current_workspace_dir() or WORKING_DIR).resolve()
+        target = (workspace / str(params.get("file_path", ""))).resolve()
+        if target == workspace or workspace not in target.parents:
+            raise PermissionError("文件写入必须限定在当前工作区内")
     identity = CURRENT_IDENTITY.get()
     if identity is None or not identity.is_admin:
         raise PermissionError("高危或未分类工具仅允许可信 AI 管理员调用")

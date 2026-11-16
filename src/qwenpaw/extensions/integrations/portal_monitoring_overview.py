@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 import httpx
+from qwenpaw.extensions.security.egress_policy import controlled_client
 
 from qwenpaw.extensions.api import diagnosis_settings_store
 from qwenpaw.extensions.api import inoe_settings_store
@@ -76,7 +77,7 @@ def _get_envelope(
     if not inoe_settings_store.get_effective_token():
         return _make_error(401, "未设置 INOE 访问令牌")
     try:
-        with httpx.Client(
+        with controlled_client(
             timeout=inoe_settings_store.get_timeout_seconds(),
         ) as client:
             response = client.get(
