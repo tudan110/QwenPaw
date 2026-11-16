@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -34,6 +35,33 @@ def resource(documents: list[dict], kind: str) -> dict:
         for doc in documents
         if doc["kind"] == kind and doc["metadata"]["name"] == "qwenpaw"
     )
+
+
+@pytest.mark.parametrize("chart,is_bundle", [(CHART, False), (BUNDLE, True)])
+def test_json_environment_values_round_trip(
+    chart: Path, is_bundle: bool, tmp_path: Path
+) -> None:
+    configured = {
+        "QWENPAW_MCP_ALLOWED_URLS": json.dumps(["https://mcp.example.test/sse"]),
+        "QWENPAW_EGRESS_RULES": json.dumps(
+            [{
+                "url": "https://model.example.test/v1/chat/completions",
+                "methods": ["POST"],
+                "networks": ["192.0.2.0/24"],
+            }]
+        ),
+    }
+    values = tmp_path / "values.yaml"
+    data = {"qwenpaw": {"env": configured}} if is_bundle else {"env": configured}
+    values.write_text(yaml.safe_dump(data), encoding="utf-8")
+    pod = resource(render(chart, "-f", str(values)), "Deployment")["spec"][
+        "template"
+    ]["spec"]
+    app = pod["containers"][0]
+    env = {item["name"]: item["value"] for item in app["env"]}
+    assert {key: json.loads(env[key]) for key in configured} == {
+        key: json.loads(value) for key, value in configured.items()
+    }
 
 
 @pytest.mark.parametrize("chart", [CHART, BUNDLE])
