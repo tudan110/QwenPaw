@@ -214,9 +214,7 @@ def test_no_alternate_bypass(client, headers):
     ("method", "suffix"),
     [
         ("GET", "/health"),
-        ("GET", "/employee-status"),
         ("GET", "/sso/status"),
-        ("POST", "/knowledge-base/query"),
         ("POST", "/sso/token-login"),
         ("POST", "/sso/exchange"),
         ("POST", "/sso/clear-login-cookie"),
@@ -237,28 +235,40 @@ def test_public_endpoints_are_method_scoped(client, prefix, method, suffix):
         "/copaw-api/api/portal/employee-status",
     ],
 )
-def test_employee_status_whitelist_is_exact(client, path):
-    assert client.get(path).status_code == 200
+def test_employee_status_requires_verified_identity(client, path):
+    assert client.get(path).status_code == 401
     assert (
         client.get(path, params={"include_alert_count": "false"}).status_code
-        == 200
+        == 401
     )
     for method in ["POST", "PUT", "DELETE"]:
         assert client.request(method, path).status_code == 401
     assert client.get(path + "/private").status_code == 401
+    assert (
+        client.get(path, headers={"X-Inoe-Token": "valid-token"}).status_code
+        == 200
+    )
 
 
 @pytest.mark.parametrize(
     "prefix", ["/api/portal", "/portal-api", "/copaw-api/api/portal"]
 )
-def test_knowledge_query_whitelist_is_exact(client, prefix):
+def test_knowledge_query_requires_verified_identity(client, prefix):
     path = prefix + "/knowledge-base/query"
     for suffix in ["", "/"]:
         response = client.post(
             path + suffix,
             json={"query": "CPU usage threshold", "filters": {}},
         )
-        assert response.status_code == 200
+        assert response.status_code == 401
+        assert (
+            client.post(
+                path + suffix,
+                json={"query": "CPU usage threshold", "filters": {}},
+                headers={"X-Inoe-Token": "valid-token"},
+            ).status_code
+            == 200
+        )
         for method in ["GET", "PUT", "DELETE"]:
             assert client.request(method, path + suffix).status_code == 401
     for suffix in [
@@ -339,14 +349,12 @@ def test_main_app_registers_sso_token_gate(monkeypatch):
     main_client = TestClient(app)
     assert main_client.get("/api/chats").status_code == 401
     response = main_client.get("/api/portal/employee-status")
-    assert response.status_code == 200
-    assert response.json()["employees"] == []
+    assert response.status_code == 401
     assert main_client.get("/api/portal/health").status_code == 200
     response = main_client.post(
         "/api/portal/knowledge-base/query", json=query_payload
     )
-    assert response.status_code == 200
-    assert response.json() == query_result
+    assert response.status_code == 401
     assert (
         main_client.get("/api/portal/knowledge-base/sources").status_code
         == 401

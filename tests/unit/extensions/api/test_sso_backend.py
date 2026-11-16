@@ -7,6 +7,7 @@ The signature must match the IdP's reference implementation byte-for-byte
 hex. The known-good hash below was produced independently with
 ``openssl dgst -sha256 -hmac``.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -36,8 +37,8 @@ def test_canonical_sorts_and_drops_empty() -> None:
         "redirectUri": "https://extsysA.example.com/sso/callback",
         "timestamp": "1782800000000",
         "nonce": "2f8c1e7a8b5d4e2f9012ab34cd56ef78",
-        "scope": "",        # empty -> dropped
-        "state": None,      # None -> dropped
+        "scope": "",  # empty -> dropped
+        "state": None,  # None -> dropped
     }
     assert _canonical(params) == (
         "clientId=ndai"
@@ -316,14 +317,16 @@ def sso_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(settings_store, "DEFAULT_DB_PATH", db)
     from qwenpaw.app import auth
     from qwenpaw.extensions.api import access_session
+
     monkeypatch.setattr(auth, "AUTH_FILE", tmp_path / "auth.json")
     monkeypatch.setattr(
-        access_session, "_STORE",
+        access_session,
+        "_STORE",
         access_session.AccessSessionStore(tmp_path / "access.db"),
     )
     app = FastAPI()
     app.include_router(router)
-    return TestClient(app)
+    return TestClient(app, headers={"Origin": "http://testserver"})
 
 
 def test_token_login_retries_cookie_when_body_token_is_stale(

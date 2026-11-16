@@ -24,7 +24,12 @@ from .access_session import (
     get_access_store,
     user_subject,
 )
-from .access_policy import authorize_request, is_model_adapter, requires_admin
+from .access_policy import (
+    authorize_request,
+    is_model_adapter,
+    require_browser_origin,
+    requires_admin,
+)
 from .model_access import verify_model_service_key
 
 logger = logging.getLogger(__name__)
@@ -32,9 +37,7 @@ logger = logging.getLogger(__name__)
 _TOKEN_COOKIE = "qwenpaw_sso_token"
 _PUBLIC_ENDPOINTS = {
     ("GET", "/api/portal/health"),
-    ("GET", "/api/portal/employee-status"),
     ("GET", "/api/portal/sso/status"),
-    ("POST", "/api/portal/knowledge-base/query"),
     ("POST", "/api/portal/sso/token-login"),
     ("POST", "/api/portal/sso/exchange"),
     ("POST", "/api/portal/sso/clear-login-cookie"),
@@ -181,20 +184,7 @@ class SsoTokenMiddleware:
                 and (token or local_token)
                 and request.method not in {"GET", "HEAD", "OPTIONS"}
             ):
-                origin = request.headers.get("Origin", "")
-                current_origin = f"{request.url.scheme}://{request.url.netloc}"
-                allowed = {
-                    current_origin,
-                    *(
-                        value.strip()
-                        for value in EnvVarLoader.get_str(
-                            "QWENPAW_BROWSER_ORIGINS", ""
-                        ).split(",")
-                        if value.strip()
-                    ),
-                }
-                if not origin or origin not in allowed:
-                    raise HTTPException(403, "Cookie 写请求来源不被允许")
+                require_browser_origin(request)
             if (
                 is_model_adapter(path)
                 and model_key

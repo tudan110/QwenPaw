@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { exchangeSsoCode, tokenLogin } from "../api/sso";
+import { loginSsoCallback } from "../api/sso";
 import { getSsoLoginRedirectUrl } from "../auth/ssoConfig";
 import { setSession } from "../auth/ssoSession";
 
@@ -9,7 +9,12 @@ type Phase = "exchanging" | "error";
 // Only allow navigating to a same-origin relative path after login, so a
 // crafted ?redirect= can't bounce the user to an external site.
 function safeRedirectTarget(raw: string | null): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) {
+  if (
+    !raw ||
+    !raw.startsWith("/") ||
+    raw.startsWith("//") ||
+    raw.includes("\\")
+  ) {
     return "/";
   }
   return raw;
@@ -32,8 +37,7 @@ export default function SsoCallbackPage() {
   const navigate = useNavigate();
   const [phase, setPhase] = useState<Phase>("exchanging");
   const [message, setMessage] = useState("正在登录...");
-  // React 18 StrictMode mounts effects twice in dev; guard the exchange so
-  // the one-time code is only consumed once.
+  // Avoid duplicate Cookie bootstrap under React StrictMode.
   const startedRef = useRef(false);
 
   useEffect(() => {
@@ -42,20 +46,12 @@ export default function SsoCallbackPage() {
     }
     startedRef.current = true;
 
-    const token = (searchParams.get("token") || "").trim();
-    const code = (searchParams.get("code") || "").trim();
-    const state = searchParams.get("state");
     const target = safeRedirectTarget(searchParams.get("redirect"));
 
-    // Token pass-through is the primary path: an explicit ?token=, or — when
-    // portal shares INOE's hostname — no param at all, letting the backend
-    // read the INOE login cookie. ?code= keeps the (currently unused)
-    // authorization-code flow working.
-    const login = token
-      ? tokenLogin(token)
-      : code
-        ? exchangeSsoCode(code, state)
-        : tokenLogin();
+    if (searchParams.has("token") || searchParams.has("code")) {
+      window.history.replaceState(null, "", "/sso/callback");
+    }
+    const login = loginSsoCallback(searchParams);
 
     login
       .then((result) => {

@@ -1,21 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Portal-side OAuth2 single-sign-on with the INOE auth gateway (IdP).
+"""INOE Cookie/token federation, local renewal and session cleanup.
 
-The browser handoff works like this:
-
-1. The user is logged into INOE and clicks the portal entry. INOE (which
-   knows the logged-in user's phone number) mints a one-time authorization
-   ``code`` and 302-redirects the browser to ``<portal>/sso/callback?code=…``.
-2. The portal frontend hands that ``code`` to :func:`exchange` here.
-3. This module signs a ``/token`` request (HMAC-SHA256 over the canonical
-   param string, per the IdP contract), exchanges the ``code`` for the
-   IdP's access token, then reads ``/userinfo`` with it.
-
-The phone number never travels through the browser, and the ``client_secret``
-never leaves the backend — it is only used to compute the signature. See
-``docs/sso/OAuth2-单点登录对接文档.md`` for the wire contract and
-``docs/sso/Oauth2SignDemo.java`` for the reference signing implementation.
+Public browser writes require a trusted Origin. Authorization-code exchange
+is disabled until browser-bound, one-time login transactions are implemented;
+legacy signing helpers remain for contract compatibility.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -31,8 +21,12 @@ from fastapi import APIRouter, Body, HTTPException, Request, Response
 
 from qwenpaw.extensions.api import sso_settings_store
 from qwenpaw.constant import EnvVarLoader
+from .access_policy import require_browser_origin
 from .access_session import (
-    ACCESS_COOKIE, LOCAL_TOKEN_PREFIX, get_access_store, user_subject,
+    ACCESS_COOKIE,
+    LOCAL_TOKEN_PREFIX,
+    get_access_store,
+    user_subject,
 )
 from qwenpaw.extensions.api.sso_auth import (
     extract_user as _extract_user,
@@ -47,10 +41,6 @@ router = APIRouter(prefix="/sso", tags=["sso"])
 # The IdP enforces a ±60s window on the request timestamp, so the outbound
 # call must be quick. Keep the timeout tight but tolerant of a slow gateway.
 _HTTP_TIMEOUT_SECONDS = 15.0
-
-# ``expires_in`` from the token endpoint is in MINUTES (a quirk of the IdP,
-# documented in the contract), not the OAuth2-standard seconds.
-_EXPIRES_IN_UNIT_SECONDS = 60
 
 # The login token INOE drops in the browser after sign-in. In the "token
 # pass-through" flow the user is already logged into INOE, so we reuse this
@@ -89,7 +79,9 @@ def _cookie_token_from_header(raw_cookie: str | None, name: str) -> str:
     cookie = SimpleCookie()
     try:
         cookie.load(raw_cookie)
-    except Exception:  # noqa: BLE001 - malformed cookie header falls back empty
+    except (
+        Exception
+    ):  # noqa: BLE001 - malformed cookie header falls back empty
         return ""
     morsel = cookie.get(name)
     return _strip_bearer(morsel.value if morsel else "")
@@ -181,9 +173,7 @@ async def _exchange_code_for_token(
     return _parse_idp_response(resp, endpoint="token")
 
 
-async def _get_json(
-    url: str, token: str, *, endpoint: str
-) -> dict[str, Any]:
+async def _get_json(url: str, token: str, *, endpoint: str) -> dict[str, Any]:
     """GET ``url`` with a Bearer token, returning the parsed JSON body."""
     headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
@@ -237,16 +227,18 @@ def _parse_idp_response(
 async def sso_status() -> dict[str, Any]:
     """Whether the backend is ready to log a user in. No secrets exposed.
 
-    ``configured`` is the token-passthrough readiness — it only needs the
-    gateway base URL (to call /userinfo). ``authorization_code_ready`` adds
-    the client credentials required by the (currently unused) code flow.
+    ``configured`` indicates token-passthrough readiness. Authorization-code
+    login stays disabled independently of stored client configuration.
     """
     return {
         "configured": sso_settings_store.is_token_login_ready(),
-        "authorization_code_ready": sso_settings_store.is_configured(),
+        "authorization_code_ready": False,
         "sso_required": EnvVarLoader.get_str(
             "QWENPAW_SSO_TOKEN_REQUIRED", "true"
-        ).strip().lower() not in {"false", "0", "no", "off"},
+        )
+        .strip()
+        .lower()
+        not in {"false", "0", "no", "off"},
         "login_url": EnvVarLoader.get_str("QWENPAW_INOE_LOGIN_URL", ""),
     }
 
@@ -266,13 +258,16 @@ async def token_login(
     the same shape as :func:`exchange` so the frontend treats both uniformly.
     """
     response.headers["Cache-Control"] = "no-store"
+    require_browser_origin(request)
     body_token = _strip_bearer(body.get("token") or "")
     cookie_token = _get_request_cookie(request, _INOE_LOGIN_COOKIE)
     if not cookie_token:
-        cookie_token = _strip_bearer(unquote(
-            request.cookies.get("qwenpaw_sso_token", "")
-            or request.cookies.get(ACCESS_COOKIE, "")
-        ))
+        cookie_token = _strip_bearer(
+            unquote(
+                request.cookies.get("qwenpaw_sso_token", "")
+                or request.cookies.get(ACCESS_COOKIE, "")
+            )
+        )
         if not body_token and cookie_token.startswith(LOCAL_TOKEN_PREFIX):
             body_token, cookie_token = cookie_token, ""
     if body_token.startswith(LOCAL_TOKEN_PREFIX):
@@ -287,9 +282,13 @@ async def token_login(
             identity.inoe_token, user, family_id=identity.family_id
         )
         response.set_cookie(
-            ACCESS_COOKIE, result["access_token"], httponly=True,
-            secure=request.url.scheme == "https", samesite="strict",
-            max_age=result["expires_in_seconds"], path="/",
+            ACCESS_COOKIE,
+            result["access_token"],
+            httponly=True,
+            secure=request.url.scheme == "https",
+            samesite="strict",
+            max_age=result["expires_in_seconds"],
+            path="/",
         )
         return result
     if not (body_token or cookie_token):
@@ -336,16 +335,23 @@ async def token_login(
         expires_in_minutes = 0.0
     result = get_access_store().issue(token, user)
     response.set_cookie(
-        ACCESS_COOKIE, result["access_token"], httponly=True,
-        secure=request.url.scheme == "https", samesite="strict",
-        max_age=result["expires_in_seconds"], path="/",
+        ACCESS_COOKIE,
+        result["access_token"],
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="strict",
+        max_age=result["expires_in_seconds"],
+        path="/",
     )
     return result
 
 
 @router.post("/clear-login-cookie")
-async def clear_login_cookie(request: Request, response: Response) -> dict[str, Any]:
+async def clear_login_cookie(
+    request: Request, response: Response
+) -> dict[str, Any]:
     """Clear stale INOE login cookies so portal can force a clean re-login."""
+    require_browser_origin(request)
     _clear_inoe_login_cookies(response)
     token = request.cookies.get(ACCESS_COOKIE, "")
     if token:
@@ -366,7 +372,9 @@ async def logout(request: Request, response: Response) -> dict[str, bool]:
 
 
 @router.get("/session")
-async def session_status(request: Request, response: Response) -> dict[str, Any]:
+async def session_status(
+    request: Request, response: Response
+) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
     identity = getattr(request.state, "access_identity", None)
     if identity is None:
@@ -384,63 +392,9 @@ async def exchange(
     response: Response,
     body: dict[str, Any] = Body(default_factory=dict),
 ) -> dict[str, Any]:
-    """Exchange an authorization ``code`` for portal login material.
-
-    Body: ``{"code": "...", "state": "..."}``. Returns
-    ``{access_token, token_type, expires_in_seconds, user}``. The frontend
-    stores this as its login state.
-    """
+    """Disable unused authorization-code login until transaction binding exists."""
     response.headers["Cache-Control"] = "no-store"
-    code = str(body.get("code") or "").strip()
-    if not code:
-        raise HTTPException(status_code=400, detail="缺少授权码 code")
-
-    base_url = sso_settings_store.get_gateway_base_url()
-    client_id = sso_settings_store.get_client_id()
-    client_secret = sso_settings_store.get_client_secret()
-    redirect_uri = sso_settings_store.get_redirect_uri()
-    if not (base_url and client_id and client_secret):
-        raise HTTPException(
-            status_code=400,
-            detail="SSO 未配置(网关地址 / client_id / client_secret 缺失)",
-        )
-
-    try:
-        token_body = await _exchange_code_for_token(
-            base_url=base_url,
-            client_id=client_id,
-            client_secret=client_secret,
-            redirect_uri=redirect_uri,
-            code=code,
-        )
-        access_token = str(token_body.get("access_token") or "").strip()
-        if not access_token:
-            raise HTTPException(
-                status_code=502, detail="SSO token 响应缺少 access_token"
-            )
-        user_body = await _fetch_userinfo(
-            base_url=base_url, access_token=access_token
-        )
-    except HTTPException:
-        raise
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="SSO 网关请求超时")
-    except httpx.HTTPError as exc:
-        logger.warning("SSO 网关连接失败: %s", exc)
-        raise HTTPException(status_code=502, detail="SSO 网关连接失败")
-
-    try:
-        expires_in_minutes = float(token_body.get("expires_in") or 0)
-    except (TypeError, ValueError):
-        expires_in_minutes = 0.0
-    expires_in_seconds = int(expires_in_minutes * _EXPIRES_IN_UNIT_SECONDS)
-    result = get_access_store().issue(access_token, _extract_user(user_body))
-    response.set_cookie(
-        ACCESS_COOKIE, result["access_token"], httponly=True,
-        secure=request.url.scheme == "https", samesite="strict",
-        max_age=result["expires_in_seconds"], path="/",
-    )
-    return result
+    raise HTTPException(404, "授权码登录未启用，请使用智观登录 Cookie")
 
 
 # ---------------------------------------------------------------------------
