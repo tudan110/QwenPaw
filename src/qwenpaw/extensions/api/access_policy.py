@@ -3,9 +3,34 @@
 
 from __future__ import annotations
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
+from qwenpaw.constant import EnvVarLoader
 
 from .access_session import AccessIdentity
+
+
+def require_browser_origin(request: Request) -> None:
+    """Require a trusted Origin for cookie-bearing or browser writes."""
+    origin = request.headers.get("Origin", "")
+    if (
+        not origin
+        and not request.cookies
+        and not request.headers.get("Sec-Fetch-Site")
+    ):
+        return
+    allowed = {
+        f"{request.url.scheme}://{request.url.netloc}",
+        *(
+            value.strip()
+            for value in EnvVarLoader.get_str(
+                "QWENPAW_BROWSER_ORIGINS", ""
+            ).split(",")
+            if value.strip()
+        ),
+    }
+    if not origin or origin not in allowed:
+        raise HTTPException(403, "登录或 Cookie 写请求来源不被允许")
+
 
 _ADMIN_PREFIXES = (
     "/api/envs",
@@ -116,11 +141,15 @@ def resource_path(path: str) -> str:
 def requires_admin(method: str, path: str) -> bool:
     # Complete profiles contain channel, MCP and tool credentials. Discovery
     # and agent-scoped business APIs retain their own resource policies.
-    if path.startswith("/api/agents/") and len(path.rstrip("/").split("/")) == 4:
+    if (
+        path.startswith("/api/agents/")
+        and len(path.rstrip("/").split("/")) == 4
+    ):
         return True
     path = resource_path(path)
     if any(
-        path == prefix or path.startswith(prefix + "/") for prefix in _ADMIN_PREFIXES
+        path == prefix or path.startswith(prefix + "/")
+        for prefix in _ADMIN_PREFIXES
     ):
         return True
     if path.startswith("/api/portal/") and (
@@ -143,7 +172,9 @@ def requires_admin(method: str, path: str) -> bool:
     return True
 
 
-def authorize_request(identity: AccessIdentity, method: str, path: str) -> None:
+def authorize_request(
+    identity: AccessIdentity, method: str, path: str
+) -> None:
     from qwenpaw.extensions.security.execution_policy import enabled
 
     if not enabled():

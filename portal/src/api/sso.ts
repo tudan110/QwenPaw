@@ -47,6 +47,15 @@ export async function tokenLogin(
   });
 }
 
+export async function loginSsoCallback(
+  parameters: URLSearchParams,
+): Promise<SsoExchangeResult> {
+  if (parameters.has("token") || parameters.has("code")) {
+    throw new Error("不接受 URL 登录凭据或授权码，请从智观重新登录。");
+  }
+  return tokenLogin();
+}
+
 export async function clearSsoLoginCookie(): Promise<{ cleared: boolean }> {
   return requestSsoApi<{ cleared: boolean }>(
     "/sso/clear-login-cookie",

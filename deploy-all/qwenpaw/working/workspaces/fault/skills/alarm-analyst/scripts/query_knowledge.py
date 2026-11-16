@@ -141,7 +141,15 @@ def _request_headers(base_url: str) -> dict[str, str]:
     else:
         token = os.getenv("ALARM_ANALYST_KNOWLEDGE_API_TOKEN", "").strip()
         if token:
-            headers["Authorization"] = f"Bearer {token}"
+            if token.lower().startswith("bearer "):
+                token = token[7:].strip()
+            headers[
+                (
+                    "X-QwenPaw-Access-Token"
+                    if token.startswith("qp1.")
+                    else "X-Inoe-Token"
+                )
+            ] = token
     return headers
 
 

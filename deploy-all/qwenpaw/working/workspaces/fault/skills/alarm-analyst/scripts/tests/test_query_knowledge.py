@@ -481,10 +481,25 @@ def test_explicit_config_precedes_env_and_default(monkeypatch, payload):
     )
     assert post.call_args.args[0].startswith("https://explicit.example.com/")
     assert post.call_args.kwargs["timeout"] == 10
-    assert post.call_args.kwargs["headers"]["Authorization"] == (
-        "Bearer test-token"
-    )
+    assert post.call_args.kwargs["headers"]["X-Inoe-Token"] == "test-token"
     assert "must-not-forward" not in str(post.call_args)
+
+
+@pytest.mark.parametrize(
+    "token,header,expected",
+    [
+        ("Bearer inoe-fixture", "X-Inoe-Token", "inoe-fixture"),
+        ("qp1.local-fixture", "X-QwenPaw-Access-Token", "qp1.local-fixture"),
+    ],
+)
+def test_service_knowledge_credential_uses_authenticated_api_contract(
+    monkeypatch, payload, token, header, expected
+):
+    monkeypatch.setenv("ALARM_ANALYST_KNOWLEDGE_API_TOKEN", token)
+    post, _ = mock_post(monkeypatch, payload)
+    assert knowledge.query_knowledge("锁等待")["status"] == "retrieved"
+    assert post.call_args.kwargs["headers"][header] == expected
+    assert "Authorization" not in post.call_args.kwargs["headers"]
 
 
 def test_env_url_and_timeout_are_used(monkeypatch, payload):
