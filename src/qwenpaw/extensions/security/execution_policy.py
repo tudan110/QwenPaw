@@ -10,7 +10,7 @@ import sys
 import unicodedata
 from urllib.parse import unquote
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from qwenpaw.constant import BACKUP_DIR, EnvVarLoader, SECRET_DIR, WORKING_DIR
 from qwenpaw.config.context import get_current_workspace_dir
@@ -23,6 +23,7 @@ from qwenpaw.extensions.api import sso_settings_store
 from qwenpaw.extensions.api.sso_backend import _validate_inoe_token
 from qwenpaw.extensions.api.sso_auth import extract_user
 from .business_reads import MCP_READ_TOOLS
+from .managed_integrity import inspect_skill
 
 _READ_TOOLS = {
     "read_file",
@@ -65,7 +66,9 @@ _READ_SCRIPT_NAMES = {
 
 
 def enabled() -> bool:
-    return EnvVarLoader.get_str("QWENPAW_PRODUCTION_GUARDS", "true").lower() not in {
+    return EnvVarLoader.get_str(
+        "QWENPAW_PRODUCTION_GUARDS", "true"
+    ).lower() not in {
         "false",
         "0",
         "off",
@@ -85,7 +88,9 @@ def check_path(path_value: str) -> None:
     else:
         raise PermissionError("不允许多重编码的文件路径")
     candidate = Path(unicodedata.normalize("NFC", value)).expanduser()
-    path = (Path(get_current_workspace_dir() or WORKING_DIR) / candidate).resolve()
+    path = (
+        Path(get_current_workspace_dir() or WORKING_DIR) / candidate
+    ).resolve()
     secret = Path(SECRET_DIR).resolve()
     if path == secret or secret in path.parents:
         raise PermissionError("禁止工具读取或修改秘密目录")
@@ -110,7 +115,10 @@ def check_path(path_value: str) -> None:
         "envs.json",
     }:
         raise PermissionError("秘密配置只能通过授权管理接口访问")
-    if path.name == "agent.json" or path == Path(WORKING_DIR).resolve() / "config.json":
+    if (
+        path.name == "agent.json"
+        or path == Path(WORKING_DIR).resolve() / "config.json"
+    ):
         raise PermissionError("完整运行配置只能通过授权管理接口访问")
     if path.name == ".env" or path.suffix in {".pem", ".key", ".env"}:
         raise PermissionError("禁止工具访问凭据文件")
@@ -124,59 +132,78 @@ def check_path(path_value: str) -> None:
     if path.parts[:2] in {("/", "proc"), ("/", "sys"), ("/", "dev")}:
         raise PermissionError("禁止工具访问进程、系统或设备文件")
     if any(
-        part in {".ssh", ".aws", ".kube", ".gnupg", ".docker", "backups"}
+        part
+        in {
+            ".ssh",
+            ".aws",
+            ".kube",
+            ".gnupg",
+            ".docker",
+            "backups",
+            ".qwenpaw-managed-sync",
+        }
         for part in path.parts
     ) or path.name in {".netrc", ".git-credentials"}:
         raise PermissionError("禁止工具访问系统凭据或备份目录")
 
 
+def _deny_script(code: str, path: Path) -> NoReturn:
+    raise PermissionError(
+        f"SKILL_INTEGRITY_BLOCKED: {code}; file={path.name}; "
+        "技能完整性校验失败。停止本轮该技能的执行尝试，"
+        "请运维检查受管种子；改命令或更换身份不能修复。"
+    )
+
+
 def _approved_script(path: Path) -> bool:
     check_path(str(path))
-    if not path.is_file() or path.suffix != ".py":
-        return False
-    hashes = json.loads(EnvVarLoader.get_str("QWENPAW_ALLOWED_SCRIPT_HASHES", "{}"))
+    if not path.is_file():
+        _deny_script("SCRIPT_MISSING", path)
+    if path.suffix != ".py":
+        _deny_script("SCRIPT_NOT_ALLOWED", path)
+    hashes = json.loads(
+        EnvVarLoader.get_str("QWENPAW_ALLOWED_SCRIPT_HASHES", "{}")
+    )
     if not isinstance(hashes, dict):
         raise ValueError("Script hash allowlist must be a JSON object")
     expected = hashes.get(str(path))
     if expected is None:
         seed = Path(
-            EnvVarLoader.get_str("QWENPAW_SKILL_SEED_PATH", "/app/share/qwenpaw-seed")
+            EnvVarLoader.get_str(
+                "QWENPAW_SKILL_SEED_PATH", "/app/share/qwenpaw-seed"
+            )
         )
         manifest_path = seed / "seed-manifest.json"
         if not manifest_path.is_file():
-            return False
+            _deny_script("SEED_MANIFEST_MISSING", path)
         if path.name not in _READ_SCRIPT_NAMES:
-            return False
+            _deny_script("SCRIPT_NOT_ALLOWED", path)
         try:
             relative = str(path.relative_to(Path(WORKING_DIR).resolve()))
         except ValueError:
-            return False
+            _deny_script("SCRIPT_OUTSIDE_WORKING_DIR", path)
         manifest = json.loads(manifest_path.read_text())
-        expected = manifest.get("managed_files", {}).get(relative, {}).get("sha256")
+        expected = (
+            manifest.get("managed_files", {}).get(relative, {}).get("sha256")
+        )
+        if expected is None:
+            _deny_script("SCRIPT_NOT_DECLARED", path)
         parts = Path(relative).parts
         if "skills" not in parts:
             return False
         skill_index = parts.index("skills")
         skill_relative = Path(*parts[: skill_index + 2])
-        skill_files = (
-            manifest.get("managed_skills", {})
-            .get(str(skill_relative), {})
-            .get("files", {})
+        inspection = inspect_skill(
+            Path(WORKING_DIR), manifest, str(skill_relative)
         )
-        if not skill_files:
-            return False
-        working = Path(WORKING_DIR).resolve()
-        for name, checksum in skill_files.items():
-            source = (working / name).resolve()
-            if (
-                not source.is_file()
-                or hashlib.sha256(source.read_bytes()).hexdigest() != checksum
-            ):
-                return False
-        for source in (working / skill_relative).rglob("*"):
-            if source.is_file() and source.suffix in {".py", ".so", ".pth"}:
-                if str(source.relative_to(working)) not in skill_files:
-                    return False
+        if not inspection["execution_ready"]:
+            reasons = sorted({item["code"] for item in inspection["blockers"]})
+            raise PermissionError(
+                f"SKILL_INTEGRITY_BLOCKED: {', '.join(reasons)}; "
+                f"skill={skill_relative}; "
+                "技能完整性校验失败。停止本轮该技能的执行尝试；"
+                "改命令、管道或更换身份不能修复，请运维预览隔离清单。"
+            )
     if path.name == "inspect_resource_metrics.py":
         if len(path.parents) < 5:
             return False
@@ -187,12 +214,16 @@ def _approved_script(path: Path) -> bool:
             / "fault/skills/alarm-analyst/scripts/get_metric_definitions.py"
         )
         cmdb_helpers = path.parents[2] / "zgops-cmdb/scripts/cmdb_read.py"
-        if not _approved_script(metric_helpers) or not _approved_script(cmdb_helpers):
+        if not _approved_script(metric_helpers) or not _approved_script(
+            cmdb_helpers
+        ):
             return False
-    return bool(
-        isinstance(expected, str)
-        and hashlib.sha256(path.read_bytes()).hexdigest() == expected
-    )
+    if (
+        not isinstance(expected, str)
+        or hashlib.sha256(path.read_bytes()).hexdigest() != expected
+    ):
+        _deny_script("SCRIPT_HASH_MISMATCH", path)
+    return True
 
 
 def check_shell(command: str, cwd: Any = None) -> None:
@@ -261,11 +292,16 @@ def check_shell(command: str, cwd: Any = None) -> None:
         or Path(args[0]).resolve() != Path(sys.executable).resolve()
     ):
         raise PermissionError("脚本必须使用当前受信任的 Python 解释器")
-    directory = Path(cwd or get_current_workspace_dir() or WORKING_DIR).resolve()
+    directory = Path(
+        cwd or get_current_workspace_dir() or WORKING_DIR
+    ).resolve()
     path = (directory / args[1]).resolve()
     if not _approved_script(path):
         raise PermissionError("脚本未在生产白名单中或完整性校验失败")
-    if path.name == "inspect_resource_metrics.py" and "--no-notify" not in args[2:]:
+    if (
+        path.name == "inspect_resource_metrics.py"
+        and "--no-notify" not in args[2:]
+    ):
         raise PermissionError("普通巡检查询必须显式禁用通知推送")
     if path.name == "order_workflow.py" and (
         len(args) < 3
@@ -288,7 +324,11 @@ def check_shell(command: str, cwd: Any = None) -> None:
     ):
         raise PermissionError("CMDB 脚本仅允许明确的只读子命令")
     for index, value in enumerate(args[2:], start=2):
-        if value.split("=", 1)[0] in {"--rules-file", "--file", "--input-file"}:
+        if value.split("=", 1)[0] in {
+            "--rules-file",
+            "--file",
+            "--input-file",
+        }:
             file_value = (
                 value.split("=", 1)[1]
                 if "=" in value
@@ -311,7 +351,9 @@ async def check_tool(name: str, params: dict[str, Any]) -> bool:
         return False
     configured_reads = {
         value.strip()
-        for value in EnvVarLoader.get_str("QWENPAW_READONLY_TOOL_NAMES", "").split(",")
+        for value in EnvVarLoader.get_str(
+            "QWENPAW_READONLY_TOOL_NAMES", ""
+        ).split(",")
         if value.strip()
     }
     mutating = any(

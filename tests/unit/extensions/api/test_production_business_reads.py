@@ -11,7 +11,10 @@ import pytest
 
 from qwenpaw.drivers.contracts import DriverCard
 from qwenpaw.drivers.handlers.mcp import MCPDriverHandler
-from qwenpaw.extensions.api.access_session import AccessIdentity, CURRENT_IDENTITY
+from qwenpaw.extensions.api.access_session import (
+    AccessIdentity,
+    CURRENT_IDENTITY,
+)
 from qwenpaw.extensions.security import execution_policy
 from qwenpaw.extensions.security.business_reads import MCP_READ_TOOLS
 
@@ -27,7 +30,9 @@ async def test_production_shell_executes_the_checked_arguments_literally(
     script.write_text("print('fixture')")
     monkeypatch.setenv(
         "QWENPAW_ALLOWED_SCRIPT_HASHES",
-        json.dumps({str(script): hashlib.sha256(script.read_bytes()).hexdigest()}),
+        json.dumps(
+            {str(script): hashlib.sha256(script.read_bytes()).hexdigest()}
+        ),
     )
     command = f'python3 {script} "a?b=x&c=*"'
     execution_policy.check_shell(command)
@@ -82,7 +87,9 @@ async def test_actual_mcp_driver_calls_read_tool_without_disabling_guards():
         None, None, tool_name="queryMonitoringTopology", arguments={}
     )
     assert result == {"rows": ["fixture"]}
-    handler._client.call_tool.assert_awaited_once_with("queryMonitoringTopology", {})
+    handler._client.call_tool.assert_awaited_once_with(
+        "queryMonitoringTopology", {}
+    )
 
 
 @pytest.mark.parametrize(
@@ -93,7 +100,10 @@ async def test_actual_mcp_driver_calls_read_tool_without_disabling_guards():
         ("monitoring_overview.py", "topology --output markdown"),
         ("resource_insight.py", "summary --output markdown"),
         ("cmdb_read.py", "list-models"),
-        ("cmdb_read.py", 'fetch "/api/v0.1/ci/s?q=_type:mysql&page=1&count=100"'),
+        (
+            "cmdb_read.py",
+            'fetch "/api/v0.1/ci/s?q=_type:mysql&page=1&count=100"',
+        ),
         ("order_workflow.py", "stats --output markdown"),
     ],
 )
@@ -113,7 +123,9 @@ def test_official_queries_with_matching_managed_seed(
             {
                 "managed_files": {relative: {"sha256": checksum}},
                 "managed_skills": {
-                    "workspaces/query/skills/fixture": {"files": {relative: checksum}}
+                    "workspaces/query/skills/fixture": {
+                        "files": {relative: checksum}
+                    }
                 },
             }
         )
@@ -129,12 +141,16 @@ def test_official_queries_with_matching_managed_seed(
         execution_policy.check_shell(f"python3 {script} {arguments}")
 
 
-def test_mixed_workflow_rejects_write_even_with_approved_script(tmp_path, monkeypatch):
+def test_mixed_workflow_rejects_write_even_with_approved_script(
+    tmp_path, monkeypatch
+):
     script = tmp_path / "order_workflow.py"
     script.write_text("print('fixture')")
     monkeypatch.setenv(
         "QWENPAW_ALLOWED_SCRIPT_HASHES",
-        json.dumps({str(script): hashlib.sha256(script.read_bytes()).hexdigest()}),
+        json.dumps(
+            {str(script): hashlib.sha256(script.read_bytes()).hexdigest()}
+        ),
     )
     with pytest.raises(PermissionError):
         execution_policy.check_shell(
@@ -162,7 +178,9 @@ def test_inspection_read_requires_no_notifications_and_trusted_shared_helpers(
         root
         / "inspection/skills/inspection-analyst/scripts/inspect_resource_metrics.py"
     )
-    metric = root / "fault/skills/alarm-analyst/scripts/get_metric_definitions.py"
+    metric = (
+        root / "fault/skills/alarm-analyst/scripts/get_metric_definitions.py"
+    )
     cmdb = root / "inspection/skills/zgops-cmdb/scripts/cmdb_read.py"
     hashes = {}
     for target in (script, metric, cmdb):
@@ -177,6 +195,63 @@ def test_inspection_read_requires_no_notifications_and_trusted_shared_helpers(
     metric.write_text("print('modified')")
     with pytest.raises(PermissionError):
         execution_policy.check_shell(command + " --no-notify")
+
+
+def test_fault_extra_code_blocks_inspection_shared_dependency(
+    tmp_path, monkeypatch
+):
+    working = tmp_path / "working"
+    seed = tmp_path / "seed"
+    paths = [
+        "workspaces/inspection/skills/inspection-analyst/scripts/inspect_resource_metrics.py",
+        "workspaces/fault/skills/alarm-analyst/scripts/get_metric_definitions.py",
+        "workspaces/inspection/skills/zgops-cmdb/scripts/cmdb_read.py",
+    ]
+    manifest = {"managed_files": {}, "managed_skills": {}}
+    for name in paths:
+        path = working / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("print('fixture')")
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        manifest["managed_files"][name] = {"sha256": digest}
+        skill = str(Path(name).parents[1])
+        manifest["managed_skills"][skill] = {"files": {name: digest}}
+    seed.mkdir()
+    (seed / "seed-manifest.json").write_text(json.dumps(manifest))
+    monkeypatch.setattr(execution_policy, "WORKING_DIR", working)
+    monkeypatch.setenv("QWENPAW_SKILL_SEED_PATH", str(seed))
+    monkeypatch.setenv("QWENPAW_ALLOWED_SCRIPT_HASHES", "{}")
+    command = f"python {working / paths[0]} --no-notify"
+    execution_policy.check_shell(command)
+    extra = working / "workspaces/fault/skills/alarm-analyst/extra.py"
+    extra.write_text("print('unreviewed')")
+    with pytest.raises(PermissionError, match="UNDECLARED_CODE"):
+        execution_policy.check_shell(command)
+
+
+def test_script_rejection_distinguishes_missing_seed_and_missing_declaration(
+    tmp_path, monkeypatch
+):
+    working, seed = tmp_path / "working", tmp_path / "seed"
+    script = (
+        working
+        / "workspaces/fault/skills/alarm-analyst/scripts/query_knowledge.py"
+    )
+    script.parent.mkdir(parents=True)
+    monkeypatch.setattr(execution_policy, "WORKING_DIR", working)
+    monkeypatch.setenv("QWENPAW_SKILL_SEED_PATH", str(seed))
+    monkeypatch.setenv("QWENPAW_ALLOWED_SCRIPT_HASHES", "{}")
+    with pytest.raises(PermissionError, match="SCRIPT_MISSING"):
+        execution_policy.check_shell(f"python {script}")
+    script.write_text("print('fixture')")
+    with pytest.raises(PermissionError, match="SEED_MANIFEST_MISSING"):
+        execution_policy.check_shell(f"python {script}")
+    seed.mkdir()
+    (seed / "seed-manifest.json").write_text(
+        json.dumps({"managed_files": {}, "managed_skills": {}})
+    )
+    with pytest.raises(PermissionError, match="SCRIPT_NOT_DECLARED"):
+        execution_policy.check_shell(f"python {script}")
 
 
 @pytest.fixture(params=["gateway", "query", "resource", "fault", "inspection"])
@@ -197,7 +272,10 @@ def cmdb_read(request, monkeypatch):
 
 
 def test_cmdb_read_dispatcher_only_accepts_fixed_read_routes(cmdb_read):
-    assert cmdb_read.read_path("list-models", []) == "/api/v0.1/ci_types?per_page=200"
+    assert (
+        cmdb_read.read_path("list-models", [])
+        == "/api/v0.1/ci_types?per_page=200"
+    )
     assert cmdb_read.read_path(
         "fetch", ["/api/v0.1/ci/s?q=_type:mysql&page=1"]
     ).startswith("/api/")

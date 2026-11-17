@@ -158,6 +158,8 @@ COPY deploy-all/qwenpaw/scripts/build_universal_seed.py \
      /usr/local/bin/build_universal_seed.py
 COPY deploy-all/qwenpaw/scripts/sync_managed_seed.py \
      /usr/local/bin/sync_managed_seed.py
+COPY src/qwenpaw/extensions/security/managed_integrity.py \
+     /usr/local/bin/managed_integrity.py
 RUN python3 /usr/local/bin/build_universal_seed.py \
       --source /build/qwenpaw-working \
       --builtin-root /app/src/qwenpaw/agents/skills \

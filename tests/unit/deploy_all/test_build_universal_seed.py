@@ -89,10 +89,11 @@ def test_full_release_seed_and_upgrade_keep_fixes_and_user_model(tmp_path):
     })
     history = target / "workspaces/knowledge/sessions/history.json"
     write_json(history, {"user": "preserve"})
-    subprocess.run([
+    applied = subprocess.run([
         sys.executable, str(BUILDER_PATH.parent / "sync_managed_seed.py"),
         "--apply", "--yes", "--seed", str(seed), "--target", str(target),
     ], check=True, capture_output=True, text=True)
+    assert json.loads(applied.stdout)["integrity"]["execution_ready"] is True
     model = json.loads(
         (target / "workspaces/knowledge/agent.json").read_text()
     )["active_model"]

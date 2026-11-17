@@ -290,3 +290,262 @@ def test_existing_target_overwrites_managed_files_only(tmp_path: Path) -> None:
 
     second = sync_module.sync_managed_seed(seed, target)
     assert second.summary()["unchanged"] >= 1
+
+
+def integrity_fixture(tmp_path: Path, monkeypatch):
+    from qwenpaw.extensions.security import execution_policy
+
+    seed, target = tmp_path / "seed", tmp_path / "target"
+    build_seed(seed)
+    build_target(target)
+    old = "workspaces/demo/skills/example/scripts/run.py"
+    relative = old.replace("run.py", "query_knowledge.py")
+    (seed / old).rename(seed / relative)
+    manifest = json.loads((seed / "seed-manifest.json").read_text())
+    manifest["managed_files"][relative] = manifest["managed_files"].pop(old)
+    files = manifest["managed_skills"]["workspaces/demo/skills/example"][
+        "files"
+    ]
+    files[relative] = files.pop(old)
+    write_json(seed / "seed-manifest.json", manifest)
+    # The old run.py intentionally remains an undeclared code file on the PVC.
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
+    monkeypatch.setenv("QWENPAW_ALLOWED_SCRIPT_HASHES", "{}")
+    monkeypatch.setenv("QWENPAW_SKILL_SEED_PATH", str(seed))
+    monkeypatch.setattr(execution_policy, "WORKING_DIR", target)
+    return seed, target, relative, execution_policy
+
+
+def test_sync_reports_execution_blockers_and_reviewed_quarantine_restores_read(
+    tmp_path, monkeypatch
+):
+    seed, target, relative, policy = integrity_fixture(tmp_path, monkeypatch)
+    extra = target / "workspaces/demo/skills/example/tmp_query.py"
+    write(extra, "print('user temporary code')\n")
+    extra.chmod(0o640)
+    result = sync_module.sync_managed_seed(seed, target, apply=True)
+    assert result.integrity["execution_ready"] is False
+    assert extra.exists()
+    with pytest.raises(PermissionError, match="UNDECLARED_CODE"):
+        policy.check_shell(f"python {target / relative}")
+    skill = "workspaces/demo/skills/example"
+    plan = sync_module.plan_quarantine(seed, target, [skill])
+    assert extra.exists()
+    with pytest.raises(sync_module.ManagedSyncError, match="confirmation"):
+        sync_module.apply_quarantine(seed, target, plan, confirmed=False)
+    applied = sync_module.apply_quarantine(seed, target, plan, confirmed=True)
+    assert applied["integrity"]["execution_ready"] is True
+    backup = Path(applied["backup_path"]) / "files" / extra.relative_to(target)
+    assert backup.read_text() == "print('user temporary code')\n"
+    assert backup.stat().st_mode & 0o777 == 0o640
+    assert not extra.exists()
+    assert (target / relative).read_bytes() == (seed / relative).read_bytes()
+    assert (target / skill / ".env").read_text() == "TOKEN=keep\n"
+    assert (target / skill / "data/knowledge.db").read_text() == "keep\n"
+    assert (target / "workspaces/demo/skills/user/SKILL.md").is_file()
+    policy.check_shell(f"python {target / relative}")
+    with pytest.raises(PermissionError):
+        policy.check_path(str(backup))
+    assert sync_module.plan_quarantine(seed, target, [skill])["files"] == []
+    with pytest.raises(sync_module.ManagedSyncError, match="stale"):
+        sync_module.apply_quarantine(seed, target, plan, confirmed=True)
+
+
+@pytest.mark.parametrize(
+    "change", ["file", "permissions", "new_code", "manifest", "plan"]
+)
+def test_quarantine_rejects_stale_or_altered_preview_without_moving_files(
+    tmp_path, monkeypatch, change
+):
+    seed, target, _, _ = integrity_fixture(tmp_path, monkeypatch)
+    sync_module.sync_managed_seed(seed, target, apply=True)
+    skill = "workspaces/demo/skills/example"
+    original = target / skill / "scripts/run.py"
+    plan = sync_module.plan_quarantine(seed, target, [skill])
+    if change == "file":
+        original.write_text("changed after review")
+    elif change == "permissions":
+        original.chmod(0o700)
+    elif change == "new_code":
+        write(target / skill / "new.py", "print('new')")
+    elif change == "manifest":
+        manifest = json.loads((seed / "seed-manifest.json").read_text())
+        manifest["seed_id"] = "new-release"
+        write_json(seed / "seed-manifest.json", manifest)
+    else:
+        plan["files"][0]["path"] = "config.json"
+    with pytest.raises(sync_module.ManagedSyncError, match="stale or altered"):
+        sync_module.apply_quarantine(seed, target, plan, confirmed=True)
+    assert original.exists()
+    assert not (target / ".qwenpaw-managed-sync/quarantine").exists()
+
+
+def test_quarantine_rolls_back_file_moves_on_failure(tmp_path, monkeypatch):
+    seed, target, _, _ = integrity_fixture(tmp_path, monkeypatch)
+    sync_module.sync_managed_seed(seed, target, apply=True)
+    skill = "workspaces/demo/skills/example"
+    write(target / skill / "second.py", "print('second')")
+    plan = sync_module.plan_quarantine(seed, target, [skill])
+    rename = sync_module.os.rename
+    calls = 0
+
+    def fail_second(source, destination):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("fixture move failure")
+        return rename(source, destination)
+
+    monkeypatch.setattr(sync_module.os, "rename", fail_second)
+    with pytest.raises(OSError, match="fixture move failure"):
+        sync_module.apply_quarantine(seed, target, plan, confirmed=True)
+    for entry in plan["files"]:
+        assert sha256(target / entry["path"]) == entry["sha256"]
+    manifests = list(
+        (target / ".qwenpaw-managed-sync/quarantine").glob("*/manifest.json")
+    )
+    assert json.loads(manifests[0].read_text())["status"] == "rolled_back"
+
+
+def test_quarantine_refuses_managed_modifications_and_symlinks(
+    tmp_path, monkeypatch
+):
+    seed, target, relative, _ = integrity_fixture(tmp_path, monkeypatch)
+    sync_module.sync_managed_seed(seed, target, apply=True)
+    skill = "workspaces/demo/skills/example"
+    (target / relative).write_text("user edited managed script")
+    with pytest.raises(
+        sync_module.ManagedSyncError, match="MANAGED_HASH_MISMATCH"
+    ):
+        sync_module.plan_quarantine(seed, target, [skill])
+    (target / relative).write_bytes((seed / relative).read_bytes())
+    (target / skill / "unsafe.py").symlink_to(tmp_path / "outside.py")
+    with pytest.raises(sync_module.ManagedSyncError, match="SYMLINK_BLOCKED"):
+        sync_module.plan_quarantine(seed, target, [skill])
+
+
+def test_quarantine_cli_preview_is_readonly_and_apply_requires_confirmation(
+    tmp_path, monkeypatch
+):
+    seed, target, _, _ = integrity_fixture(tmp_path, monkeypatch)
+    sync_module.sync_managed_seed(seed, target, apply=True)
+    plan = tmp_path / "review.json"
+    args = [
+        sys.executable,
+        str(SCRIPT),
+        "--seed",
+        str(seed),
+        "--target",
+        str(target),
+    ]
+    preview = subprocess.run(
+        [
+            *args,
+            "--plan-quarantine",
+            str(plan),
+            "--skill",
+            "workspaces/demo/skills/example",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert json.loads(preview.stdout)["files"]
+    code = target / "workspaces/demo/skills/example/scripts/run.py"
+    assert code.exists()
+    saved_plan = plan.read_bytes()
+    duplicate = subprocess.run(
+        [
+            *args,
+            "--plan-quarantine",
+            str(plan),
+            "--skill",
+            "workspaces/demo/skills/example",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert duplicate.returncode == 2
+    assert plan.read_bytes() == saved_plan
+    config_content = (target / "config.json").read_bytes()
+    unsafe = subprocess.run(
+        [
+            *args,
+            "--plan-quarantine",
+            str(target / "config.json"),
+            "--skill",
+            "workspaces/demo/skills/example",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert unsafe.returncode == 2
+    assert (target / "config.json").read_bytes() == config_content
+    refused = subprocess.run(
+        [*args, "--quarantine-plan", str(plan), "--apply"],
+        capture_output=True,
+        text=True,
+    )
+    assert refused.returncode == 2
+    assert code.exists()
+    applied = subprocess.run(
+        [*args, "--quarantine-plan", str(plan), "--apply", "--yes"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert json.loads(applied.stdout)["status"] == "completed"
+    assert not code.exists()
+
+
+def test_noncode_artifacts_do_not_block_but_missing_managed_docs_do(
+    tmp_path, monkeypatch
+):
+    seed, target, _, _ = integrity_fixture(tmp_path, monkeypatch)
+    sync_module.sync_managed_seed(seed, target, apply=True)
+    skill = "workspaces/demo/skills/example"
+    plan = sync_module.plan_quarantine(seed, target, [skill])
+    sync_module.apply_quarantine(seed, target, plan, confirmed=True)
+    write(target / skill / "report.json", '{"result":"user report"}')
+    write(target / skill / "notes.txt", "user note")
+    assert sync_module.sync_managed_seed(seed, target).integrity[
+        "execution_ready"
+    ]
+    (target / skill / "SKILL.md").unlink()
+    inspection = sync_module.sync_managed_seed(seed, target).integrity
+    assert inspection["execution_ready"] is False
+    assert any(
+        blocker["code"] == "MANAGED_FILE_MISSING"
+        for blocker in inspection["skills"][0]["blockers"]
+    )
+
+
+def test_quarantine_never_moves_code_uploaded_as_preserved_business_data(
+    tmp_path, monkeypatch
+):
+    seed, target, _, _ = integrity_fixture(tmp_path, monkeypatch)
+    sync_module.sync_managed_seed(seed, target, apply=True)
+    skill = "workspaces/demo/skills/example"
+    uploaded = target / skill / "data/uploaded.py"
+    write(uploaded, "user uploaded data")
+    with pytest.raises(sync_module.ManagedSyncError, match="Manual review"):
+        sync_module.plan_quarantine(seed, target, [skill])
+    assert uploaded.read_text() == "user uploaded data"
+
+
+@pytest.mark.parametrize("suffix", [".py", ".so", ".pth"])
+def test_quarantine_covers_each_undeclared_executable_suffix(
+    tmp_path, monkeypatch, suffix
+):
+    seed, target, _, _ = integrity_fixture(tmp_path, monkeypatch)
+    sync_module.sync_managed_seed(seed, target, apply=True)
+    skill = "workspaces/demo/skills/example"
+    extra = target / skill / ("extra" + suffix)
+    write(extra, "fixture unreviewed content")
+    plan = sync_module.plan_quarantine(seed, target, [skill])
+    assert str(extra.relative_to(target)) in {
+        item["path"] for item in plan["files"]
+    }
+    result = sync_module.apply_quarantine(seed, target, plan, confirmed=True)
+    assert not extra.exists()
+    assert result["integrity"]["execution_ready"] is True

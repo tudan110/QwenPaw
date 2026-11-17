@@ -13,6 +13,7 @@ import contextlib
 import datetime as dt
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,27 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable, Iterator
 from uuid import uuid4
+
+
+def _load_integrity_module() -> Any:
+    # Load only the pure helper; importing qwenpaw boots runtime env/locks.
+    source = Path(__file__).with_name("managed_integrity.py")
+    if not source.is_file():
+        source = (
+            Path(__file__).resolve().parents[3]
+            / "src/qwenpaw/extensions/security/managed_integrity.py"
+        )
+    spec = importlib.util.spec_from_file_location(
+        "managed_seed_integrity", source
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Managed integrity helper unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+integrity = _load_integrity_module()
 
 
 @contextlib.contextmanager
@@ -88,6 +110,7 @@ class SyncResult:
     actions: list[SyncAction] = field(default_factory=list)
     report_path: str | None = None
     backup_path: str | None = None
+    integrity: dict[str, Any] = field(default_factory=dict)
 
     def summary(self) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -104,6 +127,7 @@ class SyncResult:
             "report_path": self.report_path,
             "backup_path": self.backup_path,
             "actions": [asdict(action) for action in self.actions],
+            "integrity": self.integrity,
         }
 
 
@@ -665,6 +689,7 @@ def sync_managed_seed(
         target=str(target),
         dry_run=not apply,
         actions=actions,
+        integrity=integrity.inspect_managed_skills(target, manifest),
     )
     selected_report = report_path or _report_path(target, manifest["seed_id"])
 
@@ -674,6 +699,9 @@ def sync_managed_seed(
     if bootstrap_needed:
         with _file_write_lock(target / ".qwenpaw_restore.lock"):
             _install_seed_into_empty_target(seed, target)
+            result.integrity = integrity.inspect_managed_skills(
+                target, manifest
+            )
             result.report_path = str(selected_report)
             report = result.as_dict()
             _write_json_atomic(selected_report, report)
@@ -814,6 +842,9 @@ def sync_managed_seed(
                 str(backup_root) if backup_root.exists() else None
             )
             result.report_path = str(selected_report)
+            result.integrity = integrity.inspect_managed_skills(
+                target, manifest
+            )
             report = result.as_dict()
             _write_json_atomic(selected_report, report)
             _write_json_atomic(
@@ -831,6 +862,159 @@ def sync_managed_seed(
     return result
 
 
+def plan_quarantine(
+    seed: Path, target: Path, skills: list[str]
+) -> dict[str, Any]:
+    """Preview exact undeclared code; never remove data or managed files."""
+    seed, target = seed.resolve(), target.resolve()
+    if (
+        not isinstance(skills, list)
+        or not skills
+        or not all(isinstance(skill, str) for skill in skills)
+        or seed == target
+        or not target.is_dir()
+    ):
+        raise ManagedSyncError(
+            "Select managed skills with distinct seed/target"
+        )
+    manifest = _load_manifest(seed)
+    entries = []
+    inspections = []
+    for skill in sorted(set(skills)):
+        if skill not in manifest["managed_skills"]:
+            raise ManagedSyncError(f"Skill is not declared: {skill}")
+        result = integrity.inspect_skill(target, manifest, skill)
+        inspections.append(result)
+        for blocker in result["blockers"]:
+            if blocker["code"] == "UNDECLARED_CODE":
+                if _is_protected_skill_path(Path(blocker["path"])):
+                    raise ManagedSyncError(
+                        "Manual review required for code inside preserved data: "
+                        + blocker["path"]
+                    )
+                path = target / blocker["path"]
+                entries.append(
+                    {
+                        "path": blocker["path"],
+                        "sha256": blocker["sha256"],
+                        "mode": path.stat().st_mode & 0o777,
+                    }
+                )
+            else:
+                raise ManagedSyncError(
+                    f"Repair managed files before quarantine: "
+                    f"{blocker['code']} {blocker['path']}"
+                )
+    return {
+        "schema": "qwenpaw-code-quarantine.v1",
+        "seed": str(seed),
+        "target": str(target),
+        "manifest_sha256": _sha256(seed / SEED_MANIFEST_NAME),
+        "seed_id": manifest["seed_id"],
+        "skills": sorted(set(skills)),
+        "files": entries,
+        "integrity": inspections,
+    }
+
+
+def apply_quarantine(
+    seed: Path, target: Path, plan: dict[str, Any], *, confirmed: bool
+) -> dict[str, Any]:
+    """Apply only an unchanged reviewed plan, with backup and rollback."""
+    if not confirmed:
+        raise ManagedSyncError(
+            "Quarantine requires explicit --yes confirmation"
+        )
+    seed, target = seed.resolve(), target.resolve()
+    with _file_write_lock(target / ".qwenpaw_restore.lock"):
+        current = plan_quarantine(seed, target, plan.get("skills", []))
+        if current != plan:
+            raise ManagedSyncError(
+                "Quarantine plan is stale or altered; preview again"
+            )
+        if not current["files"]:
+            return {"status": "nothing_to_quarantine", "files": []}
+        root = target / SYNC_DIR_NAME / "quarantine"
+        for path in (target / SYNC_DIR_NAME, root):
+            if path.is_symlink():
+                raise ManagedSyncError(
+                    "Quarantine directory must not be a symlink"
+                )
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        root.chmod(0o700)
+        backup = root / uuid4().hex
+        backup.mkdir(mode=0o700)
+        manifest_path = backup / "manifest.json"
+        moved: list[str] = []
+        report: dict[str, Any] = {
+            "plan": current,
+            "status": "in_progress",
+            "moved": moved,
+        }
+        _write_json_atomic(manifest_path, report)
+        manifest_path.chmod(0o600)
+        try:
+            for entry in current["files"]:
+                source = target / entry["path"]
+                _assert_no_symlinks(source.parent)
+                if (
+                    source.is_symlink()
+                    or not source.is_file()
+                    or _sha256(source) != entry["sha256"]
+                ):
+                    raise ManagedSyncError(
+                        f"File changed during quarantine: {entry['path']}"
+                    )
+                destination = backup / "files" / entry["path"]
+                destination.parent.mkdir(
+                    parents=True, exist_ok=True, mode=0o700
+                )
+                os.rename(source, destination)
+                moved.append(entry["path"])
+                if _sha256(destination) != entry["sha256"]:
+                    raise ManagedSyncError(
+                        f"File changed while moving: {entry['path']}"
+                    )
+                _write_json_atomic(manifest_path, report)
+            if (
+                _sha256(seed / SEED_MANIFEST_NAME)
+                != current["manifest_sha256"]
+            ):
+                raise ManagedSyncError(
+                    "Seed manifest changed during quarantine"
+                )
+            for skill in current["skills"]:
+                if not integrity.inspect_skill(
+                    target, _load_manifest(seed), skill
+                )["execution_ready"]:
+                    raise ManagedSyncError(
+                        f"Skill changed during quarantine: {skill}"
+                    )
+            status = integrity.inspect_managed_skills(
+                target, _load_manifest(seed)
+            )
+            report.update(status="completed", integrity=status)
+            _write_json_atomic(manifest_path, report)
+        except Exception:
+            for name in reversed(moved):
+                original = target / name
+                if original.exists() or original.is_symlink():
+                    raise ManagedSyncError(
+                        f"Rollback conflict at {name}; backup preserved at {backup}"
+                    )
+                os.rename(backup / "files" / name, original)
+            report["status"] = "rolled_back"
+            _write_json_atomic(manifest_path, report)
+            raise
+        return {
+            "status": "completed",
+            "backup_path": str(backup),
+            "manifest_path": str(manifest_path),
+            "files": moved,
+            "integrity": status,
+        }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=Path, required=True)
@@ -838,18 +1022,67 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--yes", action="store_true")
     parser.add_argument("--report", type=Path)
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--plan-quarantine", type=Path)
+    modes.add_argument("--quarantine-plan", type=Path)
+    parser.add_argument("--skill", action="append", default=[])
     args = parser.parse_args()
     try:
+        if args.plan_quarantine:
+            if args.apply or args.yes:
+                raise ManagedSyncError("Preview cannot use --apply or --yes")
+            plan = plan_quarantine(args.seed, args.target, args.skill)
+            plan_file = args.plan_quarantine.resolve()
+            if (
+                plan_file.suffix != ".json"
+                or plan_file.is_relative_to(args.seed.resolve())
+                or plan_file.is_relative_to(args.target.resolve())
+            ):
+                raise ManagedSyncError(
+                    "Store JSON preview outside seed and live working directory"
+                )
+            plan_file.parent.mkdir(parents=True, exist_ok=True)
+            with os.fdopen(
+                os.open(
+                    plan_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+                ),
+                "w",
+                encoding="utf-8",
+            ) as handle:
+                json.dump(plan, handle, ensure_ascii=False, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            print(json.dumps(plan, ensure_ascii=False, indent=2))
+            return 0
+        if args.quarantine_plan:
+            if not args.apply or not args.yes:
+                raise ManagedSyncError(
+                    "Reviewed quarantine requires --apply --yes"
+                )
+            quarantine_result = apply_quarantine(
+                args.seed,
+                args.target,
+                _read_json(args.quarantine_plan, {}),
+                confirmed=True,
+            )
+            print(json.dumps(quarantine_result, ensure_ascii=False, indent=2))
+            return 0
         result = sync_managed_seed(
             args.seed,
             args.target,
             apply=args.apply,
             report_path=args.report,
         )
-    except ManagedSyncError as exc:
+    except (ManagedSyncError, OSError, ValueError) as exc:
         print(f"managed seed sync error: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(result.as_dict(), ensure_ascii=False, indent=2))
+    if not result.integrity.get("execution_ready"):
+        print(
+            "Managed files synchronized/planned, but skills are NOT execution-ready. "
+            "Review integrity blockers; use --plan-quarantine before any migration.",
+            file=sys.stderr,
+        )
     return 0
 
 

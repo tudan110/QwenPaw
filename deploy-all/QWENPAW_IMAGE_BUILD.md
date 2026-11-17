@@ -94,6 +94,53 @@ cd deploy-all/qwenpaw && ./build-arm64.sh
 
 同一版本的 amd64 与 arm64 镜像必须使用相同镜像 tag；导出的 tar 文件名可用架构区分。
 
+## 受管技能完整性与旧 PVC 代码隔离
+
+同步结果现在单独提供 `integrity.execution_ready` 和各技能的 `blockers`。
+“受管文件已同步”不等于“技能代码树受信”：历史增加的 `.py`、`.so`、
+`.pth` 不会被同步自动删除，但会明确报告为 `UNDECLARED_CODE`。
+受管文件缺失、哈希不同和符号链接分别报告，执行入口复用同一检查。
+该就绪字段只描述完整性，不代表所有工具、网络、角色或模型配置均可用。
+受管文档仍参与哈希检查；普通数据和报告不会因不是受管文件而被迁移。
+
+修复工具随本批镜像一起提供；**旧镜像没有这些参数，需先升级本批制品**。
+操作员应先停止对所选技能的任务和文件写入，在维护窗口按如下两步操作：
+
+```bash
+# 1. 仅预览：不迁移任何文件。可重复 --skill 选择其他受管技能。
+python3 /usr/local/bin/sync_managed_seed.py \
+  --seed /app/share/qwenpaw-seed --target /app/working \
+  --skill workspaces/fault/skills/alarm-analyst \
+  --plan-quarantine /app/runtime/fault-quarantine-plan.json
+
+# 2. 人工审查 JSON 内的准确文件路径/哈希后，再显式确认。
+python3 /usr/local/bin/sync_managed_seed.py \
+  --seed /app/share/qwenpaw-seed --target /app/working \
+  --quarantine-plan /app/runtime/fault-quarantine-plan.json --apply --yes
+```
+
+命令可通过 `kubectl exec -c qwenpaw` 在目标容器内执行。不要提交预览
+JSON 到 Git，也不要按 `tmp*` 通配删除文件或关闭生产守护。
+预览必须写入工作目录/种子之外的新 JSON 文件，不覆盖已有文件；
+重新预览时使用新文件名，避免误覆盖运行配置或已审查的计划。
+若文件、清单、技能选择或预览内容发生变化，工具拒绝旧计划，必须重新预览。
+有受管文件变更或符号链接时先处理对应问题，不会混入自动隔离范围。
+`data`/`builtin_kb` 内的代码形附件仍会被报告为执行阻断，但必须人工处理，
+本工具拒绝将这些业务数据纳入隔离计划。
+
+隔离将准确清单内的代码迁移到
+`WORKING_DIR/.qwenpaw-managed-sync/quarantine/<唯一编号>/files/`，
+保留相对路径、原权限和哈希，并写入权限受限的 `manifest.json`。
+不覆盖源种子、不迁移 `.env`/业务数据、不添加执行授权；失败时撤回已完成
+迁移，回滚冲突保留备份并明确报错。强制中断时应先检查 `in_progress`
+记录，不自行再次执行旧计划。备份目录受工具秘密路径策略保护。
+手工恢复必须按 manifest 原路径并核对当前文件，不覆盖后来修改的内容；
+恢复未声明代码会重新触发执行阻断。
+
+整理后重复完整性预览，再以普通用户验收真实知识查询。巡检依赖 fault
+技能时也要复测，不能仅凭 API 返回 200 或对话 completed 判断成功。
+合法定制代码需经审查纳入受管源码与种子，不用单文件哈希覆盖绕过依赖树。
+
 ## 首次运行行为
 
 容器发现工作目录为空时，会把 `/app/share/qwenpaw-seed/` 初始化到运行时工作目录。随后 QwenPaw 会按既有机制创建内置 `skill_pool`、默认 Agent 和 QA Agent。
