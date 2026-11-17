@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { Button, Empty, Modal, Input, Select } from "@agentscope-ai/design";
-import { Tabs } from "antd";
+import { Alert, Tabs } from "antd";
 import { Plus } from "lucide-react";
 import type { MCPClientInfo } from "../../../api/types";
 import { MCPClientCard } from "./components";
@@ -276,6 +276,16 @@ function MCPPage() {
             {t("mcp.create")}
           </Button>
         }
+      />
+
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message={t(
+          "trustedEvidence.mcpBoundary",
+          "Enabled and permission summaries reflect configuration. They do not verify service health, certificates or network isolation. Endpoint summaries hide URL credentials, paths and query parameters; use tool permissions for the detailed access policy.",
+        )}
       />
 
       {loading ? (

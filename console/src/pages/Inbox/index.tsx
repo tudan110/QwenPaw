@@ -29,7 +29,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { ApprovalCard as GlobalApprovalCard } from "../../components/ApprovalCard/ApprovalCard";
 import { useApprovalContext } from "../../contexts/ApprovalContext";
 import { commandsApi } from "../../api/modules/commands";
-import { chatApi } from "../../api/modules/chat";
+import { useStopFeedback } from "../Chat/useStopFeedback";
 import sessionApi from "../Chat/sessionApi";
 import { PushMessageCard } from "./components";
 import { useInboxData } from "./hooks/useInboxData";
@@ -74,6 +74,7 @@ const renderMarkdownText = (text: string, className: string) => (
 );
 
 export default function InboxPage() {
+  const { requestStop, notice: stopNotice } = useStopFeedback("inbox");
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabKey>(resolveInitialTab);
   const [markAllReading, setMarkAllReading] = useState(false);
@@ -209,7 +210,8 @@ export default function InboxPage() {
   const handleCancelTask = async (rootSessionId: string) => {
     const resolvedChatId =
       sessionApi.getRealIdForSession(rootSessionId) ?? rootSessionId;
-    await chatApi.stopChat(resolvedChatId);
+    const result = await requestStop(resolvedChatId);
+    if (!result.stopped) return;
     setApprovals((prev) =>
       prev.filter((item) => item.root_session_id !== rootSessionId),
     );
@@ -508,6 +510,7 @@ export default function InboxPage() {
   return (
     <div className={styles.inboxPage}>
       <PageHeader items={[{ title: t("inbox.title") }]} extra={null} />
+      {stopNotice}
 
       <div className={styles.pageContent}>
         <Tabs

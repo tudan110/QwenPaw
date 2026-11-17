@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Button, Card, Tag, Typography, Space } from "antd";
+import { Alert, Button, Card, Tag, Typography, Space } from "antd";
 import { Shield, Check, X, Clock, Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAgentStore } from "../../stores/agentStore";
 import { getAgentDisplayName } from "../../utils/agentDisplayName";
 import styles from "./ApprovalCard.module.less";
+import { redactForDisplay, safeDisplayText } from "../../utils/evidenceDisplay";
 
 const { Text } = Typography;
 
@@ -68,6 +69,8 @@ export function ApprovalCard({
   >(null);
   const [remaining, setRemaining] = useState<number>(timeoutSeconds);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const safeSummary = safeDisplayText(findingsSummary || "");
+  const safeParams = JSON.stringify(redactForDisplay(toolParams), null, 2);
 
   const handleCopy = useCallback(async (text: string, field: string) => {
     try {
@@ -253,6 +256,15 @@ export function ApprovalCard({
           </div>
         )}
 
+        {exactTarget && !isGeneralized && (
+          <div className={styles.infoRow}>
+            <Text className={styles.label}>
+              {t("trustedEvidence.target", "Target")}:
+            </Text>
+            <Text code>{safeDisplayText(exactTarget)}</Text>
+          </div>
+        )}
+
         {isGeneralized && (exactTarget || similarTarget) && (
           <div className={styles.infoRow}>
             <Text className={styles.label}>
@@ -268,11 +280,11 @@ export function ApprovalCard({
             >
               <Text className={styles.value} style={{ fontSize: 12 }}>
                 {t("approval.approveExact", "Approve Exact")}:{" "}
-                <code>{exactTarget}</code>
+                <code>{safeDisplayText(exactTarget || "")}</code>
               </Text>
               <Text className={styles.value} style={{ fontSize: 12 }}>
                 {t("approval.approvePattern", "Approve Pattern")}:{" "}
-                <code>{similarTarget}</code>
+                <code>{safeDisplayText(similarTarget || "")}</code>
               </Text>
             </div>
           </div>
@@ -280,12 +292,12 @@ export function ApprovalCard({
 
         {findingsSummary && (
           <div className={styles.summaryBox}>
-            <Text className={styles.summaryText}>{findingsSummary}</Text>
+            <Text className={styles.summaryText}>{safeSummary}</Text>
             <button
               className={`${styles.copyButton} ${
                 copiedField === "summary" ? styles.copied : ""
               }`}
-              onClick={() => handleCopy(findingsSummary, "summary")}
+              onClick={() => handleCopy(safeSummary, "summary")}
               title={t("common.copy", "Copy")}
             >
               <Copy size={12} />
@@ -299,16 +311,12 @@ export function ApprovalCard({
               {t("approval.parameters", "Parameters")}
             </summary>
             <div className={styles.paramsCodeWrapper}>
-              <pre className={styles.paramsCode}>
-                {JSON.stringify(toolParams, null, 2)}
-              </pre>
+              <pre className={styles.paramsCode}>{safeParams}</pre>
               <button
                 className={`${styles.copyButton} ${
                   copiedField === "params" ? styles.copied : ""
                 }`}
-                onClick={() =>
-                  handleCopy(JSON.stringify(toolParams, null, 2), "params")
-                }
+                onClick={() => handleCopy(safeParams, "params")}
                 title={t("common.copy", "Copy")}
               >
                 <Copy size={12} />
@@ -318,11 +326,23 @@ export function ApprovalCard({
         )}
       </div>
 
+      <Alert
+        type="info"
+        showIcon
+        message={t(
+          "trustedEvidence.approvalBoundary",
+          "Approval permits the displayed request to continue; execution success must be checked separately. Scope grants may also affect later matching requests. Common credential fields are hidden in the parameter display and copied text.",
+        )}
+        style={{ marginBottom: 12 }}
+      />
       <div className={styles.actions}>
         {isTimedOut ? (
           <>
             <Text className={styles.timeoutHint}>
-              {t("approval.timeoutAutoDenied", "Timed out, auto denied")}
+              {t(
+                "trustedEvidence.approvalExpired",
+                "The displayed waiting period has ended; verify the server-side approval result.",
+              )}
             </Text>
             {onAcknowledge ? (
               <Button

@@ -12,6 +12,7 @@ import { ShieldCheck, ShieldAlert, ShieldX, KeyRound } from "lucide-react";
 import { MCPAccessModal } from "./MCPAccessModal";
 import { MCPOAuthSection } from "./MCPOAuthSection";
 import styles from "../index.module.less";
+import { endpointOrigin } from "../../../../utils/evidenceDisplay";
 
 interface MCPClientUpdate {
   name?: string;
@@ -176,6 +177,46 @@ export const MCPClientCard = React.memo(function MCPClientCard({
         </div>
 
         <p className={styles.mcpDescription}>{client.description || "-"}</p>
+
+        <dl
+          style={{
+            fontSize: 12,
+            margin: "8px 0 16px",
+            overflowWrap: "anywhere",
+          }}
+        >
+          <dt>{t("trustedEvidence.endpoint", "Endpoint / transport")}</dt>
+          <dd style={{ marginInlineStart: 0 }}>
+            {isRemote
+              ? endpointOrigin(client.url)
+              : t("trustedEvidence.localProcess", "Local subprocess")}{" "}
+            · {client.transport}
+          </dd>
+          <dt>
+            {t("trustedEvidence.defaultPolicy", "Configured default policy")}
+          </dt>
+          <dd style={{ marginInlineStart: 0 }}>
+            {client.access_summary
+              ? t(
+                  `trustedEvidence.decisionLabels.${client.access_summary.default_effect}`,
+                  client.access_summary.default_effect,
+                )
+              : t("trustedEvidence.unknown", "Not available")}{" "}
+            · {t("trustedEvidence.overrideCount", "Overrides")}:{" "}
+            {client.access_summary?.overrides_count ?? "—"}
+          </dd>
+          <dt>{t("trustedEvidence.toolScope", "Configured tool scope")}</dt>
+          <dd style={{ marginInlineStart: 0 }}>
+            {client.tools === null
+              ? t(
+                  "trustedEvidence.allTools",
+                  "All tools exposed by this service",
+                )
+              : client.tools?.length === 0
+              ? t("trustedEvidence.noTools", "No tools selected")
+              : client.tools?.join(", ") || t("trustedEvidence.unknown")}
+          </dd>
+        </dl>
 
         <div className={styles.cardFooter}>
           <Button

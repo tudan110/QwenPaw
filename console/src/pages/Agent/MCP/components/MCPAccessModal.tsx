@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Button, Empty, Modal } from "@agentscope-ai/design";
-import { Spin } from "antd";
+import { Alert, Spin } from "antd";
 import { useTranslation } from "react-i18next";
 import api from "../../../../api";
 import { useAppMessage } from "../../../../hooks/useAppMessage";
@@ -243,6 +243,15 @@ export const MCPAccessModal: React.FC<MCPAccessModalProps> = ({
         </div>
       ) : policy ? (
         <div className={styles.accessModalBody}>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={t(
+              "trustedEvidence.policyBoundary",
+              "This editor shows the component access policy. Unsaved values are not active. Approval permits continuation; actual execution and data access require separate verification.",
+            )}
+          />
           <MCPAccessClientPanel
             policy={policy}
             principalOptions={principalOptions}

@@ -94,9 +94,12 @@ export const chatApi = {
     ),
 
   stopChat: (chatId: string) =>
-    request<void>(`/console/chat/stop?chat_id=${encodeURIComponent(chatId)}`, {
-      method: "POST",
-    }),
+    request<{ stopped: boolean }>(
+      `/console/chat/stop?chat_id=${encodeURIComponent(chatId)}`,
+      {
+        method: "POST",
+      },
+    ),
 };
 
 export const sessionApi = {

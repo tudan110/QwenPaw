@@ -1,4 +1,25 @@
 {
+  "trustedEvidence": {
+    "stop": {
+      "requesting": "Requesting stop",
+      "accepted": "Server accepted the local cancellation request",
+      "notRunning": "Server found no cancellable local running task",
+      "failed": "Stop request failed; task status needs verification"
+    },
+    "configEnabled": "Configured on",
+    "configDisabled": "Configured off",
+    "adminReadError": "Unable to read evidence. A verified administrator session is required; check access and service status.",
+    "queriedAt": "Read at",
+    "changed": "Content changed",
+    "unchanged": "Content unchanged",
+    "agent": "Agent ID",
+    "tool": "Tool name",
+    "unknown": "Not available",
+    "storage": {
+      "not_created": "No audit database exists. No example records have been generated.",
+      "unsupported_schema": "The existing database schema cannot be displayed. This feature does not migrate or clear data."
+    }
+  },
   "common": {
     "save": "Save",
     "reset": "Reset",

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { MergedRule } from "../useToolGuard";
 import type { ToolGuardConfig } from "../../../../api/modules/security";
 import type { FormInstance } from "antd";
+import { Alert } from "antd";
 import { RuleTable, ShellEvasionSection } from "./index";
 import styles from "../index.module.less";
 
@@ -44,6 +45,15 @@ export function ToolGuardTab({
 
   return (
     <div className={styles.tabContent}>
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message={t(
+          "trustedEvidence.toolBoundary",
+          "Tool guarding evaluates matching calls in its supported execution paths. MCP access policies are configured separately. These form values do not prove coverage of every interface; unsaved changes are not active configuration.",
+        )}
+      />
       <div className={styles.sectionConfigureContainer}>
         <p className={styles.tabDescription}>
           {t("security.toolGuardDescription")}

@@ -16,6 +16,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import sessionApi from "./sessionApi";
 import defaultConfig, { getDefaultConfig } from "./OptionsPanel/defaultConfig";
 import { chatApi } from "../../api/modules/chat";
+import { useStopFeedback } from "./useStopFeedback";
 import { agentApi } from "../../api/modules/agent";
 import { skillApi } from "../../api/modules/skill";
 import { getApiUrl } from "../../api/config";
@@ -1141,6 +1142,9 @@ export default function ChatPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const runtimeLoadingBridgeRef = useRef<RuntimeLoadingBridgeApi | null>(null);
   const queueSessionId = chatId ?? "new";
+  const { requestStop, notice: stopNotice } = useStopFeedback(
+    `${selectedAgent}:${queueSessionId}`,
+  );
   const queueSessionIdRef = useRef(queueSessionId);
   queueSessionIdRef.current = queueSessionId;
   const messageQueue =
@@ -2879,7 +2883,7 @@ export default function ChatPage() {
           const resolvedChatId =
             sessionApi.getRealIdForSession(data.session_id) ?? data.session_id;
           if (resolvedChatId) {
-            chatApi.stopChat(resolvedChatId).catch((err) => {
+            requestStop(resolvedChatId).catch((err) => {
               console.error("Failed to stop chat:", err);
             });
           }
@@ -3013,12 +3017,14 @@ export default function ChatPage() {
     handleQueueSkip,
     runState,
     isOwner,
+    requestStop,
   ]);
 
   return (
     <div className={styles.chatPageRoot}>
       {/* Main chat area */}
       <div className={styles.chatMainArea}>
+        {stopNotice}
         <div
           className={
             isWideMode
@@ -3118,9 +3124,9 @@ export default function ChatPage() {
 
                 if (resolvedChatId) {
                   console.log("[Chat] Calling stopChat with:", resolvedChatId);
-                  chatApi
-                    .stopChat(resolvedChatId)
-                    .then(() => {
+                  requestStop(resolvedChatId)
+                    .then((result) => {
+                      if (!result.stopped) return;
                       console.log("[Chat] stopChat succeeded");
                       setApprovals((prev) =>
                         prev.filter(

@@ -1,4 +1,5 @@
 import { Button, Tabs } from "@agentscope-ai/design";
+import { Alert } from "antd";
 import { useTranslation } from "react-i18next";
 import { useSecurityPage } from "./useSecurityPage";
 import {
@@ -11,6 +12,8 @@ import {
 } from "./components";
 import { PageHeader } from "@/components/PageHeader";
 import styles from "./index.module.less";
+import { ProtectionEvidence } from "./components/ProtectionEvidence";
+import { AuditEvidence } from "./components/AuditEvidence";
 
 function SecurityPage() {
   const { t } = useTranslation();
@@ -91,6 +94,16 @@ function SecurityPage() {
           onChange={setActiveTab}
           items={[
             {
+              key: "protectionEvidence",
+              label: t("trustedEvidence.overview", "Protection overview"),
+              children: <ProtectionEvidence />,
+            },
+            {
+              key: "auditEvidence",
+              label: t("trustedEvidence.audit", "Policy audit"),
+              children: <AuditEvidence />,
+            },
+            {
               key: "toolGuard",
               label: (
                 <span className={styles.tabLabel}>
@@ -144,6 +157,15 @@ function SecurityPage() {
               children: (
                 <div className={styles.tabContent}>
                   <div className={styles.sectionSkillScannerContainer}>
+                    <Alert
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                      message={t(
+                        "trustedEvidence.scannerBoundary",
+                        "Skill scanning covers import/review checks. Scan results do not prove runtime prompt-injection protection or complete content safety.",
+                      )}
+                    />
                     <p className={styles.tabDescription}>
                       {t("security.skillScanner.description")}
                     </p>
