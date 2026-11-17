@@ -36,12 +36,6 @@ class MediaProcessHook(LifecycleHook):
 
             await process_file_and_media_blocks_in_message(ctx.input_msgs)
         except Exception:
-            from ...extensions.security.execution_policy import enabled
-
-            if enabled():
-                raise PermissionError(
-                    "附件检查或解析失败，未将未校验内容提交模型"
-                ) from None
             logger.warning(
                 "media_process: failed; user uploads may not be visible",
                 exc_info=True,

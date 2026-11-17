@@ -11,7 +11,6 @@ import time
 from typing import TYPE_CHECKING, Any, List
 
 import httpx
-from qwenpaw.extensions.security.egress_policy import controlled_async_client
 from agentscope.model import ChatModelBase
 from openai import APIError
 from pydantic import Field
@@ -103,7 +102,8 @@ class OpenAIProvider(Provider):
         headers = self._build_default_headers()
         if headers:
             kwargs["default_headers"] = headers
-        kwargs["http_client"] = controlled_async_client(follow_redirects=False)
+        if "X-QwenPaw-Model-Key" in headers:
+            kwargs["http_client"] = httpx.AsyncClient(follow_redirects=False)
         return AsyncOpenAI(**kwargs)
 
     @staticmethod
@@ -251,7 +251,7 @@ class OpenAIProvider(Provider):
             write=CHAT_CLIENT_READ_TIMEOUT,
             pool=CHAT_CLIENT_READ_TIMEOUT,
         )
-        client_kwargs["http_client"] = controlled_async_client(
+        client_kwargs["http_client"] = httpx.AsyncClient(
             timeout=httpx.Timeout(
                 connect=CHAT_CLIENT_CONNECT_TIMEOUT,
                 read=CHAT_CLIENT_READ_TIMEOUT,

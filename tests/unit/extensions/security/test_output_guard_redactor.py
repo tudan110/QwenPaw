@@ -235,8 +235,7 @@ def test_lexicon_hot_reload(tmp_path):
     assert "新词" not in masked
 
 
-def test_lexicon_invalid_regex_skipped(tmp_path, monkeypatch):
-    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "false")
+def test_lexicon_invalid_regex_skipped(tmp_path):
     content = "\n".join(
         ["regexes:", '  - pattern: "([bad"', "words:", '  - "敏感词"', ""],
     )
@@ -247,8 +246,7 @@ def test_lexicon_invalid_regex_skipped(tmp_path, monkeypatch):
     assert "1234567890abcdefghijklm" not in masked  # builtins intact
 
 
-def test_lexicon_malformed_yaml_fail_open(tmp_path, monkeypatch):
-    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "false")
+def test_lexicon_malformed_yaml_fail_open(tmp_path):
     path = _write_lexicon(tmp_path, ": : :\n\t- broken")
     cfg = OutputGuardSettings(lexicon_path=str(path))
     masked, hits = redact("sk-test1234567890abcdefghijklmn", cfg=cfg)
@@ -256,8 +254,7 @@ def test_lexicon_malformed_yaml_fail_open(tmp_path, monkeypatch):
     assert "1234567890abcdefghijklm" not in masked
 
 
-def test_lexicon_missing_file_fail_open(tmp_path, monkeypatch):
-    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "false")
+def test_lexicon_missing_file_fail_open(tmp_path):
     cfg = OutputGuardSettings(lexicon_path=str(tmp_path / "nope.yaml"))
     _, hits = redact("sk-test1234567890abcdefghijklmn", cfg=cfg)
     assert "openai_dashscope_key" in hits

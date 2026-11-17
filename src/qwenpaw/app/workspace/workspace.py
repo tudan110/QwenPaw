@@ -78,7 +78,7 @@ class Workspace:
         self._config = None  # Loaded before start()
         self._started = False
         self._manager = None  # Reference to MultiAgentManager
-        self._task_tracker = TaskTracker(namespace=str(self.workspace_dir.resolve()))
+        self._task_tracker = TaskTracker()
         self._app_services: Any = None
 
         # Register all services
@@ -261,9 +261,6 @@ class Workspace:
         Drop-in replacement for the old ``Runner.stream_query()``.
         """
         from ...runtime import Runtime
-        from ...extensions.security.execution_control import assert_execution_open
-
-        assert_execution_open()
 
         rt = Runtime(workspace=self, app_services=self._app_services)
         async for item in rt.run(request):

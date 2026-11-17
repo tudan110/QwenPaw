@@ -1,0 +1,3067 @@
+{
+  "purpose": "Archived CAICT remediation; withdrawn from active branch; review material only",
+  "baseline": "cf77202f94df408c2e6e7dee18c5b32eccd85706",
+  "saved_head": "1b15a083735c52b5a67d286acfb06574d6c4df44",
+  "saved_branch": "codex/archive-caiict-remediation-20261117",
+  "original_branch": "dev",
+  "commits": [
+    "af157e9293d20a3a65d6ce399c7e1ddc3655891c",
+    "8d50873affad0eff4c8650f3eea71df2d28d0138",
+    "1b15a083735c52b5a67d286acfb06574d6c4df44"
+  ],
+  "rollback_paths": [
+    "console/src/api/modules/executionControl.ts",
+    "console/src/pages/Settings/Security/components/ExecutionControlTab.test.tsx",
+    "console/src/pages/Settings/Security/components/ExecutionControlTab.tsx",
+    "console/src/pages/Settings/Security/index.tsx",
+    "deploy-all/helm/cnos-inoe-agent-1.0.0.tgz",
+    "deploy-all/qwenpaw/helm/qwenpaw/templates/deployment.yaml",
+    "deploy-all/qwenpaw/helm/qwenpaw/values.yaml",
+    "docs/reviews/trusted-agent-remediation-20261116.md",
+    "outputs/trusted-agent-assessment-20261116/可信互联网智能体能力对照与整改方案_15项版.xlsx",
+    "outputs/trusted-agent-remediation-20261116/components.local.cdx.json",
+    "scripts/trusted-agent/component_inventory.py",
+    "scripts/trusted-agent/run_acceptance.py",
+    "src/qwenpaw/agents/utils/file_handling.py",
+    "src/qwenpaw/app/_app.py",
+    "src/qwenpaw/app/approvals/service.py",
+    "src/qwenpaw/app/routers/__init__.py",
+    "src/qwenpaw/app/routers/approval.py",
+    "src/qwenpaw/app/routers/console.py",
+    "src/qwenpaw/app/routers/execution_control.py",
+    "src/qwenpaw/app/task_tracker.py",
+    "src/qwenpaw/app/workspace/workspace.py",
+    "src/qwenpaw/drivers/handlers/mcp.py",
+    "src/qwenpaw/drivers/handlers/mcp_stateful_client.py",
+    "src/qwenpaw/extensions/api/access_policy.py",
+    "src/qwenpaw/extensions/api/kunlun_openai_adapter.py",
+    "src/qwenpaw/extensions/api/qiming_openai_adapter.py",
+    "src/qwenpaw/extensions/api/xingchen_openai_adapter.py",
+    "src/qwenpaw/extensions/integrations/portal_monitoring_overview.py",
+    "src/qwenpaw/extensions/integrations/zgops_cmdb/resource_import.py",
+    "src/qwenpaw/extensions/security/__init__.py",
+    "src/qwenpaw/extensions/security/egress_policy.py",
+    "src/qwenpaw/extensions/security/execution_control.py",
+    "src/qwenpaw/extensions/security/execution_policy.py",
+    "src/qwenpaw/extensions/security/mcp_boundary.py",
+    "src/qwenpaw/extensions/security/operation_intent.py",
+    "src/qwenpaw/extensions/security/output_guard/__init__.py",
+    "src/qwenpaw/extensions/security/output_guard/channel_patch.py",
+    "src/qwenpaw/extensions/security/output_guard/redactor.py",
+    "src/qwenpaw/extensions/security/output_guard/response_boundary.py",
+    "src/qwenpaw/governance/audit.py",
+    "src/qwenpaw/governance/audit_forwarder.py",
+    "src/qwenpaw/governance/execution_trace.py",
+    "src/qwenpaw/governance/tool_adapter.py",
+    "src/qwenpaw/governance/tool_registry.py",
+    "src/qwenpaw/hooks/request_setup/media_hook.py",
+    "src/qwenpaw/providers/openai_provider.py",
+    "src/qwenpaw/providers/openai_response_provider.py",
+    "src/qwenpaw/runtime/heartbeat.py",
+    "src/qwenpaw/runtime/runtime.py",
+    "tests/unit/app/test_approval_scope.py",
+    "tests/unit/deploy_all/test_security_defaults.py",
+    "tests/unit/extensions/api/test_p0_enforcement.py",
+    "tests/unit/extensions/api/test_production_business_reads.py",
+    "tests/unit/extensions/security/test_acceptance_tool.py",
+    "tests/unit/extensions/security/test_control_api.py",
+    "tests/unit/extensions/security/test_egress_policy.py",
+    "tests/unit/extensions/security/test_execution_control.py",
+    "tests/unit/extensions/security/test_operation_intent.py",
+    "tests/unit/extensions/security/test_output_boundary.py",
+    "tests/unit/extensions/security/test_output_guard_channel_patch.py",
+    "tests/unit/extensions/security/test_output_guard_redactor.py",
+    "tests/unit/extensions/security/test_trusted_execution.py",
+    "tests/unit/governance/test_audit_forwarder.py",
+    "tests/unit/governance/test_audit_retention.py"
+  ],
+  "unrelated_tracked": {
+    "portal/src/App.tsx": {
+      "sha256": "70ce186f065271307325c8905d07a91c82afb637fb72e9a8d4534ac672d218d4",
+      "mode": "0o644"
+    },
+    "portal/src/pages/digital-employee/ai-big-screen.css": {
+      "sha256": "3ae63de4b31271bd11a6abbd6d72f2ac2e4de6e1d6c40f88ec53d91b41c58885",
+      "mode": "0o644"
+    },
+    "src/qwenpaw/extensions/api/portal_backend.py": {
+      "sha256": "cf1e0ec3ae159dd29529e5c35f8f11f270603bebe789b9fa96364954294577af",
+      "mode": "0o644"
+    },
+    "src/qwenpaw/hooks/request_setup/contextvars_hook.py": {
+      "sha256": "eca37f79ceac786bd35b873b8ef1bd10b585c58ae2e222b3bfdb69e0492a0041",
+      "mode": "0o644"
+    }
+  },
+  "archives": {
+    "remediation-commits.bundle": {
+      "sha256": "83c08e98a23531eb9f96f53d794659e824ef578ae4d944eb66b588ca36607737",
+      "bytes": 114665
+    },
+    "remediation-files.tar.gz": {
+      "sha256": "c00abff852756cf1b4206f19757ae66830c5374a7780d9000d2a052368f0a5c8",
+      "bytes": 277247
+    },
+    "patches/0001-fix-security-enforce-trusted-agent-execution-and-out.patch": {
+      "sha256": "085163d5acd651e81544c65fdc390e0226c632a35e7c6488d269fb2e91049d91",
+      "bytes": 390945
+    },
+    "patches/0002-docs-annotate-capability-workbook-with-remediation-p.patch": {
+      "sha256": "ae245dfea8add7d5dd6cb5e8e39733fa39883e7e169b95e5e5eede7963b4e21a",
+      "bytes": 45912
+    },
+    "patches/0003-fix-deploy-quote-Helm-environment-values.patch": {
+      "sha256": "ade9c7bf3a16436381d8a355bd6319001878e24d0c8c483b06e5da9588339768",
+      "bytes": 21401
+    },
+    "review-materials/remediation-before-rollback.md": {
+      "sha256": "658300d1b93456754dde80c3c2ed3e695a3816501074da175ee715c88e581b11",
+      "bytes": 10554
+    },
+    "review-materials/可信互联网智能体能力对照与整改方案_15项版_撤回前快照.xlsx": {
+      "sha256": "a5a77d6fe8130a713e81b7bf0a711f5aa11cdc68daf0b466c9096410c38187dc",
+      "bytes": 21370
+    }
+  },
+  "moved_artifacts": [
+    {
+      "from": "outputs/release-20261116-81",
+      "archive_path": "release-candidate",
+      "files": {
+        "81-配置核对说明.md": {
+          "bytes": 1956,
+          "mtime_ns": 1794821748968524338
+        },
+        "81-egress-candidate-INCOMPLETE.yaml": {
+          "bytes": 2242,
+          "mtime_ns": 1794821633844642602
+        },
+        "digital-workforce-portal-amd64.tar": {
+          "bytes": 76686336,
+          "mtime_ns": 1794819104425496557
+        },
+        "qwenpaw-amd64.tar": {
+          "bytes": 3451191808,
+          "mtime_ns": 1794819128157055201
+        },
+        "SHA256SUMS": {
+          "bytes": 277,
+          "mtime_ns": 1794821667730217867
+        },
+        "cnos-inoe-agent-1.0.0.tgz": {
+          "bytes": 7239,
+          "mtime_ns": 1794821660759532041
+        }
+      }
+    },
+    {
+      "from": "console/dist",
+      "archive_path": "build-artifacts/console-dist",
+      "files": {
+        "qwenpaw.png": {
+          "bytes": 55690,
+          "mtime_ns": 1794802672274300723
+        },
+        "index.html": {
+          "bytes": 1153,
+          "mtime_ns": 1794802679011586467
+        },
+        "logo-dark.svg": {
+          "bytes": 9623,
+          "mtime_ns": 1794802672273155000
+        },
+        "logo-light.svg": {
+          "bytes": 9623,
+          "mtime_ns": 1794802672273490647
+        },
+        "online.svg": {
+          "bytes": 7016,
+          "mtime_ns": 1794802672273745714
+        },
+        "qwenpawBack.png": {
+          "bytes": 40462,
+          "mtime_ns": 1794802672274642744
+        },
+        "assets/cynefinDiagram-TSTJHNR4-DHpwweNs.js": {
+          "bytes": 10176,
+          "mtime_ns": 1794802678997350404
+        },
+        "assets/KaTeX_Script-Regular-D3wIWfF6.woff2": {
+          "bytes": 9644,
+          "mtime_ns": 1794802678989693030
+        },
+        "assets/sequenceDiagram-DBY2YBRQ-CCMJIawa.js": {
+          "bytes": 117532,
+          "mtime_ns": 1794802678996300051
+        },
+        "assets/chunk-V7JOEXUC-CosVKaDx.js": {
+          "bytes": 49299,
+          "mtime_ns": 1794802678996325758
+        },
+        "assets/haxe-BU8jal1w.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679002010875
+        },
+        "assets/mel-DvnC4EAg.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004514599
+        },
+        "assets/KaTeX_AMS-Regular-DRggAlZN.ttf": {
+          "bytes": 63632,
+          "mtime_ns": 1794802678991962769
+        },
+        "assets/diagram-G47NLZAW-BWiRQbc1.js": {
+          "bytes": 11275,
+          "mtime_ns": 1794802678997185789
+        },
+        "assets/mindmap-definition-LN4V7U3C-Nxi5fABI.js": {
+          "bytes": 23440,
+          "mtime_ns": 1794802679010952130
+        },
+        "assets/groovy-HHDC8R1E.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001573901
+        },
+        "assets/stateDiagram-v2-6OUMAXLB-DfwKgF79.js": {
+          "bytes": 505,
+          "mtime_ns": 1794802678996520329
+        },
+        "assets/lisp-D_OIJ86I.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679002674752
+        },
+        "assets/KaTeX_Fraktur-Regular-CTYiF6lA.woff2": {
+          "bytes": 11316,
+          "mtime_ns": 1794802678988917952
+        },
+        "assets/ui-vendor-tn0RQdqM.css": {
+          "bytes": 0,
+          "mtime_ns": 1794802678954033837
+        },
+        "assets/monkey-BLeAvRkI.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004601553
+        },
+        "assets/KaTeX_Caligraphic-Regular-wX97UBjC.ttf": {
+          "bytes": 12344,
+          "mtime_ns": 1794802678991733241
+        },
+        "assets/julia-DUo2xAdp.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679002274401
+        },
+        "assets/scilab-hjhSkuq7.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006804212
+        },
+        "assets/tap-DNVMnHMg.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007215187
+        },
+        "assets/ishikawaDiagram-FXEZZL3T-CAsYa12X.js": {
+          "bytes": 17645,
+          "mtime_ns": 1794802678997130293
+        },
+        "assets/dockerfile-CVv-2e5w.js": {
+          "bytes": 504,
+          "mtime_ns": 1794802679000058742
+        },
+        "assets/makefile-GDGV93Ti.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004457395
+        },
+        "assets/brainfuck-CYVvK73_.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998992639
+        },
+        "assets/1c-DFPQ8-fH.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678997584765
+        },
+        "assets/kotlin-BJUqaoLQ.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679002544843
+        },
+        "assets/actionscript-CKxxg4yI.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998098526
+        },
+        "assets/gherkin-nblB2P0q.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001146927
+        },
+        "assets/nim-CUonxvBF.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004647883
+        },
+        "assets/julia-repl-CMWqWnmM.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679002508720
+        },
+        "assets/stan-DglgFWW-.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006896957
+        },
+        "assets/rsl-DHVy_b0d.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005892892
+        },
+        "assets/index-DsuapsEL.js": {
+          "bytes": 8478,
+          "mtime_ns": 1794802679010679105
+        },
+        "assets/pony-7tFuIJjc.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004859787
+        },
+        "assets/graph-D6nkCF12.js": {
+          "bytes": 5829,
+          "mtime_ns": 1794802678996501914
+        },
+        "assets/dts-SehxBTf4.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000594043
+        },
+        "assets/KaTeX_Main-Regular-Dr94JaBh.woff": {
+          "bytes": 30772,
+          "mtime_ns": 1794802678989898518
+        },
+        "assets/chunk-MOJQB5TN-tdHsPeRi.js": {
+          "bytes": 15754,
+          "mtime_ns": 1794802678997447899
+        },
+        "assets/arcade-VFZGdqXa.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998614662
+        },
+        "assets/jboss-cli-rWQAFCe1.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679002265401
+        },
+        "assets/sas-BAuGi4nr.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006426152
+        },
+        "assets/KaTeX_Size3-Regular-DgpXs0kz.ttf": {
+          "bytes": 7588,
+          "mtime_ns": 1794802678994002772
+        },
+        "assets/ruby-CXyBYbTC.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005940889
+        },
+        "assets/index-D22yxsDw.css": {
+          "bytes": 15172,
+          "mtime_ns": 1794802678994437954
+        },
+        "assets/vbscript-CAcX14Wk.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007433508
+        },
+        "assets/vim-Ch8KCZOh.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007744447
+        },
+        "assets/flix-OjSpeOz1.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000769033
+        },
+        "assets/llvm-DvFo5Fxi.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004562555
+        },
+        "assets/applescript-CusrttK4.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998597121
+        },
+        "assets/yaml-B0NE5TNa.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679009589420
+        },
+        "assets/vala-DvdOmDMe.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007409884
+        },
+        "assets/KaTeX_SansSerif-Regular-BNo7hRIc.ttf": {
+          "bytes": 19436,
+          "mtime_ns": 1794802678993994397
+        },
+        "assets/css-p4X8Zgpv.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999832130
+        },
+        "assets/r-qGXYau4O.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005610742
+        },
+        "assets/n1ql-DSV9eQrW.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004650300
+        },
+        "assets/index-CNgq-obe.js": {
+          "bytes": 10322,
+          "mtime_ns": 1794802679011482723
+        },
+        "assets/KaTeX_SansSerif-Bold-CFMepnvq.ttf": {
+          "bytes": 24504,
+          "mtime_ns": 1794802678992891089
+        },
+        "assets/rust-5v8Z-YA5.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006857251
+        },
+        "assets/php-template-DMeol4vb.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004816331
+        },
+        "assets/q-DFbu5bRF.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005613117
+        },
+        "assets/nsis-BB0UWxFd.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004700088
+        },
+        "assets/http-B8MxlKLL.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001865550
+        },
+        "assets/autohotkey-B9YVw-6h.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998761820
+        },
+        "assets/csp-BpOUQLM2.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999780800
+        },
+        "assets/sankeyDiagram-HTMAVEWB-DKfVdIeo.js": {
+          "bytes": 23241,
+          "mtime_ns": 1794802679011256320
+        },
+        "assets/infoDiagram-FWYZ7A6U-OGQbI6z3.js": {
+          "bytes": 660,
+          "mtime_ns": 1794802678995849119
+        },
+        "assets/haskell-C0UJQmBf.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001586942
+        },
+        "assets/KaTeX_Main-Regular-B22Nviop.woff2": {
+          "bytes": 26272,
+          "mtime_ns": 1794802678988761503
+        },
+        "assets/ganttDiagram-NO4QXBWP-OWZhnwrY.js": {
+          "bytes": 39319,
+          "mtime_ns": 1794802678995886201
+        },
+        "assets/index-DTcFPSnT.js": {
+          "bytes": 9364,
+          "mtime_ns": 1794802679011209323
+        },
+        "assets/axapta-B9xtxBTM.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998868980
+        },
+        "assets/erb-BFc_bQ-j.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000652540
+        },
+        "assets/index-CtoK5jGI.css": {
+          "bytes": 2045,
+          "mtime_ns": 1794802678994844638
+        },
+        "assets/powershell-D90Qymra.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004859412
+        },
+        "assets/thrift-C0IDipxv.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007283975
+        },
+        "assets/crystal-A6bvy8iT.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999634392
+        },
+        "assets/arduino-BwRCBwKY.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998611412
+        },
+        "assets/index-COI_k82z.js": {
+          "bytes": 29139,
+          "mtime_ns": 1794802679011572301
+        },
+        "assets/mipsasm-CVkzHLGC.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004562888
+        },
+        "assets/java-BytR2hL_.js": {
+          "bytes": 504,
+          "mtime_ns": 1794802679002115410
+        },
+        "assets/puppet-7sTOw3qJ.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005555370
+        },
+        "assets/angelscript-Bw9jK02S.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998572123
+        },
+        "assets/routeros-DgKNc2xo.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005942222
+        },
+        "assets/erlang-repl-DlOdofWS.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000701620
+        },
+        "assets/ocaml-D5tpJxXr.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004737044
+        },
+        "assets/blockDiagram-677ZJIJ3-DqCwvvSV.js": {
+          "bytes": 72975,
+          "mtime_ns": 1794802678996868808
+        },
+        "assets/index-U4zqPS74.css": {
+          "bytes": 10159,
+          "mtime_ns": 1794802678994444162
+        },
+        "assets/abnfDiagram-VRR7QNED-zcLjgLf1.js": {
+          "bytes": 1886,
+          "mtime_ns": 1794802678997454690
+        },
+        "assets/diagram-NH7WQ7WH-DNoc3Iv-.js": {
+          "bytes": 4322,
+          "mtime_ns": 1794802678996848393
+        },
+        "assets/stateDiagram-2N3HPSRC-D7yVNzIl.js": {
+          "bytes": 10474,
+          "mtime_ns": 1794802678996443375
+        },
+        "assets/index-Ba5zRRbW.css": {
+          "bytes": 4254,
+          "mtime_ns": 1794802678994658649
+        },
+        "assets/abnf-BvN4foAe.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678997671552
+        },
+        "assets/index-BRTXY361.css": {
+          "bytes": 1486,
+          "mtime_ns": 1794802678994416039
+        },
+        "assets/fsharp-B3bkOv1Q.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000877401
+        },
+        "assets/aspectj-C95qHY_B.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998718281
+        },
+        "assets/apache-IU0-dexT.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998571956
+        },
+        "assets/cose-bilkent-JH36ORCC-DkZnoLsZ.js": {
+          "bytes": 81794,
+          "mtime_ns": 1794802679011518429
+        },
+        "assets/architectureDiagram-ZJ3FMSHR-Bw0Jz0Za.js": {
+          "bytes": 151786,
+          "mtime_ns": 1794802679011223072
+        },
+        "assets/react-vendor-Bgs2OvWR.js": {
+          "bytes": 186412,
+          "mtime_ns": 1794802678995067625
+        },
+        "assets/KaTeX_AMS-Regular-DMm9YOAa.woff": {
+          "bytes": 33516,
+          "mtime_ns": 1794802678990707720
+        },
+        "assets/isbl-Dbnbc2Nb.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001965836
+        },
+        "assets/diagram-OA4YK3LP-mjTO-x1-.js": {
+          "bytes": 8552,
+          "mtime_ns": 1794802678996974344
+        },
+        "assets/ada-C1mBoEOp.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678997959160
+        },
+        "assets/smali-BoRuTFqe.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006855626
+        },
+        "assets/c-OYWzF3iz.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999139089
+        },
+        "assets/diagram-WEI45ONY-DlkoB9PN.js": {
+          "bytes": 6157,
+          "mtime_ns": 1794802678996853309
+        },
+        "assets/vbscript-html-CgDcoNoz.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007401301
+        },
+        "assets/index-BnsHK8N9.js": {
+          "bytes": 38631,
+          "mtime_ns": 1794802679011517221
+        },
+        "assets/jszip.min-BbA0vlck.js": {
+          "bytes": 97542,
+          "mtime_ns": 1794802679010984961
+        },
+        "assets/chunk-RYQCIY6F-DgqIdmR5.js": {
+          "bytes": 7114,
+          "mtime_ns": 1794802679010794639
+        },
+        "assets/vhdl-AotLaBVm.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007656911
+        },
+        "assets/gml-WIepDtNy.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001323541
+        },
+        "assets/KaTeX_Math-BoldItalic-iY-2wyZ7.woff": {
+          "bytes": 18668,
+          "mtime_ns": 1794802678990444319
+        },
+        "assets/KaTeX_Main-BoldItalic-SpSLRI95.woff": {
+          "bytes": 19412,
+          "mtime_ns": 1794802678989789233
+        },
+        "assets/KaTeX_Size2-Regular-oD1tc_U0.woff": {
+          "bytes": 6188,
+          "mtime_ns": 1794802678991655038
+        },
+        "assets/autoit-DaM_oS_e.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998805484
+        },
+        "assets/index-eMifpi77.css": {
+          "bytes": 10332,
+          "mtime_ns": 1794802678994722229
+        },
+        "assets/dart-B-LkPN8D.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999877461
+        },
+        "assets/fix-F8IOydp5.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000767616
+        },
+        "assets/csharp-BHyHOgcG.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999739969
+        },
+        "assets/index-kUJ1N-cU.js": {
+          "bytes": 5587,
+          "mtime_ns": 1794802679011012085
+        },
+        "assets/scanError-DxwIjRnL.css": {
+          "bytes": 9305,
+          "mtime_ns": 1794802678994816348
+        },
+        "assets/roboconf-gDvZFPLR.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005848394
+        },
+        "assets/bnf-lDrHcZo7.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999049552
+        },
+        "assets/elm-Ct1MC1Tw.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000752700
+        },
+        "assets/profile-D-cb6eWm.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004907201
+        },
+        "assets/KaTeX_Main-Italic-3WenGoN9.ttf": {
+          "bytes": 33580,
+          "mtime_ns": 1794802678991932604
+        },
+        "assets/KaTeX_SansSerif-Regular-CS6fqUqJ.woff": {
+          "bytes": 12316,
+          "mtime_ns": 1794802678991569460
+        },
+        "assets/openscad-BSAjpbBk.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004737211
+        },
+        "assets/chunk-XXDRQBXY-Bx34FAzz.js": {
+          "bytes": 227,
+          "mtime_ns": 1794802678995495516
+        },
+        "assets/KaTeX_Fraktur-Bold-BsDP51OF.woff": {
+          "bytes": 13296,
+          "mtime_ns": 1794802678990180585
+        },
+        "assets/handlebars-B-pv8icu.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001613315
+        },
+        "assets/xychartDiagram-FW5EYKEG-D-wCNSRW.js": {
+          "bytes": 40627,
+          "mtime_ns": 1794802678996298843
+        },
+        "assets/delphi-kXoBlD4U.js": {
+          "bytes": 504,
+          "mtime_ns": 1794802679000141570
+        },
+        "assets/journeyDiagram-5HDEW3XC-C6IfUP9E.js": {
+          "bytes": 23617,
+          "mtime_ns": 1794802678996618573
+        },
+        "assets/excel-pHvRRzcH.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001045391
+        },
+        "assets/KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2": {
+          "bytes": 6912,
+          "mtime_ns": 1794802678989159687
+        },
+        "assets/index-BD6UaQQ4.js": {
+          "bytes": 9074,
+          "mtime_ns": 1794802679011155868
+        },
+        "assets/xquery-C_tuWhPZ.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007911979
+        },
+        "assets/kanban-definition-HUTT4EX6-D8qiX7xP.js": {
+          "bytes": 20781,
+          "mtime_ns": 1794802678996717317
+        },
+        "assets/xl-DKWvdFre.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007685076
+        },
+        "assets/mermaidComponents-DiUXlOra.css": {
+          "bytes": 747,
+          "mtime_ns": 1794802678994198802
+        },
+        "assets/KaTeX_Caligraphic-Regular-CTRA-rTL.woff": {
+          "bytes": 7656,
+          "mtime_ns": 1794802678989773901
+        },
+        "assets/swift-Bm_5dzW7.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007215437
+        },
+        "assets/utils-vendor-C-Na5tUn.js": {
+          "bytes": 183477,
+          "mtime_ns": 1794802678995212991
+        },
+        "assets/sml-dtq2KHd5.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006893915
+        },
+        "assets/vbnet-C8LMxrts.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007368053
+        },
+        "assets/index-INYAL_UM.css": {
+          "bytes": 327281,
+          "mtime_ns": 1794802678994943632
+        },
+        "assets/gauss-CihRi5f3.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001080889
+        },
+        "assets/i18n-vendor-DAvVWfos.js": {
+          "bytes": 51443,
+          "mtime_ns": 1794802678995154828
+        },
+        "assets/index-Qi9ScAtb.css": {
+          "bytes": 2321,
+          "mtime_ns": 1794802678994553364
+        },
+        "assets/bash-uEaeX1kf.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998947142
+        },
+        "assets/clojure-ChJax3wg.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999395740
+        },
+        "assets/properties-DdgPiL5D.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005427920
+        },
+        "assets/scala-CRKqBQBp.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006702468
+        },
+        "assets/index-D3X9J1wY.js": {
+          "bytes": 12343,
+          "mtime_ns": 1794802679011572384
+        },
+        "assets/ldif-UDxz7YHG.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679002632212
+        },
+        "assets/requirementDiagram-TGXJPOKE-Bsv9RUh8.js": {
+          "bytes": 31285,
+          "mtime_ns": 1794802678996300842
+        },
+        "assets/python-repl-DgLH0bJO.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005813230
+        },
+        "assets/chunk-5VM5RSS4-CSm_ntGt.js": {
+          "bytes": 363,
+          "mtime_ns": 1794802678995458310
+        },
+        "assets/sqf-KVpngFBR.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006892374
+        },
+        "assets/ceylon-BhZ7sOL2.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999325994
+        },
+        "assets/index-Bde9CQLe.js": {
+          "bytes": 18828,
+          "mtime_ns": 1794802679011081122
+        },
+        "assets/markdown-6r0WRgTS.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004512016
+        },
+        "assets/pieDiagram-ENE6RG2P-6Pj1xOwS.js": {
+          "bytes": 5190,
+          "mtime_ns": 1794802678996164975
+        },
+        "assets/classDiagram-v2-EOCWNBFH-mktKzHwB.js": {
+          "bytes": 544,
+          "mtime_ns": 1794802678996383338
+        },
+        "assets/KaTeX_Size4-Regular-BF-4gkZK.woff": {
+          "bytes": 5980,
+          "mtime_ns": 1794802678991558377
+        },
+        "assets/coffeescript-CQ8wJYXU.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999459736
+        },
+        "assets/KaTeX_Main-Italic-NWA7e6Wa.woff2": {
+          "bytes": 16988,
+          "mtime_ns": 1794802678988916286
+        },
+        "assets/nix-D_ouTSxG.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004701630
+        },
+        "assets/KaTeX_Size2-Regular-Dy4dx90m.woff2": {
+          "bytes": 5208,
+          "mtime_ns": 1794802678989690697
+        },
+        "assets/ini-C0Mcvxm_.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001946045
+        },
+        "assets/index-qEhXun_8.css": {
+          "bytes": 810,
+          "mtime_ns": 1794802678994442287
+        },
+        "assets/KaTeX_Main-Bold-Jm3AIy58.woff": {
+          "bytes": 29912,
+          "mtime_ns": 1794802678990462276
+        },
+        "assets/PushMessageCard-DoTxdUV8.css": {
+          "bytes": 1811,
+          "mtime_ns": 1794802678994384916
+        },
+        "assets/sql_more-tZC_SS6q.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006936538
+        },
+        "assets/typescript-BFZJmUD-.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007367053
+        },
+        "assets/php-B0NpafTQ.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004859579
+        },
+        "assets/nginx-DbgcNosS.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004647758
+        },
+        "assets/KaTeX_SansSerif-Regular-DDBCnlJ7.woff2": {
+          "bytes": 10344,
+          "mtime_ns": 1794802678989679573
+        },
+        "assets/prolog-oU3Hc8wx.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005557745
+        },
+        "assets/qwenpawBack-CnLehSCb.png": {
+          "bytes": 40462,
+          "mtime_ns": 1794802678972062338
+        },
+        "assets/wardleyDiagram-EHGQE667-rsmQEdbf.js": {
+          "bytes": 26175,
+          "mtime_ns": 1794802678997214371
+        },
+        "assets/accesslog-CQ5izp4-.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678997783878
+        },
+        "assets/mathematica-CRNN83Ek.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004459145
+        },
+        "assets/asciidoc-BsC1lN95.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998705740
+        },
+        "assets/mojolicious-DYrT-fkP.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004603344
+        },
+        "assets/latex-CNmJhLKD.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679002572008
+        },
+        "assets/vennDiagram-L72KCM5P-Lp4Lybb6.js": {
+          "bytes": 42427,
+          "mtime_ns": 1794802679010791098
+        },
+        "assets/chunk-JWPE2WC7-DPB0MjvR.js": {
+          "bytes": 294,
+          "mtime_ns": 1794802678995822288
+        },
+        "assets/quadrantDiagram-ABIIQ3AL-C_F68tRB.js": {
+          "bytes": 34474,
+          "mtime_ns": 1794802678996281927
+        },
+        "assets/mercury-DBDUb2IX.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004517808
+        },
+        "assets/stylus-CbWVSbwf.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007215312
+        },
+        "assets/hy-BUIrn4pN.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001968502
+        },
+        "assets/less-DKjbf3Fx.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679002651461
+        },
+        "assets/fortran-BjlCpTb-.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000957896
+        },
+        "assets/basic-B8GrWtFz.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998966266
+        },
+        "assets/twig-CjFRdy64.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007250769
+        },
+        "assets/chunk-2Q5K7J3B-BxBiv8aQ.js": {
+          "bytes": 190,
+          "mtime_ns": 1794802678995758542
+        },
+        "assets/chunk-EX3LRPZG-fwhqBK9Q.js": {
+          "bytes": 38622,
+          "mtime_ns": 1794802678996580534
+        },
+        "assets/index-Cd4FXIS1.css": {
+          "bytes": 6365,
+          "mtime_ns": 1794802678994553239
+        },
+        "assets/chunk-VR4S4FIN-CwHCyt_j.js": {
+          "bytes": 529,
+          "mtime_ns": 1794802678995534472
+        },
+        "assets/dsconfig-oxshvqVS.js": {
+          "bytes": 504,
+          "mtime_ns": 1794802679000240273
+        },
+        "assets/objectivec-CtqkL5gp.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004739253
+        },
+        "assets/index-6SODF7Ih.js": {
+          "bytes": 7465,
+          "mtime_ns": 1794802679010902091
+        },
+        "assets/hsp-Hy3oHopy.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001651105
+        },
+        "assets/verilog-Bd4wmmwD.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007746406
+        },
+        "assets/javascript-BLBO8dgs.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679002104994
+        },
+        "assets/inform7-OPCObTTU.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001947129
+        },
+        "assets/KaTeX_SansSerif-Bold-DbIhKOiC.woff": {
+          "bytes": 14408,
+          "mtime_ns": 1794802678991024492
+        },
+        "assets/sizeCapture-X5ZJPWSS-dqbhi4Fd.js": {
+          "bytes": 1075,
+          "mtime_ns": 1794802679010638607
+        },
+        "assets/stata-CeDKxmIC.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006938329
+        },
+        "assets/dagre-VKFMJZFB-QQSg6svv.js": {
+          "bytes": 8954,
+          "mtime_ns": 1794802679011276111
+        },
+        "assets/index-DZuqZj9J.css": {
+          "bytes": 7684,
+          "mtime_ns": 1794802678994178053
+        },
+        "assets/parser3-CjLFpK9B.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004776584
+        },
+        "assets/scheme-C6luw3wP.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006865583
+        },
+        "assets/KaTeX_Fraktur-Regular-CB_wures.ttf": {
+          "bytes": 19572,
+          "mtime_ns": 1794802678991990184
+        },
+        "assets/cpp-uACxcH0T.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999499067
+        },
+        "assets/rib-BS1ynqOs.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005851186
+        },
+        "assets/cmake-DUJFfFLM.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999411572
+        },
+        "assets/perl-ByCT3rNK.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004816790
+        },
+        "assets/index-wUqvMFwy.js": {
+          "bytes": 40195,
+          "mtime_ns": 1794802679011080164
+        },
+        "assets/mermaidComponents-CIEe3YPa.js": {
+          "bytes": 1856,
+          "mtime_ns": 1794802679010969129
+        },
+        "assets/scss-7DDFLD5x.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006748632
+        },
+        "assets/KaTeX_Script-Regular-C5JkGWo-.ttf": {
+          "bytes": 16648,
+          "mtime_ns": 1794802678993699957
+        },
+        "assets/erlang-lDZQYalh.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000744992
+        },
+        "assets/maxima-C9I4vrdb.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004498642
+        },
+        "assets/gams-Df12_TX7.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001208423
+        },
+        "assets/glsl-BTn-gqQn.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001488031
+        },
+        "assets/swimlanes-5IMT3BWC-D7ZvvE9d.js": {
+          "bytes": 120376,
+          "mtime_ns": 1794802679009553297
+        },
+        "assets/KaTeX_Main-BoldItalic-DzxPMmG6.ttf": {
+          "bytes": 32968,
+          "mtime_ns": 1794802678992301416
+        },
+        "assets/ebnfDiagram-CCIWWBDH-bPMEboSR.js": {
+          "bytes": 2082,
+          "mtime_ns": 1794802678997441691
+        },
+        "assets/KaTeX_Size4-Regular-Dl5lxZxV.woff2": {
+          "bytes": 4928,
+          "mtime_ns": 1794802678989397882
+        },
+        "assets/index-CLNx6jFw.js": {
+          "bytes": 10029,
+          "mtime_ns": 1794802679010754142
+        },
+        "assets/lua-DgiXW3RX.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004498350
+        },
+        "assets/chunk-32BRIVSS-QzPy9gO5.js": {
+          "bytes": 1880,
+          "mtime_ns": 1794802678995403688
+        },
+        "assets/KaTeX_Main-Bold-waoOVXN0.ttf": {
+          "bytes": 51336,
+          "mtime_ns": 1794802678993664250
+        },
+        "assets/clojure-repl-DVsElwHq.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999387574
+        },
+        "assets/taggerscript-i-danTbF.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007401468
+        },
+        "assets/railroadDiagram-RFXS5EU6-D2-4W5iZ.js": {
+          "bytes": 1683,
+          "mtime_ns": 1794802678997421983
+        },
+        "assets/PushMessageCard-DJLU9066.js": {
+          "bytes": 4766,
+          "mtime_ns": 1794802679011081455
+        },
+        "assets/index-DgAO2Tev.js": {
+          "bytes": 2764,
+          "mtime_ns": 1794802678995315026
+        },
+        "assets/KaTeX_Math-BoldItalic-B3XSjfu4.ttf": {
+          "bytes": 31196,
+          "mtime_ns": 1794802678992709266
+        },
+        "assets/tp-DmaN1Fw3.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007240978
+        },
+        "assets/qml-Bei4BuVU.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005611075
+        },
+        "assets/haml-CniotNla.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001513155
+        },
+        "assets/zephir-BKWG4NQZ.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679009591878
+        },
+        "assets/avrasm-D1NYv-1a.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998811608
+        },
+        "assets/KaTeX_Caligraphic-Regular-Di6jR-x-.woff2": {
+          "bytes": 6908,
+          "mtime_ns": 1794802678988717631
+        },
+        "assets/diff-B1_0zbbh.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999922708
+        },
+        "assets/KaTeX_Math-Italic-DA0__PXp.woff": {
+          "bytes": 18748,
+          "mtime_ns": 1794802678991280102
+        },
+        "assets/irpf90-DINUXVRd.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001978585
+        },
+        "assets/KaTeX_Script-Regular-D5yQViql.woff": {
+          "bytes": 10588,
+          "mtime_ns": 1794802678991703951
+        },
+        "assets/index-B7_0_3rL.js": {
+          "bytes": 8098,
+          "mtime_ns": 1794802679010899716
+        },
+        "assets/purebasic-DS_MHLxB.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005955013
+        },
+        "assets/dns-C_3eHcLM.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000008661
+        },
+        "assets/swimlanesDiagram-G3AALYLV-CX9xzq98.js": {
+          "bytes": 595,
+          "mtime_ns": 1794802678995580177
+        },
+        "assets/flowDiagram-23GEKE2U-C3nCq9GN.js": {
+          "bytes": 61402,
+          "mtime_ns": 1794802679011579842
+        },
+        "assets/step21-CPbB2FjG.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007003825
+        },
+        "assets/KaTeX_Caligraphic-Bold-BEiXGLvX.woff": {
+          "bytes": 7716,
+          "mtime_ns": 1794802678991645538
+        },
+        "assets/x86asm-UtpYXB-m.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007665910
+        },
+        "assets/tcl-DuyCCugR.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007236186
+        },
+        "assets/index-DJnBjBio.js": {
+          "bytes": 1590892,
+          "mtime_ns": 1794802679017247835
+        },
+        "assets/ruleslanguage-Don9m2Hk.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006690052
+        },
+        "assets/capnproto-B2-ucL48.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999202793
+        },
+        "assets/markdown-vendor-CMw2oXtv.js": {
+          "bytes": 160228,
+          "mtime_ns": 1794802678995227407
+        },
+        "assets/sql-DjTCSr1O.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006937079
+        },
+        "assets/KaTeX_SansSerif-Italic-DN2j7dab.woff": {
+          "bytes": 14112,
+          "mtime_ns": 1794802678990773716
+        },
+        "assets/KaTeX_Fraktur-Regular-Dxdc4cR9.woff": {
+          "bytes": 13208,
+          "mtime_ns": 1794802678991706451
+        },
+        "assets/KaTeX_Fraktur-Bold-CL6g_b3V.woff2": {
+          "bytes": 11348,
+          "mtime_ns": 1794802678989691239
+        },
+        "assets/moonscript-DtzBlYXI.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004601303
+        },
+        "assets/cos-BeOgw2aw.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999582729
+        },
+        "assets/livecodeserver-CAYHp7U-.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679002697125
+        },
+        "assets/index-B77gt54Q.css": {
+          "bytes": 3663,
+          "mtime_ns": 1794802678994584779
+        },
+        "assets/pgsql-tK2NK8R9.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004816498
+        },
+        "assets/KaTeX_Size1-Regular-C195tn64.woff": {
+          "bytes": 6496,
+          "mtime_ns": 1794802678991246229
+        },
+        "assets/awk-Cyz-CL0u.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998848648
+        },
+        "assets/index-CrBdoNzB.js": {
+          "bytes": 13031,
+          "mtime_ns": 1794802679011516971
+        },
+        "assets/golo-DFGqCO5J.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001368788
+        },
+        "assets/diagram-FQU43EPY-D_kqHUT4.js": {
+          "bytes": 10890,
+          "mtime_ns": 1794802678997026424
+        },
+        "assets/smalltalk-C7hUDt5b.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006808754
+        },
+        "assets/timeline-definition-FHXFAJF6-CrmZ6LyH.js": {
+          "bytes": 31398,
+          "mtime_ns": 1794802678996682569
+        },
+        "assets/index-DXA18fqm.js": {
+          "bytes": 7086,
+          "mtime_ns": 1794802679010954921
+        },
+        "assets/dos-hArOvMRr.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000094698
+        },
+        "assets/index-BC0orJBO.css": {
+          "bytes": 479,
+          "mtime_ns": 1794802678994377000
+        },
+        "assets/erDiagram-Q63AITRT-Bt5OHpwN.js": {
+          "bytes": 27257,
+          "mtime_ns": 1794802678995633674
+        },
+        "assets/shell-D_k5pEic.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679006796671
+        },
+        "assets/cynefin-VYW2F7L2-CRsEqmXZ.js": {
+          "bytes": 690835,
+          "mtime_ns": 1794802679014704238
+        },
+        "assets/pf-BGc8dVFB.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004775125
+        },
+        "assets/dust-BUbKJWIz.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000359141
+        },
+        "assets/c4Diagram-LMCZKHZV-BfrSWnaT.js": {
+          "bytes": 70047,
+          "mtime_ns": 1794802678995366482
+        },
+        "assets/lsl-4Q4jNrcj.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004409897
+        },
+        "assets/classDiagram-OUVF2IWQ-mktKzHwB.js": {
+          "bytes": 544,
+          "mtime_ns": 1794802678996305675
+        },
+        "assets/c-like-QBNTgIRW.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999103424
+        },
+        "assets/index-B1mo4sS3.js": {
+          "bytes": 23491,
+          "mtime_ns": 1794802679011210989
+        },
+        "assets/KaTeX_Size1-Regular-Dbsnue_I.ttf": {
+          "bytes": 12228,
+          "mtime_ns": 1794802678993750954
+        },
+        "assets/index-DuemfuG6.js": {
+          "bytes": 65154,
+          "mtime_ns": 1794802679011517138
+        },
+        "assets/KaTeX_Size4-Regular-DWFBv043.ttf": {
+          "bytes": 10364,
+          "mtime_ns": 1794802678993986856
+        },
+        "assets/KaTeX_Size3-Regular-CTq5MqoE.woff": {
+          "bytes": 4420,
+          "mtime_ns": 1794802678991735241
+        },
+        "assets/ebnf-BvrHsJEb.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000176151
+        },
+        "assets/KaTeX_Main-BoldItalic-DxDJ3AOS.woff2": {
+          "bytes": 16780,
+          "mtime_ns": 1794802678989072151
+        },
+        "assets/gitGraphDiagram-IHSO6WYX-C6mBkTN9.js": {
+          "bytes": 30012,
+          "mtime_ns": 1794802678995712128
+        },
+        "assets/reasonml-DYHVnV9W.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005610992
+        },
+        "assets/python-N6OgStUD.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005555579
+        },
+        "assets/django-CU7e2pV7.js": {
+          "bytes": 504,
+          "mtime_ns": 1794802678999977788
+        },
+        "assets/processing-DuQJVSHq.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004906909
+        },
+        "assets/index-B9ktsNYi.js": {
+          "bytes": 24849,
+          "mtime_ns": 1794802679011014251
+        },
+        "assets/ui-vendor-Bx9quDpC.js": {
+          "bytes": 8340399,
+          "mtime_ns": 1794802679035862177
+        },
+        "assets/KaTeX_SansSerif-Italic-YYjJ1zSn.ttf": {
+          "bytes": 22364,
+          "mtime_ns": 1794802678992864257
+        },
+        "assets/elixir-C9uWM7PR.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000628666
+        },
+        "assets/dnd-vendor-D1xjBboA.js": {
+          "bytes": 44167,
+          "mtime_ns": 1794802678995287986
+        },
+        "assets/KaTeX_Main-Bold-Cx986IdX.woff2": {
+          "bytes": 25324,
+          "mtime_ns": 1794802678988948200
+        },
+        "assets/scanError-CwkWupUJ.js": {
+          "bytes": 18057,
+          "mtime_ns": 1794802679011255862
+        },
+        "assets/KaTeX_Main-Regular-ypZvNtVU.ttf": {
+          "bytes": 53580,
+          "mtime_ns": 1794802678992459531
+        },
+        "assets/armasm-COOCSA-K.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678998687407
+        },
+        "assets/oxygene-Bcay7V3H.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004774834
+        },
+        "assets/layout-G2_VHZDF.js": {
+          "bytes": 25246,
+          "mtime_ns": 1794802679011574593
+        },
+        "assets/KaTeX_Math-BoldItalic-CZnvNsCZ.woff2": {
+          "bytes": 16400,
+          "mtime_ns": 1794802678989224767
+        },
+        "assets/KaTeX_AMS-Regular-BQhdFMY1.woff2": {
+          "bytes": 28076,
+          "mtime_ns": 1794802678988934493
+        },
+        "assets/gcode-BaDZvXoH.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001190965
+        },
+        "assets/index-DT6EDmMB.js": {
+          "bytes": 6857,
+          "mtime_ns": 1794802679011157867
+        },
+        "assets/KaTeX_Fraktur-Bold-BdnERNNW.ttf": {
+          "bytes": 19584,
+          "mtime_ns": 1794802678992107927
+        },
+        "assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf": {
+          "bytes": 27556,
+          "mtime_ns": 1794802678994027354
+        },
+        "assets/mizar-ChqHzfCp.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004562638
+        },
+        "assets/lasso-CYqPtWIR.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679002557509
+        },
+        "assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2": {
+          "bytes": 13568,
+          "mtime_ns": 1794802678989787317
+        },
+        "assets/KaTeX_Math-Italic-flOr_0UB.ttf": {
+          "bytes": 31308,
+          "mtime_ns": 1794802678994033103
+        },
+        "assets/json-C4cgmn22.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679002262110
+        },
+        "assets/leaf-1jsU48bs.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679002660086
+        },
+        "assets/index-D23Gd_2G.css": {
+          "bytes": 12312,
+          "mtime_ns": 1794802678994916134
+        },
+        "assets/KaTeX_Size1-Regular-mCD8mA8B.woff2": {
+          "bytes": 5468,
+          "mtime_ns": 1794802678989453420
+        },
+        "assets/KaTeX_Math-Italic-t53AETM-.woff2": {
+          "bytes": 16440,
+          "mtime_ns": 1794802678989749777
+        },
+        "assets/htmlbars-Fn_hm8yU.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001637772
+        },
+        "assets/subunit-BVR0etoy.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007116110
+        },
+        "assets/matlab-59u6Et54.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004457436
+        },
+        "assets/KaTeX_Main-Italic-BMLOBm91.woff": {
+          "bytes": 19676,
+          "mtime_ns": 1794802678989747652
+        },
+        "assets/KaTeX_SansSerif-Bold-D1sUS0GD.woff2": {
+          "bytes": 12216,
+          "mtime_ns": 1794802678989327344
+        },
+        "assets/KaTeX_Size2-Regular-B7gKUWhC.ttf": {
+          "bytes": 11508,
+          "mtime_ns": 1794802678993996064
+        },
+        "assets/livescript-Dul9VqHy.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004410814
+        },
+        "assets/go-7-OgI58-.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001492281
+        },
+        "assets/node-repl-DCOIHP68.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004700255
+        },
+        "assets/gradle-VuGbzl3B.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679001537653
+        },
+        "assets/KaTeX_SansSerif-Italic-C3H0VqGB.woff2": {
+          "bytes": 12028,
+          "mtime_ns": 1794802678989281472
+        },
+        "assets/KaTeX_Caligraphic-Bold-ATXxdsX0.ttf": {
+          "bytes": 12368,
+          "mtime_ns": 1794802678992769679
+        },
+        "assets/index-OgAKs5g1.js": {
+          "bytes": 34459,
+          "mtime_ns": 1794802679011156243
+        },
+        "assets/protobuf-8uYYYFEk.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679005555120
+        },
+        "assets/clean-Bvgdk0ek.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999349909
+        },
+        "assets/crmsh-BKyEDayA.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999542356
+        },
+        "assets/cal-DPRCHy7Y.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999248374
+        },
+        "assets/plaintext-Cr8TuwpP.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679004908659
+        },
+        "assets/KaTeX_Typewriter-Regular-C0xS9mPB.woff": {
+          "bytes": 16028,
+          "mtime_ns": 1794802678991957145
+        },
+        "assets/cytoscape.esm-DTSO7Bv0.js": {
+          "bytes": 443722,
+          "mtime_ns": 1794802678997064796
+        },
+        "assets/d-BNYPBFox.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679000690662
+        },
+        "assets/pegDiagram-2B236MQR-rGc0UjFE.js": {
+          "bytes": 2033,
+          "mtime_ns": 1794802678997585390
+        },
+        "assets/coq-rmC8_s9w.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802678999692472
+        },
+        "assets/xml-DU2pSt_N.js": {
+          "bytes": 509,
+          "mtime_ns": 1794802679007748822
+        },
+        "assets/index-CgxUALop.css": {
+          "bytes": 2044,
+          "mtime_ns": 1794802678994380124
+        }
+      }
+    },
+    {
+      "from": "src/qwenpaw/console",
+      "archive_path": "build-artifacts/packaged-console",
+      "files": {
+        "qwenpaw.png": {
+          "bytes": 55690,
+          "mtime_ns": 1782703664000000000
+        },
+        "index.html": {
+          "bytes": 1073,
+          "mtime_ns": 1782703671000000000
+        },
+        "logo-dark.svg": {
+          "bytes": 9623,
+          "mtime_ns": 1782703664000000000
+        },
+        "logo-light.svg": {
+          "bytes": 9623,
+          "mtime_ns": 1782703664000000000
+        },
+        "online.svg": {
+          "bytes": 7016,
+          "mtime_ns": 1782703664000000000
+        },
+        "qwenpawBack.png": {
+          "bytes": 40462,
+          "mtime_ns": 1782703664000000000
+        },
+        "assets/coffeescript-D5l38eBv.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Script-Regular-D3wIWfF6.woff2": {
+          "bytes": 9644,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-jOVu-no-.js": {
+          "bytes": 1540613,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/gams-PtlfRkWE.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/chunk-5VM5RSS4-DNCGlFwM.js": {
+          "bytes": 363,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_AMS-Regular-DRggAlZN.ttf": {
+          "bytes": 63632,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-BaxHlFlO.js": {
+          "bytes": 22764,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/classDiagram-OUVF2IWQ-DfkR-sPA.js": {
+          "bytes": 544,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/php-template-C1uyXCLi.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/crmsh-BJsz_uO8.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-DryNNVL-.js": {
+          "bytes": 9933,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/mipsasm-D8T4Jswd.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-CXR_QBUu.js": {
+          "bytes": 9074,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/tap-BHlWdhPA.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Fraktur-Regular-CTYiF6lA.woff2": {
+          "bytes": 11316,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/inform7-DBmShtYp.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/ui-vendor-tn0RQdqM.css": {
+          "bytes": 0,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/elm-BF3j_gu-.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Caligraphic-Regular-wX97UBjC.ttf": {
+          "bytes": 12344,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/ceylon-CX5niwAg.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-DkskDjNj.js": {
+          "bytes": 36464,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/q-D7sfIVLL.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/json-DR3f393E.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/dts-BwasPzKW.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/diagram-WEI45ONY-BHrZaZ9E.js": {
+          "bytes": 6157,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/1c-BoUwRWrK.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/php-CpF-tvr9.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/hsp-Bvw4XDWx.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Main-Regular-Dr94JaBh.woff": {
+          "bytes": 30772,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/bash-Dn5ISQFW.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/diff-CXF7N_ez.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/xml-CawFPaOg.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Size3-Regular-DgpXs0kz.ttf": {
+          "bytes": 7588,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/applescript-Cn7JmKCh.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/subunit-CCVz6I40.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/vennDiagram-L72KCM5P-DCaD2hjU.js": {
+          "bytes": 42427,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-D22yxsDw.css": {
+          "bytes": 15172,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/erb-CJRB2ynA.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/swimlanesDiagram-G3AALYLV-DYr5flwc.js": {
+          "bytes": 595,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/journeyDiagram-5HDEW3XC-UwbhaKNH.js": {
+          "bytes": 23617,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/vbscript-html-DZoYuGog.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/lisp-vj1doVp5.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/c-Dys1Tj9U.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/sequenceDiagram-DBY2YBRQ-BArqeNde.js": {
+          "bytes": 117532,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/cose-bilkent-JH36ORCC-BkVX_SYR.js": {
+          "bytes": 81794,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/sml-U6ogSLDz.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_SansSerif-Regular-BNo7hRIc.ttf": {
+          "bytes": 19436,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_SansSerif-Bold-CFMepnvq.ttf": {
+          "bytes": 24504,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/dust-D5poPK2-.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/properties-BdjVbQN7.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/diagram-NH7WQ7WH-CbHJqcoY.js": {
+          "bytes": 4322,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/flix-DHFatLDV.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/gcode-DDBl_BNv.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/csp-B_igQRN6.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/vim-Bw9d7diP.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/aspectj-X2kXNwyg.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/ebnfDiagram-CCIWWBDH-DtEji3Iq.js": {
+          "bytes": 2082,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-DWTaTlde.js": {
+          "bytes": 14997,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/livecodeserver-BYTWWkfd.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/lsl-vrfSz45c.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Main-Regular-B22Nviop.woff2": {
+          "bytes": 26272,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/mel-Vrav4bY-.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/ruleslanguage-Boku_Rk2.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/nim-9mD7oxYc.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/d-C9z2VPRT.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/n1ql-B5Dlva02.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/routeros-DmJmhECL.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/vala-CkTHPLbi.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-CtoK5jGI.css": {
+          "bytes": 2045,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/ganttDiagram-NO4QXBWP-CMeyreqY.js": {
+          "bytes": 39319,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/abnfDiagram-VRR7QNED-6r_E0b0Y.js": {
+          "bytes": 1886,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/delphi-asEVSGTa.js": {
+          "bytes": 504,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/objectivec-T3jKJ3IG.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/clojure-repl-CKa4Pax9.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-D8mtF5yE.js": {
+          "bytes": 39885,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/chunk-JWPE2WC7-yNQfqjz8.js": {
+          "bytes": 294,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-U4zqPS74.css": {
+          "bytes": 10159,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-CLNyb4dv.js": {
+          "bytes": 12344,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-Ba5zRRbW.css": {
+          "bytes": 4254,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/nginx-R7L68_wM.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/nix-CzjH-vSD.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-BRTXY361.css": {
+          "bytes": 1486,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/angelscript-mXIwOuwb.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/react-vendor-Bgs2OvWR.js": {
+          "bytes": 186412,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_AMS-Regular-DMm9YOAa.woff": {
+          "bytes": 33516,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/less-BcvjNbzW.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/tcl-CUfNQ1oD.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/llvm-DEIzrFMG.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/profile-BdBKOhtb.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/puppet-BCfn-TWl.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/taggerscript-3uO2w8_-.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/fix-zg5PV3tF.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/arcade-CgO6g8kf.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/blockDiagram-677ZJIJ3-BBZMAhJg.js": {
+          "bytes": 72975,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/stateDiagram-2N3HPSRC-Bkzyv0HN.js": {
+          "bytes": 10474,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/haml-BNbCq_bx.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/dart-DB-uCDO_.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/architectureDiagram-ZJ3FMSHR-CjudpZco.js": {
+          "bytes": 151786,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/mercury-Bqwb0Clk.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-DbNyszeV.js": {
+          "bytes": 13031,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/jszip.min-BbA0vlck.js": {
+          "bytes": 97542,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-xiNLt21n.js": {
+          "bytes": 7086,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/capnproto-DBlcxsLR.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/accesslog-DkDegK9n.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Math-BoldItalic-iY-2wyZ7.woff": {
+          "bytes": 18668,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Main-BoldItalic-SpSLRI95.woff": {
+          "bytes": 19412,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/typescript-YpnmE-Gs.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/diagram-FQU43EPY-DXwo9pYU.js": {
+          "bytes": 10890,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Size2-Regular-oD1tc_U0.woff": {
+          "bytes": 6188,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-eMifpi77.css": {
+          "bytes": 10332,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/actionscript-DMWh7j41.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/cmake-Cqhmufv9.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/glsl-C3igHpbp.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/vbscript-3MaYYmNa.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-DrSwPbS1.js": {
+          "bytes": 10322,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Main-Italic-3WenGoN9.ttf": {
+          "bytes": 33580,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_SansSerif-Regular-CS6fqUqJ.woff": {
+          "bytes": 12316,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/layout-CD0x_G5i.js": {
+          "bytes": 25246,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/scss-DtPYcpIy.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/coq-CLftbafJ.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/pf-BW1X3dh5.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/scanError-BHBoiXgo.js": {
+          "bytes": 19040,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Fraktur-Bold-BsDP51OF.woff": {
+          "bytes": 13296,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/crystal-BU2o92PU.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/scanError-CyUdu3bB.css": {
+          "bytes": 12294,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-CAgor6Ij.css": {
+          "bytes": 333383,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/pegDiagram-2B236MQR-BOujd9Rq.js": {
+          "bytes": 2033,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/apache-CBkQuBE6.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/infoDiagram-FWYZ7A6U-Dq_RuzQm.js": {
+          "bytes": 660,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2": {
+          "bytes": 6912,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/oxygene-B7YP9K-H.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/pgsql-B4PB5utY.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/mermaidComponents-DiUXlOra.css": {
+          "bytes": 747,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Caligraphic-Regular-CTRA-rTL.woff": {
+          "bytes": 7656,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/gauss-BRsWQn7i.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/http-BIVAV01L.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/requirementDiagram-TGXJPOKE-Dzvo4WBH.js": {
+          "bytes": 31285,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/sankeyDiagram-HTMAVEWB-DGbYyXN9.js": {
+          "bytes": 23241,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/i18n-vendor-DAvVWfos.js": {
+          "bytes": 51443,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/ini-BhyJnXwH.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/cynefin-VYW2F7L2-BFnrmAqA.js": {
+          "bytes": 690835,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/kanban-definition-HUTT4EX6-B1id451P.js": {
+          "bytes": 20781,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-Qi9ScAtb.css": {
+          "bytes": 2321,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/tp-Bl3FdVmS.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/plaintext-B6ihiipc.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/dagre-VKFMJZFB-BvRhP50_.js": {
+          "bytes": 8954,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/dockerfile-f4gDZNDu.js": {
+          "bytes": 504,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/irpf90-DICTezRm.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/verilog-j2wx0-wo.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/lua-DUmLKZlP.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/purebasic-BBnnf_7G.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/graph-DhLnKrd6.js": {
+          "bytes": 5829,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/xychartDiagram-FW5EYKEG-B0SmREQt.js": {
+          "bytes": 40627,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/cynefinDiagram-TSTJHNR4-BH3SDgYC.js": {
+          "bytes": 10176,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/thrift-BJCUtt8p.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/java-BvA9TUEp.js": {
+          "bytes": 504,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Size4-Regular-BF-4gkZK.woff": {
+          "bytes": 5980,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/markdown-DkVgOwpS.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/erlang-repl-GB1d-fXk.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Main-Italic-NWA7e6Wa.woff2": {
+          "bytes": 16988,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/roboconf-DqLykKm4.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/stylus-Bjkqhn5x.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/lasso-sMksjOCh.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Size2-Regular-Dy4dx90m.woff2": {
+          "bytes": 5208,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-qEhXun_8.css": {
+          "bytes": 810,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Main-Bold-Jm3AIy58.woff": {
+          "bytes": 29912,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/PushMessageCard-DoTxdUV8.css": {
+          "bytes": 1811,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_SansSerif-Regular-DDBCnlJ7.woff2": {
+          "bytes": 10344,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/maxima-DGqXFlW2.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/qwenpawBack-CnLehSCb.png": {
+          "bytes": 40462,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/scilab-D-64Iy7J.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/ada-D3IsnnKV.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/xl-BL9s_GZ4.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/chunk-XXDRQBXY-BP2XWnk1.js": {
+          "bytes": 227,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/gherkin-Box-8WPK.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/clojure-CmT0wPvh.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/pony-CqY4JJ-I.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/awk-Bbrt01iC.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/haskell-DxjOstZb.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/zephir-C1PdlFzk.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/basic-7PMg_rdq.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/python-Bp9b99KZ.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/jboss-cli-Ch_iV1CF.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/isbl-zMqlA0UM.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/fortran-BHnWM-GB.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/pieDiagram-ENE6RG2P-DI13R24B.js": {
+          "bytes": 5190,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-Cd4FXIS1.css": {
+          "bytes": 6365,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/brainfuck-R43_1dP-.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-DRAoGGLd.js": {
+          "bytes": 8478,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/ui-vendor-Dm_1HsBT.js": {
+          "bytes": 8343436,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/openscad-B8epjhQj.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/ruby-zadLVcyD.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_SansSerif-Bold-DbIhKOiC.woff": {
+          "bytes": 14408,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/haxe-B0qDgIdR.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/mermaidComponents-5Z9gzSWD.js": {
+          "bytes": 1856,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/twig-DIoaQGDv.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-DZuqZj9J.css": {
+          "bytes": 7684,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/chunk-2Q5K7J3B-Bd620aB-.js": {
+          "bytes": 190,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/excel-DdNZNNVm.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-BKVUVouH.js": {
+          "bytes": 61925,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-k8yRQTpI.js": {
+          "bytes": 31510,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-DVdZnm_X.js": {
+          "bytes": 5587,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Fraktur-Regular-CB_wures.ttf": {
+          "bytes": 19572,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/mojolicious-CfIuelmV.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/erlang-DklVgBbs.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/hy-Bw_uDgGf.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/chunk-MOJQB5TN-DDO9UmXk.js": {
+          "bytes": 15754,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/cpp-0ibxX8oG.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/ishikawaDiagram-FXEZZL3T-CNz3lhNg.js": {
+          "bytes": 17645,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Script-Regular-C5JkGWo-.ttf": {
+          "bytes": 16648,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/rsl-BcsYM9l6.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-bgo2dmO3.js": {
+          "bytes": 24945,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/mathematica-Dr-sbNWH.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Main-BoldItalic-DzxPMmG6.ttf": {
+          "bytes": 32968,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/timeline-definition-FHXFAJF6-D6kwwH5v.js": {
+          "bytes": 31398,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Size4-Regular-Dl5lxZxV.woff2": {
+          "bytes": 4928,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/dsconfig-y5hMpD0U.js": {
+          "bytes": 504,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Main-Bold-waoOVXN0.ttf": {
+          "bytes": 51336,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/utils-vendor-C3SbtAMQ.js": {
+          "bytes": 183477,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/autoit-CIZ3wUy6.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/qml-C7_Zfo7h.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/abnf-Cc6rwMHa.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/arduino-BXYYgFEy.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Math-BoldItalic-B3XSjfu4.ttf": {
+          "bytes": 31196,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/stan-e1HYNTZf.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/python-repl-Bi6p7D05.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/chunk-VR4S4FIN-CVaZPoB2.js": {
+          "bytes": 529,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-218GUt1M.js": {
+          "bytes": 6857,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/handlebars-CBJ_RIXf.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/golo-B5OqDZY5.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/step21-Bm2BI-zL.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Caligraphic-Regular-Di6jR-x-.woff2": {
+          "bytes": 6908,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/perl-DfVBr3tX.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/asciidoc-v8_EtkLF.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/c-like-KUJ3GtWg.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Math-Italic-DA0__PXp.woff": {
+          "bytes": 18748,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/swift-B-TSnXQ9.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Script-Regular-D5yQViql.woff": {
+          "bytes": 10588,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/classDiagram-v2-EOCWNBFH-DfkR-sPA.js": {
+          "bytes": 544,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/fsharp-Ar_bgw6y.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/erDiagram-Q63AITRT-CY-5pq-Y.js": {
+          "bytes": 27257,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Caligraphic-Bold-BEiXGLvX.woff": {
+          "bytes": 7716,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/leaf-icxxQVyo.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/quadrantDiagram-ABIIQ3AL-DcBp7NiR.js": {
+          "bytes": 34474,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/markdown-vendor-CMw2oXtv.js": {
+          "bytes": 160228,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_SansSerif-Italic-DN2j7dab.woff": {
+          "bytes": 14112,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Fraktur-Regular-Dxdc4cR9.woff": {
+          "bytes": 13208,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/wardleyDiagram-EHGQE667-ChCW9A7D.js": {
+          "bytes": 26175,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/csharp-BtETBIDF.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Fraktur-Bold-CL6g_b3V.woff2": {
+          "bytes": 11348,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/chunk-32BRIVSS-fcLiGREp.js": {
+          "bytes": 1880,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-B77gt54Q.css": {
+          "bytes": 3663,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/swimlanes-5IMT3BWC-DCZcdsTk.js": {
+          "bytes": 120376,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/powershell-DGxX027G.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Size1-Regular-C195tn64.woff": {
+          "bytes": 6496,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-DMs8JcrC.js": {
+          "bytes": 8098,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-BKTW4SL4.js": {
+          "bytes": 18828,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/shell-D5I_RqKq.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/sas-BT9U6_So.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/yaml-BaYnewRy.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/makefile-D55LNR_h.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-BC0orJBO.css": {
+          "bytes": 479,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/parser3-BKN3M2hu.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/scheme-CrwbAsGj.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/r-B3-zYyYN.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/javascript-DkeUy5MA.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/flowDiagram-23GEKE2U-CkfCWjhA.js": {
+          "bytes": 61402,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/cos-CNmGn7BC.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Size1-Regular-Dbsnue_I.ttf": {
+          "bytes": 12228,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/chunk-RYQCIY6F-CTLcR4ni.js": {
+          "bytes": 7114,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/bnf-Bpg9N3ky.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/gradle-DSImb46v.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/reasonml-BAnmwr2r.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Size4-Regular-DWFBv043.ttf": {
+          "bytes": 10364,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Size3-Regular-CTq5MqoE.woff": {
+          "bytes": 4420,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Main-BoldItalic-DxDJ3AOS.woff2": {
+          "bytes": 16780,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/smalltalk-DMvsYVEt.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/dos-BOYEN5fW.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-CYPciC8P.js": {
+          "bytes": 2748,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/chunk-EX3LRPZG-PJNIMVxE.js": {
+          "bytes": 38622,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/x86asm-De6CUds-.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/matlab-C0NJtJA3.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/moonscript-sH9-axZS.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/stateDiagram-v2-6OUMAXLB-B-UOdLQu.js": {
+          "bytes": 505,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_SansSerif-Italic-YYjJ1zSn.ttf": {
+          "bytes": 22364,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/dnd-vendor-D1xjBboA.js": {
+          "bytes": 44167,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/cal-CYbBQ5Xt.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/dns-CGRLmGwG.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Main-Bold-Cx986IdX.woff2": {
+          "bytes": 25324,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Main-Regular-ypZvNtVU.ttf": {
+          "bytes": 53580,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/prolog-BV3si3l0.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/julia-lOLl5mjR.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/avrasm-CCNN1pQb.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/nsis-0vWytZJy.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/scala-MG5EDshN.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Math-BoldItalic-CZnvNsCZ.woff2": {
+          "bytes": 16400,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_AMS-Regular-BQhdFMY1.woff2": {
+          "bytes": 28076,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/go-DYSEwy52.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/axapta-TgZkFeKz.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Fraktur-Bold-BdnERNNW.ttf": {
+          "bytes": 19584,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/mindmap-definition-LN4V7U3C-wyHP-IUq.js": {
+          "bytes": 23440,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/kotlin-Dh6xv1Aa.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/chunk-V7JOEXUC-D258azW6.js": {
+          "bytes": 49299,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/gitGraphDiagram-IHSO6WYX-CdzqRrDa.js": {
+          "bytes": 30012,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf": {
+          "bytes": 27556,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2": {
+          "bytes": 13568,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/htmlbars-BSyvlA5g.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/autohotkey-bwhUcDY4.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/rib-DjZT559d.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Math-Italic-flOr_0UB.ttf": {
+          "bytes": 31308,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/css-CGt2bmQW.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/ldif-DrYoz0q0.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/c4Diagram-LMCZKHZV-DD9xsBkt.js": {
+          "bytes": 70047,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/groovy-B2Lu4gxn.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/sizeCapture-X5ZJPWSS-D02KWW0i.js": {
+          "bytes": 1075,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/elixir-DwohRwmU.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/mizar-A_PhcZCn.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-D23Gd_2G.css": {
+          "bytes": 12312,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Size1-Regular-mCD8mA8B.woff2": {
+          "bytes": 5468,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/diagram-G47NLZAW-Dqi-swvC.js": {
+          "bytes": 11275,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Math-Italic-t53AETM-.woff2": {
+          "bytes": 16440,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/processing-D3czmWHU.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/sqf-CjHWksw7.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/vhdl-DVrDBp59.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Main-Italic-BMLOBm91.woff": {
+          "bytes": 19676,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_SansSerif-Bold-D1sUS0GD.woff2": {
+          "bytes": 12216,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-DHqGrGGA.js": {
+          "bytes": 7465,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Size2-Regular-B7gKUWhC.ttf": {
+          "bytes": 11508,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/clean-CVZEaB75.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/vbnet-CNIOCc1Y.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/xquery-C7r4M6--.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/stata-DGMLjCk5.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_SansSerif-Italic-C3H0VqGB.woff2": {
+          "bytes": 12028,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Caligraphic-Bold-ATXxdsX0.ttf": {
+          "bytes": 12368,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-Gr988oc7.js": {
+          "bytes": 9364,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/django-D6ZlY7lG.js": {
+          "bytes": 504,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/rust-XODM4sKA.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/protobuf-lk1Ktt14.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/ocaml-C2lJ4e1S.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/diagram-OA4YK3LP-Ci-aO2mr.js": {
+          "bytes": 8552,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/KaTeX_Typewriter-Regular-C0xS9mPB.woff": {
+          "bytes": 16028,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/cytoscape.esm-DTSO7Bv0.js": {
+          "bytes": 443722,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/railroadDiagram-RFXS5EU6-l45fghK3.js": {
+          "bytes": 1683,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/ebnf-Dfct66qq.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/gml-BB80IFAE.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/latex-CQKgKGJ9.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/livescript-CkU-aqLJ.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/monkey-DY12SkZj.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/armasm-DZT33Dr4.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/julia-repl-Beqbqj6p.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/sql_more-ovodwK1T.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/sql-D0fokYHZ.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/index-CgxUALop.css": {
+          "bytes": 2044,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/PushMessageCard-CH6j3fA1.js": {
+          "bytes": 4739,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/node-repl-DDCZFzrm.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        },
+        "assets/smali-CH2rppoT.js": {
+          "bytes": 509,
+          "mtime_ns": 1782703671000000000
+        }
+      }
+    }
+  ],
+  "server_changes": "none"
+}

@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-17",
+  "rollback_baseline": "cf77202f94df408c2e6e7dee18c5b32eccd85706",
+  "scoped_paths_matching_baseline": 64,
+  "unrelated_tracked_files_preserved": 4,
+  "bundle_verified": true,
+  "archived_file_snapshots_match_saved_branch": true,
+  "original_patches_pass_apply_check": true,
+  "release_candidate_checksums": "3/3 passed",
+  "backend_regression": {
+    "passed": 556,
+    "warnings": "one existing audioop deprecation"
+  },
+  "console_regression": {
+    "passed": 20,
+    "files": 3
+  },
+  "console_build": "passed; existing chunk/circular-chunk warnings remain",
+  "packaged_console_rebuilt": true,
+  "server_81_changes": "none",
+  "push_or_deploy": "none"
+}

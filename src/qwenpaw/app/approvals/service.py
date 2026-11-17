@@ -280,14 +280,6 @@ class ApprovalService:
                 return None
 
             pending.status = decision.value
-            if (
-                decision == ApprovalDecision.APPROVED
-                and time.time() > pending.created_at + pending.timeout_seconds
-            ):
-                decision = ApprovalDecision.TIMEOUT
-                pending.status = decision.value
-            if pending.extra.get("single_use"):
-                scope = ApprovalScope.EXACT
             pending.resolved_at = time.time()
             pending.scope = scope
 
@@ -526,18 +518,6 @@ class ApprovalService:
     # ------------------------------------------------------------------
     # Garbage collection
     # ------------------------------------------------------------------
-
-    async def cancel_all_pending(self) -> int:
-        """Invalidate every pending approval during an emergency freeze."""
-        async with self._lock:
-            records = list(self._pending.values())
-            self._pending.clear()
-            for pending in records:
-                pending.status = "cancelled"
-                pending.resolved_at = time.time()
-                if not pending.future.done():
-                    pending.future.set_result(ApprovalDecision.DENIED)
-            return len(records)
 
     def _gc_pending_locked(self) -> None:
         """Evict stale pending records whose futures were never resolved.

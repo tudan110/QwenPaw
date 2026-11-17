@@ -129,16 +129,11 @@ def load_config() -> OutputGuardSettings:
 def install() -> None:
     """Wrap all channel classes' outbound methods with the redactor.
 
-    Idempotent; production startup must fail if the boundary cannot install.
+    Idempotent; never raises (logs and continues on failure).
     """
-
     try:
         from . import channel_patch
 
         channel_patch.install(load_config)
     except Exception:  # pragma: no cover - defensive
         logger.exception("output_guard: install failed")
-        from ..execution_policy import enabled
-
-        if enabled():
-            raise RuntimeError("输出防护安装失败，拒绝以无防护状态启动") from None

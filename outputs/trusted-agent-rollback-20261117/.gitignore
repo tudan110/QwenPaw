@@ -1,0 +1,7 @@
+# Local recovery material is deliberately retained outside normal Git commits.
+*.bundle
+*.tar.gz
+patches/
+workspace-before/
+release-candidate/
+build-artifacts/

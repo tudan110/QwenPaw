@@ -79,10 +79,6 @@ class ToolRegistry:
         parts = python_name.split("_")
         return "".join(p.capitalize() for p in parts)
 
-    def is_registered_python_name(self, python_name: str) -> bool:
-        """Only explicit registrations confer capability admission."""
-        return python_name in self._python_name_map
-
     def extract_target(
         self,
         tool_name: str,

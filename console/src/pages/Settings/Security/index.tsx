@@ -11,7 +11,6 @@ import {
 } from "./components";
 import { PageHeader } from "@/components/PageHeader";
 import styles from "./index.module.less";
-import { ExecutionControlTab } from "./components/ExecutionControlTab";
 
 function SecurityPage() {
   const { t } = useTranslation();
@@ -91,11 +90,6 @@ function SecurityPage() {
           activeKey={activeTab}
           onChange={setActiveTab}
           items={[
-            {
-              key: "executionControl",
-              label: "执行控制与归档",
-              children: <ExecutionControlTab />,
-            },
             {
               key: "toolGuard",
               label: (

@@ -12,32 +12,6 @@ from qwenpaw.constant import EnvVarLoader
 from .execution_policy import enabled
 
 
-def endpoint_key(url: str) -> tuple[str, str, int, str]:
-    """Exact protocol/host/port/path; credentials and ambiguous URLs denied."""
-    try:
-        target = urlsplit(url)
-        if (
-            target.scheme not in {"http", "https"}
-            or not target.hostname
-            or target.username is not None
-            or target.password is not None
-            or target.query
-            or target.fragment
-            or any(c in url for c in ("\\", "%"))
-            or any(ord(c) <= 32 for c in url)
-            or any(p in {".", ".."} for p in target.path.split("/"))
-        ):
-            raise ValueError("invalid endpoint")
-        return (
-            target.scheme,
-            target.hostname.lower(),
-            target.port or (443 if target.scheme == "https" else 80),
-            target.path or "/",
-        )
-    except ValueError:
-        raise PermissionError("MCP 服务端点格式不安全") from None
-
-
 def validate_endpoint(endpoint: dict[str, Any]) -> None:
     if not enabled():
         return
@@ -59,11 +33,28 @@ def validate_endpoint(endpoint: dict[str, Any]) -> None:
         ]:
             raise PermissionError("生产环境拒绝未声明的 MCP 子进程")
         return
-    configured = json.loads(EnvVarLoader.get_str("QWENPAW_MCP_ALLOWED_URLS", "[]"))
-    if not isinstance(configured, list) or not all(
-        isinstance(u, str) for u in configured
+    target = urlsplit(str(endpoint.get("url") or ""))
+    allowed = {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        *(
+            value.strip()
+            for value in EnvVarLoader.get_str(
+                "QWENPAW_MCP_ALLOWED_HOSTS", ""
+            ).split(",")
+            if value.strip()
+        ),
+    }
+    if (
+        target.scheme not in {"http", "https"}
+        or target.username is not None
+        or target.password is not None
+        or not target.hostname
+        or not (
+            target.hostname in allowed
+            or target.hostname.endswith(".svc.cluster.local")
+            or target.hostname.endswith(".svc")
+        )
     ):
-        raise ValueError("MCP URL allowlist must be a JSON string array")
-    allowed = {endpoint_key(url) for url in configured}
-    if endpoint_key(str(endpoint.get("url") or "")) not in allowed:
         raise PermissionError("生产环境拒绝未批准的 MCP 服务端点")
