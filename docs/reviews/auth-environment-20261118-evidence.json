@@ -1,0 +1,359 @@
+{
+  "target": "http://171.43.135.133:30083/",
+  "date": "2026-11-18",
+  "timezone": "Asia/Shanghai",
+  "code_ref": "dev@f2eb4c30c1f60359a844f48485b19999cd175988",
+  "deployment_commit_verified": false,
+  "cases": [
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "portal_health",
+        "path": "/portal-api/health",
+        "result": {
+          "chunk_id": "fb1a13",
+          "wall_time_seconds": 0.969042305,
+          "exit_code": 0,
+          "original_token_count": 60,
+          "output": "HTTP/1.1 200 OK\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:10:42 GMT\r\nContent-Type: application/json\r\nContent-Length: 20\r\nConnection: keep-alive\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"status\":\"healthy\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "portal_sso_status",
+        "path": "/portal-api/sso/status",
+        "result": {
+          "chunk_id": "2d33d6",
+          "wall_time_seconds": 0.903433499,
+          "exit_code": 0,
+          "original_token_count": 77,
+          "output": "HTTP/1.1 200 OK\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:10:42 GMT\r\nContent-Type: application/json\r\nContent-Length: 87\r\nConnection: keep-alive\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"configured\":true,\"authorization_code_ready\":false,\"sso_required\":true,\"login_url\":\"\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "portal_business",
+        "path": "/portal-api/alarm-workorders",
+        "result": {
+          "chunk_id": "591d2a",
+          "wall_time_seconds": 0.884066997,
+          "exit_code": 0,
+          "original_token_count": 103,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:10:42 GMT\r\nContent-Type: application/json\r\nContent-Length: 154\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_REQUIRED\",\"detail\":\"缺少 SSO token，请先登录\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:10:42.806730+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "canonical_business",
+        "path": "/api/portal/alarm-workorders",
+        "result": {
+          "chunk_id": "8b5908",
+          "wall_time_seconds": 0.931598501,
+          "exit_code": 0,
+          "original_token_count": 103,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:10:42 GMT\r\nContent-Type: application/json\r\nContent-Length: 154\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_REQUIRED\",\"detail\":\"缺少 SSO token，请先登录\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:10:42.943129+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "copaw_alias",
+        "path": "/copaw-api/api/doctor/runtime",
+        "result": {
+          "chunk_id": "8828ea",
+          "wall_time_seconds": 0.908321805,
+          "exit_code": 0,
+          "original_token_count": 103,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:10:42 GMT\r\nContent-Type: application/json\r\nContent-Length: 154\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_REQUIRED\",\"detail\":\"缺少 SSO token，请先登录\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:10:42.944636+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "invalid_inoe",
+        "path": "/portal-api/alarm-workorders",
+        "result": {
+          "chunk_id": "92e2ed",
+          "wall_time_seconds": 0.774455499,
+          "exit_code": 0,
+          "original_token_count": 107,
+          "output": "HTTP/1.1 502 Bad Gateway\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:10:42 GMT\r\nContent-Type: application/json\r\nContent-Length: 171\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_VALIDATION_UNAVAILABLE\",\"detail\":\"SSO 用户信息服务返回异常状态\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:10:42.579131+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "invalid_local",
+        "path": "/portal-api/alarm-workorders",
+        "result": {
+          "chunk_id": "0b87c3",
+          "wall_time_seconds": 1.004001146,
+          "exit_code": 0,
+          "original_token_count": 104,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:10:43 GMT\r\nContent-Type: application/json\r\nContent-Length: 158\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_INVALID\",\"detail\":\"本地访问凭据无效或已过期\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:10:43.071346+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "invalid_cookie",
+        "path": "/portal-api/alarm-workorders",
+        "result": {
+          "chunk_id": "09dedb",
+          "wall_time_seconds": 0.867684397,
+          "exit_code": 0,
+          "original_token_count": 107,
+          "output": "HTTP/1.1 502 Bad Gateway\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:10:42 GMT\r\nContent-Type: application/json\r\nContent-Length: 171\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_VALIDATION_UNAVAILABLE\",\"detail\":\"SSO 用户信息服务返回异常状态\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:10:42.892490+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "fake_proxy_identity",
+        "path": "/portal-api/alarm-workorders",
+        "result": {
+          "chunk_id": "12706c",
+          "wall_time_seconds": 0.984176999,
+          "exit_code": 0,
+          "original_token_count": 103,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:10:43 GMT\r\nContent-Type: application/json\r\nContent-Length: 154\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_REQUIRED\",\"detail\":\"缺少 SSO token，请先登录\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:10:43.189806+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "query_token",
+        "path": "/portal-api/alarm-workorders?token=auth-verification-invalid-20261118",
+        "result": {
+          "chunk_id": "74dd59",
+          "wall_time_seconds": 0.822733732,
+          "exit_code": 0,
+          "original_token_count": 103,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:10:42 GMT\r\nContent-Type: application/json\r\nContent-Length: 154\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_REQUIRED\",\"detail\":\"缺少 SSO token，请先登录\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:10:42.651456+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "bearer_invalid",
+        "path": "/portal-api/alarm-workorders",
+        "result": {
+          "chunk_id": "ddb852",
+          "wall_time_seconds": 0.937676019,
+          "exit_code": 0,
+          "original_token_count": 104,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:10:42 GMT\r\nContent-Type: application/json\r\nContent-Length: 158\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_INVALID\",\"detail\":\"本地访问凭据无效或已过期\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:10:42.593931+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "empty_header_cookie",
+        "path": "/portal-api/alarm-workorders",
+        "result": {
+          "chunk_id": "0a11cc",
+          "wall_time_seconds": 0.750560798,
+          "exit_code": 0,
+          "original_token_count": 103,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:10:42 GMT\r\nContent-Type: application/json\r\nContent-Length: 154\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_REQUIRED\",\"detail\":\"缺少 SSO token，请先登录\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:10:42.650630+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "login_missing",
+        "path": "/portal-api/sso/token-login",
+        "result": {
+          "chunk_id": "ee61e5",
+          "wall_time_seconds": 0.457281716,
+          "exit_code": 0,
+          "original_token_count": 67,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:11:09 GMT\r\nContent-Type: application/json\r\nContent-Length: 37\r\nConnection: keep-alive\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"detail\":\"缺少 INOE 登录凭证\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "login_invalid",
+        "path": "/portal-api/sso/token-login",
+        "result": {
+          "chunk_id": "607585",
+          "wall_time_seconds": 0.578566048,
+          "exit_code": 0,
+          "original_token_count": 71,
+          "output": "HTTP/1.1 502 Bad Gateway\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:11:09 GMT\r\nContent-Type: application/json\r\nContent-Length: 53\r\nConnection: keep-alive\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"detail\":\"SSO 用户信息服务返回异常状态\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "invalid_inoe_repeat",
+        "path": "/portal-api/alarm-workorders",
+        "result": {
+          "chunk_id": "3fa75e",
+          "wall_time_seconds": 0.523700336,
+          "exit_code": 0,
+          "original_token_count": 107,
+          "output": "HTTP/1.1 502 Bad Gateway\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:11:09 GMT\r\nContent-Type: application/json\r\nContent-Length: 171\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_VALIDATION_UNAVAILABLE\",\"detail\":\"SSO 用户信息服务返回异常状态\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:11:09.896306+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "encoded_path",
+        "path": "/portal-api/%61larm-workorders",
+        "result": {
+          "chunk_id": "ca71ff",
+          "wall_time_seconds": 0.537515222,
+          "exit_code": 0,
+          "original_token_count": 103,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:11:09 GMT\r\nContent-Type: application/json\r\nContent-Length: 154\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_REQUIRED\",\"detail\":\"缺少 SSO token，请先登录\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:11:09.827636+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "double_slash",
+        "path": "/portal-api//alarm-workorders",
+        "result": {
+          "chunk_id": "679a97",
+          "wall_time_seconds": 0.499639832,
+          "exit_code": 0,
+          "original_token_count": 103,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:11:09 GMT\r\nContent-Type: application/json\r\nContent-Length: 154\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_REQUIRED\",\"detail\":\"缺少 SSO token，请先登录\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:11:09.857980+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "login_evil_origin",
+        "path": "/portal-api/sso/token-login",
+        "result": {
+          "chunk_id": "8b85e7",
+          "wall_time_seconds": 0.564257041,
+          "exit_code": 0,
+          "original_token_count": 71,
+          "output": "HTTP/1.1 403 Forbidden\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:11:50 GMT\r\nContent-Type: application/json\r\nContent-Length: 57\r\nConnection: keep-alive\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"detail\":\"登录或 Cookie 写请求来源不被允许\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "login_null_origin",
+        "path": "/portal-api/sso/token-login",
+        "result": {
+          "chunk_id": "113226",
+          "wall_time_seconds": 0.752902661,
+          "exit_code": 0,
+          "original_token_count": 71,
+          "output": "HTTP/1.1 403 Forbidden\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:11:50 GMT\r\nContent-Type: application/json\r\nContent-Length: 57\r\nConnection: keep-alive\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"detail\":\"登录或 Cookie 写请求来源不被允许\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "login_same_origin",
+        "path": "/portal-api/sso/token-login",
+        "result": {
+          "chunk_id": "b11a96",
+          "wall_time_seconds": 0.606701655,
+          "exit_code": 0,
+          "original_token_count": 67,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:11:50 GMT\r\nContent-Type: application/json\r\nContent-Length: 37\r\nConnection: keep-alive\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"detail\":\"缺少 INOE 登录凭证\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "session_noauth",
+        "path": "/portal-api/sso/session",
+        "result": {
+          "chunk_id": "8b98e8",
+          "wall_time_seconds": 0.570186079,
+          "exit_code": 0,
+          "original_token_count": 103,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:11:50 GMT\r\nContent-Type: application/json\r\nContent-Length: 154\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_REQUIRED\",\"detail\":\"缺少 SSO token，请先登录\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:11:50.300337+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "admin_settings",
+        "path": "/portal-api/sso/sso-settings",
+        "result": {
+          "chunk_id": "73a4d1",
+          "wall_time_seconds": 0.75550359,
+          "exit_code": 0,
+          "original_token_count": 103,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:11:50 GMT\r\nContent-Type: application/json\r\nContent-Length: 154\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_REQUIRED\",\"detail\":\"缺少 SSO token，请先登录\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:11:50.845505+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "identity_forgery",
+        "path": "/api/agents/gateway?user_id=admin",
+        "result": {
+          "chunk_id": "67cfa7",
+          "wall_time_seconds": 0.629769209,
+          "exit_code": 0,
+          "original_token_count": 103,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:11:50 GMT\r\nContent-Type: application/json\r\nContent-Length: 154\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_REQUIRED\",\"detail\":\"缺少 SSO token，请先登录\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:11:50.287706+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "envs_noauth",
+        "path": "/api/envs",
+        "result": {
+          "chunk_id": "f61d18",
+          "wall_time_seconds": 0.593983971,
+          "exit_code": 0,
+          "original_token_count": 103,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:11:50 GMT\r\nContent-Type: application/json\r\nContent-Length: 154\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_REQUIRED\",\"detail\":\"缺少 SSO token，请先登录\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:11:50.455285+00:00\"}"
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "invalid_token_format",
+        "path": "/portal-api/alarm-workorders",
+        "result": {
+          "chunk_id": "6d925f",
+          "wall_time_seconds": 0.659493214,
+          "exit_code": 0,
+          "original_token_count": 100,
+          "output": "HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.31.2\r\nDate: Wed, 18 Nov 2026 01:11:50 GMT\r\nContent-Type: application/json\r\nContent-Length: 144\r\nConnection: keep-alive\r\ncache-control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-XSS-Protection: 1; mode=block\r\n\r\n{\"code\":\"SSO_TOKEN_INVALID\",\"detail\":\"SSO token 格式无效\",\"stage\":\"request_authentication\",\"occurred_at\":\"2026-11-18T01:11:50.527006+00:00\"}"
+        }
+      }
+    }
+  ]
+}
