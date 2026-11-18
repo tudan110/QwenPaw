@@ -79,9 +79,7 @@ def create_agent_api_client(
         base_url=normalized,
         timeout=default_timeout,
         trust_env=trust_env_for_url(normalized),
-        headers=agent_api_headers(
-            normalized, _normalize_api_base_url(None)
-        ),
+        headers=agent_api_headers(normalized, _normalize_api_base_url(None)),
     )
 
 
@@ -797,9 +795,15 @@ async def _call_fork_api(
         "channel": channel,
     }
     try:
+        from ...extensions.integrations.agent_api_auth import agent_api_headers
+
         async with httpx.AsyncClient(
             timeout=30.0,
             trust_env=trust_env_for_url(url),
+            headers=agent_api_headers(
+                _normalize_api_base_url(base_url),
+                _normalize_api_base_url(None),
+            ),
         ) as client:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()

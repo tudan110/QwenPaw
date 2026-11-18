@@ -16,6 +16,7 @@
 * **fail-open**：词库文件损坏 / 正则非法时记日志跳过，内置 pattern
   照常生效。
 """
+
 from __future__ import annotations
 
 import logging
@@ -112,6 +113,11 @@ class _Pattern:
 
 _BUILTIN_PATTERNS: Tuple[_Pattern, ...] = (
     _Pattern(
+        id="collaboration_capability",
+        regex=re.compile(r"\bqc1\.[A-Za-z0-9_-]{20,}"),
+        style="full",
+    ),
+    _Pattern(
         id="pem_private_key",
         regex=re.compile(
             r"-----BEGIN [A-Z ]*PRIVATE KEY-----"
@@ -206,6 +212,7 @@ _BUILTIN_PATTERNS: Tuple[_Pattern, ...] = (
 # ---------------------------------------------------------------------------
 _TAIL_GUARD_RE = re.compile(
     r"(?:\bsk-[A-Za-z0-9_-]*"
+    r"|\bqc1\.[A-Za-z0-9_-]*"
     r"|\bAKIA[0-9A-Z]*"
     r"|\bLTAI[A-Za-z0-9]*"
     r"|\bgh[pousr]_[A-Za-z0-9]*"

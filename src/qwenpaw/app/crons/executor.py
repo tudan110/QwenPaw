@@ -22,8 +22,22 @@ class CronExecutor:
         self._workspace = workspace
         self._channel_manager = channel_manager
 
+    async def execute(
+        self, job: CronJobSpec, *, scheduled: bool = False
+    ) -> dict[str, Any]:
+        if job.task_type != "agent":
+            return await self._execute(job)
+        from ...extensions.api.collaboration_access import (
+            scheduled_collaboration,
+        )
+
+        with scheduled_collaboration(
+            job.id or "", job.runtime.timeout_seconds, force_service=scheduled
+        ):
+            return await self._execute(job)
+
     # pylint: disable=too-many-statements,too-many-branches
-    async def execute(self, job: CronJobSpec) -> dict[str, Any]:
+    async def _execute(self, job: CronJobSpec) -> dict[str, Any]:
         """Execute one job once.
 
         - task_type text: send fixed text to channel

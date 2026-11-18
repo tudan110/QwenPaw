@@ -17,16 +17,19 @@ from qwenpaw.agents.tools.file_search import (
     _walk_and_grep,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def temp_dir():
+def temp_dir(monkeypatch):
     """Create a temporary directory that is cleaned up after the test."""
     with tempfile.TemporaryDirectory() as td:
+        monkeypatch.setattr(
+            "qwenpaw.extensions.security.execution_policy.get_current_workspace_dir",
+            lambda: Path(td),
+        )
         yield Path(td)
 
 

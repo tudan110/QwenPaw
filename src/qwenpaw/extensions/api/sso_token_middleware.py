@@ -31,6 +31,11 @@ from .access_policy import (
     requires_admin,
 )
 from .model_access import verify_model_service_key
+from .collaboration_access import (
+    CURRENT_COLLABORATION_TOKEN,
+    HEADER as COLLABORATION_HEADER,
+    resolve_lease,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +141,13 @@ class SsoTokenMiddleware:
             if is_model_adapter(path)
             else ""
         )
-        if disabled and not local_token and not token:
+        has_collaboration = COLLABORATION_HEADER in request.headers
+        if (
+            disabled
+            and not local_token
+            and not token
+            and not has_collaboration
+        ):
             from qwenpaw.extensions.security.execution_policy import (
                 enabled as production_guards_enabled,
             )
@@ -158,7 +169,12 @@ class SsoTokenMiddleware:
         if "X-QwenPaw-Access-Token" in request.headers and not local_token:
             token = ""
             model_key = ""
-        if not token and not local_token and not model_key:
+        if (
+            not token
+            and not local_token
+            and not model_key
+            and not has_collaboration
+        ):
             response = JSONResponse(
                 status_code=401,
                 content={
@@ -172,79 +188,93 @@ class SsoTokenMiddleware:
             await response(scope, receive, send)
             return
         try:
-            explicit = (
-                "X-Inoe-Token" in request.headers
-                or "X-QwenPaw-Access-Token" in request.headers
-                or normalize_token(
-                    request.headers.get("Authorization", "")
-                ).startswith(LOCAL_TOKEN_PREFIX)
-            )
-            if (
-                not explicit
-                and (token or local_token)
-                and request.method not in {"GET", "HEAD", "OPTIONS"}
-            ):
-                require_browser_origin(request)
-            if (
-                is_model_adapter(path)
-                and model_key
-                and not local_token
-                and not token
-                and "X-Inoe-Token" not in request.headers
-                and verify_model_service_key(model_key)
-            ):
-                request.state.access_identity = AccessIdentity(
-                    user={}, inoe_token="", source="model_service"
+            if has_collaboration:
+                if (
+                    local_token
+                    or token
+                    or model_key
+                    or request.cookies
+                    or "Authorization" in request.headers
+                    or "X-Inoe-Token" in request.headers
+                    or "X-QwenPaw-Access-Token" in request.headers
+                ):
+                    raise HTTPException(401, "协同与用户访问凭据不能混用")
+                lease = request.headers[COLLABORATION_HEADER]
+                identity = resolve_lease(lease, request.method, path)
+            else:
+                explicit = (
+                    "X-Inoe-Token" in request.headers
+                    or "X-QwenPaw-Access-Token" in request.headers
+                    or normalize_token(
+                        request.headers.get("Authorization", "")
+                    ).startswith(LOCAL_TOKEN_PREFIX)
                 )
-                await self.app(scope, receive, send)
-                return
-            cached = _use_cache(request.method, path)
-            authorization = normalize_token(
-                request.headers.get("Authorization", "")
-            )
-            if (
-                authorization.startswith(LOCAL_TOKEN_PREFIX)
-                and "X-QwenPaw-Access-Token" in request.headers
-                and authorization != local_token
-            ):
-                raise HTTPException(401, "本地访问凭据冲突")
-            if local_token:
-                identity = get_access_store().resolve(local_token)
-                if not cached:
-                    user = await self.validator.validate(
-                        identity.inoe_token,
-                        sso_settings_store.get_userinfo_url(),
-                        use_cache=False,
+                if (
+                    not explicit
+                    and (token or local_token)
+                    and request.method not in {"GET", "HEAD", "OPTIONS"}
+                ):
+                    require_browser_origin(request)
+                if (
+                    is_model_adapter(path)
+                    and model_key
+                    and not local_token
+                    and not token
+                    and "X-Inoe-Token" not in request.headers
+                    and verify_model_service_key(model_key)
+                ):
+                    request.state.access_identity = AccessIdentity(
+                        user={}, inoe_token="", source="model_service"
                     )
-                    if user_subject(user) != user_subject(identity.user):
-                        raise HTTPException(401, "登录身份已变化")
-                if "X-Inoe-Token" in request.headers:
-                    if token.startswith(LOCAL_TOKEN_PREFIX):
-                        if token != local_token:
-                            raise HTTPException(401, "本地访问凭据冲突")
-                        token = ""
-                if token and "X-Inoe-Token" in request.headers:
+                    await self.app(scope, receive, send)
+                    return
+                cached = _use_cache(request.method, path)
+                authorization = normalize_token(
+                    request.headers.get("Authorization", "")
+                )
+                if (
+                    authorization.startswith(LOCAL_TOKEN_PREFIX)
+                    and "X-QwenPaw-Access-Token" in request.headers
+                    and authorization != local_token
+                ):
+                    raise HTTPException(401, "本地访问凭据冲突")
+                if local_token:
+                    identity = get_access_store().resolve(local_token)
+                    if not cached:
+                        user = await self.validator.validate(
+                            identity.inoe_token,
+                            sso_settings_store.get_userinfo_url(),
+                            use_cache=False,
+                        )
+                        if user_subject(user) != user_subject(identity.user):
+                            raise HTTPException(401, "登录身份已变化")
+                    if "X-Inoe-Token" in request.headers:
+                        if token.startswith(LOCAL_TOKEN_PREFIX):
+                            if token != local_token:
+                                raise HTTPException(401, "本地访问凭据冲突")
+                            token = ""
+                    if token and "X-Inoe-Token" in request.headers:
+                        user = await self.validator.validate(
+                            token,
+                            sso_settings_store.get_userinfo_url(),
+                            use_cache=cached,
+                        )
+                        if user_subject(user) != user_subject(identity.user):
+                            raise HTTPException(401, "访问凭据身份冲突")
+                        identity = AccessIdentity(
+                            user=user,
+                            inoe_token=token,
+                            access_token=local_token,
+                            source="mixed",
+                        )
+                else:
                     user = await self.validator.validate(
                         token,
                         sso_settings_store.get_userinfo_url(),
                         use_cache=cached,
                     )
-                    if user_subject(user) != user_subject(identity.user):
-                        raise HTTPException(401, "访问凭据身份冲突")
-                    identity = AccessIdentity(
-                        user=user,
-                        inoe_token=token,
-                        access_token=local_token,
-                        source="mixed",
-                    )
-            else:
-                user = await self.validator.validate(
-                    token,
-                    sso_settings_store.get_userinfo_url(),
-                    use_cache=cached,
-                )
-                identity = AccessIdentity(user=user, inoe_token=token)
-            authorize_request(identity, request.method, path)
+                    identity = AccessIdentity(user=user, inoe_token=token)
+                authorize_request(identity, request.method, path)
         except HTTPException as exc:
             response = JSONResponse(
                 status_code=exc.status_code,
@@ -280,9 +310,22 @@ class SsoTokenMiddleware:
             await response(scope, receive, send)
             return
 
+        await self._call_authenticated(
+            request,
+            identity,
+            scope,
+            receive,
+            send,
+            lease=lease if has_collaboration else "",
+        )
+
+    async def _call_authenticated(
+        self, request, identity, scope, receive, send, *, lease=""
+    ):
         request.state.sso_user = identity.user
         request.state.inoe_token = identity.inoe_token
         request.state.access_identity = identity
+        ctx_lease = CURRENT_COLLABORATION_TOKEN.set(lease)
         ctx_identity = CURRENT_IDENTITY.set(identity)
         ctx_token = inoe_settings_store.CURRENT_REQUEST_TOKEN.set(
             identity.inoe_token
@@ -292,3 +335,4 @@ class SsoTokenMiddleware:
         finally:
             inoe_settings_store.CURRENT_REQUEST_TOKEN.reset(ctx_token)
             CURRENT_IDENTITY.reset(ctx_identity)
+            CURRENT_COLLABORATION_TOKEN.reset(ctx_lease)

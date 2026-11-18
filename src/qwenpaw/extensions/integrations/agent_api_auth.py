@@ -11,6 +11,12 @@ from qwenpaw.extensions.api.inoe_settings_store import CURRENT_REQUEST_TOKEN
 from qwenpaw.extensions.api.sso_auth import normalize_token
 from qwenpaw.extensions.api.access_session import CURRENT_IDENTITY
 from qwenpaw.sandbox import SandboxConfig
+from qwenpaw.extensions.api.collaboration_access import (
+    CURRENT_COLLABORATION_TOKEN,
+    ENV_KEY as COLLABORATION_ENV,
+    HEADER as COLLABORATION_HEADER,
+    SOURCE as COLLABORATION_SOURCE,
+)
 
 _REQUEST_TOKEN_ENV = "QWENPAW_REQUEST_INOE_TOKEN"
 _ACCESS_TOKEN_ENV = "QWENPAW_REQUEST_ACCESS_TOKEN"
@@ -62,7 +68,16 @@ def is_trusted_api_target(target_url: str, trusted_url: str) -> bool:
 def agent_api_headers(target_url: str, trusted_url: str) -> dict[str, str]:
     access_token = get_access_token()
     token = get_request_token()
-    if not token and not access_token:
+    identity = CURRENT_IDENTITY.get()
+    collaboration_token = ""
+    if (
+        identity is None
+        or getattr(identity, "source", "") == COLLABORATION_SOURCE
+    ):
+        collaboration_token = CURRENT_COLLABORATION_TOKEN.get() or (
+            EnvVarLoader.get_str(COLLABORATION_ENV, "") or ""
+        )
+    if not token and not access_token and not collaboration_token:
         return {}
     if not is_trusted_api_target(target_url, trusted_url) or urlsplit(
         target_url
@@ -70,6 +85,8 @@ def agent_api_headers(target_url: str, trusted_url: str) -> dict[str, str]:
         raise ValueError(
             "Refusing to forward INOE credentials to an untrusted agent API"
         )
+    if collaboration_token and not token and not access_token:
+        return {COLLABORATION_HEADER: collaboration_token}
     return (
         {"X-QwenPaw-Access-Token": access_token}
         if access_token
@@ -85,10 +102,20 @@ def subprocess_request_environment(
     for key in (
         _REQUEST_TOKEN_ENV,
         _ACCESS_TOKEN_ENV,
+        COLLABORATION_ENV,
+        "COPAW_REQUEST_COLLABORATION_TOKEN",
         "COPAW_REQUEST_INOE_TOKEN",
         "COPAW_REQUEST_ACCESS_TOKEN",
     ):
         result.pop(key, None)
+    identity = CURRENT_IDENTITY.get()
+    if (
+        identity is not None
+        and getattr(identity, "source", "") == COLLABORATION_SOURCE
+    ):
+        lease = CURRENT_COLLABORATION_TOKEN.get()
+        if lease:
+            result[COLLABORATION_ENV] = lease
     token = get_request_token()
     if token:
         result[_REQUEST_TOKEN_ENV] = token
@@ -101,6 +128,30 @@ def subprocess_request_environment(
 
 def sandbox_request_environment(config: SandboxConfig) -> SandboxConfig:
     """Preserve explicit credential masks and environment allowlists."""
+    identity = CURRENT_IDENTITY.get()
+    if (
+        identity is not None
+        and getattr(identity, "source", "") == COLLABORATION_SOURCE
+    ):
+        env = config.env_vars.copy()
+        for key in (
+            _REQUEST_TOKEN_ENV,
+            _ACCESS_TOKEN_ENV,
+            "COPAW_REQUEST_INOE_TOKEN",
+            "COPAW_REQUEST_ACCESS_TOKEN",
+            "COPAW_REQUEST_COLLABORATION_TOKEN",
+        ):
+            env[key] = ""
+        if env.get(COLLABORATION_ENV) != "" and (
+            config.env_mode != "allowlist" or COLLABORATION_ENV in env
+        ):
+            env[COLLABORATION_ENV] = CURRENT_COLLABORATION_TOKEN.get()
+        return replace(config, env_vars=env)
+    if identity is not None:
+        env = config.env_vars.copy()
+        env[COLLABORATION_ENV] = ""
+        env["COPAW_REQUEST_COLLABORATION_TOKEN"] = ""
+        config = replace(config, env_vars=env)
     token = get_request_token()
     if not token:
         return config

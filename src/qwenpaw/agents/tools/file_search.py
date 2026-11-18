@@ -167,6 +167,17 @@ def _resolve_search_root(
     return search_root
 
 
+def _search_entry_allowed(path: Path) -> bool:
+    """Filter each discovered entry, including nested secrets and links."""
+    from ...extensions.security.execution_policy import check_search_path
+
+    try:
+        check_search_path(str(path))
+    except (PermissionError, OSError, RuntimeError):
+        return False
+    return True
+
+
 def _emit_match_entries(
     entries: list[tuple[int, str, bool]],
     disp_path: str,
@@ -308,10 +319,15 @@ def _walk_and_grep(  # noqa: C901  pylint: disable=too-many-branches,too-many-lo
             if cancel.is_set():
                 status = "timeout"
                 break
-            dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS)
+            dirnames[:] = sorted(
+                d
+                for d in dirnames
+                if d not in _SKIP_DIRS
+                and _search_entry_allowed(Path(dirpath) / d)
+            )
             for fname in filenames:
                 fp = Path(dirpath) / fname
-                if not _is_text_file(fp):
+                if not _search_entry_allowed(fp) or not _is_text_file(fp):
                     continue
                 if include_pattern and not fnmatch.fnmatch(
                     fname,
@@ -333,6 +349,8 @@ def _walk_and_grep(  # noqa: C901  pylint: disable=too-many-branches,too-many-lo
         if cancel.is_set():
             status = "timeout"
             break
+        if not _search_entry_allowed(file_path):
+            continue
 
         display_path = (
             file_path.name
@@ -453,10 +471,49 @@ def _walk_and_glob(
     results: list[str] = []
     truncated = False
 
+    from ...extensions.security.execution_policy import check_search, enabled
+
+    check_search("glob_search", {"path": str(search_root), "pattern": pattern})
+    visited: set[tuple[Path, tuple[str, ...]]] = set()
+
+    def safe_glob(directory: Path, parts: tuple[str, ...]):
+        key = (directory, parts)
+        if cancel.is_set() or not parts or key in visited:
+            return
+        visited.add(key)
+        part, remaining = parts[0], parts[1:]
+        if part == "**":
+            if remaining:
+                yield from safe_glob(directory, remaining)
+            else:
+                yield directory
+        for entry in directory.iterdir():
+            if cancel.is_set():
+                return
+            if entry.name in _SKIP_DIRS or not _search_entry_allowed(entry):
+                continue
+            if part == "**":
+                if entry.is_dir():
+                    yield from safe_glob(entry, parts)
+            elif fnmatch.fnmatchcase(entry.name, part):
+                if not remaining:
+                    yield entry
+                elif entry.is_dir():
+                    yield from safe_glob(entry, remaining)
+
     try:
-        for entry in search_root.glob(pattern):
+        entries = (
+            safe_glob(search_root, Path(pattern).parts)
+            if enabled()
+            else search_root.glob(pattern)
+        )
+        for entry in entries:
             if cancel.is_set():
                 break
+            if not _search_entry_allowed(entry):
+                continue
+            if pattern.endswith(os.sep) and not entry.is_dir():
+                continue
             try:
                 parts = entry.relative_to(search_root).parts
             except ValueError:
@@ -509,6 +566,9 @@ async def grep_search(
             Only search files whose **name** matches this glob
             (e.g. ``"*.py"``).  Defaults to None (all text files).
     """
+    from ...extensions.security.execution_policy import check_search
+
+    check_search("grep_search", {"path": path})
     if not pattern:
         return _make_response("Error: No search `pattern` provided.")
 
@@ -599,6 +659,9 @@ async def glob_search(
         path (`str`, optional):
             Root directory to search from.  Defaults to WORKING_DIR.
     """
+    from ...extensions.security.execution_policy import check_search
+
+    check_search("glob_search", {"path": path, "pattern": pattern})
     if not pattern:
         return _make_response("Error: No glob `pattern` provided.")
 

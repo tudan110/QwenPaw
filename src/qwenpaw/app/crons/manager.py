@@ -651,7 +651,9 @@ class CronManager(ManagerBase):
             delivery_failed = False
 
             try:
-                execution_result = await self._executor.execute(job)
+                execution_result = await self._executor.execute(
+                    job, scheduled=trigger == "scheduled"
+                )
                 execution_succeeded = True
                 delivery_failed = (
                     execution_result.get("delivery_status") == "failed"

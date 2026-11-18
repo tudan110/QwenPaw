@@ -159,6 +159,44 @@ def _deny_script(code: str, path: Path) -> NoReturn:
     )
 
 
+def check_search_path(path_value: str) -> None:
+    """Confine recursive searches to non-sensitive workspace entries."""
+    if not enabled():
+        return
+    configured = Path(get_current_workspace_dir() or WORKING_DIR).absolute()
+    workspace = configured.resolve()
+    candidate = Path(path_value).expanduser()
+    if not candidate.is_absolute():
+        candidate = workspace / candidate
+    elif candidate.is_relative_to(configured):
+        # Normalize aliases above the trusted workspace (e.g. macOS /var),
+        # while retaining links inside it for the explicit check below.
+        candidate = workspace / candidate.relative_to(configured)
+    resolved = candidate.resolve()
+    if not resolved.is_relative_to(workspace):
+        raise PermissionError("搜索只能访问当前工作区")
+    if resolved.name.startswith(".env."):
+        raise PermissionError("搜索不能访问环境凭据文件")
+    # Do not follow even an in-workspace link: its target may change between
+    # discovery and reading, and glob can explicitly traverse linked folders.
+    for entry in (candidate, *candidate.parents):
+        if entry == workspace:
+            break
+        if entry.is_symlink():
+            raise PermissionError("搜索不能访问符号链接")
+    check_path(str(candidate))
+
+
+def check_search(name: str, params: dict[str, Any]) -> None:
+    if not enabled():
+        return
+    check_search_path(params.get("path") or ".")
+    if name == "glob_search":
+        pattern = Path(params.get("pattern") or "")
+        if pattern.is_absolute() or ".." in pattern.parts:
+            raise PermissionError("搜索模式不能越过当前目录")
+
+
 def _approved_script(path: Path) -> bool:
     check_path(str(path))
     if not path.is_file():
@@ -344,6 +382,9 @@ def check_shell(command: str, cwd: Any = None) -> None:
 async def check_tool(name: str, params: dict[str, Any]) -> bool:
     """Return whether this call needs mandatory administrator approval."""
     if not enabled():
+        return False
+    if name in {"grep_search", "glob_search"}:
+        check_search(name, params)
         return False
     for key in ("file_path", "path", "filename"):
         value = params.get(key)
