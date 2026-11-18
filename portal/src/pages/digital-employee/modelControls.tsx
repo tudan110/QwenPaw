@@ -1459,7 +1459,7 @@ function AddModelDialog({
   }
 
   return (
-    <div className="history-modal show" onClick={onClose}>
+    <div className="history-modal show">
       <div
         className="history-content portal-provider-config-dialog"
         onClick={(event) => event.stopPropagation()}
@@ -1468,7 +1468,7 @@ function AddModelDialog({
           <h3>
             <i className="fas fa-cube" /> 添加模型
           </h3>
-          <button className="history-close" onClick={onClose}>
+          <button type="button" className="history-close" aria-label="关闭添加模型弹窗" onClick={onClose}>
             <i className="fas fa-times" />
           </button>
         </div>
@@ -1589,7 +1589,7 @@ function ProviderConfigDialog({
   }
 
   return (
-    <div className="history-modal show" onClick={onClose}>
+    <div className="history-modal show">
       <div
         className="history-content portal-provider-config-dialog"
         onClick={(event) => event.stopPropagation()}
@@ -1598,7 +1598,7 @@ function ProviderConfigDialog({
           <h3>
             <i className={`fas ${mode === "add-model" ? "fa-cube" : "fa-sliders"}`} /> {mode === "add-model" ? "添加模型" : mode === "create" ? "添加提供商" : "提供商设置"}
           </h3>
-          <button className="history-close" onClick={onClose}>
+          <button type="button" className="history-close" aria-label="关闭模型配置弹窗" onClick={onClose}>
             <i className="fas fa-times" />
           </button>
         </div>
