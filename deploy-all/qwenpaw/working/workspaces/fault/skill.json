@@ -185,7 +185,7 @@
       "source": "customized",
       "metadata": {
         "name": "report-export",
-        "description": "当用户要求“生成报告”“导出报告”“生成巡检报告”“生成告警分析报告”“生成运维报表”等可下载的报告类交付物时使用此技能。它把基于会话上下文撰写的报告文件归档到统一下载目录，并生成可点击下载的链接。默认生成 Markdown 格式；用户明确要求 PDF / Word / Excel / PPT 时，先用对应的 pdf / docx / xlsx / pptx 技能生成文件，再用本技能归档。",
+        "description": "仅当用户明确要求下载、导出、保存为文件或交付PDF/Word/Excel/PPT等报告文件时使用。普通告警分析、生成告警分析报告、查看分析结论、发送通知不触发本技能，应由alarm-analyst直接输出聊天卡片报告。文件导出是附加交付，不能替代同轮完整分析正文；后续单独导出已有报告时复用原文，不重新分析或通知。 调用内建 export_report，默认 PDF，支持 Word（docx）和 Markdown（md），生产模式无需临时脚本。",
         "version_text": "",
         "commit_text": "",
         "source": "customized",

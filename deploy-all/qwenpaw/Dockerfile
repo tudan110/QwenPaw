@@ -187,6 +187,7 @@ RUN set -eux; \
     /app/venv/bin/python -c "from fastmcp.server.server import FastMCP; print('fastmcp server support OK (per-agent memory_manager)')"; \
     /app/venv/bin/python -c "import jieba, sqlite_vec, tiktoken, pypdf, openpyxl, xlrd, pytesseract; from PIL import Image; print('knowledge-base python deps OK')"; \
     /app/venv/bin/python -c "import pypdfium2, pdfplumber, rapidocr_onnxruntime; print('multimodal deps OK')"; \
+    /app/venv/bin/python -c "import tempfile; from pathlib import Path; from pypdf import PdfReader; from qwenpaw.extensions.report_export import export_report; root = Path(tempfile.mkdtemp()); doc = export_report('中文报告导出检查', '报告', 'docx', 'build', root); pdf = export_report('中文报告导出检查', '报告', 'pdf', 'build', root); assert doc.is_file() and len(PdfReader(pdf).pages) > 0; import shutil; shutil.rmtree(root); print('PDF and Word export OK')"; \
     ( cd /app/share/qwenpaw-seed/workspaces/knowledge/skills/knowledge-base \
       && /app/venv/bin/python -c "import sys; sys.path.insert(0, '.'); from providers import ocr; e = ocr.engine_name(); print('resolved OCR engine:', e); assert e != 'none', 'no OCR engine available (rapidocr + pytesseract both failed to load)'" ); \
     command -v tesseract; \

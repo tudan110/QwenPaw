@@ -17,6 +17,7 @@ register them. The literal names still appear in
 ``security/tool_guard`` guardians for backward compatibility with
 pre-existing allowlists.
 """
+
 from __future__ import annotations
 
 from typing import Callable
@@ -27,6 +28,7 @@ from .file_io import read_file, write_file, edit_file, append_file
 from .file_search import grep_search, glob_search
 from .shell import execute_shell_command
 from .send_file import send_file_to_user
+from .export_report import export_report
 from .browser_control import browser_use
 from .desktop_screenshot import desktop_screenshot
 from .view_media import view_image, view_video
@@ -67,6 +69,7 @@ __all__ = [
     "grep_search",
     "glob_search",
     "send_file_to_user",
+    "export_report",
     "desktop_screenshot",
     "view_image",
     "view_video",

@@ -64,6 +64,10 @@ _READ_SCRIPT_NAMES = {
     "order_workflow.py",
 }
 
+# Bounded artifact creation: text input only, fixed renderer and report root.
+# This does not grant general filesystem writes or shell execution.
+_ARTIFACT_TOOLS = {"export_report"}
+
 
 def enabled() -> bool:
     return EnvVarLoader.get_str(
@@ -375,6 +379,7 @@ async def check_tool(name: str, params: dict[str, Any]) -> bool:
     )
     if (
         name in _READ_TOOLS
+        or name in _ARTIFACT_TOOLS
         or name in MCP_READ_TOOLS
         or (name in configured_reads and not mutating)
     ):

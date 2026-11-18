@@ -161,6 +161,8 @@ def _register_builtin_tools(r: ToolRegistry) -> None:
     for name, param in [
         ("GetCurrentTime", ""),
         ("GetTokenUsage", ""),
+        # Fixed renderer; accepts content, never a source/output path.
+        ("ExportReport", ""),
         ("ListAgents", ""),
         ("MaterializeSkill", ""),
         ("ChatWithAgent", "agent_id"),
@@ -189,6 +191,7 @@ def _register_python_name_mappings(
         "browser_use": "Browser",
         "desktop_screenshot": "DesktopScreenshot",
         "send_file_to_user": "SendFileToUser",
+        "export_report": "ExportReport",
         "view_image": "ViewImage",
         "view_video": "ViewVideo",
         "get_current_time": "GetCurrentTime",

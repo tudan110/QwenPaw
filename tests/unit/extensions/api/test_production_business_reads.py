@@ -63,6 +63,21 @@ async def test_reviewed_mcp_queries_work_for_ordinary_users(name):
     assert await execution_policy.check_tool(name, {}) is False
 
 
+async def test_report_export_allowed_without_general_writes():
+    assert (
+        await execution_policy.check_tool(
+            "export_report", {"content": "# 报告", "format": "pdf"}
+        )
+        is False
+    )
+    with pytest.raises(PermissionError):
+        await execution_policy.check_tool(
+            "write_file", {"file_path": "report.py", "content": "print(1)"}
+        )
+    with pytest.raises(PermissionError):
+        execution_policy.check_shell('python -c "print(1)"')
+
+
 @pytest.mark.parametrize(
     "name",
     [
