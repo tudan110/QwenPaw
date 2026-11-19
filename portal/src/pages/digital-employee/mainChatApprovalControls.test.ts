@@ -27,8 +27,8 @@ test("approval UI renders scoped choices, expiry, errors and inherited defaults"
       tool_source: "STRICT mode",
       severity: "HIGH",
       findings_count: 1,
-      result_summary: "<script>untrusted tool content</script>",
-      exact_target: "/tmp/test.txt",
+      result_summary: "<script>untrusted tool content</script> --token fixture-summary-secret",
+      exact_target: "https://fixture-user:fixture-pass@example.invalid/read?token=fixture-target-secret",
       similar_target: "/tmp/**",
       is_generalized: true,
       created_at: Date.now() / 1000,
@@ -44,9 +44,11 @@ test("approval UI renders scoped choices, expiry, errors and inherited defaults"
     }
     assert.ok(html.includes("&lt;script&gt;"));
     assert.ok(!html.includes("<script>"));
+    assert.match(html, /https:\/\/example\.invalid\/read/);
+    assert.doesNotMatch(html, /fixture-user|fixture-pass|fixture-summary-secret|fixture-target-secret/);
     approval.created_at -= 400;
     const expired = render();
-    assert.match(expired, /审批已超时/);
+    assert.match(expired, /等待期限已到.*以服务端审批结果为准/);
     assert.equal((expired.match(/disabled=""/g) || []).length, 3);
     controls.items = [];
     assert.equal(render(), "");

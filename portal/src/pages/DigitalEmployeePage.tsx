@@ -67,6 +67,7 @@ import { useRemoteChatSession } from "./digital-employee/useRemoteChatSession";
 import {
   MainChatApprovalModeSelector,
   MainChatApprovalPanel,
+  MainChatStopNotice,
 } from "./digital-employee/mainChatApprovalControls";
 import { portalAppTitle } from "../config/portalBranding";
 import portalLogo from "../assets/images/portal-logo.png";
@@ -565,6 +566,8 @@ export default function DigitalEmployeePage({
     activeAssistantMessageIdRef,
     handleRemoteSendMessage,
     stopActiveStream,
+    stopFeedback,
+    clearStopFeedback,
     refreshRemoteSessions,
     handleOpenHistory,
     handleSelectRemoteHistory,
@@ -1496,7 +1499,12 @@ export default function DigitalEmployeePage({
       error={approvalMode.storageError}
     />
   ) : null;
-  const approvalPanel = <MainChatApprovalPanel controls={approvals} />;
+  const approvalPanel = (
+    <>
+      <MainChatApprovalPanel controls={approvals} />
+      {stopFeedback ? <MainChatStopNotice feedback={stopFeedback} onDismiss={clearStopFeedback} /> : null}
+    </>
+  );
   const chatHeaderActions = (
     <>
       {showModelSelector ? (

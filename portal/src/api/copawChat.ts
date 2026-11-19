@@ -245,7 +245,7 @@ export function deleteChat(agentId: string | undefined, chatId: string) {
 }
 
 export function stopChat(agentId: string | undefined, chatId: string) {
-  return requestCopaw(`/console/chat/stop?chat_id=${encodeURIComponent(chatId)}`, {
+  return requestCopaw<{ stopped: boolean }>(`/console/chat/stop?chat_id=${encodeURIComponent(chatId)}`, {
     agentId,
     method: "POST",
   });

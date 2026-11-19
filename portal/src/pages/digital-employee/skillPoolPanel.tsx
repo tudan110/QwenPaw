@@ -1460,7 +1460,7 @@ export function SkillPoolPanel() {
               <div>
                 <h3>上传技能压缩包</h3>
                 <p>
-                  导入到「智观 AI」的技能，会先做网管领域校验与安全扫描，导入后自动标记为二开（最大 100MB）。
+                  导入到「智观 AI」的技能，会先做网管领域校验与安全扫描，导入后自动标记为二开（最大 100MB）。扫描只说明导入检查结果，运行时防护需另行验证。
                 </p>
               </div>
               <button type="button" className="skill-pool-modal-close" onClick={closeUploadModal}>
@@ -1514,7 +1514,7 @@ export function SkillPoolPanel() {
               <div>
                 <h3>从链接导入技能</h3>
                 <p>
-                  支持技能 Hub / 仓库的发布链接；导入到「智观 AI」的技能，会先做领域校验与安全扫描，导入后自动标记为二开。
+                  支持技能 Hub / 仓库的发布链接；导入到「智观 AI」的技能，会先做领域校验与安全扫描，导入后自动标记为二开。扫描只说明导入检查结果，运行时防护需另行验证。
                 </p>
               </div>
               <button type="button" className="skill-pool-modal-close" onClick={closeHubModal}>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
   readConversationProcessRecordDetailsExpandable,
   readConversationProcessRecordDisplayMode,
@@ -34,6 +34,10 @@ import ProviderSettingsSection, {
   type ProviderFieldDesc,
 } from "./ProviderSettingsSection";
 import ResourceImportLlmSection from "./ResourceImportLlmSection";
+
+const PortalSecurityEvidence = lazy(() =>
+  import("./securityEvidencePanel").then((module) => ({ default: module.PortalSecurityEvidence })),
+);
 
 // Editable numeric fields in the diagnosis tab, grouped for rendering.
 type DiagnosisNumberField = {
@@ -298,6 +302,12 @@ function isMaskedSecret(value: unknown): value is MaskedSecret {
 }
 
 const SETTINGS_TABS = [
+  {
+    id: "security-evidence",
+    label: "安全与审计",
+    iconClass: "fa-shield-halved",
+    description: "查看防护配置、样例自检与策略审计",
+  },
   {
     id: "conversation",
     label: "对话",
@@ -1638,6 +1648,11 @@ export function SettingsPanel() {
             </aside>
 
             <section className="portal-advanced-config-panel settings-content-panel">
+              {activeTab === "security-evidence" ? (
+                <Suspense fallback={<p role="status">正在加载安全与审计…</p>}>
+                  <PortalSecurityEvidence />
+                </Suspense>
+              ) : null}
               {activeTab === "conversation" ? (
                 <div className="portal-model-shell">
                   <section className="settings-section">

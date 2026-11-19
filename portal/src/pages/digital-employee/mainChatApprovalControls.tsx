@@ -6,6 +6,7 @@ import {
   type MainChatApprovalLevel,
 } from "./mainChatApproval";
 import type { useMainChatApprovals } from "./useMainChatApproval";
+import { safeDisplayText, STOP_LABELS, type StopFeedback } from "./evidenceDisplay";
 import "./mainChatApproval.css";
 
 export function MainChatApprovalModeSelector({
@@ -98,7 +99,7 @@ export function MainChatApprovalModeSelector({
             if (event.key === "Tab") setOpen(false);
           }}
         >
-          <div className="main-chat-approval-mode-caption">当前会话 · 下次发送生效</div>
+          <div className="main-chat-approval-mode-caption">当前会话 · 下次发送生效 · MCP 权限单独配置</div>
           {APPROVAL_LEVELS.map((item) => (
             <button
               type="button"
@@ -182,7 +183,7 @@ function ApprovalCard({
         </div>
         <span className="main-chat-approval-countdown">
           <i className="far fa-clock" aria-hidden="true" />
-          {expired ? "已超时" : `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`}
+          {expired ? "等待期限已到" : `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`}
         </span>
       </header>
       <div className="main-chat-approval-meta">
@@ -191,23 +192,23 @@ function ApprovalCard({
         <span>风险项：{approval.findings_count}</span>
         {subAgent ? <span>子智能体：{approval.agent_id}</span> : null}
       </div>
-      <p className="main-chat-approval-summary">{approval.result_summary || "此工具调用需要您确认后才能继续。"}</p>
+      <p className="main-chat-approval-summary">{safeDisplayText(approval.result_summary || "此工具调用需要您确认后才能继续。")}</p>
       {approval.exact_target ? (
         <div className="main-chat-approval-target">
-          <span>精确目标</span><code>{approval.exact_target}</code>
+          <span>精确目标（脱敏）</span><code>{safeDisplayText(approval.exact_target)}</code>
         </div>
       ) : null}
       {generalized ? (
         <div className="main-chat-approval-target">
-          <span>通用范围</span><code>{approval.similar_target}</code>
+          <span>通用范围（脱敏）</span><code>{safeDisplayText(approval.similar_target || "")}</code>
         </div>
       ) : null}
       <p className="main-chat-approval-hint">
         {expired
-          ? "审批已超时，本次操作未获批准。"
+          ? "显示的等待期限已到，请以服务端审批结果为准。"
           : generalized
-            ? "批准精确目标不会扩大范围；授权可能在本会话内复用，严格模式仍逐次审批。"
-            : "批准后继续执行；拒绝则不执行本次工具调用。"}
+            ? "批准允许请求继续，不代表执行成功；范围授权可能影响后续匹配请求。"
+            : "批准允许当前请求继续，执行是否成功需另行核对。"}
       </p>
       <footer>
         <button type="button" className="main-chat-approval-button quiet" disabled={Boolean(busy) || canceling} onClick={() => run("cancel")}>
@@ -228,6 +229,21 @@ function ApprovalCard({
         </div>
       </footer>
     </article>
+  );
+}
+
+export function MainChatStopNotice({ feedback, onDismiss }: { feedback: StopFeedback; onDismiss: () => void }) {
+  return (
+    <section className="main-chat-approval-panel" aria-label="任务停止反馈">
+      <div className="main-chat-stop-notice" role="status">
+        <div>
+          <strong>{STOP_LABELS[feedback.status]}</strong>
+          {" · "}<time dateTime={new Date(feedback.at).toISOString()}>{new Date(feedback.at).toLocaleString()}</time>
+          <div>此提示只反映当前取消请求；远程操作是否停止或回退尚未确认。</div>
+        </div>
+        <button type="button" className="main-chat-approval-button quiet" onClick={onDismiss}>关闭</button>
+      </div>
+    </section>
   );
 }
 

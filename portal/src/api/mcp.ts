@@ -69,6 +69,7 @@ export interface McpClientInfo {
   env: Record<string, string>;
   cwd: string;
   tools: string[] | null;
+  access_summary?: { default_effect: MCPAccessEffect; overrides_count: number };
 }
 
 export interface McpToolInfo {

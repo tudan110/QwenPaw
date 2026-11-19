@@ -29,6 +29,7 @@ import {
 import { portalGatewayAgentId } from "../../config/portalBranding";
 import PortalConfirmDialog from "../../components/PortalConfirmDialog";
 import "../mcp-panel.css";
+import { endpointOrigin } from "./evidenceDisplay";
 
 type NoticeState =
   | { type: "success" | "error"; message: string }
@@ -304,12 +305,11 @@ function getTransportColor(transport: McpTransport) {
   };
 }
 
+const POLICY_LABELS: Record<MCPAccessEffect, string> = { allow: "允许", ask: "审批", deny: "拒绝" };
+
 function getClientEndpoint(client: McpClientInfo) {
-  if (client.transport === "stdio") {
-    const args = client.args?.length ? ` ${client.args.join(" ")}` : "";
-    return `${client.command}${args}`.trim() || "未配置命令";
-  }
-  return client.url || "未配置地址";
+  if (client.transport === "stdio") return "本地子进程";
+  return client.url ? endpointOrigin(client.url) : "未配置地址";
 }
 
 function buildPayload(form: FormState): {
@@ -793,7 +793,6 @@ export function McpPanel() {
           <div className="mcp-grid">
             {filteredClients.map((client) => {
               const transportStyle = getTransportColor(client.transport);
-              const toolsCount = null;
               return (
                 <article key={client.key} className="mcp-card">
                   <div className="mcp-card-head">
@@ -809,7 +808,7 @@ export function McpPanel() {
                     <div className="mcp-card-badges">
                       <span className={`mcp-badge ${client.enabled ? "enabled" : "disabled"}`}>
                         <span className={`mcp-dot ${client.enabled ? "enabled" : "disabled"}`} />
-                        {client.enabled ? "运行中" : "已停用"}
+                        {client.enabled ? "已启用" : "已停用"}
                       </span>
                       <span className="mcp-badge transport">{client.transport}</span>
                     </div>
@@ -821,17 +820,22 @@ export function McpPanel() {
                       <strong>{client.description || "未填写描述"}</strong>
                     </div>
                     <div className="mcp-card-kv">
-                      <span>{client.transport === "stdio" ? "Command" : "Endpoint"}</span>
+                      <span>端点摘要</span>
                       <strong>{getClientEndpoint(client)}</strong>
                     </div>
-                    <div className="mcp-card-status">
-                      <span className={`mcp-dot ${client.enabled ? "enabled" : "disabled"}`} />
-                      {client.enabled ? "当前可参与工具编排" : "当前不会被调用"}
+                    <div className="mcp-card-kv">
+                      <span>默认策略 / 例外规则</span>
+                      <strong>{client.access_summary
+                        ? `${POLICY_LABELS[client.access_summary.default_effect]} / ${client.access_summary.overrides_count} 条`
+                        : "未取得策略摘要"}</strong>
                     </div>
-                    <div className="mcp-card-tools-summary">
-                      <span>工具能力 {typeof toolsCount === "number" ? `${toolsCount} 项` : "未读取"}</span>
-                      <span>{client.transport === "stdio" ? "本地进程" : "远程协议"}</span>
+                    <div className="mcp-card-kv">
+                      <span>已配置的工具范围</span>
+                      <strong>{client.tools === null ? "该服务公开的全部工具"
+                        : client.tools?.length ? client.tools.join("、")
+                        : Array.isArray(client.tools) ? "未选择工具" : "未读取"}</strong>
                     </div>
+                    <small>以上为配置摘要；连接、证书及实际调用需另行验证。</small>
                   </div>
 
                   <div className="mcp-card-actions">
@@ -879,6 +883,7 @@ export function McpPanel() {
                 <section className="mcp-access-section">
                   <div className="mcp-access-control-row">
                     <div className="mcp-access-heading"><h4>整体权限</h4><span>默认策略</span></div>
+                    <p>修改在保存后生效。审批放行与工具执行结果需分别核对。</p>
                     <EffectSelector value={accessPolicy.default_effect} onChange={(effect) => setAccessPolicy({ ...accessPolicy, default_effect: effect })} />
                     <button type="button" className="mcp-add-rule mcp-access-add-rule" onClick={() => setAccessPolicy(addClientRule(accessPolicy))}>＋ 新增规则</button>
                   </div>

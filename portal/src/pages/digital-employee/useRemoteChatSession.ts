@@ -15,6 +15,7 @@ import {
   stopChat,
   streamChat,
 } from "../../api/copawChat";
+import { stopResult, type StopFeedback, type StopStatus } from "./evidenceDisplay";
 import { getFaultDisposalHistory } from "../../api/faultDisposalBridge";
 import { isManualFaultAdviceOnly, manualFaultRequestContext } from "../../fault-scenario/manualGuidance";
 import {
@@ -133,6 +134,12 @@ export function useRemoteChatSession({
   const [remoteSessions, setRemoteSessions] = useState<any[]>([]);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [stopFeedback, setStopFeedback] = useState<StopFeedback>();
+  const stopRevision = useRef(0);
+  const clearStopFeedback = useCallback(() => {
+    stopRevision.current += 1;
+    setStopFeedback(undefined);
+  }, []);
   const [pendingAlarmWorkorderProposal, setPendingAlarmWorkorderProposal] = useState<any>(null);
   const [isSubmittingAlarmWorkorder, setIsSubmittingAlarmWorkorder] = useState(false);
 
@@ -773,10 +780,26 @@ export function useRemoteChatSession({
       || isStreamingRef.current
       || currentChatStatusRef.current === "running",
     );
-    if (requestStop && isRemoteEmployeeRef.current && currentChatIdRef.current) {
-      stopChat(remoteAgentIdRef.current || undefined, currentChatIdRef.current).catch(
-        () => {},
-      );
+    if (silent) clearStopFeedback();
+    if (requestStop && !silent) {
+      const revision = ++stopRevision.current;
+      const agentId = remoteAgentIdRef.current;
+      const chatId = currentChatIdRef.current;
+      const at = Date.now();
+      const publish = (status: StopStatus) => {
+        if (stopRevision.current !== revision || remoteAgentIdRef.current !== agentId
+          || currentChatIdRef.current !== chatId) return;
+        setStopFeedback({ agentId, chatId, at, status });
+      };
+      if (isRemoteEmployeeRef.current && chatId) {
+        publish("requesting");
+        void stopChat(agentId || undefined, chatId).then(
+          (result) => publish(stopResult(result)),
+          () => publish("failed"),
+        );
+      } else {
+        publish("unavailable");
+      }
     }
     streamAbortNoticeModeRef.current = silent ? "silent" : "show";
     flushStreamUpdates();
@@ -797,7 +820,7 @@ export function useRemoteChatSession({
     streamProcessBlocksRef.current = new Map();
     setIsStreaming(false);
     setCurrentChatStatus("idle");
-  }, [finalizePendingResponse]);
+  }, [clearStopFeedback, finalizePendingResponse]);
 
   const cancelApprovalTask = useCallback(async (signal: AbortSignal) => {
     const agentId = remoteAgentIdRef.current;
@@ -805,9 +828,15 @@ export function useRemoteChatSession({
     if (!agentId || !chatId) {
       throw new Error("缺少当前任务信息，无法取消任务。");
     }
+    const at = Date.now();
+    const revision = ++stopRevision.current;
+    setStopFeedback(undefined);
     await stopMainChatApprovalTask(agentId, chatId, signal);
     if (remoteAgentIdRef.current === agentId && currentChatIdRef.current === chatId) {
       stopActiveStream(false);
+      if (!signal.aborted && stopRevision.current === revision) {
+        setStopFeedback({ agentId, chatId, at, status: "accepted" });
+      }
     }
   }, [stopActiveStream]);
 
@@ -1497,6 +1526,7 @@ export function useRemoteChatSession({
       return false;
     }
 
+    clearStopFeedback();
     const normalizedVisibleContent = (visibleContent || content).trim();
     const userMessage = createUserMessage(normalizedVisibleContent);
     streamAbortNoticeModeRef.current = null;
@@ -1643,7 +1673,7 @@ export function useRemoteChatSession({
     }
 
     return streamSucceeded;
-  }, [refreshRemoteSessions, approvalMode.rememberForSession]);
+  }, [clearStopFeedback, refreshRemoteSessions, approvalMode.rememberForSession]);
 
   const resetRemoteState = useCallback(({
     initialMessages = [],
@@ -1704,6 +1734,9 @@ export function useRemoteChatSession({
     flushTimerRef,
     handleRemoteSendMessage,
     stopActiveStream,
+    stopFeedback: stopFeedback?.agentId === remoteAgentId && stopFeedback?.chatId === currentChatId
+      ? stopFeedback : undefined,
+    clearStopFeedback,
     refreshRemoteSessions,
     handleOpenHistory,
     handleSelectRemoteHistory,
