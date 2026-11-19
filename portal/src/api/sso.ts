@@ -39,21 +39,26 @@ async function requestSsoApi<T>(
  */
 export async function tokenLogin(
   token?: string | null,
+  requireInoeCookie = false,
 ): Promise<SsoExchangeResult> {
   return requestSsoApi<SsoExchangeResult>("/sso/token-login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(token ? { token } : {}),
+    body: JSON.stringify({
+      ...(token ? { token } : {}),
+      ...(requireInoeCookie ? { require_inoe_cookie: true } : {}),
+    }),
   });
 }
 
 export async function loginSsoCallback(
   parameters: URLSearchParams,
+  requireInoeCookie = false,
 ): Promise<SsoExchangeResult> {
   if (parameters.has("token") || parameters.has("code")) {
     throw new Error("不接受 URL 登录凭据或授权码，请从智观重新登录。");
   }
-  return tokenLogin();
+  return tokenLogin(undefined, requireInoeCookie);
 }
 
 export async function clearSsoLoginCookie(): Promise<{ cleared: boolean }> {

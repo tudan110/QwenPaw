@@ -230,3 +230,15 @@ def test_raw_request_does_not_inherit_another_local_session(credential):
         assert child["INOE_API_TOKEN"] == "user-token"
     finally:
         CURRENT_IDENTITY.reset(reset)
+
+
+def test_delegated_process_does_not_borrow_shared_token_when_current_is_empty():
+    original = {"INOE_API_TOKEN": "shared-fixture"}
+    reset = CURRENT_REQUEST_TOKEN.set("")
+    try:
+        delegated = subprocess_request_environment(original)
+    finally:
+        CURRENT_REQUEST_TOKEN.reset(reset)
+    assert delegated["QWENPAW_REQUEST_INOE_TOKEN"] == ""
+    assert delegated["INOE_API_TOKEN"] == ""
+    assert original["INOE_API_TOKEN"] == "shared-fixture"

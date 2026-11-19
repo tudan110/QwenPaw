@@ -2689,3 +2689,36 @@ def test_alarm_card_candidate_text_keeps_markerless_alarm_report_for_backfill() 
         )
         == report
     )
+
+
+def test_real_alarm_requests_do_not_share_cached_data_between_users(monkeypatch):
+    store = portal_backend.inoe_settings_store
+    monkeypatch.setenv("INOE_API_TOKEN", "background-fixture")
+    monkeypatch.setattr(
+        portal_backend,
+        "_query_visible_portal_real_alarms",
+        lambda _limit: {"items": [store.build_headers()["Authorization"]]},
+    )
+    monkeypatch.setattr(
+        portal_backend, "_get_cached_portal_real_alarm_payload",
+        lambda *_args, **_kwargs: {"items": ["background-cache"]},
+    )
+
+    async def get_visible(token):
+        reset = store.CURRENT_REQUEST_TOKEN.set(token)
+        try:
+            return await portal_backend._get_visible_portal_real_alarms(1)
+        finally:
+            store.CURRENT_REQUEST_TOKEN.reset(reset)
+
+    async def concurrent_queries():
+        return await asyncio.gather(
+            get_visible("admin-fixture"), get_visible("user-fixture"),
+            get_visible(None),
+        )
+
+    assert asyncio.run(concurrent_queries()) == [
+        {"items": ["Bearer admin-fixture"]},
+        {"items": ["Bearer user-fixture"]},
+        {"items": ["background-cache"]},
+    ]

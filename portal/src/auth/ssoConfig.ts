@@ -186,6 +186,46 @@ async function clearStaleSsoState(): Promise<void> {
   }
 }
 
+export function usesNativeInoeCookie(): boolean {
+  return new URL(getInoeFrontendOrigin()).hostname === window.location.hostname;
+}
+
+function sessionUserKey(): string {
+  const user = getSession()?.user;
+  if (user?.userId != null) return `id:${String(user.userId)}`;
+  return user?.username ? `name:${user.username}` : "";
+}
+
+function useLoginResult(result: Awaited<ReturnType<typeof tokenLogin>>) {
+  setSession({
+    token: result.access_token,
+    user: result.user,
+    expiresInSeconds: result.expires_in_seconds,
+  });
+}
+
+async function checkNativeLogin(bootstrap: boolean): Promise<boolean> {
+  const previous = sessionUserKey();
+  try {
+    useLoginResult(await tokenLogin(getSession()?.token, true));
+  } catch (error) {
+    if ((error as { status?: number })?.status !== 401) {
+      if (bootstrap) throw error;
+      return true;
+    }
+    // Do not clear the traditional site's cookie from Portal. It may have
+    // changed since the rejected request was sent.
+    clearSessionWithoutRedirect();
+    window.location.href = getSsoLoginRedirectUrl();
+    return false;
+  }
+  if (!bootstrap && previous !== sessionUserKey()) {
+    window.location.reload();
+    return false;
+  }
+  return true;
+}
+
 function shouldSkipRevalidate(force: boolean): boolean {
   if (force) {
     return false;
@@ -211,6 +251,15 @@ export async function triggerSsoRelogin(): Promise<void> {
     return;
   }
   reloginTriggered = true;
+  if (usesNativeInoeCookie()) {
+    // Recheck the native login before redirecting: the API may have rejected
+    // the former account after an INOE switch, while the new login is valid.
+    const stillHere = await checkNativeLogin(false);
+    if (stillHere) {
+      reloginTriggered = false;
+    }
+    return;
+  }
   await clearStaleSsoState();
   window.location.href = getSsoLoginRedirectUrl();
 }
@@ -225,6 +274,7 @@ export async function triggerSsoRelogin(): Promise<void> {
  * blip doesn't lock out a session that's actually fine.
  */
 async function revalidateSession(): Promise<boolean> {
+  if (usesNativeInoeCookie()) return checkNativeLogin(false);
   const token = getSession()?.token;
   try {
     const result = await tokenLogin(token || undefined);
@@ -315,6 +365,7 @@ export function setupSsoSessionMonitor(): () => void {
     refreshInterval();
   };
 
+  const mountedUser = sessionUserKey();
   const handleStorage = (event: StorageEvent) => {
     if (event.storageArea !== window.localStorage) {
       return;
@@ -324,6 +375,10 @@ export function setupSsoSessionMonitor(): () => void {
     }
     if (!isAuthenticated()) {
       void triggerSsoRelogin();
+      return;
+    }
+    if (mountedUser !== sessionUserKey()) {
+      window.location.reload();
       return;
     }
     refreshInterval();
@@ -367,6 +422,7 @@ export async function ensureSsoLogin(): Promise<boolean> {
   if (isAllowlisted(pathname)) {
     return true;
   }
+  if (usesNativeInoeCookie()) return checkNativeLogin(true);
   if (isAuthenticated()) {
     // Must be awaited: if INOE logged the user out server-side, the cached
     // session looks valid locally but is dead upstream. Painting first and

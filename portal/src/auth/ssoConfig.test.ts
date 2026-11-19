@@ -60,6 +60,8 @@ function setupBrowserEnv(options?: { pathname?: string; hidden?: boolean }) {
     hostname: "portal.local",
     pathname,
     search: "",
+    reloads: 0,
+    reload() { this.reloads += 1; },
   };
 
   const document = {
@@ -208,6 +210,7 @@ test("setupSsoSessionMonitor reacts to storage logout from another tab", async (
   const teardown = sso.setupSsoSessionMonitor();
   try {
     clearSession();
+    globalThis.fetch = async () => new Response(null, { status: 401 });
     windowObj.dispatch("storage", {
       storageArea: windowObj.localStorage,
       key: "qwenpaw.sso.token",
@@ -262,7 +265,8 @@ test(
   "unresponsive cookie cleanup is bounded and does not stall relogin",
   { timeout: 5_000 },
   async (context) => {
-    const { locationState } = setupBrowserEnv();
+    const { locationState, windowObj } = setupBrowserEnv();
+    windowObj.__PORTAL_RUNTIME_CONFIG__.ssoLoginUrl = "http://inoe.local:30081/login";
     setSession({ token: "qp1.old", user: { userId: 7 }, expiresInSeconds: 60 });
     globalThis.fetch = async (_url, init) =>
       new Promise<Response>((_resolve, reject) => {
@@ -276,9 +280,47 @@ test(
       context.mock.timers.tick(2_000);
       await relogin;
       assert.equal(getSession(), null);
-      assert.match(locationState.href, /^http:\/\/portal.local:30081\/login\?/);
+      assert.match(locationState.href, /^http:\/\/inoe.local:30081\/login\?/);
     } finally {
       context.mock.timers.reset();
     }
   },
 );
+
+function loginAs(id: number) {
+  return new Response(JSON.stringify({ access_token: `qp1.user${id}`, user: {
+    userId: id,
+    username: `user${id}`,
+  }, expires_in_seconds: 300 }), { headers: { "Content-Type": "application/json" } });
+}
+
+test("same-host Portal entry resolves the current INOE login before rendering", async () => {
+  const { locationState } = setupBrowserEnv();
+  setSession({ token: "qp1.user1", user: { userId: 1, username: "user1" } });
+  globalThis.fetch = async (_url, init) => {
+    assert.deepEqual(JSON.parse(String(init?.body)), {
+      token: "qp1.user1", require_inoe_cookie: true,
+    });
+    return loginAs(7);
+  };
+  assert.equal(await sso.ensureSsoLogin(), true);
+  assert.equal(getSession()?.user.userId, 7);
+  assert.equal(getSession()?.token, "qp1.user7");
+  assert.equal(locationState.reloads, 0);
+});
+
+test("an active Portal tab reloads when INOE picks a different user", async () => {
+  const { locationState } = setupBrowserEnv();
+  setSession({ token: "qp1.user1", user: { userId: 1, username: "user1" } });
+  globalThis.fetch = async () => loginAs(7);
+  assert.equal(await sso.checkSsoSession(true), false);
+  assert.equal(getSession()?.user.userId, 7);
+  assert.equal(locationState.reloads, 1);
+});
+
+test("same-host entry does not mount the previous user when INOE is unavailable", async () => {
+  setupBrowserEnv();
+  setSession({ token: "qp1.user1", user: { userId: 1 } });
+  globalThis.fetch = async () => new Response(null, { status: 503 });
+  await assert.rejects(sso.ensureSsoLogin());
+});

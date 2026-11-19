@@ -1001,6 +1001,19 @@
   gap: 10px;
 }
 
+.portal-digital-employee .portal-inoe-account {
+  max-width: min(25ch, 32vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--bg-surface, #f4f6fb);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .portal-digital-employee .portal-system-entry-btn {
   display: inline-flex;
   align-items: center;

@@ -24,6 +24,7 @@ from qwenpaw.constant import EnvVarLoader
 from .access_policy import require_browser_origin
 from .access_session import (
     ACCESS_COOKIE,
+    INOE_LOGIN_COOKIE as _INOE_LOGIN_COOKIE,
     LOCAL_TOKEN_PREFIX,
     get_access_store,
     user_subject,
@@ -47,7 +48,6 @@ _HTTP_TIMEOUT_SECONDS = 15.0
 # token directly: the frontend forwards it (or, when portal shares INOE's
 # hostname, the browser sends this cookie automatically) and we validate it
 # against /userinfo. No phone number, no authorization code, no signing.
-_INOE_LOGIN_COOKIE = "Cnos-Inoe-Admin-Token"
 
 # INOE drops this alongside the token cookie at login — the same
 # ``expires_in`` (minutes) its native /login response carries. Only trust it
@@ -260,8 +260,26 @@ async def token_login(
     response.headers["Cache-Control"] = "no-store"
     require_browser_origin(request)
     body_token = _strip_bearer(body.get("token") or "")
-    cookie_token = _get_request_cookie(request, _INOE_LOGIN_COOKIE)
-    if not cookie_token:
+    cookie_token = _strip_bearer(
+        unquote(_get_request_cookie(request, _INOE_LOGIN_COOKIE)),
+    )
+    require_cookie = body.get("require_inoe_cookie") is True
+    previous = None
+    if require_cookie:
+        # For same-host Portal entries only the current INOE cookie can choose
+        # the identity. A surviving Portal credential only identifies a session
+        # to renew or revoke after INOE has confirmed the current account.
+        if not cookie_token or cookie_token.startswith(LOCAL_TOKEN_PREFIX):
+            raise HTTPException(401, "缺少当前智观登录凭据")
+        prior_token = body_token or _get_request_cookie(request, ACCESS_COOKIE)
+        if prior_token.startswith(LOCAL_TOKEN_PREFIX):
+            try:
+                previous = get_access_store().resolve(prior_token)
+            except HTTPException as exc:
+                if exc.status_code != 401:
+                    raise
+        body_token = ""
+    elif not cookie_token:
         cookie_token = _strip_bearer(
             unquote(
                 request.cookies.get("qwenpaw_sso_token", "")
@@ -327,13 +345,17 @@ async def token_login(
         raise HTTPException(
             status_code=401, detail="未能从 INOE 获取用户信息,token 可能已失效"
         )
-    try:
-        expires_in_minutes = float(
-            _get_request_cookie(request, _INOE_EXPIRES_IN_COOKIE) or 0
-        )
-    except (TypeError, ValueError):
-        expires_in_minutes = 0.0
-    result = get_access_store().issue(token, user)
+    store = get_access_store()
+    if (
+        previous is not None
+        and previous.inoe_token == token
+        and user_subject(previous.user) == user_subject(user)
+    ):
+        result = store.issue(token, user, family_id=previous.family_id)
+    else:
+        result = store.issue(token, user)
+        if previous is not None:
+            store.revoke(previous.access_token)
     response.set_cookie(
         ACCESS_COOKIE,
         result["access_token"],

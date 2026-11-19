@@ -402,10 +402,17 @@ def _load_zgops_modules():
 
 
 def _load_zgops_client(find_project_module: Any):
+    from .inoe_settings_store import get_effective_token, has_user_inoe_context
+
     env = find_project_module._resolve_zgops_env()  # noqa: SLF001
+    token = env.get("INOE_API_TOKEN", "")
+    if has_user_inoe_context():
+        token = get_effective_token()
+        if not token:
+            raise PermissionError("缺少当前用户的智观访问凭据")
     client = find_project_module.CmdbHttpClient(
         base_url=env.get("INOE_API_BASE_URL", ""),
-        token=env.get("INOE_API_TOKEN", ""),
+        token=token,
     )
     client.try_login()
     return client

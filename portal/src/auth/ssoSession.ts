@@ -6,7 +6,7 @@
 // for newly federated sessions.
 
 export interface SsoUser {
-  userId?: string;
+  userId?: string | number;
   username?: string;
   nickName?: string;
   phonenumber?: string;

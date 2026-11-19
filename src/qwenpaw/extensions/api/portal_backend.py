@@ -2782,6 +2782,28 @@ async def _get_visible_portal_real_alarms(
     allow_stale: bool = True,
 ) -> dict[str, Any]:
     normalized_limit = _normalize_portal_real_alarm_limit(limit)
+    # The cache and refresh task below belong to the service account. User
+    # requests must not reuse them, including during a gateway outage.
+    if inoe_settings_store.has_user_inoe_context():
+        if not inoe_settings_store.get_effective_token():
+            raise HTTPException(
+                status_code=403, detail="缺少当前用户的智观访问凭据",
+            )
+        try:
+            return await asyncio.wait_for(
+                asyncio.get_running_loop().run_in_executor(
+                    PORTAL_REAL_ALARM_EXECUTOR,
+                    copy_context().run,
+                    _query_visible_portal_real_alarms,
+                    normalized_limit,
+                ),
+                timeout=max(0.1, float(timeout_seconds)),
+            )
+        except asyncio.TimeoutError:
+            return _load_visible_portal_real_alarm_fallback_payload(
+                normalized_limit,
+            )
+
     fresh_cached = _get_cached_portal_real_alarm_payload(
         normalized_limit,
         require_fresh=True,
@@ -4223,6 +4245,8 @@ async def get_real_alarms(
             limit or _portal_real_alarm_list_limit(),
             timeout_seconds=PORTAL_REAL_ALARM_ROUTE_TIMEOUT_SECONDS,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         error_detail = f"{type(exc).__name__}: {str(exc)}"
         print(f"[ERROR] get_real_alarms failed: {error_detail}")

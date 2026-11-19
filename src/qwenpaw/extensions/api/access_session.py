@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 LOCAL_TOKEN_PREFIX = "qp1."
 ACCESS_COOKIE = "qwenpaw_access_token"
+INOE_LOGIN_COOKIE = "Cnos-Inoe-Admin-Token"
 ACCESS_TTL_SECONDS = 600
 
 

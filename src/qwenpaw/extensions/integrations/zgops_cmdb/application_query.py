@@ -29,11 +29,17 @@ APPLICATION_CI_TYPE = "project"
 
 _DEFAULT_TIMEOUT_SECONDS = 6.0
 
-_CONFIG_KEYS = ("INOE_API_BASE_URL", "INOE_API_TOKEN")
-
-
 def _resolve_config() -> dict[str, str]:
-    return {key: str(os.environ.get(key) or "").strip() for key in _CONFIG_KEYS}
+    from qwenpaw.extensions.api import inoe_settings_store
+
+    return {
+        "INOE_API_BASE_URL": str(os.environ.get("INOE_API_BASE_URL") or "").strip(),
+        "INOE_API_TOKEN": (
+            inoe_settings_store.get_effective_token()
+            if inoe_settings_store.has_user_inoe_context()
+            else str(os.environ.get("INOE_API_TOKEN") or "").strip()
+        ),
+    }
 
 
 def _request_json(

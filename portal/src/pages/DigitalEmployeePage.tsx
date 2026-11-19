@@ -37,6 +37,7 @@ import {
   DigitalEmployeePageErrorBoundary,
   DisposalConfirmModal,
   EmployeeChatMainPanel,
+  PortalInoeAccount,
   EmployeeChatSidebar,
   ExecutionHistoryModal,
   PortalAlertBell,
@@ -1784,6 +1785,7 @@ export default function DigitalEmployeePage({
                   {themeToggleIcon}
                 </button>
               </Tooltip>
+              <PortalInoeAccount />
               <PortalTraditionalViewButton />
             </div>
           ) : null}

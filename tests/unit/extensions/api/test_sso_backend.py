@@ -396,3 +396,74 @@ def test_token_login_keeps_cookie_fallback_disabled_when_same_token(
     assert response.status_code == 401
     assert response.json() == {"detail": "INOE 登录态无效或已过期"}
     assert seen == ["same-token"]
+
+
+def test_native_inoe_cookie_selects_normal_user_even_with_admin_portal_session(
+    sso_client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi import HTTPException
+    from qwenpaw.extensions.api.access_session import (
+        INOE_LOGIN_COOKIE,
+        get_access_store,
+    )
+
+    monkeypatch.setenv("INOE_API_BASE_URL", "http://gw:30080")
+    user_a = {"userId": 1, "username": "admin-fixture"}
+    user_b = {"userId": 7, "username": "ordinary-fixture"}
+    sessions = get_access_store()
+    old = sessions.issue("admin-inoe", user_a)["access_token"]
+    validated = []
+
+    async def userinfo(_url, token):
+        validated.append(token)
+        assert token == "ordinary-inoe"
+        return {"code": 200, "user": user_b}
+
+    monkeypatch.setattr(
+        "qwenpaw.extensions.api.sso_backend._validate_inoe_token", userinfo,
+    )
+    body = {"token": old, "require_inoe_cookie": True}
+    assert sso_client.post("/sso/token-login", json=body).status_code == 401
+    assert not validated
+
+    # The same native switch must also stop an old open tab before it can
+    # use the former administrator's cookie-bound business context.
+    from qwenpaw.extensions.api import inoe_settings_store
+    from qwenpaw.extensions.api.sso_token_middleware import SsoTokenMiddleware
+
+    app = FastAPI()
+
+    @app.post("/api/agents/query/console/chat")
+    def demo_chat():
+        return {"upstream": inoe_settings_store.build_headers()["Authorization"]}
+
+    @app.get("/api/providers")
+    def admin_settings():
+        return {}
+
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
+    monkeypatch.setenv("QWENPAW_SSO_TOKEN_REQUIRED", "true")
+    monkeypatch.setenv("QWENPAW_ADMIN_INOE_USER_IDS", "1")
+    app.add_middleware(SsoTokenMiddleware)
+    business = TestClient(app, cookies={INOE_LOGIN_COOKIE: "ordinary-inoe"})
+    assert business.post(
+        "/api/agents/query/console/chat",
+        headers={"X-QwenPaw-Access-Token": old},
+    ).status_code == 401
+
+    sso_client.cookies.set(INOE_LOGIN_COOKIE, "ordinary-inoe")
+    result = sso_client.post("/sso/token-login", json=body)
+    assert result.status_code == 200, result.json()
+    assert result.json()["user"] == user_b
+    assert validated == ["ordinary-inoe"]
+    identity = sessions.resolve(result.json()["access_token"])
+    assert identity.inoe_token == "ordinary-inoe"
+    assert not identity.is_admin
+    headers = {"X-QwenPaw-Access-Token": identity.access_token}
+    assert business.post("/api/agents/query/console/chat", headers=headers).json() == {
+        "upstream": "Bearer ordinary-inoe",
+    }
+    assert business.get("/api/providers", headers=headers).status_code == 403
+    with pytest.raises(HTTPException) as revoked:
+        sessions.resolve(old)
+    assert revoked.value.status_code == 401

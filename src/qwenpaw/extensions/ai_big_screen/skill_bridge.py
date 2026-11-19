@@ -48,7 +48,11 @@ def resolve_skill_root(workspace: str, skill: str) -> Path:
 
 def _skill_subprocess_env() -> dict[str, str]:
     """Force UTF-8 stdio so Chinese skill output never mojibakes."""
-    env = dict(os.environ)
+    from qwenpaw.extensions.integrations.agent_api_auth import (
+        subprocess_request_environment,
+    )
+
+    env = subprocess_request_environment(dict(os.environ))
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     return env

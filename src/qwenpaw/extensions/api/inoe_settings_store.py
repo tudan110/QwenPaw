@@ -268,31 +268,35 @@ def get_token(*, db_path: Path = DEFAULT_DB_PATH) -> str:
     ).strip()
 
 
-# Per-request INOE credential from the portal's SSO pass-through (see
-# ssoSession.ts): portal_backend's middleware sets this from the
-# ``X-Inoe-Token`` header for the lifetime of the request, so every INOE
-# call made while handling it — including ones dispatched via
-# ``asyncio.to_thread`` — sees the logged-in user's own token instead of
-# the shared configured one. Unset outside a request (background tasks,
-# SSO disabled), where it stays ``None`` and callers fall back to
-# :func:`get_token`.
+# Middleware sets the verified credential for the entire request, including
+# work dispatched via asyncio.to_thread. None means no delegated context;
+# an empty string is explicit and cannot borrow a shared service credential.
 CURRENT_REQUEST_TOKEN: contextvars.ContextVar[str | None] = (
     contextvars.ContextVar("inoe_current_request_token", default=None)
 )
 
 
+def has_user_inoe_context() -> bool:
+    from .access_session import CURRENT_IDENTITY
+    from .collaboration_access import SOURCE as COLLABORATION_SOURCE
+
+    identity = CURRENT_IDENTITY.get()
+    if identity is not None:
+        return identity.source != COLLABORATION_SOURCE
+    return CURRENT_REQUEST_TOKEN.get() is not None
+
+
 def get_effective_token(*, db_path: Path = DEFAULT_DB_PATH) -> str:
-    """Token to use for an outbound INOE call right now.
-
-    Prefers the current request's SSO pass-through token (the logged-in
-    user's own INOE permissions); falls back to the configured
-    ``inoe_api_token`` when no per-request token is set.
-    """
+    """Resolve user credentials without borrowing the background credential."""
+    if not has_user_inoe_context():
+        return get_token(db_path=db_path)
     ctx_token = CURRENT_REQUEST_TOKEN.get()
-    if ctx_token:
+    if ctx_token is not None:
         return ctx_token
-    return get_token(db_path=db_path)
+    from .access_session import CURRENT_IDENTITY
 
+    identity = CURRENT_IDENTITY.get()
+    return identity.inoe_token if identity is not None else ""
 
 def get_timeout_seconds(*, db_path: Path = DEFAULT_DB_PATH) -> float:
     return float(

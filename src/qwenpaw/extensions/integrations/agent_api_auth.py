@@ -7,7 +7,10 @@ from dataclasses import replace
 from urllib.parse import urlsplit
 
 from qwenpaw.constant import EnvVarLoader
-from qwenpaw.extensions.api.inoe_settings_store import CURRENT_REQUEST_TOKEN
+from qwenpaw.extensions.api.inoe_settings_store import (
+    CURRENT_REQUEST_TOKEN,
+    has_user_inoe_context,
+)
 from qwenpaw.extensions.api.sso_auth import normalize_token
 from qwenpaw.extensions.api.access_session import CURRENT_IDENTITY
 from qwenpaw.sandbox import SandboxConfig
@@ -26,7 +29,12 @@ _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 def get_request_token() -> str:
     token = CURRENT_REQUEST_TOKEN.get()
     if token is None:
-        token = EnvVarLoader.get_str(_REQUEST_TOKEN_ENV, "") or ""
+        identity = CURRENT_IDENTITY.get()
+        token = (
+            identity.inoe_token
+            if identity is not None
+            else EnvVarLoader.get_str(_REQUEST_TOKEN_ENV, "") or ""
+        )
     return normalize_token(token)
 
 
@@ -117,7 +125,7 @@ def subprocess_request_environment(
         if lease:
             result[COLLABORATION_ENV] = lease
     token = get_request_token()
-    if token:
+    if token or has_user_inoe_context():
         result[_REQUEST_TOKEN_ENV] = token
         result["INOE_API_TOKEN"] = token
     access_token = get_access_token()
@@ -153,7 +161,8 @@ def sandbox_request_environment(config: SandboxConfig) -> SandboxConfig:
         env["COPAW_REQUEST_COLLABORATION_TOKEN"] = ""
         config = replace(config, env_vars=env)
     token = get_request_token()
-    if not token:
+    user_context = has_user_inoe_context()
+    if not token and not user_context:
         return config
     keys = (_REQUEST_TOKEN_ENV, "INOE_API_TOKEN", _ACCESS_TOKEN_ENV)
     if any(config.env_vars.get(key) == "" for key in keys):
@@ -162,10 +171,6 @@ def sandbox_request_environment(config: SandboxConfig) -> SandboxConfig:
     for key in keys:
         if config.env_mode != "allowlist" or key in env:
             value = get_access_token() if key == _ACCESS_TOKEN_ENV else token
-            if value:
+            if value or user_context:
                 env[key] = value
-            elif (
-                key == _ACCESS_TOKEN_ENV and CURRENT_IDENTITY.get() is not None
-            ):
-                env[key] = ""
     return replace(config, env_vars=env)

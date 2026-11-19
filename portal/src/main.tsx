@@ -50,4 +50,11 @@ void ensureSsoLogin().then((proceed) => {
       <App />
     </BrowserRouter>,
   );
+}).catch(() => {
+  ReactDOM.createRoot(rootElement).render(
+    <main role="alert" style={{ padding: "2rem" }}>
+      <p>暂时无法验证当前智观登录。请刷新重试，或返回智观确认登录状态。</p>
+      <button type="button" onClick={() => window.location.reload()}>刷新重试</button>
+    </main>,
+  );
 });

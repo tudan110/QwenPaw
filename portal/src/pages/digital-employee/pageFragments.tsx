@@ -13,6 +13,8 @@ import type { DigitalEmployee } from "../../types/portal";
 import { getEmployeeById } from "../../data/portalData";
 import DigitalEmployeeAvatar from "../../components/DigitalEmployeeAvatar";
 import PortalTraditionalViewButton from "../../components/PortalTraditionalViewButton";
+import { isSsoEnabled } from "../../auth/ssoConfig";
+import { getSession } from "../../auth/ssoSession";
 import { portalAppTitle } from "../../config/portalBranding";
 import { ChatMessageItem } from "./components";
 import type {
@@ -373,6 +375,7 @@ export function PortalHomeHero({
             {themeToggleIcon}
           </button>
         </Tooltip>
+        <PortalInoeAccount />
         <PortalTraditionalViewButton className="portal-home-traditional-toggle" />
       </div>
       <div className="portal-home-hero">
@@ -588,6 +591,7 @@ export function DashboardPanel({
               {themeToggleIcon}
             </button>
           </Tooltip>
+          <PortalInoeAccount />
           <PortalTraditionalViewButton />
         </div>
       </div>
@@ -800,6 +804,15 @@ export function DashboardPanel({
       )}
     </div>
   );
+}
+
+export function PortalInoeAccount() {
+  if (!isSsoEnabled()) return null;
+  const user = getSession()?.user;
+  const account = user?.username?.trim() || user?.userId;
+  if (account == null || account === "") return null;
+  const label = `当前智观账号：${account}`;
+  return <span className="portal-inoe-account" title={label}>{label}</span>;
 }
 
 export function EmployeeChatMainPanel({

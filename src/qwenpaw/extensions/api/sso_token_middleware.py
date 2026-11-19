@@ -18,6 +18,7 @@ from qwenpaw.extensions.api.sso_auth import (
 )
 from .access_session import (
     ACCESS_COOKIE,
+    INOE_LOGIN_COOKIE,
     CURRENT_IDENTITY,
     LOCAL_TOKEN_PREFIX,
     AccessIdentity,
@@ -240,6 +241,11 @@ class SsoTokenMiddleware:
                     raise HTTPException(401, "本地访问凭据冲突")
                 if local_token:
                     identity = get_access_store().resolve(local_token)
+                    inoe_cookie = normalize_token(
+                        unquote(request.cookies.get(INOE_LOGIN_COOKIE, ""))
+                    )
+                    if inoe_cookie and inoe_cookie != identity.inoe_token:
+                        raise HTTPException(401, "智观登录已切换，请刷新会话")
                     if not cached:
                         user = await self.validator.validate(
                             identity.inoe_token,

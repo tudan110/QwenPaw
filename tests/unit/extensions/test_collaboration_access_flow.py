@@ -97,6 +97,11 @@ def flow(monkeypatch, tmp_path):
         "qwenpaw.extensions.api.collaboration_access",
         "extensions/api/collaboration_access.py",
     )
+    inoe.has_user_inoe_context = lambda: (
+        access.CURRENT_IDENTITY.get().source != lease.SOURCE
+        if access.CURRENT_IDENTITY.get() is not None
+        else inoe.CURRENT_REQUEST_TOKEN.get() is not None
+    )
     auth = load(
         "qwenpaw.extensions.integrations.agent_api_auth",
         "extensions/integrations/agent_api_auth.py",

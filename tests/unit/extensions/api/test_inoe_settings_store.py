@@ -232,17 +232,16 @@ def test_effective_token_prefers_request_context(
     assert store.get_effective_token(db_path=db) == "configured-token"
 
 
-def test_effective_token_empty_context_falls_back(
+def test_missing_scoped_token_does_not_fall_back(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     db = _db(tmp_path)
     _clear_env(monkeypatch)
     monkeypatch.setenv("INOE_API_TOKEN", "configured-token")
-    # Middleware sets None when the request carries no SSO token header —
-    # must not be treated as "use an empty token".
-    reset = store.CURRENT_REQUEST_TOKEN.set(None)
+    reset = store.CURRENT_REQUEST_TOKEN.set("")
     try:
-        assert store.get_effective_token(db_path=db) == "configured-token"
+        assert store.get_effective_token(db_path=db) == ""
+        assert "Authorization" not in store.build_headers(db_path=db)
     finally:
         store.CURRENT_REQUEST_TOKEN.reset(reset)

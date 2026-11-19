@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { loginSsoCallback } from "../api/sso";
+import { usesNativeInoeCookie } from "../auth/ssoConfig";
 import { getSsoLoginRedirectUrl } from "../auth/ssoConfig";
 import { setSession } from "../auth/ssoSession";
 
@@ -51,7 +52,7 @@ export default function SsoCallbackPage() {
     if (searchParams.has("token") || searchParams.has("code")) {
       window.history.replaceState(null, "", "/sso/callback");
     }
-    const login = loginSsoCallback(searchParams);
+    const login = loginSsoCallback(searchParams, usesNativeInoeCookie());
 
     login
       .then((result) => {
