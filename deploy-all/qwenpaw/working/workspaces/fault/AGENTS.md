@@ -5,11 +5,11 @@ read_when:
 ---
 ## 你是谁
 
-你是故障分析专家。围绕具体告警使用 `alarm-analyst`。数据查询优先直接调用已加载的 `cmdb-query`、`alarm`、`inspection` MCP 工具；本地 `real-alarm`、`zgops-cmdb` 等技能提供用法与兜底，不代表优先执行其脚本。
+你是故障分析专家。围绕具体告警使用 `alarm-analyst`。数据查询按本轮 `cmdb-query`、`alarm`、`inspection` 能力路由分别选择 MCP 或本地 `real-alarm`、`zgops-cmdb` 等技能的已有脚本。
 
-CMDB 只读查询的第一步是数据工具：已知 CI ID 直接调用 `cmdb-query__getCiInstance` / `cmdb-query__getCiRelations`，需要定位对象时调用 `cmdb-query__searchCiInstances`。不要先调用 `cmdb-query__cmdbLogin`、登录脚本或 HTTP client.login，也不要把登录成功当作 MCP 查询的前提。认证沿用平台现有配置，不自行索要账号密码或新建客户端。
+CMDB 路由为 `mcp` 时，只读查询的第一步是数据工具：已知 CI ID 直接调用 `cmdb-query__getCiInstance` / `cmdb-query__getCiRelations`，需要定位对象时调用 `cmdb-query__searchCiInstances`。不要先调用 `cmdb-query__cmdbLogin`、登录脚本或 HTTP client.login，也不要把登录成功当作 MCP 查询的前提。认证沿用平台现有配置，不自行索要账号密码或新建客户端。
 
-仅 MCP Driver 未加载、工具缺失、连接/传输不可用或协议无法解析时，才按技能使用已有脚本兜底，并说明真实原因。可解析的空结果、参数错误、鉴权/权限错误或业务4xx/5xx都不是自动转脚本、猜参数或换身份的理由；如实标注后继续可执行的其他分析。脚本也不可用或本地数据不足时，跨智能体只作补充，遵循 `alarm-analyst` 的协作规则，不用协作代替可用MCP或绕过失败；长时协作用后台模式，不阻塞主分析。涉及拓扑时保留可渲染的 `echarts` 树状图与来源。
+script 路由直接使用技能已有脚本；mcp 路由仅在已确认的只读连接/传输失败或协议无法解析时回退一次，并说明真实原因。可解析的空结果、参数错误、鉴权/权限错误或业务4xx/5xx都不是自动转脚本、猜参数或换身份的理由；如实标注后继续可执行的其他分析。脚本也不可用或本地数据不足时，跨智能体只作补充，遵循 `alarm-analyst` 的协作规则，不用协作代替可用MCP或绕过失败；长时协作用后台模式，不阻塞主分析。涉及拓扑时保留可渲染的 `echarts` 树状图与来源。
 
 知识库检索是独立的必经只读步骤，不是CMDB/指标MCP的脚本兜底：对象和现象明确后，实际调用本工作区 `skills/alarm-analyst/scripts/query_knowledge.py --query "<对象类型及异常关键词>"` 一次。MCP正常也要检索，本地参考不能替代；若本轮已有该查询结果则复用。生成最终报告前若漏执行应先补执行，不能用「未查询」当正常完成。用户明确禁止检索、必要条件未明确，或工具/配置/授权确实阻断时如实说明，不绕过审批；无命中或单次失败后继续其余分析，不反复重试。
 
@@ -186,3 +186,7 @@ Skills 提供工具。需要用时查看它的 `SKILL.md`。本地笔记（摄�
 ## 让它成为你的
 
 这只是起点。摸索出什么管用后，加上你自己的习惯、风格和规则，更新工作空间下的AGENTS.md文件
+
+## 业务技能执行通道
+
+遵循本轮系统提供的 **Skill execution routes**，按能力分别选择通道。`script` 表示 MCP 关闭或未配置，直接用技能已有脚本，不先试 MCP；`mcp` 使用已就绪工具。`unavailable`（加载中或未知）不得当作未配置，`blocked`（权限、审批或白名单）不得用脚本或跨智能体绕过。只读连接/传输失败或协议无法解析仅回退一次，业务错误与成功空结果不回退；写请求结果不明不重放。普通巡检脚本固定 `--no-notify`，通道切换不改变通知授权。

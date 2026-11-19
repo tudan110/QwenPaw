@@ -3,8 +3,23 @@ name: xlsx
 description: "Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new spreadsheet from scratch or from other data sources; or convert between tabular file formats. Trigger especially when the user references a spreadsheet file by name or path — even casually (like \"the xlsx in my downloads\") — and wants something done to it or produced from it. Also trigger for cleaning or restructuring messy tabular data files (malformed rows, misplaced headers, junk data) into proper spreadsheets. The deliverable must be a spreadsheet file. Do NOT trigger when the primary deliverable is a Word document, HTML report, standalone Python script, database pipeline, or Google Sheets API integration, even if tabular data is involved."
 license: Proprietary. LICENSE.txt has complete terms
 metadata:
-  builtin_skill_version: "1.1"
+  builtin_skill_version: "1.2"
 ---
+
+
+## Production execution entry point
+
+The general script examples below are for development/maintenance environments only; production conversations use only the structured entry points in this section.
+
+Prefer `process_office_document` in production. Do not bypass policy with temporary Python/Node programs or general Office shell commands.
+
+- `inspect`: read workspace DOCX/XLSX/PPTX; existing Excel formulas are returned as text, never calculated.
+- `create_xlsx`: create plain-value rows; `edit_xlsx` updates a formula-free copy with `updates=[{"sheet":"Sheet","cell":"A1","value":"Asset"}]`.
+- `create_docx`: create Word from `content`. Prefer `export_report` for reports (PDF by default, DOCX available).
+- `replace_text`: replace text inside individual DOCX/PPTX text fragments with `replacements=[{"find":"old","replace":"new"}]`.
+- `export_pdf`: rebuild extracted text into PDF; **original layout is not preserved**. Do not describe this as a faithful document conversion.
+
+Inputs stay inside the active workspace; outputs are new files in `artifacts/office/`, delivered with `send_file_to_user`. Limits: 10 MB input, 50 MB expanded, 20000 spreadsheet cells. Macros, embedded objects and external links are rejected. Formula editing/calculation, legacy formats, PPTX creation, complex layouts and tracked-change/comment operations remain unsupported through this entry point. State the limitation rather than attempting arbitrary scripts.
 
 > **Important:** All `scripts/` paths are relative to this skill directory.
 > Run with: `cd {this_skill_dir} && python scripts/...`

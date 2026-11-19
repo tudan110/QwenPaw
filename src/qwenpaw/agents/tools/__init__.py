@@ -29,6 +29,8 @@ from .file_search import grep_search, glob_search
 from .shell import execute_shell_command
 from .send_file import send_file_to_user
 from .export_report import export_report
+from .office_document import process_office_document
+from .skill_context import write_skill_context
 from .browser_control import browser_use
 from .desktop_screenshot import desktop_screenshot
 from .view_media import view_image, view_video
@@ -70,6 +72,8 @@ __all__ = [
     "glob_search",
     "send_file_to_user",
     "export_report",
+    "process_office_document",
+    "write_skill_context",
     "desktop_screenshot",
     "view_image",
     "view_video",

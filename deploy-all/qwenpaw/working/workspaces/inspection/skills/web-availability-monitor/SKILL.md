@@ -8,6 +8,16 @@ description: 查询和编排 Web 可用性监测任务。适用于查看监测�
 
 # Web Availability Monitor
 
+## 执行通道路由
+
+先读取本轮系统提供的 **Skill execution routes**，按能力分别选择通道；下文 MCP 操作说明仅适用于该能力的 `mcp` 路由。
+
+- `script`：MCP 已关闭或未配置，直接执行本技能已有脚本，不先尝试 MCP；记录 `mcp_disabled` / `mcp_not_configured`。
+- `mcp`：调用已就绪的 MCP 工具；只有已确认的只读连接/传输失败或协议无法解析，才允许一次脚本回退。
+- `unavailable`：加载中或状态未知，说明尚未就绪；不得把工具不可见推断为未配置或直接转脚本。仅 `reason=mcp_transport_unavailable` 明确确认了发现阶段的连接故障时，允许只读操作使用已有脚本一次；缺少路由摘要时也不猜测开关状态。
+- `blocked`：权限、审批或工具白名单限制，不得通过脚本或跨智能体绕过。可解析的鉴权、参数、业务错误及成功空结果均不自动回退。
+- 脚本缺失、依赖或凭据缺失时报告具体限制，不反向启用 MCP、不换身份。写操作已发送但结果不明时，不用脚本重复提交；通道切换不改变原有授权与通知规则。
+
 这是 inspection 本地的 **Web 可用性监测** 技能，对接 `http://web-check-app:3101` 对应的网页监测系统。
 
 它不是普通“站点 ping 一下”的探活脚本，而是一个 **可编排的页面监测技能**：支持任务、步骤流、定时调度、手工执行、步骤截图和失败复盘。
@@ -39,9 +49,9 @@ WEB_MONITOR_EXTRA_HEADERS={}
 2. 如果后续接入认证，再把 token 或 cookie 填进去
 3. 不要在回答中泄露 token、cookie 或额外请求头明文
 
-## MCP 优先级
+## MCP 通道说明
 
-本工作区已启用 `web-check-app` MCP Server。Agent 必须优先直接调用对应的 MCP Tool，不要自行使用 curl、requests、SSE 或 JSON-RPC。工具与能力映射如下：
+对应能力路由为 `mcp` 时使用 `web-check-app` MCP Server。`mcp` 路由下必须直接调用对应的 MCP Tool，不要自行使用 curl、requests、SSE 或 JSON-RPC。工具与能力映射如下：
 
 | 能力 | MCP Tool |
 |---|---|
@@ -60,10 +70,10 @@ WEB_MONITOR_EXTRA_HEADERS={}
 | 批量删除运行 | `web-check-app__batchDeleteMonitorRuns` |
 | Selector Helper | `web-check-app__suggestSelectors` |
 
-MCP 不可用时才允许使用下方 `scripts/web_monitor.py` 作为兜底，具体仅限：MCP Driver 未加载、工具不存在、连接/传输不可用，或响应无法按 MCP 协议解析。MCP 已经成功调用但返回可解析的业务错误、鉴权错误、参数错误或上游 4xx/5xx 时必须立即失败，不换参数、不自动重试、不回退脚本。
+对应能力为 `script` 时直接使用下方 `scripts/web_monitor.py`；`mcp` 路由仅在上文只读故障条件下允许一次回退。MCP 已经成功调用但返回可解析的业务错误、鉴权错误、参数错误或上游 4xx/5xx 时必须立即失败，不换参数、不自动重试、不回退脚本。
 ## 旧脚本回退路径
 
-仅在 MCP Driver 未加载、工具不存在、连接/传输不可用，或响应无法按 MCP 协议解析时，才允许执行以下脚本命令。
+在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才允许执行以下脚本命令。
 
 查看可用性监测看板：
 
@@ -218,11 +228,11 @@ python3 scripts/web_monitor.py update --monitor-name "网易163门户" --payload
 - 发布任务：调用 `web-check-app__publishMonitor`
 - 删除任务或运行记录：按确认规则调用 `web-check-app__deleteMonitor`、`web-check-app__deleteMonitorRun` 或 `web-check-app__batchDeleteMonitorRuns`
 
-只有触发上述 fallback 条件时，才使用对应的 `health`、`dashboard`、`list-monitors`、`detail`、`runs`、`run`、`trigger`、`selector-helper`、`create`、`update`、`publish`、`delete-monitor`、`delete-run` 或 `delete-runs` 脚本命令。
+在 `script` 路由或满足上述只读 fallback 条件时，才使用对应的 `health`、`dashboard`、`list-monitors`、`detail`、`runs`、`run`、`trigger`、`selector-helper`、`create`、`update`、`publish`、`delete-monitor`、`delete-run` 或 `delete-runs` 脚本命令。
 
 ## 执行要求
 
-1. **优先使用 `web-check-app` MCP Tool；不要默认使用浏览器自动化点击页面**
+1. **按本轮路由使用 `web-check-app` MCP Tool 或已有脚本；不要默认使用浏览器自动化点击页面**
 2. 查询类请求和 Selector Helper 直接执行
 3. 创建/更新前，先确认任务名、URL、调度和步骤定义
 4. 发布和手工触发前，确认用户的明确意图

@@ -402,7 +402,17 @@ def _skill_subprocess_env() -> dict[str, str]:
     thread crash, ``subprocess.run`` returns empty stdout, and the caller
     raises "skill bridge returned empty output".
     """
-    env = dict(os.environ)
+    from ..integrations.agent_api_auth import subprocess_request_environment
+    from .access_session import CURRENT_IDENTITY
+
+    env = subprocess_request_environment(dict(os.environ))
+    identity = CURRENT_IDENTITY.get()
+    if identity is not None:
+        # Portal bridges use the authenticated caller, including an explicit
+        # empty marker when no business credential exists. Never borrow a
+        # shared service account for a request with a different identity.
+        env["QWENPAW_REQUEST_INOE_TOKEN"] = identity.inoe_token
+        env["INOE_API_TOKEN"] = identity.inoe_token
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     return env

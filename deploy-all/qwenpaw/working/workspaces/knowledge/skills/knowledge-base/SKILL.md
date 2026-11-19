@@ -50,6 +50,18 @@ eval/                  评测闭环：抽取回归 + 检索 recall@k
 
 ## 启动
 
+### 生产对话检索入口
+
+对话中使用固定脚本，不启动服务、不安装依赖：
+
+```bash
+python3 skills/knowledge-base/scripts/kb_query.py "数据库慢查询怎么处置" --output json
+```
+
+该入口随受管种子发布，通过完整性校验后可执行。查询失败必须报告错误，
+不能说成“没有资料”。资料上传、沉淀和删除使用知识库页面的现有授权入口。
+下面的启动和 curl 命令仅供运维在终端调试，不是生产对话执行路径。
+
 ```bash
 cd skills/knowledge-base
 pip install -r requirements.txt

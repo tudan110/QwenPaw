@@ -61,6 +61,14 @@ class FakeHttpClient(FakeStdIOClient):
 
 
 def patch_mcp_runtime_clients(monkeypatch) -> None:
+    # Keep endpoint validation enabled, but declare the test-only commands.
+    # Both clients below are replaced before any handler can connect.
+    monkeypatch.setenv(
+        "QWENPAW_MCP_ALLOWED_COMMANDS", '["fake-mcp", "python"]'
+    )
+    monkeypatch.setenv(
+        "QWENPAW_READONLY_TOOL_NAMES", "alarm__echo,policy_echo__echo"
+    )
     FakeStdIOClient.instances.clear()
     FakeHttpClient.instances.clear()
     monkeypatch.setattr(

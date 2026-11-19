@@ -3,8 +3,18 @@ name: pdf
 description: 当用户需要对PDF文件进行任何操作时，请使用此技能。包括从 PDF 中读取或提取文本/表格、合并多个 PDF、拆分 PDF、旋转页面、添加水印、创建新PDF、填写PDF表单、加密/解密 PDF、提取图片，以及对扫描版 PDF 进行 OCR 使其可搜索。如果用户提到 .pdf 文件或要求生成 PDF，请使用此技能。
 license: Proprietary. LICENSE.txt has complete terms
 metadata:
-  builtin_skill_version: "1.1"
+  builtin_skill_version: "1.2"
 ---
+
+## 生产模式执行入口
+
+生成报告请调用 `export_report(content=<正文>, title=<标题>)`，默认生成 PDF；
+需要 Word 时指定 `format="docx"`。将工具返回的下载链接原样交给用户，
+不要运行临时 Python、Node、LibreOffice 或 shell 来绕过生产策略。
+DOCX/XLSX/PPTX 的文字重排 PDF 可用 `process_office_document(operation="export_pdf", file_path=<路径>)`，此方式不保留原版式，返回的 `file_path` 用 `send_file_to_user` 交付。
+现有 PDF 的合并、拆页、OCR、表单和加解密尚未纳入结构化入口；遇到这些请求应说明限制，不能声称已完成。
+以下通用脚本示例仅供开发维护环境参考，生产对话仅使用上述入口。
+
 
 > **重要：** 所有 `scripts/` 路径均相对于此技能目录。
 > 运行方式：`cd {this_skill_dir} && python scripts/...`

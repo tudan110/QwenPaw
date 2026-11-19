@@ -3,8 +3,23 @@ name: pptx
 description: "Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or summary); editing, modifying, or updating existing presentations; combining or splitting slide files; working with templates, layouts, speaker notes, or comments. Trigger whenever the user mentions \"deck,\" \"slides,\" \"presentation,\" or references a .pptx filename, regardless of what they plan to do with the content afterward. If a .pptx file needs to be opened, created, or touched, use this skill."
 license: Proprietary. LICENSE.txt has complete terms
 metadata:
-  builtin_skill_version: "1.1"
+  builtin_skill_version: "1.2"
 ---
+
+
+## Production execution entry point
+
+The general script examples below are for development/maintenance environments only; production conversations use only the structured entry points in this section.
+
+Prefer `process_office_document` in production. Do not bypass policy with temporary Python/Node programs or general Office shell commands.
+
+- `inspect`: read workspace DOCX/XLSX/PPTX; existing Excel formulas are returned as text, never calculated.
+- `create_xlsx`: create plain-value rows; `edit_xlsx` updates a formula-free copy with `updates=[{"sheet":"Sheet","cell":"A1","value":"Asset"}]`.
+- `create_docx`: create Word from `content`. Prefer `export_report` for reports (PDF by default, DOCX available).
+- `replace_text`: replace text inside individual DOCX/PPTX text fragments with `replacements=[{"find":"old","replace":"new"}]`.
+- `export_pdf`: rebuild extracted text into PDF; **original layout is not preserved**. Do not describe this as a faithful document conversion.
+
+Inputs stay inside the active workspace; outputs are new files in `artifacts/office/`, delivered with `send_file_to_user`. Limits: 10 MB input, 50 MB expanded, 20000 spreadsheet cells. Macros, embedded objects and external links are rejected. Formula editing/calculation, legacy formats, PPTX creation, complex layouts and tracked-change/comment operations remain unsupported through this entry point. State the limitation rather than attempting arbitrary scripts.
 
 > **Important:** All `scripts/` paths are relative to this skill directory.
 > Run with: `cd {this_skill_dir} && python scripts/...`

@@ -24,6 +24,13 @@ from qwenpaw.extensions.api.sso_backend import _validate_inoe_token
 from qwenpaw.extensions.api.sso_auth import extract_user
 from .business_reads import MCP_READ_TOOLS
 from .managed_integrity import inspect_skill
+from .skill_cli import check_cli_arguments
+from .skill_scripts import (
+    SCRIPT_SKILLS,
+    approval_files,
+    check_arguments,
+    check_web_identifiers,
+)
 
 _READ_TOOLS = {
     "read_file",
@@ -66,7 +73,11 @@ _READ_SCRIPT_NAMES = {
 
 # Bounded artifact creation: text input only, fixed renderer and report root.
 # This does not grant general filesystem writes or shell execution.
-_ARTIFACT_TOOLS = {"export_report"}
+_ARTIFACT_TOOLS = {
+    "export_report",
+    "process_office_document",
+    "write_skill_context",
+}
 
 
 def enabled() -> bool:
@@ -218,7 +229,7 @@ def _approved_script(path: Path) -> bool:
         manifest_path = seed / "seed-manifest.json"
         if not manifest_path.is_file():
             _deny_script("SEED_MANIFEST_MISSING", path)
-        if path.name not in _READ_SCRIPT_NAMES:
+        if path.name not in _READ_SCRIPT_NAMES | SCRIPT_SKILLS.keys():
             _deny_script("SCRIPT_NOT_ALLOWED", path)
         try:
             relative = str(path.relative_to(Path(WORKING_DIR).resolve()))
@@ -246,6 +257,14 @@ def _approved_script(path: Path) -> bool:
                 "技能完整性校验失败。停止本轮该技能的执行尝试；"
                 "改命令、管道或更换身份不能修复，请运维预览隔离清单。"
             )
+        if path.name == "kb_search.py":
+            dependency = inspect_skill(
+                Path(WORKING_DIR),
+                manifest,
+                "workspaces/knowledge/skills/knowledge-base",
+            )
+            if not dependency["execution_ready"]:
+                _deny_script("KNOWLEDGE_DEPENDENCY_NOT_TRUSTED", path)
     if path.name == "inspect_resource_metrics.py":
         if len(path.parents) < 5:
             return False
@@ -268,7 +287,8 @@ def _approved_script(path: Path) -> bool:
     return True
 
 
-def check_shell(command: str, cwd: Any = None) -> None:
+def check_shell(command: str, cwd: Any = None) -> bool:
+    """Return True for actions requiring administrator approval."""
     if sys.platform == "win32" and any(char in command for char in ";|&<>%^!"):
         raise PermissionError("Windows 生产命令不允许 shell 元字符")
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
@@ -319,8 +339,15 @@ def check_shell(command: str, cwd: Any = None) -> None:
         ):
             raise PermissionError("协同 CLI 必须来自当前受信任的安装目录")
         if args[1:3] in (["agents", "list"], ["agents", "chat"]):
-            return
-        raise PermissionError("仅允许受控智能体协同 CLI")
+            return False
+        workspace = Path(get_current_workspace_dir() or WORKING_DIR).resolve()
+        directory = Path(cwd or workspace).resolve()
+        try:
+            return check_cli_arguments(
+                args[1:], directory, workspace, check_path
+            )
+        except OSError as exc:
+            raise PermissionError("技能 CLI 输入文件不存在或无法访问") from exc
     if len(args) < 2 or Path(args[0]).name not in {
         "python",
         "python3",
@@ -340,6 +367,22 @@ def check_shell(command: str, cwd: Any = None) -> None:
     path = (directory / args[1]).resolve()
     if not _approved_script(path):
         raise PermissionError("脚本未在生产白名单中或完整性校验失败")
+    if path.name in SCRIPT_SKILLS:
+        workspace = Path(get_current_workspace_dir() or WORKING_DIR).resolve()
+        # Structured contracts reject abbreviations/unknown flags rather
+        # than inheriting argparse's permissive prefix matching.
+        try:
+            return check_arguments(
+                path,
+                args[2:],
+                directory,
+                workspace,
+                check_path,
+            )
+        except PermissionError:
+            raise
+        except OSError as exc:
+            raise PermissionError("技能输入文件不存在或无法访问") from exc
     if (
         path.name == "inspect_resource_metrics.py"
         and "--no-notify" not in args[2:]
@@ -377,6 +420,23 @@ def check_shell(command: str, cwd: Any = None) -> None:
                 else (args[index + 1] if index + 1 < len(args) else "")
             )
             check_path(str(directory / file_value))
+    return False
+
+
+def approval_binding(name: str, params: dict[str, Any]) -> dict[str, Any]:
+    """Freeze indirect JSON inputs along with the displayed command."""
+    from copy import deepcopy
+
+    binding = {"params": deepcopy(params)}
+    if name == "execute_shell_command":
+        directory = Path(
+            params.get("cwd") or get_current_workspace_dir() or WORKING_DIR
+        ).resolve()
+        binding["files"] = approval_files(
+            str(params.get("command", "")),
+            directory,
+        )
+    return binding
 
 
 async def check_tool(name: str, params: dict[str, Any]) -> bool:
@@ -386,14 +446,20 @@ async def check_tool(name: str, params: dict[str, Any]) -> bool:
     if name in {"grep_search", "glob_search"}:
         check_search(name, params)
         return False
+    if name.startswith("web-check-app__"):
+        check_web_identifiers(params)
     for key in ("file_path", "path", "filename"):
         value = params.get(key)
         if not isinstance(value, str):
             continue
         check_path(value)
+    shell_write = False
     if name == "execute_shell_command":
-        check_shell(str(params.get("command", "")), params.get("cwd"))
-        return False
+        shell_write = check_shell(
+            str(params.get("command", "")), params.get("cwd")
+        )
+        if not shell_write:
+            return False
     configured_reads = {
         value.strip()
         for value in EnvVarLoader.get_str(
@@ -418,7 +484,7 @@ async def check_tool(name: str, params: dict[str, Any]) -> bool:
             "dispatch",
         )
     )
-    if (
+    if not shell_write and (
         name in _READ_TOOLS
         or name in _ARTIFACT_TOOLS
         or name in MCP_READ_TOOLS

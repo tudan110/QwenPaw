@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
 import html
 import io
 import json
@@ -1454,6 +1455,44 @@ def _env_overrides() -> dict[str, str]:
 
 def _parse_env() -> dict[str, str]:
     overrides = _env_overrides()
+    # Trusted bridge subprocesses receive a request credential explicitly.
+    # An empty/malformed delegated credential must never expose a shared
+    # service account's broader CMDB permissions.
+    request_token_key = next(
+        (
+            key
+            for key in (
+                "QWENPAW_REQUEST_INOE_TOKEN",
+                "COPAW_REQUEST_INOE_TOKEN",
+            )
+            if key in os.environ
+        ),
+        None,
+    )
+    if request_token_key is not None:
+        token = os.environ[request_token_key].strip()
+        if token.lower().startswith("bearer "):
+            token = token[7:].strip()
+        if (
+            not token
+            or token.lower() == "bearer"
+            or any(
+                char.isspace() or ord(char) < 32 or ord(char) == 127
+                for char in token
+            )
+        ):
+            raise PermissionError("委派请求缺少有效智观凭据，禁止回退共享凭据")
+        overrides["INOE_API_TOKEN"] = token
+    elif any(
+        key in os.environ
+        for key in (
+            "QWENPAW_REQUEST_ACCESS_TOKEN",
+            "COPAW_REQUEST_ACCESS_TOKEN",
+            "QWENPAW_REQUEST_COLLABORATION_TOKEN",
+            "COPAW_REQUEST_COLLABORATION_TOKEN",
+        )
+    ):
+        raise PermissionError("委派请求缺少智观凭据，禁止回退共享凭据")
     if all(overrides.get(key) for key in _CMDB_ENV_OVERRIDE_KEYS):
         return overrides
     raise RuntimeError(
@@ -11033,8 +11072,19 @@ def _resource_import_metadata_env_signature() -> str:
         env = _parse_env()
     except Exception:
         return ""
-    return (
-        f"{env.get('INOE_API_BASE_URL') or ''}|{env.get('INOE_API_TOKEN') or ''}"
+    # Partition cached metadata by connection and identity without persisting
+    # the bearer token. JSON avoids ambiguous separator-containing values.
+    connection = json.dumps(
+        [env.get("INOE_API_BASE_URL") or "", env.get("INOE_API_TOKEN") or ""],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return "sha256:" + hashlib.sha256(connection.encode("utf-8")).hexdigest()
+
+
+def _is_resource_import_metadata_signature(value: Any) -> bool:
+    return isinstance(value, str) and bool(
+        re.fullmatch(r"sha256:[0-9a-f]{64}", value),
     )
 
 
@@ -11048,13 +11098,21 @@ def _read_resource_import_metadata_cache(
         stat_result = path.stat()
     except OSError:
         return None
-    if (time.time() - stat_result.st_mtime) > _METADATA_CACHE_TTL_SECONDS:
-        return None
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(payload, dict):
+        return None
+    if not _is_resource_import_metadata_signature(payload.get("envSignature")):
+        # Old releases stored URL|token here. Never reuse that format, and
+        # remove its credentials even if the cached metadata has expired.
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return None
+    if (time.time() - stat_result.st_mtime) > _METADATA_CACHE_TTL_SECONDS:
         return None
     if payload.get("envSignature") != env_signature:
         return None
@@ -11066,7 +11124,10 @@ def _write_resource_import_metadata_cache(
     env_signature: str,
     metadata: dict[str, Any],
 ) -> None:
-    if not env_signature or _METADATA_CACHE_TTL_SECONDS <= 0:
+    if (
+        not _is_resource_import_metadata_signature(env_signature)
+        or _METADATA_CACHE_TTL_SECONDS <= 0
+    ):
         return
     path = _resource_import_metadata_cache_path()
     try:

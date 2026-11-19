@@ -5,13 +5,23 @@ description: 查询当前配置所指向的 CMDB 环境。用于模型、属性�
 
 # ZGOPS CMDB 查询技能
 
+## 执行通道路由
+
+先读取本轮系统提供的 **Skill execution routes**，按能力分别选择通道；下文 MCP 操作说明仅适用于该能力的 `mcp` 路由。
+
+- `script`：MCP 已关闭或未配置，直接执行本技能已有脚本，不先尝试 MCP；记录 `mcp_disabled` / `mcp_not_configured`。
+- `mcp`：调用已就绪的 MCP 工具；只有已确认的只读连接/传输失败或协议无法解析，才允许一次脚本回退。
+- `unavailable`：加载中或状态未知，说明尚未就绪；不得把工具不可见推断为未配置或直接转脚本。仅 `reason=mcp_transport_unavailable` 明确确认了发现阶段的连接故障时，允许只读操作使用已有脚本一次；缺少路由摘要时也不猜测开关状态。
+- `blocked`：权限、审批或工具白名单限制，不得通过脚本或跨智能体绕过。可解析的鉴权、参数、业务错误及成功空结果均不自动回退。
+- 脚本缺失、依赖或凭据缺失时报告具体限制，不反向启用 MCP、不换身份。写操作已发送但结果不明时，不用脚本重复提交；通道切换不改变原有授权与通知规则。
+
 仅面向当前配置所指向的 CMDB 环境。
 
-## CMDB MCP 优先级
+## CMDB MCP 通道说明
 
-本工作区已启用 `cmdb-query` MCP Server。查询时直接调用下面的数据工具；有CI ID先查详情/关系，没有唯一对象先搜索。**不先调用 `cmdb-query__cmdbLogin`，也不先运行登录脚本或client.login**，不能把登录成功当作只读MCP查询前提。不要自行使用 `curl`、`requests`、SSE、JSON-RPC或额外客户端，不使用浏览器代查。
+对应能力路由为 `mcp` 时使用 `cmdb-query` MCP Server。查询时直接调用下面的数据工具；有CI ID先查详情/关系，没有唯一对象先搜索。**不先调用 `cmdb-query__cmdbLogin`，也不先运行登录脚本或client.login**，不能把登录成功当作只读MCP查询前提。不要自行使用 `curl`、`requests`、SSE、JSON-RPC或额外客户端，不使用浏览器代查。
 
-仅在 cmdb-query MCP Driver 未加载、工具缺失、连接/传输不可用或协议无法解析时，才回退到旧脚本路径。可解析的空结果、参数错误、鉴权/权限或业务4xx/5xx必须fail-fast并说明，不以脚本换身份绕过，不换参数反复试探。登录参数错误不证明数据MCP不可用，也不是转脚本的理由。
+在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才回退到旧脚本路径。可解析的空结果、参数错误、鉴权/权限或业务4xx/5xx必须fail-fast并说明，不以脚本换身份绕过，不换参数反复试探。登录参数错误不证明数据MCP不可用，也不是转脚本的理由。
 
 ## MCP Tools
 
@@ -111,7 +121,7 @@ description: 查询当前配置所指向的 CMDB 环境。用于模型、属性�
 
 生产环境通过工具的 `cwd` 参数选择技能目录，使用下面经过种子哈希校验的固定 Python 只读入口；不要拼接 `cd`、管道或自行执行 shell。登录和写操作不属于这个入口。
 
-仅当 cmdb-query MCP Driver 未加载、客户端/工具不可用或协议响应无法解析时，才执行以下命令。脚本自动从环境变量读取凭证（由设置页热加载）。
+在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才执行以下命令。脚本自动从环境变量读取凭证（由设置页热加载）。
 
 ```bash
 python3 scripts/cmdb_read.py list-models
@@ -127,7 +137,7 @@ python3 scripts/cmdb_read.py inoe-stat child --type_id <模型ID> --type_kind mo
 python3 scripts/cmdb_read.py inoe-stat group-attr --type_id <模型ID> --type_kind model --attr vendor --output markdown
 ```
 
-回退时必须在过程说明中写明回退原因（如 `cmdb-query-mcp-unavailable`）。
+脚本通道或回退时必须在过程说明中写明真实路由原因（如 `cmdb-query-mcp-unavailable`）。
 
 回退响应按 HTTP 状态和 `code/msg/message` 判断成功，失败不能当空结果；关联搜索仍需按 `numfound` 翻页。`inoe-stat` 默认动态解析元数据，`--no_dynamic_type` 只能与明确的 `--type_id`、`--type_kind` 配合，不再猜环境 ID。目录有歧义时停止；分组属性统计按成员模型查询并合并。
 

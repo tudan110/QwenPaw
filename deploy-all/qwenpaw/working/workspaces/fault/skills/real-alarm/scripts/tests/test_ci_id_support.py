@@ -1,4 +1,5 @@
 import json
+import os
 import unittest
 from argparse import Namespace
 from pathlib import Path
@@ -19,6 +20,11 @@ from utils.alarm_normalizer import build_alarm_rows, normalize_alarms
 
 
 class CiIdSupportTests(unittest.TestCase):
+    def setUp(self):
+        env = patch.dict(os.environ, {"INOE_API_BASE_URL": "https://example.invalid"})
+        env.start()
+        self.addCleanup(env.stop)
+
     @patch("get_alarms.requests.get")
     def test_execute_uses_get_with_query_params(self, mock_get):
         response = MagicMock()
@@ -132,7 +138,9 @@ class CiIdSupportTests(unittest.TestCase):
     def test_execute_falls_back_to_curl_when_requests_connection_fails(
         self, _mock_get, mock_run
     ):
-        def _fake_run(args, capture_output, text, encoding, timeout, check):
+        def _fake_run(args, capture_output, text, encoding, timeout, check, input):
+            self.assertIn("Authorization", input)
+            self.assertNotIn("token", args)
             body_path = args[args.index("-o") + 1]
             Path(body_path).write_text(
                 json.dumps(

@@ -33,4 +33,12 @@ MCP_READ_TOOLS = {
     "resource__queryAssetOverview",
     "resource__queryDatabasePerformanceMetrics",
     "resource__queryMonitoringTopology",
+    # Existing monitor/run data only. Triggering a monitor or visiting an
+    # arbitrary URL for selector suggestions is not a read operation.
+    "web-check-app__getMonitor",
+    "web-check-app__getMonitorDashboard",
+    "web-check-app__getMonitorRun",
+    "web-check-app__getWebMonitorHealth",
+    "web-check-app__listMonitorRuns",
+    "web-check-app__listMonitors",
 }

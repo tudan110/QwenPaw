@@ -440,6 +440,13 @@
   word-break: break-all;
 }
 
+.mcp-card-kv p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .mcp-card-status {
   display: flex;
   align-items: center;

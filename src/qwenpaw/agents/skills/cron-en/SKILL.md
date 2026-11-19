@@ -2,12 +2,22 @@
 name: cron
 description: Use this skill only for scheduled or recurring tasks. Manage jobs with qwenpaw cron list/create/get/state/update/pause/resume/delete/run, and always pass --agent-id explicitly.
 metadata:
-  builtin_skill_version: "1.6"
+  builtin_skill_version: "1.7"
   qwenpaw:
     emoji: "⏰"
 ---
 
 # Cron (Scheduled Task Management)
+
+## Production permissions
+
+All actual cron operations require trusted administrator approval, including
+listing and reading jobs because the API does not isolate chat owners.
+Always use the current agent's `--agent-id`; do not override service URLs.
+For JSON input, use `write_skill_context` and pass its returned path to
+`--file`. Files must be inside the active workspace and at most 256 KiB.
+Approval binds the file content; changing it requires new approval.
+Explain missing permission instead of retrying with alternative commands.
 
 ## When to Use
 

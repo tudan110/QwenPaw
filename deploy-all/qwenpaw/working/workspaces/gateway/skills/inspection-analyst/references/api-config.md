@@ -1,6 +1,6 @@
 # 巡检 MCP 配置
 
-本 Skill 的资源确认由当前智能体已注册的 `cmdb-query` MCP Server 提供，指标查询由已注册的 `inspection` MCP Server 提供。Agent 直接调用 `cmdb-query__*` 与 `inspection__*` Tools；Skill、脚本和文档中不得保存 MCP API Key、上游 token 或自行建立 SSE / JSON-RPC 连接。
+本 Skill 按本轮 Skill execution routes 分别选择资源确认与指标查询通道。script 直接使用已有脚本，unavailable/blocked 不自行转脚本；mcp 路由分别由 `cmdb-query` 与 `inspection` MCP Server 提供。仅 mcp 路由直接调用 `cmdb-query__*` 与 `inspection__*` Tools；Skill、脚本和文档中不得保存 MCP API Key、上游 token 或自行建立 SSE / JSON-RPC 连接。
 
 ## CMDB MCP Tools
 
@@ -33,13 +33,15 @@
 
 ## 关键规则
 
-- CMDB 与指标 MCP Tool 返回上游错误、协议错误或不可解析结果时 fail-fast，不更换参数反复重试。
+- CMDB 与指标 MCP Tool 返回可解析的上游/业务错误时 fail-fast，不更换参数反复重试。
 - 搜索 `numfound` 是总匹配数，`total` 是本页数；实例分页按 ID 去重。`level=2` 只查第二层；当前 MCP 分别传整数 1、2、3，HTTP 回退使用单个 `level=1,2,3`，重复 level 参数只取第一个值。
 - MCP 未暴露 `page/fl/excludes` 的关系查询不能强传这些参数，达到数量限制时说明截断。只有 CI 列表时展示关联概览，不称为完整实例部署链；CMDB 资源状态计数不能当作巡检指标或告警事件条数。
 - 双向查询是预先计划的互补查询，不是错误后的换参数重试；多父资源拓扑用 `graph`，不为树状展示丢边。原始 JSON、图表、错误和文件均须脱敏，不回显 `bearer_token`、`login_pwd` 等凭证。
-- 仅当对应 MCP Driver 未加载、客户端/工具不可用或协议无法解析时，才能使用脚本回退；CMDB 回退只允许一次调用 `zgops-cmdb`，并记录 `zgops-cmdb-script-fallback` 与原因。
+- 对应能力为 script 时直接使用脚本；mcp 路由仅在已确认的只读连接/传输失败或协议无法解析时回退一次；CMDB 回退只允许一次调用 `zgops-cmdb`，并记录 `zgops-cmdb-script-fallback` 与原因。
 - 指标查询成功但最近值全空是合法的“无实时监控数据”结论，不重复调用或回退。
 - `operator` 需要通过 `verification_rules_new` 字典解码。
 - 命中规则配置时：**满足规则 = 正常，不满足规则 = 异常**。
 - 没有对应规则配置的指标：标注“需结合上下文由大模型判断”，不要伪造阈值。
 - 四个 MCP Tools 均为只读取数，不触发飞书、钉钉或应用通知。
+
+普通只读巡检的指标脚本固定携带 `--no-notify`；切换通道不自动发送通知。

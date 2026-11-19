@@ -207,17 +207,29 @@ class AgentBuilder:
             request_context,
             governor,
         )
+        driver_discovery_states: dict[str, str] = {}
         (
             driver_tools,
             driver_prompt_hints,
         ) = await self._collect_driver_tools_and_prompts(
             ctx,
             request_context,
+            discovery_states=driver_discovery_states,
         )
         extra_tools.extend(driver_tools)
         if not hasattr(ctx, "extras") or ctx.extras is None:
             ctx.extras = {}
         ctx.extras["driver_prompt_hints"] = driver_prompt_hints
+        from .skill_routes import build_skill_route_hint
+
+        skill_route_hint = await build_skill_route_hint(
+            getattr(workspace, "driver_manager", None),
+            effective_skills,
+            driver_tools,
+            discovery_states=driver_discovery_states,
+        )
+        if skill_route_hint:
+            driver_prompt_hints.append(skill_route_hint)
 
         # Model + formatter (built before the toolkit so the scroll context
         # strategy, which needs the model for token counting, can wire in).
@@ -586,6 +598,8 @@ class AgentBuilder:
     async def _collect_driver_tools_and_prompts(
         ctx: Any,
         request_context: dict[str, Any],
+        *,
+        discovery_states: dict[str, str] | None = None,
     ) -> tuple[list[Any], list[str]]:
         """Build request-time Driver tools and prompt hints.
 
@@ -603,6 +617,7 @@ class AgentBuilder:
         return await build_driver_agent_tools(
             driver_manager,
             request_context,
+            discovery_states=discovery_states,
         )
 
     @staticmethod

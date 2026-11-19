@@ -3,8 +3,23 @@ name: docx
 description: "当用户需要创建、读取、编辑或处理 Word 文档（.docx）时，使用此技能。触发场景包括提到“Word 文档”、“.docx”，或要求生成带目录、标题、页码、信头等格式的专业文档；也包括提取或重组 .docx 内容、插入或替换图片、在 Word 文件中查找替换、处理修订或批注，以及将内容整理为正式 Word 文档。如果用户要求生成“报告”“备忘录”“信函”“模板”等 Word / .docx 交付物，也应使用此技能。不要用于 PDF、电子表格、Google Docs，或与文档生成无关的一般编程任务。"
 license: Proprietary. LICENSE.txt has complete terms
 metadata:
-  builtin_skill_version: "1.1"
+  builtin_skill_version: "1.2"
 ---
+
+
+## 生产模式执行入口
+
+以下通用脚本示例仅供开发维护环境参考，生产对话仅使用本节所列入口。
+
+生产环境优先使用 `process_office_document`，不要运行临时 Python/Node、解压打包或通用 Office shell 命令来绕过策略。
+
+- `inspect`：读取当前工作区的 DOCX/XLSX/PPTX；Excel 公式按文本返回，不计算。
+- `create_xlsx`：通过 `rows` 创建普通值表格；`edit_xlsx` 通过 `updates=[{"sheet":"Sheet","cell":"A1","value":"资源"}]` 更新无公式表格副本。
+- `create_docx`：通过 `content` 创建 Word；报告优先用 `export_report`，默认 PDF，可选 DOCX。
+- `replace_text`：通过 `replacements=[{"find":"旧文字","replace":"新文字"}]` 替换 DOCX/PPTX 同一文本片段中的文字。
+- `export_pdf`：将提取文本重新排版生成 PDF，**不保留原文版式**，不可宣称完成原版转换。
+
+输入须位于当前工作区；输出在 `artifacts/office/`，原文件不覆盖，交付用 `send_file_to_user`。限输入 10 MB、解压 50 MB、表格 20000 单元格；宏、嵌入对象、外部链接被拒绝。公式计算/编辑、旧版 Office、PPTX 从零创建、复杂版式及修订批注操作暂不由此入口支持；明确说明能力边界，不改用任意脚本绕过限制。
 
 > **重要:** 所有 `scripts/` 路径均相对于本技能目录。
 > 运行方式: `cd {this_skill_dir} && python scripts/...`

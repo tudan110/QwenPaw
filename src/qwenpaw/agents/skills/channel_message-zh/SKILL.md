@@ -2,12 +2,20 @@
 name: channel_message
 description: 当需要主动向用户、会话或频道单向发送消息时，使用本 skill。通常仅在用户明确要求向某个 channel / 会话发送消息，或需要主动通知时使用。先用 qwenpaw chats list 查询 session，再用 qwenpaw channels send 推送消息。
 metadata:
-  builtin_skill_version: "1.3"
+  builtin_skill_version: "1.4"
   qwenpaw:
     emoji: "📤"
 ---
 
 # 频道消息推送
+
+## 生产模式权限
+
+查询/管理会话及发送消息均需可信管理员审批，必须显式使用当前智能体的 `--agent-id`。
+当前会话查询接口未隔离会话所有者，因此查询也需要审批。
+发送前展示明确的频道、用户、会话和消息正文；不得覆盖服务地址。
+若创建会话需要 JSON，使用 `write_skill_context` 生成工作区内输入并传给 `--file`。
+未获授权时解释所需权限，不通过脚本或其他命令绕过。
 
 ## 什么时候用
 

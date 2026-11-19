@@ -8,13 +8,23 @@ description: 实时告警管理系统查询和统计分析。支持获取告警�
 
 # Real Alarm
 
+## 执行通道路由
+
+先读取本轮系统提供的 **Skill execution routes**，按能力分别选择通道；下文 MCP 操作说明仅适用于该能力的 `mcp` 路由。
+
+- `script`：MCP 已关闭或未配置，直接执行本技能已有脚本，不先尝试 MCP；记录 `mcp_disabled` / `mcp_not_configured`。
+- `mcp`：调用已就绪的 MCP 工具；只有已确认的只读连接/传输失败或协议无法解析，才允许一次脚本回退。
+- `unavailable`：加载中或状态未知，说明尚未就绪；不得把工具不可见推断为未配置或直接转脚本。仅 `reason=mcp_transport_unavailable` 明确确认了发现阶段的连接故障时，允许只读操作使用已有脚本一次；缺少路由摘要时也不猜测开关状态。
+- `blocked`：权限、审批或工具白名单限制，不得通过脚本或跨智能体绕过。可解析的鉴权、参数、业务错误及成功空结果均不自动回退。
+- 脚本缺失、依赖或凭据缺失时报告具体限制，不反向启用 MCP、不换身份。写操作已发送但结果不明时，不用脚本重复提交；通道切换不改变原有授权与通知规则。
+
 为实时告警管理系统查询提供最短执行路径。适用于告警列表、告警统计、告警状态、级别/设备/专业分布、特定告警搜索与简要分析。
 
-## 告警 MCP 优先级
+## 告警 MCP 通道说明
 
-本工作区已启用 `alarm` MCP Server。Agent 必须优先直接调用 `alarm__queryHistoricalAlarms` 获取告警数据；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC，也不要为此编写额外 MCP 客户端。
+对应能力路由为 `mcp` 时使用 `alarm` MCP Server。`mcp` 路由下必须直接调用 `alarm__queryHistoricalAlarms` 获取告警数据；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC，也不要为此编写额外 MCP 客户端。
 
-仅在 alarm MCP Driver 未加载、客户端/工具不可用或协议响应无法解析时，才允许回退到旧脚本路径（见末尾"旧脚本回退路径"）。MCP Tool 返回的可解析业务错误（4xx/5xx、鉴权、参数错误）必须 fail-fast，不换参数重试，也不回退脚本。
+在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才允许回退到旧脚本路径（见末尾"旧脚本回退路径"）。MCP Tool 返回的可解析业务错误（4xx/5xx、鉴权、参数错误）必须 fail-fast，不换参数重试，也不回退脚本。
 
 ## 触发条件（给 Agent）
 
@@ -226,8 +236,8 @@ MCP 返回的 `rows` 中每条告警包含以下关键字段：
 
 ## 错误处理规则
 
-- **MCP Tool 返回上游错误、协议错误或不可解析结果**：立即 fail-fast，不换参数反复重试，不回退脚本
-- **MCP Driver 未加载、客户端/工具不可用或协议无法解析**：回退到旧脚本路径（见末尾），并在过程说明中写明回退原因
+- **MCP Tool 返回可解析的上游/业务错误**：立即 fail-fast，不换参数反复重试，不回退脚本
+- **已确认的只读连接/传输失败或协议无法解析**：按执行通道路由一次回退到旧脚本路径（见末尾），并在过程说明中写明回退原因
 - **空结果**：明确说"未找到匹配告警"，不要输出空表格后沉默
 - **分页过程中部分页失败**：明确说明已成功获取的页数和失败页，避免假装是完整统计
 - **本地过滤后无结果**：明确说明过滤条件与结果，不输出空表格
@@ -293,7 +303,7 @@ MCP 返回的 `rows` 中每条告警包含以下关键字段：
 
 ## 旧脚本回退路径
 
-仅当 alarm MCP Driver 未加载、客户端/工具不可用或协议响应无法解析时，才执行以下命令。脚本自动从环境变量读取 `INOE_API_TOKEN` 和 `INOE_API_BASE_URL`（由设置页热加载），无需手动配置 `.env`。
+在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才执行以下命令。脚本自动从环境变量读取 `INOE_API_TOKEN` 和 `INOE_API_BASE_URL`（由设置页热加载），无需手动配置 `.env`。
 
 **场景 A：简单列表**
 
@@ -313,7 +323,7 @@ python3 scripts/analyze_alarms.py --mode summary --output markdown
 python3 scripts/query_alarm_class_count.py --alarm_status 1 --output markdown
 ```
 
-回退时必须在过程说明中写明回退原因（如 `alarm-mcp-unavailable` 或 `alarm-mcp-protocol-error`）。
+脚本通道或回退时必须在过程说明中写明真实路由原因（如 `alarm-mcp-unavailable` 或 `alarm-mcp-protocol-error`）。
 
 ## 注意事项
 

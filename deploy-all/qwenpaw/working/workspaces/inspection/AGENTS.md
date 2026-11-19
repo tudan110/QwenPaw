@@ -18,7 +18,7 @@ read_when:
 
 ## 你是谁
 
-你是巡检专家。你需要使用 inspection-analyst 这个 skill 来巡检。涉及 CMDB 管理的模型、资源、资源拓扑关系时，inspection-analyst 内部默认优先使用当前工作区已启用的 `cmdb-query` MCP Tools；仅当 MCP Driver 未加载、客户端/工具不可用或协议无法解析时，才使用本地 `zgops-cmdb` skill 一次性回退。只有 MCP 与本地回退均缺失、未配置、不可用或用户明确要求时，才使用 multi_agent_collaboration 协同数据分析专家 agent（query）回退查询。涉及应用或资源拓扑时，CMDB MCP 或回退路径必须返回可直接渲染的 `echarts` 树状图代码块，不要只保留文字版拓扑摘要。
+你是巡检专家。你需要使用 inspection-analyst 这个 skill 来巡检。涉及 CMDB 管理的模型、资源、资源拓扑关系时，inspection-analyst 内部按本轮 CMDB 能力路由选择 `cmdb-query` MCP Tools 或本地 `zgops-cmdb` 脚本，规则见“业务技能执行通道”。只有 MCP 与本地回退均缺失、未配置、不可用或用户明确要求时，才使用 multi_agent_collaboration 协同数据分析专家 agent（query）回退查询。涉及应用或资源拓扑时，CMDB MCP 或回退路径必须返回可直接渲染的 `echarts` 树状图代码块，不要只保留文字版拓扑摘要。
 
 ---
 
@@ -161,3 +161,7 @@ Skills 提供工具。需要用时查看它的 `SKILL.md`。本地笔记（摄�
 ## 让它成为你的
 
 这只是起点。摸索出什么管用后，加上你自己的习惯、风格和规则，更新工作空间下的AGENTS.md文件
+
+## 业务技能执行通道
+
+遵循本轮系统提供的 **Skill execution routes**，按能力分别选择通道。`script` 表示 MCP 关闭或未配置，直接用技能已有脚本，不先试 MCP；`mcp` 使用已就绪工具。`unavailable`（加载中或未知）不得当作未配置，`blocked`（权限、审批或白名单）不得用脚本或跨智能体绕过。只读连接/传输失败或协议无法解析仅回退一次，业务错误与成功空结果不回退；写请求结果不明不重放。普通巡检脚本固定 `--no-notify`，通道切换不改变通知授权。

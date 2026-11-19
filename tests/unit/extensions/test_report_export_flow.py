@@ -87,6 +87,14 @@ def flow(monkeypatch, tmp_path):
         "qwenpaw.extensions.security.business_reads",
         "extensions/security/business_reads.py",
     )
+    load(
+        "qwenpaw.extensions.security.skill_scripts",
+        "extensions/security/skill_scripts.py",
+    )
+    load(
+        "qwenpaw.extensions.security.skill_cli",
+        "extensions/security/skill_cli.py",
+    )
     renderer = load(
         "qwenpaw.extensions.report_export", "extensions/report_export.py"
     )

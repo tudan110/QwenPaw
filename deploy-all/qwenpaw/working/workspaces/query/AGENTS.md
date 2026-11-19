@@ -36,7 +36,7 @@ read_when:
 - 用户询问“某个应用/项目/系统名的应用拓扑、业务拓扑、资源依赖关系”时，才使用 `zgops-cmdb` 的 `find-project` + `app-topology`；不要把“简易拓扑/全局拓扑/系统拓扑”误判成应用拓扑。
 - 用户询问“资产总览 / 监控资产总览 / 监控总览概况”时，使用 `monitoring-overview-query` 的 `asset-overview`。
 - 不要把资源状态/性能接口加入 `real-alarm`；不要把 CMDB count/group 类接口迁出 `zgops-cmdb`。
-- 用户询问“制造商分布 / 厂商分布 / 厂家统计 / 按 vendor 分组 / CMDB count/group”时，使用 `zgops-cmdb`，先根据当前元数据区分模型分组与具体模型，MCP 优先并检查属性参数 schema；不能固定分组 ID、把纯资源数量当告警事件数或绕过 schema 不兼容。仅符合技能规定的 MCP 回退条件时才运行既有 `inoe-stat`；分组属性统计逐个查询成员模型并合并，不反复试接口或旧环境 ID。
+- 用户询问“制造商分布 / 厂商分布 / 厂家统计 / 按 vendor 分组 / CMDB count/group”时，使用 `zgops-cmdb`，先根据当前元数据区分模型分组与具体模型，按本轮能力路由执行并检查属性参数 schema；不能固定分组 ID、把纯资源数量当告警事件数或绕过 schema 不兼容。script 路由或符合技能规定的只读 MCP 回退条件时运行既有 `inoe-stat`；分组属性统计逐个查询成员模型并合并，不反复试接口或旧环境 ID。
 - `zgops-cmdb` 的 `inoe-stat` 会优先从当前环境 CMDB 元数据动态解析资源类型；如果用户问“有哪些资源类型 / type 怎么对应 / 模型分组”，执行 `scripts/zgops-cmdb.sh inoe-stat types --output markdown`，不要手写静态 type 对照表。
 
 ## 告警查询硬规则
@@ -191,3 +191,7 @@ Skills 提供工具。需要用时查看它的 `SKILL.md`。本地笔记（摄�
 ## 让它成为你的
 
 这只是起点。摸索出什么管用后，加上你自己的习惯、风格和规则，更新工作空间下的AGENTS.md文件
+
+## 业务技能执行通道
+
+遵循本轮系统提供的 **Skill execution routes**，按能力分别选择通道。`script` 表示 MCP 关闭或未配置，直接用技能已有脚本，不先试 MCP；`mcp` 使用已就绪工具。`unavailable`（加载中或未知）不得当作未配置，`blocked`（权限、审批或白名单）不得用脚本或跨智能体绕过。只读连接/传输失败或协议无法解析仅回退一次，业务错误与成功空结果不回退；写请求结果不明不重放。普通巡检脚本固定 `--no-notify`，通道切换不改变通知授权。

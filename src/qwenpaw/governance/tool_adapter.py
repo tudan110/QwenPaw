@@ -200,6 +200,8 @@ async def _policy_tool_check_permissions(
     from ..extensions.security.execution_policy import check_tool
 
     self._qp_p0_approved_params = None
+    self._qp_sandbox_mode = False
+    self._qp_sandbox_config = None
     try:
         mandatory_approval = await check_tool(
             getattr(self, "name", ""), input_data or {}
@@ -260,16 +262,36 @@ async def _policy_tool_check_permissions(
     tc_spec = self._build_tc_spec()
 
     if mandatory_approval:
+        from ..extensions.security.execution_policy import approval_binding
+
+        # Capture files before presenting approval; changes while the user
+        # is reviewing the request invalidate it, just like changed params.
+        approved_binding = approval_binding(
+            getattr(self, "name", ""),
+            input_data or {},
+        )
+        reason = "生产受控操作必须管理员审批"
+        files = approved_binding.get("files", {})
+        if files:
+            preview = "\n".join(
+                f"{path} (sha256={digest})"
+                for path, digest in list(files.items())[:8]
+            )
+            reason += (
+                f"\n本次绑定 {len(files)} 项输入，内容变化需重新审批："
+                f"\n{preview}"
+            )
+            if len(files) > 8:
+                reason += f"\n另有 {len(files) - 8} 项。"
         result = await _ask_user_approval(
             governor=governor,
             tc_spec=tc_spec,
             request_context=request_ctx,
-            governance_reason="生产高危操作必须管理员审批",
+            governance_reason=reason,
             source="production_boundary",
         )
         if result.behavior == PermissionBehavior.ALLOW:
-            from copy import deepcopy
-            self._qp_p0_approved_params = deepcopy(input_data or {})
+            self._qp_p0_approved_params = approved_binding
         return result
 
     decision = governor.assert_policy(tc_spec)
@@ -334,12 +356,26 @@ async def _policy_tool_call(
 
     mandatory_approval = await check_tool(
         getattr(self, "name", ""),
-        {key: value for key, value in kwargs.items() if key != "sandbox_config"},
+        {
+            key: value
+            for key, value in kwargs.items()
+            if key != "sandbox_config"
+        },
     )
-    if mandatory_approval and getattr(self, "_qp_p0_approved_params", None) != {
-        key: value for key, value in kwargs.items() if key != "sandbox_config"
-    }:
-        raise PermissionError("执行参数与已审批参数不一致")
+    if mandatory_approval:
+        from ..extensions.security.execution_policy import approval_binding
+
+        actual_binding = approval_binding(
+            getattr(self, "name", ""),
+            {
+                key: value
+                for key, value in kwargs.items()
+                if key != "sandbox_config"
+            },
+        )
+        if getattr(self, "_qp_p0_approved_params", None) != actual_binding:
+            self._qp_p0_approved_params = None
+            raise PermissionError("执行参数或输入文件内容与已审批内容不一致")
     if mandatory_approval:
         self._qp_p0_approved_params = None
     if sandbox_mode:

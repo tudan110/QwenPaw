@@ -28,6 +28,7 @@ import {
 } from "../../api/mcpAccessPolicy";
 import { portalGatewayAgentId } from "../../config/portalBranding";
 import PortalConfirmDialog from "../../components/PortalConfirmDialog";
+import { getMcpSkillRoutingInfo } from "./mcpSkillRouting";
 import "../mcp-panel.css";
 import { endpointOrigin } from "./evidenceDisplay";
 
@@ -686,7 +687,7 @@ export function McpPanel() {
       await mcpApi.toggleClient(client.key, agentId);
       setNotice({
         type: "success",
-        message: `${client.name} 已${client.enabled ? "停用" : "启用"}`,
+        message: `${client.name} 已${client.enabled ? "停用" : "启用"}；后续请求使用新配置，启用后需等待连接就绪。`,
       });
       await loadClients();
     } catch (error) {
@@ -793,6 +794,7 @@ export function McpPanel() {
           <div className="mcp-grid">
             {filteredClients.map((client) => {
               const transportStyle = getTransportColor(client.transport);
+              const skillRouting = getMcpSkillRoutingInfo(client.key, client.enabled);
               return (
                 <article key={client.key} className="mcp-card">
                   <div className="mcp-card-head">
@@ -835,6 +837,17 @@ export function McpPanel() {
                         : client.tools?.length ? client.tools.join("、")
                         : Array.isArray(client.tools) ? "未选择工具" : "未读取"}</strong>
                     </div>
+                    <div className="mcp-card-status">
+                      <span className={`mcp-dot ${client.enabled ? "enabled" : "disabled"}`} />
+                      {client.enabled ? "连接就绪后可参与工具编排" : "后续请求不使用此 MCP"}
+                    </div>
+                    {skillRouting ? (
+                      <div className="mcp-card-kv">
+                        <span>关联内置技能</span>
+                        <strong>{skillRouting.skills.join("、")}</strong>
+                        <p>{skillRouting.description}</p>
+                      </div>
+                    ) : null}
                     <small>以上为配置摘要；连接、证书及实际调用需另行验证。</small>
                   </div>
 
@@ -1045,9 +1058,12 @@ export function McpPanel() {
                     <span className="mcp-form-switch-track" aria-hidden="true" />
                     <span>
                       <strong>{form.enabled ? "已启用" : "已停用"}</strong>
-                      <small>{form.enabled ? "保存后可参与工具编排" : "保存后不会被 Agent 调用"}</small>
+                      <small>{form.enabled ? "保存并连接就绪后可参与工具编排" : "保存后，后续请求不使用此 MCP"}</small>
                     </span>
                   </label>
+                  {getMcpSkillRoutingInfo(form.clientKey, form.enabled) ? (
+                    <small>{getMcpSkillRoutingInfo(form.clientKey, form.enabled)?.description}</small>
+                  ) : null}
                 </div>
 
                 {form.transport === "stdio" ? (

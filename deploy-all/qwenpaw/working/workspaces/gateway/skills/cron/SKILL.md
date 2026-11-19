@@ -2,12 +2,21 @@
 name: cron
 description: 仅在需要未来定时执行或周期执行任务时，使用本 skill。使用 qwenpaw cron list/create/get/state/pause/resume/delete/run 管理任务，并始终显式传入 --agent-id。
 metadata:
-  builtin_skill_version: "1.6"
+  builtin_skill_version: "1.7"
   qwenpaw:
     emoji: "⏰"
 ---
 
 # 定时任务管理
+
+## 生产模式权限
+
+所有实际 cron 操作均需可信管理员审批，包括任务列表和详情（当前接口未隔离会话所有者）。
+显式使用当前智能体的 `--agent-id`，不要切换身份或覆盖服务地址。
+需要 JSON 文件时，先用 `write_skill_context` 准备，再将返回路径传给 `--file`；
+仅支持当前工作区内、256 KiB 以内的 JSON。审批绑定文件内容，修改后需要重新审批。
+未获授权时解释所需权限，不重复尝试替换命令。
+
 
 ## 什么时候用
 

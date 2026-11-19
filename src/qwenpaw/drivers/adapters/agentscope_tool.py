@@ -182,6 +182,8 @@ class DriverCapabilityTool(ToolBase):
 async def build_driver_agent_tools(
     driver_manager: Any | None,
     request_context: dict[str, str],
+    *,
+    discovery_states: dict[str, str] | None = None,
 ) -> tuple[list[ToolBase], list[str]]:
     """Build AgentScope tools and prompt hints from active Drivers.
 
@@ -189,29 +191,51 @@ async def build_driver_agent_tools(
     streaming while Driver remains responsible for capability discovery and
     the AgentScope adapter boundary.
     """
+    states = discovery_states if discovery_states is not None else {}
+    states.clear()
     if driver_manager is None:
         return [], []
 
     try:
-        driver_capabilities = await driver_manager.list_capabilities(
-            kind="tool",
-            request_context=request_context,
-        )
-        tools: list[ToolBase] = [
-            DriverCapabilityTool(
-                capability,
-                driver_manager.invoke_capability,
-                request_context,
-            )
-            for capability in driver_capabilities
-            if getattr(capability.exposure, "as_tool", False)
-        ]
+        drivers = await driver_manager.list_drivers()
     except Exception:
-        logger.debug(
-            "Failed to build AgentScope tools from Driver capabilities",
-            exc_info=True,
-        )
+        states["*"] = "mcp_discovery_failed"
+        logger.warning("Could not list Drivers for tool discovery")
         return [], []
+
+    tools: list[ToolBase] = []
+    for driver in drivers:
+        if not driver.enabled or driver.status != "active":
+            continue
+        try:
+            capabilities = await driver_manager.list_driver_capabilities(
+                driver.name,
+                kind="tool",
+                request_context=request_context,
+            )
+            driver_tools = [
+                DriverCapabilityTool(
+                    capability,
+                    driver_manager.invoke_capability,
+                    request_context,
+                )
+                for capability in capabilities
+                if getattr(capability.exposure, "as_tool", False)
+            ]
+        except (ConnectionError, TimeoutError):
+            states[driver.name] = "mcp_transport_unavailable"
+            logger.warning(
+                "Driver '%s' tool transport unavailable", driver.name
+            )
+            continue
+        except Exception:
+            states[driver.name] = "mcp_discovery_failed"
+            logger.warning("Driver '%s' tool discovery failed", driver.name)
+            continue
+        states[driver.name] = (
+            "mcp_ready" if driver_tools else "no_exposed_tools"
+        )
+        tools.extend(driver_tools)
 
     if not tools:
         return [], []

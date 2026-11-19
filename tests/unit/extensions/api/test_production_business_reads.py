@@ -110,6 +110,85 @@ async def test_actual_mcp_driver_calls_read_tool_without_disabling_guards():
 @pytest.mark.parametrize(
     "name, arguments",
     [
+        ("getWebMonitorHealth", {}),
+        ("getMonitorDashboard", {}),
+        ("listMonitors", {}),
+        ("getMonitor", {"monitorId": "monitor-fixture"}),
+        ("listMonitorRuns", {"monitorId": "monitor-fixture"}),
+        ("getMonitorRun", {"runId": "run-fixture"}),
+    ],
+)
+async def test_web_queries_reach_client_for_ordinary_user(name, arguments):
+    handler = MCPDriverHandler(
+        DriverCard(name="web-check-app", protocol="mcp", endpoint={}),
+        MagicMock(),
+    )
+    handler._client = AsyncMock()
+    handler._client.call_tool.return_value = {"data": "fixture"}
+
+    result = await handler._execute(
+        None, None, tool_name=name, arguments=arguments
+    )
+
+    assert result == {"data": "fixture"}
+    handler._client.call_tool.assert_awaited_once_with(name, arguments)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "createMonitor",
+        "updateMonitor",
+        "deleteMonitor",
+        "publishMonitor",
+        "triggerMonitor",
+        "deleteMonitorRun",
+        "batchDeleteMonitorRuns",
+        "suggestSelectors",
+        "getMonitorAndDelete",
+    ],
+)
+async def test_web_mutations_and_unreviewed_actions_do_not_reach_client(name):
+    handler = MCPDriverHandler(
+        DriverCard(name="web-check-app", protocol="mcp", endpoint={}),
+        MagicMock(),
+    )
+    handler._client = AsyncMock()
+
+    with pytest.raises(PermissionError):
+        await handler._execute(
+            None, None, tool_name=name, arguments={"monitorId": "fixture"}
+        )
+
+    handler._client.call_tool.assert_not_awaited()
+
+
+async def test_web_write_cannot_skip_required_connector_approval(monkeypatch):
+    handler = MCPDriverHandler(
+        DriverCard(name="web-check-app", protocol="mcp", endpoint={}),
+        MagicMock(),
+    )
+    handler._client = AsyncMock()
+    check = AsyncMock(return_value=True)
+    monkeypatch.setattr(execution_policy, "check_tool", check)
+
+    with pytest.raises(PermissionError, match="强制审批业务连接器"):
+        await handler._execute(
+            None,
+            None,
+            tool_name="triggerMonitor",
+            arguments={"monitorId": "fixture"},
+        )
+
+    check.assert_awaited_once_with(
+        "web-check-app__triggerMonitor", {"monitorId": "fixture"}
+    )
+    handler._client.call_tool.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "name, arguments",
+    [
         ("get_devices.py", "--page_num 1 --page_size 1"),
         ("analyze_devices.py", "--mode summary --output markdown"),
         ("monitoring_overview.py", "topology --output markdown"),

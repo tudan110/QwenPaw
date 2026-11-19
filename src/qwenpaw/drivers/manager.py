@@ -222,10 +222,14 @@ class DriverManager:
         handlers = self._iter_handlers(protocol)
         capabilities: list[DriverCapability] = []
         for handler in handlers:
+            if not await self._is_persisted_driver_enabled(handler):
+                continue
             for capability in await handler.list_capabilities(
                 request_context=request_context,
             ):
-                if kind is None or capability.kind == kind:
+                if (
+                    kind is None or capability.kind == kind
+                ) and self._tool_allowed(handler, capability.name):
                     capabilities.append(capability)
         return sorted(capabilities, key=lambda item: item.capability_id)
 
@@ -238,6 +242,8 @@ class DriverManager:
     ) -> list[DriverCapability]:
         """Return capabilities from one active Driver only."""
         handler = self._get_handler(name)
+        if not await self._is_persisted_driver_enabled(handler):
+            return []
         capabilities = await handler.list_capabilities(
             request_context=request_context,
         )
@@ -245,7 +251,8 @@ class DriverManager:
             [
                 capability
                 for capability in capabilities
-                if kind is None or capability.kind == kind
+                if (kind is None or capability.kind == kind)
+                and self._tool_allowed(handler, capability.name)
             ],
             key=lambda item: item.capability_id,
         )
@@ -256,7 +263,7 @@ class DriverManager:
     ) -> DriverInvocationResult:
         """Dispatch one capability invocation to its owning handler."""
         try:
-            _, driver_name, _, _, _ = parse_capability_id(
+            _, driver_name, _, _, tool_name = parse_capability_id(
                 invocation.capability_id,
             )
         except ValueError as exc:
@@ -274,7 +281,43 @@ class DriverManager:
                 message=str(exc),
                 metadata={"driver_name": exc.name},
             )
+        if not await self._is_persisted_driver_enabled(handler):
+            return DriverInvocationResult(
+                ok=False,
+                error_type="driver_unavailable",
+                message="Driver disabled, removed or configuration invalid.",
+            )
+        if not self._tool_allowed(handler, tool_name):
+            return DriverInvocationResult(
+                ok=False,
+                error_type="driver_policy_denied",
+                message="Tool is excluded by the Driver tool whitelist.",
+            )
         return await handler.invoke_capability(invocation)
+
+    @staticmethod
+    def _tool_allowed(handler: DriverHandler, name: str) -> bool:
+        allowed = handler.card.config.get("tools")
+        return allowed is None or name in allowed
+
+    async def _is_persisted_driver_enabled(
+        self,
+        handler: DriverHandler,
+    ) -> bool:
+        """Honor a saved disable even while background reload is pending."""
+        try:
+            path = await self._card_store.stored_path(handler.name)
+            if path is None:
+                return False
+            card = await self._card_store.load_path(path)
+            handler.sync_runtime_metadata(card)
+            return card.enabled and card.protocol == handler.card.protocol
+        except Exception:
+            logger.warning(
+                "Cannot read effective configuration for Driver '%s'",
+                handler.name,
+            )
+            return False
 
     def _get_handler(self, name: str) -> DriverHandler:
         handler = self._handlers.get(name)
@@ -352,12 +395,12 @@ class DriverManager:
 
     def _runtime_info_from_card(self, card: DriverCard) -> DriverRuntimeInfo:
         active = card.name in self._handlers
-        if active:
-            status = "active"
-        elif card.enabled:
-            status = "inactive"
-        else:
+        if not card.enabled:
             status = "disabled"
+        elif active:
+            status = "active"
+        else:
+            status = "inactive"
         return DriverRuntimeInfo(
             name=card.name,
             protocol=card.protocol,

@@ -5,13 +5,23 @@ description: 查询 INOE 资源状态与性能数据。适用于用户询问设�
 
 # Resource Insight Query
 
+## 执行通道路由
+
+先读取本轮系统提供的 **Skill execution routes**，按能力分别选择通道；下文 MCP 操作说明仅适用于该能力的 `mcp` 路由。
+
+- `script`：MCP 已关闭或未配置，直接执行本技能已有脚本，不先尝试 MCP；记录 `mcp_disabled` / `mcp_not_configured`。
+- `mcp`：调用已就绪的 MCP 工具；只有已确认的只读连接/传输失败或协议无法解析，才允许一次脚本回退。
+- `unavailable`：加载中或状态未知，说明尚未就绪；不得把工具不可见推断为未配置或直接转脚本。仅 `reason=mcp_transport_unavailable` 明确确认了发现阶段的连接故障时，允许只读操作使用已有脚本一次；缺少路由摘要时也不猜测开关状态。
+- `blocked`：权限、审批或工具白名单限制，不得通过脚本或跨智能体绕过。可解析的鉴权、参数、业务错误及成功空结果均不自动回退。
+- 脚本缺失、依赖或凭据缺失时报告具体限制，不反向启用 MCP、不换身份。写操作已发送但结果不明时，不用脚本重复提交；通道切换不改变原有授权与通知规则。
+
 查询 INOE 资源状态与性能数据。不处理实时告警列表，也不替代 `zgops-cmdb`。
 
-## MCP 优先级
+## MCP 通道说明
 
-本工作区已启用 `resource` MCP Server。Agent 必须优先直接调用以下 MCP Tools；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC。
+对应能力路由为 `mcp` 时使用 `resource` MCP Server。`mcp` 路由下必须直接调用以下 MCP Tools；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC。
 
-仅在 resource MCP Driver 未加载、客户端/工具不可用或协议响应无法解析时，才允许回退到旧脚本路径（见末尾"旧脚本回退路径"）。
+在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才允许回退到旧脚本路径（见末尾"旧脚本回退路径"）。
 
 ## 边界
 
@@ -44,7 +54,7 @@ description: 查询 INOE 资源状态与性能数据。适用于用户询问设�
 生产环境通过工具的 `cwd` 参数指定本技能目录，每次执行一条固定 Python 查询命令；不要拼接 `cd`、`&&` 或管道。
 
 
-仅当 resource MCP Driver 不可用时，才执行以下命令。脚本自动从环境变量读取凭证。
+在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才执行以下命令。脚本自动从环境变量读取凭证。
 
 ```bash
 python3 scripts/resource_insight.py status-overview --resource_type database --output markdown
@@ -52,4 +62,4 @@ python3 scripts/resource_insight.py top-metric --resource_type database --top_nu
 python3 scripts/resource_insight.py summary --resource_type database --output markdown
 ```
 
-回退时必须在过程说明中写明回退原因（如 `resource-mcp-unavailable`）。
+脚本通道或回退时必须在过程说明中写明真实路由原因（如 `resource-mcp-unavailable`）。

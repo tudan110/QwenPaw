@@ -8,11 +8,21 @@ description: 面向单条活动告警、单个应用故障及用户直接咨询�
 
 # Alarm Analyst
 
+## 执行通道路由
+
+先读取本轮系统提供的 **Skill execution routes**，按能力分别选择通道；下文 MCP 操作说明仅适用于该能力的 `mcp` 路由。
+
+- `script`：MCP 已关闭或未配置，直接执行本技能已有脚本，不先尝试 MCP；记录 `mcp_disabled` / `mcp_not_configured`。
+- `mcp`：调用已就绪的 MCP 工具；只有已确认的只读连接/传输失败或协议无法解析，才允许一次脚本回退。
+- `unavailable`：加载中或状态未知，说明尚未就绪；不得把工具不可见推断为未配置或直接转脚本。仅 `reason=mcp_transport_unavailable` 明确确认了发现阶段的连接故障时，允许只读操作使用已有脚本一次；缺少路由摘要时也不猜测开关状态。
+- `blocked`：权限、审批或工具白名单限制，不得通过脚本或跨智能体绕过。可解析的鉴权、参数、业务错误及成功空结果均不自动回退。
+- 脚本缺失、依赖或凭据缺失时报告具体限制，不反向启用 MCP、不换身份。写操作已发送但结果不明时，不用脚本重复提交；通道切换不改变原有授权与通知规则。
+
 围绕单条活动告警完成根因分析与处置闭环。不是单纯的告警查询技能，也不是只输出诊断结论的模板。
 
 ## 加载与最终报告约定
 
-- **查询先直接调用MCP数据工具，不先登录CMDB**：不调用 `cmdb-query__cmdbLogin` 或登录脚本作前置。本技能已加载后不从头重读；参考文档读实际技能目录原文件，空缓存或越界就停止该路径，不再试读或猜路径。
+- **查询在对应能力为 `mcp` 路由时直接调用MCP数据工具，不先登录CMDB**：不调用 `cmdb-query__cmdbLogin` 或登录脚本作前置。本技能已加载后不从头重读；参考文档读实际技能目录原文件，空缓存或越界就停止该路径，不再试读或猜路径。
 - **知识库必须实际检索一次**：对象/现象明确后调用 `python <实际技能目录>/scripts/query_knowledge.py --query "<对象类型 异常现象>"`；主机CPU告警可用「物理机 CPU利用率超限 阈值告警」。这是独立知识查询，不是MCP兜底，MCP正常也执行；本轮已有真实结果则复用。最终报告前漏调用须补执行，不能仅写未执行。用户禁止、必要条件不明或真实工具/配置/授权阻断时说明原因，不重试或绕审批。
 - 分析开始时只读 `references/portal-card-protocol.md` 的1～144行，含合同、可选受控摘要及完整模板；主机场景按需读 `references/rca-iaas.md`。历史结果截断仅在回读工具可用且本轮未失败时，用真实指标调用ID尝试一次；已知无沙箱、被拒绝、摘要失败或工具缺失就停止该路径，带限制继续输出完整报告。不换shell读库、不试读空缓存、不重复审批、不重新请求指标；已有可见接口统计可引用，但不补猜边界、数量、峰值时间或同步关系。
 - **指标最小入参固定为 `mulRes=[{"resId":"<CI_ID>"}]`**，不改成ciId/resCode，不填数字类型ID。定义查询等CMDB真实ci_type/name取得后再发，不用中文别名或cpu猜模型名。实时queryType="0"，历史queryType="1"并带startTime/endTime，二者不可混称。
@@ -52,13 +62,13 @@ description: 面向单条活动告警、单个应用故障及用户直接咨询�
 
 只要当前工作区具备可用数据工具，就先执行已有授权的查询再汇报，不停在查询计划。本节不授权 SSH/集群/数据库操作；人工处置模板不是系统实际执行。工具不可用、参数不明或用户禁止时说明限制，保留待现场确认的访问步骤。
 
-### MCP 优先
-本工作区已启用 `cmdb-query`、`alarm`、`inspection` MCP Server。先直接调用数据工具，不先调用 `cmdb-query__cmdbLogin`、登录脚本、client.login或自建HTTP客户端；已知CI ID直接查详情/关系。仅Driver未加载、工具缺失、连接/传输不可用或协议无法解析时，才回退已有脚本。
+### 按能力选择通道
+按本轮路由分别使用 `cmdb-query`、`alarm`、`inspection`；以下描述适用于 `mcp` 路由。先直接调用数据工具，不先调用 `cmdb-query__cmdbLogin`、登录脚本、client.login或自建HTTP客户端；已知CI ID直接查详情/关系。在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才回退已有脚本。
 
 1. CMDB 查询 → `cmdb-query__searchCiInstances` / `cmdb-query__getCiInstance` / `cmdb-query__getCiRelations`
 2. 活动告警查询 → `alarm__queryHistoricalAlarms`
 3. 指标查询 → `inspection__getMetricDefinitions` / `inspection__getMetricData`
-4. 只有 MCP 不可用时才回退脚本，只有本地脚本也缺失/不可用时才回退跨智能体（chat_with_agent → query）
+4. 按执行通道路由选择脚本，只有本地脚本也缺失/不可用时才回退跨智能体（chat_with_agent → query）
 5. 回退必须说明真实原因；空结果及可解析的参数、鉴权/权限或业务4xx/5xx错误按Fail Fast处理，不自动转脚本、猜参数重试或换身份。指标定义使用已取得的真实模型名，不先猜cpu或中文别名
 
 ### 拓扑驱动分析
@@ -136,7 +146,7 @@ description: 面向单条活动告警、单个应用故障及用户直接咨询�
 
 ### 运维数据查询与整理（数据检索、条件筛选、信息整理）
 
-只使用当前已接入且与故障相关的数据，沿用既有 MCP 优先、并行和 Fail Fast 规则。**本轮不纳入日志，不新增日志查询、日志接入或必填日志行**；不为展示能力额外遍历数据源、扩大窗口或拉取全量历史。
+只使用当前已接入且与故障相关的数据，沿用按能力路由、并行和 Fail Fast 规则。**本轮不纳入日志，不新增日志查询、日志接入或必填日志行**；不为展示能力额外遍历数据源、扩大窗口或拉取全量历史。
 
 **数据检索与条件留痕**
 
@@ -329,7 +339,7 @@ inspection__getMetricData(mulRes=[{"resId":"<CI_ID>"}], queryKeys=["<指标编�
 
 ### 聚合脚本回退
 
-仅当 MCP Driver 不可用时，才使用聚合脚本（脚本自动解析 ciType、并行查询、结构化输出）：
+在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才使用聚合脚本（所有涉及能力均须允许脚本；混合通道时分别执行对应能力，禁止聚合脚本越过其他能力路由；脚本自动解析 ciType、并行查询、结构化输出）：
 
 ```bash
 cd skills/alarm-analyst && python scripts/analyze_alarm_context.py \
@@ -338,7 +348,7 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py \
   --event-time "<告警时间>" --output markdown
 ```
 
-回退时必须在过程说明中写明回退原因（如 `cmdb-query-mcp-unavailable`）。
+脚本通道或回退时必须在过程说明中写明真实路由原因（如 `cmdb-query-mcp-unavailable`）。
 
 聚合脚本会解包根 CI、按需要查询三层正反向并分页去重；应用仍默认正向。返回 `topology.queryComplete/queryErrors/queryDirections`，`execution.status` 的 partial/blocked 不能被 `code=200` 掩盖为完整成功；已取得的结果保留，失败方向不换参数重试。
 
@@ -357,7 +367,7 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py \
 
 ### 指标分析
 
-优先使用 MCP：
+指标路由为 `mcp` 时使用 MCP；为 `script` 时按既有指标脚本取得同样的定义与值：
 
 1. 调用 `inspection__getMetricDefinitions(metricType=<模型名>)` 获取指标定义
 2. AI 从指标定义中筛选与告警相关的关键指标编码

@@ -20,6 +20,12 @@ CMDB 的单独地址、用户名、密码、`.env` 或 `secrets/zgops-cmdb.env`�
 
 ## 快速路径
 
+生产对话需要 JSON 上下文时，先调用 `write_skill_context(content=<JSON 字符串>)`，
+将返回的 `file_path` 用于 `--context-file`；不要用通用写文件、重定向或临时 Python。
+上传文件和上下文放在当前工作区；`agentId` 省略或使用当前智能体。
+`start`、`metadata`、`preview` 不写入 CMDB；`import` 必须先展示预览和目标，
+再由可信管理员确认审批。审批后修改输入文件会使本次授权失效。
+
 ```bash
 python scripts/resource_import_bridge.py start
 python scripts/resource_import_bridge.py metadata
@@ -32,7 +38,7 @@ python scripts/resource_import_bridge.py topology-prompt
 
 ```json
 {
-  "agentId": "query",
+  "agentId": "resource",
   "files": [
     {
       "name": "network-devices.xlsx",
@@ -77,4 +83,4 @@ python scripts/resource_import_bridge.py topology-prompt
 
 - 这个 skill 只负责导入。
 - 执行层入口在 `scripts/resource_import_bridge.py`。
-- 运行时默认依赖共享 `secrets/zgops-cmdb.env` 和仓库内导入实现；当前 skill 自己的 `.env` 仅作旧版回退，不需要检查其他 skill 的目录结构。
+- 运行时使用平台连接设置和当前请求身份；不要读取或补写技能目录中的凭据文件。

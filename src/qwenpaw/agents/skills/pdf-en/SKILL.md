@@ -3,8 +3,23 @@ name: pdf
 description: Use this skill whenever the user wants to do anything with PDF files. This includes reading or extracting text/tables from PDFs, combining or merging multiple PDFs into one, splitting PDFs apart, rotating pages, adding watermarks, creating new PDFs, filling PDF forms, encrypting/decrypting PDFs, extracting images, and OCR on scanned PDFs to make them searchable. If the user mentions a .pdf file or asks to produce one, use this skill.
 license: Proprietary. LICENSE.txt has complete terms
 metadata:
-  builtin_skill_version: "1.1"
+  builtin_skill_version: "1.2"
 ---
+
+## Production entry points
+
+For reports, call `export_report(content=<text>, title=<title>)`, which defaults
+to PDF; use `format="docx"` for Word. Return the generated download link
+verbatim. Do not run temporary Python, Node, LibreOffice or shell
+commands to bypass production policy.
+For text-only PDF output from DOCX/XLSX/PPTX, use
+`process_office_document(operation="export_pdf", file_path=<path>)`; original
+layout is not preserved. Deliver this tool's returned `file_path` using
+`send_file_to_user`. Existing PDF merging, splitting, OCR, forms and
+cryptography have no structured production entry point yet; explain this
+limit instead of claiming success.
+The general script examples below are for development and maintenance only.
+
 
 > **Important:** All `scripts/` paths are relative to this skill directory.
 > Run with: `cd {this_skill_dir} && python scripts/...`

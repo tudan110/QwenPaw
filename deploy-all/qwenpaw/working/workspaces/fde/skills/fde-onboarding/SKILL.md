@@ -22,20 +22,30 @@ description: skill 构建助手的元技能 —— 把客户/运营方的需求�
 
 ## 工作流（一步步来，别甩问卷）
 
+### 生产模式执行约束
+
+- `list-agents`、`list-staged`、`show-staged`、静态 `selfcheck` 可通过受管脚本执行。
+- `scaffold`、`create-agent`、`discard --yes` 必须经过可信管理员审批；
+  生成和删除仅限当前工作区 `staged/`，不能切换输出到业务工作区。
+- 需求单 JSON 用 `write_skill_context` 准备，将返回路径传给 `--brief-file`；
+  不要写 `/tmp/brief.json`。`--skill-dir` 使用当前工作区下 staged 的绝对路径。
+- 当前 `probe` 的实现不具备真正隔离，生产对话禁止动态试跑生成代码。
+  此阶段使用静态扫描、语法自检和代码预览；门户试跑也不能当作安全沙箱。
+  不通过任意 Python、修改身份或替换命令绕过限制。
+
 1. **访谈**：拿到「业务目标/痛点、要对接哪些系统及对接方式（贴 API 文档/报文样例/curl）、期望职责与输入输出形态、目标业务智能体、SLA/边界、可复用的已有技能」。整理成「交付需求单」（结构化要点 + markdown 摘要），发给对方确认。
 2. **交付方案**：把需求单映射到平台构件 —— 要新建哪几个 skill（`name`/`category`/`triggers`/职责/目标工作区）、要不要 `integrations/` 适配器或 MCP、要不要 cron、复用哪些已有 skill、关键不确定点（进"待确认项"，**不要编造接口字段**）。发给对方确认。
 3. **生成**：对每个待建 skill，调
    ```bash
-   python scripts/fde_tools.py scaffold --name <skill-name> --target-workspace <ws> --brief-file /tmp/brief.json --json
+   python scripts/fde_tools.py scaffold --name <skill-name> --target-workspace <ws> --brief-file <write_skill_context返回路径> --json
    ```
    它会从骨架（`references/skeleton/`，镜像 `src/qwenpaw/extensions/templates/skill_scaffold/`）生成到 fde 工作区的 `staged/<skill-name>/` 并顺手自检一次。然后**按访谈拿到的接口信息**用 `edit_file` 把 `staged/<skill-name>/runtime/tool_adapters.py` 的 `mock-or-real` 占位换成真实调用、补 `runtime/playbooks/business_flow.py`、改 `SKILL.md` 的触发/描述。连接配置走平台 settings（`settings.db`，materialize 进 `os.environ`、子进程继承）：复用现有连接无需配置；要接新外部系统则新建 settings store 字段（参考 `src/qwenpaw/extensions/api/n9e_settings_store.py`）走设置页，**不要**塞 `.env`。
 4. **自检**：每改动一次跑
    ```bash
-   python scripts/fde_tools.py selfcheck --skill-dir staged/<skill-name> --json
-   python scripts/fde_tools.py probe     --skill-dir staged/<skill-name> --json   # 沙箱跑一遍 diagnose
+   python scripts/fde_tools.py selfcheck --skill-dir <当前工作区绝对路径>/staged/<skill-name> --json
    ```
    `ready_for_review` 必须为 true 才交付（域审查未通过/有语法错/缺 SKILL.md 都会阻塞）。连接凭证走平台 settings（`settings.db`），**绝不写进 SKILL.md/脚本/staged 文件**；新连接在 portal 设置页配，拿不准的字段进待确认项。
-5. **交付**：把"交付方案 + 每个 staged skill 的预览 + 自检结果 + 待确认项"组织清楚给对方，并提示：到 Portal **「skill 构建助手」** 面板逐个查看代码、（可选）沙箱试跑、然后点「确认安装到 \<目标工作区\>」。真正写入业务工作区由那个人工动作触发（走现有 `POST /api/skills`，含安全扫描），**你不替他按这个键**。
+5. **交付**：把"交付方案 + 每个 staged skill 的预览 + 自检结果 + 待确认项"组织清楚给对方，并提示：到 Portal **「skill 构建助手」** 面板逐个查看代码和静态自检结果，再由人工确认安装。当前试跑没有真正隔离，生产模式不使用。真正写入业务工作区由人工动作触发（走现有 `POST /api/skills`，含安全扫描），**你不替他按这个键**。
 
 ## 工具速查（`scripts/fde_tools.py`，用 app 自带 python 调，不要 uv）
 
@@ -45,9 +55,9 @@ description: skill 构建助手的元技能 —— 把客户/运营方的需求�
 | `create-agent --id X [--name Y] [--description D] [--provider P --model M]` | 建一个新的业务智能体的空壳（workspace + config profile + agent.json） |
 | `scaffold --name N --target-workspace W [--brief-file F]` | 从骨架生成 staged 技能 + 自检 |
 | `selfcheck --skill-dir D` | 安全扫描 dry-run + 领域审查 + 语法 + 待确认项 |
-| `probe --skill-dir D [--context-file F]` | 沙箱里跑一遍生成技能的 `diagnose` |
+| `probe --skill-dir D [--context-file F]` | 尚无真实隔离，生产模式不执行 |
 | `list-staged` / `show-staged --name N` | 列出 / 查看 staged 技能（文件树+内容） |
-| `discard --name N` | 删掉一个 staged 技能 |
+| `discard --name N --yes` | 审批后删掉一个 staged 技能 |
 
 > 顺手提一下安装兜底：用户在面板上点「确认安装到 \<X\>」时，如果 X 还不存在，后端会**自动先用 X 当 id 建一个空壳再装**，所以即便你忘了在 blueprint 阶段建，一次点击也不会卡住。但建出来的 name 会跟 id 同名，描述会写"由 FDE 自动创建"——能在 blueprint 阶段就建好、起个像样的名字，体验更整齐。
 

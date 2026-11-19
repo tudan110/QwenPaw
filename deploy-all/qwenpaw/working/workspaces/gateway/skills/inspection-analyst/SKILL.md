@@ -8,26 +8,36 @@ description: 资源巡检技能。当用户要求巡检、健康检查、查看�
 
 # Inspection Analyst
 
+## 执行通道路由
+
+先读取本轮系统提供的 **Skill execution routes**，按能力分别选择通道；下文 MCP 操作说明仅适用于该能力的 `mcp` 路由。
+
+- `script`：MCP 已关闭或未配置，直接执行本技能已有脚本，不先尝试 MCP；记录 `mcp_disabled` / `mcp_not_configured`。
+- `mcp`：调用已就绪的 MCP 工具；只有已确认的只读连接/传输失败或协议无法解析，才允许一次脚本回退。
+- `unavailable`：加载中或状态未知，说明尚未就绪；不得把工具不可见推断为未配置或直接转脚本。仅 `reason=mcp_transport_unavailable` 明确确认了发现阶段的连接故障时，允许只读操作使用已有脚本一次；缺少路由摘要时也不猜测开关状态。
+- `blocked`：权限、审批或工具白名单限制，不得通过脚本或跨智能体绕过。可解析的鉴权、参数、业务错误及成功空结果均不自动回退。
+- 脚本缺失、依赖或凭据缺失时报告具体限制，不反向启用 MCP、不换身份。写操作已发送但结果不明时，不用脚本重复提交；通道切换不改变原有授权与通知规则。
+
 完成一条真实巡检链路：识别巡检对象 → CMDB 确认拓扑 → 批量查询指标 → 阈值判定 → 输出结果 → 通知推送。
 
 ## 执行流程
 
 1. **识别巡检对象**：用户指定的资源（数据库、中间件、主机等）
-2. **CMDB MCP 确认**：本工作区已启用 `cmdb-query` MCP Server。必须优先直接调用以下只读 Tools；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC，也不要为此编写额外 MCP 客户端：
+2. **CMDB MCP 确认**：对应能力路由为 `mcp` 时使用 `cmdb-query` MCP Server。必须优先直接调用以下只读 Tools；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC，也不要为此编写额外 MCP 客户端：
    - `cmdb-query__listCiTypes`：按响应判断是否已取全，确认目标模型的真实 `name`（如 `redis`、`mysql`），不要反复翻页取相同完整目录。模型名必须来自返回值；数字类型 ID 只能用于展示或关联，不能直接作为 `metricType`。
    - `cmdb-query__searchCiInstances`：以 `_type:<模型 name>` 搜索实例并完整处理分页。零候选时直接说明无法确认资源；多候选时列出候选让用户选择，禁止自动任选。
    - `cmdb-query__getCiInstance`：对选中候选的真实 `_id` 做二次确认。读取当前响应的 `ci`（兼容旧 `result`），只将确认后的 `_id` 作为 `resId`，模型 `name` 作为 `ciType` / `metricType`；数字 `_type` 是模型 ID，不是指标模型名称。
    - `cmdb-query__getCiRelations`：仅当用户要求依赖、影响面、拓扑，或指标异常确有必要时，以确认后的 `_id` 查询关系。资源实例按 `zgops-cmdb` 的“查资源实例拓扑”先正向 `reverse=0`、再反向 `reverse=1`，覆盖 `level=1..3` 并合并去重；单向为空不代表无关系，两向成功且为空才说明指定范围内未发现关系。任一方向失败则标注拓扑不完整，不伪造关系或用脚本绕过业务错误。
-   - 仅当 CMDB MCP Driver 未加载、客户端或 Tool 不可用、或协议响应无法解析时，才允许一次性回退 `../zgops-cmdb/scripts/zgops-cmdb.sh list-models` 与 `fetch`；过程说明必须标记 `zgops-cmdb-script-fallback` 和具体原因。可解析的业务 4xx/5xx、鉴权、参数或上游错误必须 fail-fast，不换参数重试。
-3. **查询指标**：完成 CMDB MCP 确认后，优先直接调用已注册的 `inspection` MCP Server，按“指标 MCP 调用”章节获取指标定义、指标值、阈值规则与操作符字典。
+   - 在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才允许一次性回退 `../zgops-cmdb/scripts/zgops-cmdb.sh list-models` 与 `fetch`；过程说明必须标记 `zgops-cmdb-script-fallback` 和具体原因。可解析的业务 4xx/5xx、鉴权、参数或上游错误必须 fail-fast，不换参数重试。
+3. **查询指标**：完成 CMDB 确认后，按指标能力路由选择 `inspection` MCP Server 或指标脚本，按“指标 MCP 调用”章节获取指标定义、指标值、阈值规则与操作符字典。
    - CMDB 搜索的 `numfound` 是总匹配数，`total` 是本页数量；完整分页并按 CI ID 去重。`level=2` 只查第二层，当前 MCP 分别传整数 1、2、3；HTTP 回退传单个 `level=1,2,3`，不重复 level 参数。
    - 已知 CI ID 直接确认详情；批量补齐已确认关联资源可用 `_id:(ID1;ID2;ID3)`。只有 CI 列表时展示关联概览，不补造实例部署边；MCP 没暴露分页时报告截断，不传未声明参数或转脚本绕过成功结果。
 4. **输出结果**：按既有规则完成阈值判定，包含按需查询的真实拓扑关系、指标数据表、巡检结论。
-5. **通知推送**：只读 MCP Tools 不发送通知；仅在执行现有脚本回退路径时，才保留脚本按配置推送的行为。
+5. **通知推送**：普通只读巡检不发送通知；脚本路径固定使用 `--no-notify`。单独请求通知时才按原授权执行通知流程。
 
 ## 指标 MCP 调用
 
-本工作区已启用 `inspection` MCP Server。完成 CMDB 确认后，必须优先直接调用以下 MCP Tools；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC 访问接口，也不要为此编写额外 MCP 客户端。
+对应能力路由为 `mcp` 时使用 `inspection` MCP Server。完成 CMDB 确认且指标路由为 `mcp` 后，直接调用以下 MCP Tools；不要自行使用 `curl`、`requests`、SSE 或 JSON-RPC 访问接口，也不要为此编写额外 MCP 客户端。
 
 ### 调用顺序
 
@@ -71,18 +81,18 @@ description: 资源巡检技能。当用户要求巡检、健康检查、查看�
 
 ### 判定与回退
 
-- CMDB 或 inspection MCP Tool 返回上游错误、协议错误或不可解析结果时，立即按失败处理，不要换参数反复重试；仅在对应 MCP Driver 未加载、客户端/工具不可用或协议无法解析时，才允许回退到下方旧脚本路径，并在过程说明中写明回退原因。
+- CMDB 或 inspection MCP Tool 返回可解析的上游/业务错误时，立即按失败处理，不要换参数反复重试；仅在已确认的只读连接/传输失败或协议无法解析时，才允许一次回退到下方脚本路径，并在过程说明中写明回退原因。
 - 指标 Tool 成功但全部最近值为空，是“无实时监控数据”的合法结论；不要回退脚本、不要重复调用、不要转其他 Skill 验证。
 - 使用 MCP 结果时，按本 Skill 的既有规则完成判定：满足阈值规则为正常，不满足为异常，无规则标注“需大模型判断”。
-- MCP Tools 只负责取数，不自动发送通知。MCP 路径下应在报告中写明“通知未配置”；不要把只读巡检查询变成通知动作。
+- MCP Tools 只负责取数，不自动发送通知。MCP 路径下应在报告中写明“通知未执行”；不要把只读巡检查询变成通知动作。
 
 ## CMDB 脚本回退路径
 
-`zgops-cmdb` 仍是同工作区下的兄弟 Skill，但在本巡检流程中仅作为 CMDB MCP 的回退基线：只有 CMDB MCP Driver 未加载、客户端/工具不可用或协议无法解析时，才允许从 inspection-analyst 目录按相对路径调用一次 `../zgops-cmdb/scripts/zgops-cmdb.sh list-models` 与 `fetch`。普通 MCP 成功路径不得调用该脚本。
+`zgops-cmdb` 仍是同工作区下的兄弟 Skill，在本巡检流程中作为 CMDB 的脚本通道：在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才允许从 inspection-analyst 目录按相对路径调用一次 `../zgops-cmdb/scripts/zgops-cmdb.sh list-models` 与 `fetch`。普通 MCP 成功路径不得调用该脚本。
 
 ## 旧脚本回退路径
 
-仅当 MCP Driver 未加载、工具不可用或 MCP 返回协议无法解析时，才执行以下命令。该脚本保留用于回退与结果基线，不作为默认指标查询方式：
+在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才执行以下命令。该脚本用于显式脚本通道和只读故障回退：
 
 ```bash
 python3 scripts/inspect_resource_metrics.py --no-notify \
@@ -100,11 +110,11 @@ python3 scripts/inspect_resource_metrics.py --no-notify \
 
 建议直接使用 CMDB 模型名称（即 `list-models` 输出的"模型名"列），避免额外查询开销。
 
-## CMDB MCP 优先原则
+## CMDB 通道选择原则
 
 建议如涉及组件操作，应结合 CMDB 明确部署路径给人工访问、排查、处置和验证步骤；系统不 SSH、执行容器命令或登录数据库补字段，不索要口令。缺 Namespace/Pod/账号时列待现场确认，指标有值不代表已验证登录或处置成功，不能只给组件内部命令。
 
-查 CMDB / 拓扑时，`inspection-analyst` 默认优先使用当前工作区已启用的 `cmdb-query` MCP Tools。只有 CMDB MCP Driver 未加载、客户端/工具不可用或协议无法解析时，才一次性回退本地 `zgops-cmdb`；只有本地回退也缺失、未配置、不可用或用户明确要求时，才使用 multi_agent_collaboration 协同 query。涉及应用或资源拓扑时，CMDB MCP 或回退路径都必须返回可直接渲染的 `echarts` 代码块；应用用树状图，资源多父关系用 `graph` 保留真实边，不能只保留文字版拓扑摘要。所有输出（含原始 JSON 和错误）均须脱敏，不回显 `bearer_token`、`login_pwd` 等凭证。
+查 CMDB / 拓扑时，`inspection-analyst` 按本轮 CMDB 能力路由使用 `cmdb-query` MCP Tools 或本地脚本。在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才一次性回退本地 `zgops-cmdb`；只有本地回退也缺失、未配置、不可用或用户明确要求时，才使用 multi_agent_collaboration 协同 query。涉及应用或资源拓扑时，CMDB MCP 或回退路径都必须返回可直接渲染的 `echarts` 代码块；应用用树状图，资源多父关系用 `graph` 保留真实边，不能只保留文字版拓扑摘要。所有输出（含原始 JSON 和错误）均须脱敏，不回显 `bearer_token`、`login_pwd` 等凭证。
 
 回退时必须在过程说明中写出回退原因。
 
@@ -112,11 +122,11 @@ python3 scripts/inspect_resource_metrics.py --no-notify \
 
 - **不能猜测 resId / ciType**：多个候选时列出清单让用户选择
 - **不能假装查询成功**：接口失败直接报错，不返回假数据
-- **Fail Fast，单次尝试即可下结论**：CMDB / MCP 指标查询接口失败（超时、401/403/404/5xx、连接错误）或返回不可解析结果时，按失败处理，不做二次三次重试，不切换参数硬凑结果；只有 MCP Driver 未加载、不可用或协议无法解析时，才按“旧脚本回退路径”执行一次回退。
+- **Fail Fast，单次尝试即可下结论**：CMDB / MCP 指标查询接口失败（超时、401/403/404/5xx、连接错误）或返回不可解析结果时，按失败处理，不做二次三次重试，不切换参数硬凑结果；在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才按“旧脚本回退路径”执行一次回退。
 - **指标值为空是合法结论**：MCP 指标查询成功但指标最近值全空（采集链路无数据 / `originalDatas: []`），**直接如实产出“无实时监控数据”报告即可**。不要为“证明真的没数据”绕去 alarm-analyst / resource-insight-query 等其他 skill 反复验证，也不要重复调用 MCP Tool 或回退脚本。
 - **按需展示拓扑**：实际查询了拓扑时展示真实结果和缺口，不能省略成“拓扑已确认”；未请求且无分析必要时注明未查询，不为凑报告增加调用。CI 列表只能画关联概览，不能补造部署边。
 - **阈值判定**：满足规则 = 正常，不满足 = 异常；无规则的标注"需大模型判断"
-- **通知**：MCP 只读查询不发送通知，报告中明确写出“通知未配置”；只有旧脚本回退路径才按其现有配置处理通知。
+- **通知**：普通只读查询不发送通知，脚本固定使用 `--no-notify`；报告如实写“通知未执行”，不得把切换通道当作通知授权。
 
 ## 输出结构
 

@@ -2,12 +2,22 @@
 name: channel_message
 description: Use this skill to proactively send a one-way message to a user/session/channel, usually only when the user explicitly asks to send to a channel/session or when proactive notification is needed. First query sessions with qwenpaw chats list, then push with qwenpaw channels send.
 metadata:
-  builtin_skill_version: "1.3"
+  builtin_skill_version: "1.4"
   qwenpaw:
     emoji: "📤"
 ---
 
 # Channel Message
+
+## Production permissions
+
+Reading/managing chats and sending messages require trusted administrator
+approval and the current agent's explicit `--agent-id`. Chat reads also need
+approval because the API does not isolate chat owners.
+Show the exact channel, user, session and message before sending; never
+override service URLs. For chat creation JSON, use `write_skill_context`
+and pass its workspace path to `--file`. Explain missing permission instead
+of using alternative scripts or commands.
 
 ## When to Use
 
