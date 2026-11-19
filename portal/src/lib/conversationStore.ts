@@ -1,3 +1,7 @@
+function useBrowserConversationCache(): boolean {
+  return window.__PORTAL_RUNTIME_CONFIG__?.privateConversations !== true;
+}
+
 const STORAGE_KEY = "digital-workforce-conversations-v2";
 const LEGACY_STORAGE_KEYS = [
   "digital-workforce-conversations",
@@ -431,6 +435,7 @@ function normalizeConversationStore(
 }
 
 export function loadConversationStore(): ConversationStore {
+  if (!useBrowserConversationCache()) return {};
   try {
     for (const legacyKey of LEGACY_STORAGE_KEYS) {
       window.localStorage.removeItem(legacyKey);
@@ -443,6 +448,7 @@ export function loadConversationStore(): ConversationStore {
 }
 
 export function saveConversationStore(store: ConversationStore): void {
+  if (!useBrowserConversationCache()) return;
   const normalized = normalizeConversationStore(store);
 
   try {

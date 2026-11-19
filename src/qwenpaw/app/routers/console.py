@@ -33,6 +33,7 @@ from ...extensions.api.chat_isolation import (
     reject_reserved_legacy_namespace,
     require_owned_chat,
 )
+from ...extensions.api import trusted_chat_text
 from ...utils.logging import LOG_FILE_PATH
 from ..agent_context import get_agent_for_request
 from ..approvals.display import approval_display_fields
@@ -210,7 +211,9 @@ async def post_console_chat(
         native_payload = _extract_session_and_payload(request_data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    authorize_chat_payload(native_payload, chat_scope())
+    scope = chat_scope()
+    authorize_chat_payload(native_payload, scope)
+    await trusted_chat_text.check_portal_input(native_payload["content_parts"], isolated=scope is not None)
     session_id = console_channel.resolve_session_id(
         sender_id=native_payload["sender_id"],
         channel_meta=native_payload["meta"],
@@ -329,6 +332,8 @@ async def post_console_upload(
 ) -> dict:
     """Save to console channel media_dir."""
 
+    if trusted_chat_text.enabled():
+        await trusted_chat_text.check_portal_input([{"type": "file"}], isolated=chat_scope() is not None)
     workspace = await get_agent_for_request(request)
     console_channel = await workspace.channel_manager.get_channel("console")
     if console_channel is None:
@@ -548,6 +553,7 @@ async def post_console_chat_task(
     native_payload = _extract_session_and_payload(request_data)
     scope = chat_scope()
     authorize_chat_payload(native_payload, scope)
+    await trusted_chat_text.check_portal_input(native_payload["content_parts"], isolated=scope is not None)
     session_id = console_channel.resolve_session_id(
         sender_id=native_payload["sender_id"],
         channel_meta=native_payload["meta"],

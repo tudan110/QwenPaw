@@ -1,0 +1,13 @@
+.controlled-documents { display: grid; gap: 14px; min-width: 0; }
+.controlled-documents h3, .controlled-documents h4 { margin: 0 0 8px; }
+.controlled-documents p { margin: 6px 0; }
+.controlled-documents section { border: 1px solid rgba(125, 125, 125, .28); border-radius: 10px; padding: 14px; min-width: 0; }
+.controlled-documents form { display: grid; gap: 8px; justify-items: start; }
+.controlled-documents nav, .controlled-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.controlled-line > .ant-input { width: min(100%, 360px); }
+.controlled-line input[type="number"] { width: 60px; }
+.controlled-record { border-top: 1px solid rgba(125, 125, 125, .25); padding: 9px 0; line-height: 1.65; overflow-wrap: anywhere; }
+.controlled-record code { margin-inline: 6px; }
+.controlled-record pre { white-space: pre-wrap; max-height: 260px; overflow: auto; }
+.controlled-error { color: #dc2626; }
+.controlled-success { color: #15803d; }

@@ -81,6 +81,8 @@ _SECURITY_KEYS = {
     "ADMIN_INOE_USER_IDS",
     "PRODUCTION_GUARDS",
     "TRUSTED_CHAT_ISOLATION",
+    "TRUSTED_CHAT_TEXT_GUARD",
+    "CONTROLLED_DOCUMENTS",
     "ALLOWED_SCRIPT_HASHES",
     "INTERNAL_API_ORIGINS",
     "SKILL_SEED_PATH",
@@ -166,6 +168,9 @@ def requires_admin(method: str, path: str) -> bool:
         return True
     if path.startswith("/api/models") and path != "/api/models/active":
         return True
+    # The resource router checks owner/grant on user requests and admin on its admin subtree.
+    if path.startswith("/api/portal/controlled-documents/"):
+        return path.startswith("/api/portal/controlled-documents/admin/")
     if method in {"GET", "HEAD", "OPTIONS"}:
         return False
     if method == "POST" and path in _USER_POST_PATHS:

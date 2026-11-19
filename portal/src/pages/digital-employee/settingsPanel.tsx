@@ -39,6 +39,10 @@ const PortalSecurityEvidence = lazy(() =>
   import("./securityEvidencePanel").then((module) => ({ default: module.PortalSecurityEvidence })),
 );
 
+const ControlledDocumentsPanel = lazy(() =>
+  import("./controlledDocumentsPanel").then((module) => ({ default: module.ControlledDocumentsPanel })),
+);
+
 // Editable numeric fields in the diagnosis tab, grouped for rendering.
 type DiagnosisNumberField = {
   key: string;
@@ -302,6 +306,12 @@ function isMaskedSecret(value: unknown): value is MaskedSecret {
 }
 
 const SETTINGS_TABS = [
+  {
+    id: "controlled-documents",
+    label: "受控资料",
+    iconClass: "fa-folder-open",
+    description: "个人资料、限时授权和操作复核",
+  },
   {
     id: "security-evidence",
     label: "安全与审计",
@@ -1648,6 +1658,11 @@ export function SettingsPanel() {
             </aside>
 
             <section className="portal-advanced-config-panel settings-content-panel">
+              {activeTab === "controlled-documents" ? (
+                <Suspense fallback={<p role="status">正在加载受控资料…</p>}>
+                  <ControlledDocumentsPanel />
+                </Suspense>
+              ) : null}
               {activeTab === "security-evidence" ? (
                 <Suspense fallback={<p role="status">正在加载安全与审计…</p>}>
                   <PortalSecurityEvidence />

@@ -20,10 +20,16 @@ case "$(printf '%s' "${PORTAL_SSO_ENABLED:-}" | tr '[:upper:]' '[:lower:]')" in
   *) SSO_ENABLED=false ;;
 esac
 
+case "$(printf '%s' "${PORTAL_PRIVATE_CONVERSATIONS:-}" | tr '[:upper:]' '[:lower:]')" in
+  1 | true | yes | on) PRIVATE_CONVERSATIONS=true ;;
+  *) PRIVATE_CONVERSATIONS=false ;;
+esac
+
 cat >/usr/share/nginx/html/runtime-config.js <<EOF
 window.__PORTAL_RUNTIME_CONFIG__ = Object.freeze({
   appTitle: "${PORTAL_APP_TITLE_ESCAPED}",
   ssoEnabled: ${SSO_ENABLED},
+  privateConversations: ${PRIVATE_CONVERSATIONS},
   ssoInoePort: "${SSO_INOE_PORT_ESCAPED}",
   ssoLoginUrl: "${SSO_LOGIN_URL_ESCAPED}"
 });

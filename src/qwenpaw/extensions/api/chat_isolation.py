@@ -51,12 +51,24 @@ def chat_scope() -> PortalChatScope | None:
     if not chat_isolation_enabled():
         return None
     identity = CURRENT_IDENTITY.get()
-    if identity is None or not identity.user_id or identity.source == "model_service":
+    if identity is None:
         raise HTTPException(401, "请先通过智观认证")
+    from .collaboration_access import SOURCE
     from .sso_settings_store import get_userinfo_url
 
     realm = get_userinfo_url()
-    digest = hashlib.sha256(f"{realm}\0{identity.user_id}".encode("utf-8")).hexdigest()[:32]
+    if identity.source == SOURCE:
+        # The signed scheduled-job credential is admitted only to the few
+        # collaboration endpoints. Give it a per-job scope, never a human owner.
+        job_id = identity.user.get("job_id")
+        if not isinstance(job_id, str) or not job_id or len(job_id) > 200:
+            raise HTTPException(401, "协同任务缺少有效归属")
+        material = f"\0cron\0{realm}\0{job_id}"
+    elif identity.source in {"inoe", "qwenpaw", "mixed"} and identity.user_id:
+        material = f"{realm}\0{identity.user_id}"
+    else:
+        raise HTTPException(401, "请先通过智观认证")
+    digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:32]
     return PortalChatScope(digest)
 
 

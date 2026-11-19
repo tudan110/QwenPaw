@@ -121,3 +121,24 @@ def test_raw_session_storage_is_unavailable_to_tools(client, monkeypatch, tmp_pa
     ):
         with pytest.raises(PermissionError):
             execution_policy.check_path(str(path))
+
+
+def test_scheduled_collaboration_has_no_human_chat_scope(client):
+    from fastapi import HTTPException
+    from qwenpaw.extensions.api.collaboration_access import SOURCE
+
+    def scope_for(identity):
+        context = CURRENT_IDENTITY.set(identity)
+        try:
+            return chat_scope()
+        finally:
+            CURRENT_IDENTITY.reset(context)
+
+    human = scope_for(AccessIdentity({"userId": "job-a"}, ""))
+    job_a = scope_for(AccessIdentity({"job_id": "job-a"}, "", source=SOURCE))
+    job_b = scope_for(AccessIdentity({"job_id": "job-b"}, "", source=SOURCE))
+    assert len({human.owner, job_a.owner, job_b.owner}) == 3
+    assert job_a.session_id("console") != job_b.session_id("console")
+    with pytest.raises(HTTPException) as blocked:
+        job_b.session_id(job_a.session_id("console"))
+    assert blocked.value.status_code == 404

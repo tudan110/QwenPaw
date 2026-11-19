@@ -31,5 +31,6 @@ interface Window {
     ssoEnabled?: boolean;
     ssoLoginUrl?: string;
     ssoInoePort?: string;
+    privateConversations?: boolean;
   };
 }
