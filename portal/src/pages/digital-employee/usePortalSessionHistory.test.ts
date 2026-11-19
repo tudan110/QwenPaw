@@ -24,12 +24,31 @@ test("new conversations stay scoped to the current employee", async (t) => {
       "/src/pages/digital-employee/usePortalSessionHistory.ts",
     );
     const { digitalEmployees } = await server.ssrLoadModule("/src/data/portalData.ts");
-    const { createInitialMessages } = await server.ssrLoadModule(
+    const { createInitialMessages, normalizeRemoteSessions, getIsolatedPortalSessionGroup } = await server.ssrLoadModule(
       "/src/pages/digital-employee/helpers.ts",
     );
     const { PORTAL_HOME_EMPLOYEE, REMOTE_AGENT_IDS } = await server.ssrLoadModule(
       "/src/pages/digital-employee/pageHelpers.ts",
     );
+
+    await t.test("server-scoped history keeps the Portal and app workbench separate", () => {
+      const scope = "a".repeat(32);
+      const scoped = (id: string, digit: string, meta = {}, extra = {}) => ({
+        id, name: id, session_id: `qpsession1${scope}${digit.repeat(32)}`,
+        user_id: `qpowner1${scope}`, channel: "console", meta, ...extra,
+      });
+      const first = scoped("legacy chat", "1");
+      const second = scoped("new chat", "2", { portalSessionGroup: "portal-home" });
+      const app = scoped("app draft", "3", { appId: "" });
+      const scheduled = scoped("scheduled", "4", {}, { source: "cron" });
+      const mismatched = scoped("mismatched", "5", {}, { user_id: `qpowner1${"b".repeat(32)}` });
+      const unrelated = scoped("other view", "6", { portalSessionGroup: "resource" });
+      const named = normalizeRemoteSessions(
+        [first, second, app, scheduled, mismatched, unrelated], "portal-home",
+      ).map((session: { id: string }) => session.id);
+      assert.deepEqual(named.sort(), ["legacy chat", "new chat"]);
+      assert.equal(getIsolatedPortalSessionGroup(app, "portal-home"), "app-workbench");
+    });
 
     function setup(overrides: Partial<HistoryOptions>) {
       const calls = new Map<string, unknown[][]>();

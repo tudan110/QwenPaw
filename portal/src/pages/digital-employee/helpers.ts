@@ -1116,10 +1116,28 @@ function isCrossAgentSessionForEmployee(chat: any, employeeId: string) {
   return segments.length >= 4 && segments[1] === "to" && segments[2] === employeeId;
 }
 
+export function getIsolatedPortalSessionGroup(chat: any, workspaceGroup: string) {
+  const sessionId = String(chat?.session_id || "");
+  const scope = /^qpsession1([0-9a-f]{32})[0-9a-f]{32}$/.exec(sessionId);
+  if (!scope || chat?.channel !== "console" || chat?.user_id !== `qpowner1${scope[1]}`
+      || chat?.source === "cron") {
+    return "";
+  }
+  // The API already filters by verified owner and requested workspace. Group
+  // those records for display: hashes no longer carry the previous UI prefix.
+  if (typeof chat?.meta?.portalSessionGroup === "string") {
+    return chat.meta.portalSessionGroup;
+  }
+  return Object.prototype.hasOwnProperty.call(chat?.meta || {}, "appId")
+    ? "app-workbench"
+    : workspaceGroup;
+}
+
 function isRemoteSessionForEmployee(chat: any, employeeId: string) {
   const sessionId = String(chat?.session_id || "");
   return sessionId.startsWith(getPortalSessionPrefix(employeeId))
-    || isCrossAgentSessionForEmployee(chat, employeeId);
+    || isCrossAgentSessionForEmployee(chat, employeeId)
+    || getIsolatedPortalSessionGroup(chat, employeeId) === employeeId;
 }
 
 function getEmployeeNameByAgentId(agentId: string) {

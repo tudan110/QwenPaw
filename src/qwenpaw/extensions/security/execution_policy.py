@@ -34,6 +34,7 @@ from .skill_scripts import (
 )
 
 _READ_TOOLS = {
+    "lookup_portal_cmdb_asset",
     "read_file",
     "list_agents",
     "chat_with_agent",

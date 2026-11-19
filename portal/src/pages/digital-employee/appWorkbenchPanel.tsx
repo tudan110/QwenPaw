@@ -23,6 +23,7 @@ import {
   createRemoteSessionId,
   extractCopawMessageText,
   getPortalSessionPrefix,
+  getIsolatedPortalSessionGroup,
   isCopawReasoningMessage,
   isInternalUserMessage,
   mergeStreamingText,
@@ -592,6 +593,7 @@ export function AppWorkbenchPanel({
           // Scope this session to the app being edited (empty = unpublished draft)
           meta: {
             appId: editingAppRef.current?.id || editAppIdRef.current || "",
+            portalSessionGroup: WORKBENCH_SESSION_SEED,
           },
         });
         chatIdRef.current = chat.id;
@@ -795,7 +797,8 @@ export function AppWorkbenchPanel({
       // surface only under the new/draft entry, never under an app — by design.
       const list: WorkbenchSession[] = (Array.isArray(chats) ? chats : [])
         .filter((c: any) =>
-          String(c?.session_id || "").startsWith(WORKBENCH_SESSION_PREFIX),
+          String(c?.session_id || "").startsWith(WORKBENCH_SESSION_PREFIX)
+          || getIsolatedPortalSessionGroup(c, "portal-home") === WORKBENCH_SESSION_SEED,
         )
         .filter((c: any) => {
           const appId = String(c?.meta?.appId || "");

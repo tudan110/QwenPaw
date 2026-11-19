@@ -231,6 +231,20 @@ class AgentBuilder:
         if skill_route_hint:
             driver_prompt_hints.append(skill_route_hint)
 
+        from ..extensions.integrations.zgops_cmdb.portal_asset_lookup import (
+            PORTAL_ASSET_LOOKUP_HINT,
+            lookup_portal_cmdb_asset,
+            portal_asset_lookup_available,
+        )
+
+        if portal_asset_lookup_available(agent_id, effective_skills, request_context):
+            extra_tools.append(
+                self._wrap_tool(
+                    lookup_portal_cmdb_asset, agent_id, request_context, governor,
+                ),
+            )
+            driver_prompt_hints.append(PORTAL_ASSET_LOOKUP_HINT)
+
         # Model + formatter (built before the toolkit so the scroll context
         # strategy, which needs the model for token counting, can wire in).
         model, _formatter = self.build_model(agent_config)

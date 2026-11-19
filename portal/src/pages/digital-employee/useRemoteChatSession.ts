@@ -1590,7 +1590,7 @@ export function useRemoteChatSession({
             session_id: sessionId || createRemoteSessionId(nextEmployee.id),
             user_id: getChatUserId(),
             channel: COPAW_CHANNEL,
-            meta: chatMeta || undefined,
+            meta: { ...chatMeta, portalSessionGroup: nextEmployee.id },
           });
         } finally {
           setIsCreatingChat(false);
