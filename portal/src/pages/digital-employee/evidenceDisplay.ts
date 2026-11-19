@@ -51,7 +51,7 @@ export function auditCsvCell(value: unknown): string {
   return `"${escaped.replace(/"/g, '""')}"`;
 }
 
-export type StopStatus = "requesting" | "accepted" | "notRunning" | "failed" | "unavailable";
+export type StopStatus = "requesting" | "accepted" | "cancelled" | "completed" | "taskFailed" | "notRunning" | "failed" | "unavailable";
 
 export interface StopFeedback {
   agentId: string | null;
@@ -62,13 +62,19 @@ export interface StopFeedback {
 
 export const STOP_LABELS: Record<StopStatus, string> = {
   requesting: "正在请求停止",
-  accepted: "服务端已接受本地任务取消请求",
+  accepted: "服务端已接受取消请求，任务终态待确认",
+  cancelled: "服务端已确认本地任务取消",
+  completed: "服务端任务已结束，未确认发生取消",
+  taskFailed: "服务端任务以异常结束，未确认发生取消",
   notRunning: "服务端未找到可取消的本地运行任务",
   failed: "停止请求失败，任务状态待核实",
   unavailable: "已停止页面接收，未能向服务端提交取消请求",
 };
 
-export function stopResult(response: { stopped?: unknown } | null | undefined): StopStatus {
+export function stopResult(response: { stopped?: unknown; status?: unknown } | null | undefined): StopStatus {
+  if (response?.status === "cancelled") return "cancelled";
+  if (response?.status === "completed") return "completed";
+  if (response?.status === "failed") return "taskFailed";
   if (response?.stopped === true) return "accepted";
   if (response?.stopped === false) return "notRunning";
   return "failed";

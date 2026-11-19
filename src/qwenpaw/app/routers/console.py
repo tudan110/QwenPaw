@@ -27,6 +27,12 @@ from qwenpaw.schemas import (
     AgentRequest,
     _coerce_content_item,
 )
+from ...extensions.api.chat_isolation import (
+    authorize_chat_payload,
+    chat_scope,
+    reject_reserved_legacy_namespace,
+    require_owned_chat,
+)
 from ...utils.logging import LOG_FILE_PATH
 from ..agent_context import get_agent_for_request
 from ..approvals.display import approval_display_fields
@@ -46,6 +52,7 @@ router = APIRouter(prefix="/console", tags=["console"])
 class _BackgroundTask:
     """In-memory state for a background chat task."""
 
+    owner: str | None = None
     status: str = "submitted"
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
@@ -203,6 +210,7 @@ async def post_console_chat(
         native_payload = _extract_session_and_payload(request_data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    authorize_chat_payload(native_payload, chat_scope())
     session_id = console_channel.resolve_session_id(
         sender_id=native_payload["sender_id"],
         channel_meta=native_payload["meta"],
@@ -288,44 +296,30 @@ async def post_console_chat_stop(
     request: Request,
     chat_id: str = Query(..., description="Chat id (ChatSpec.id) to stop"),
 ) -> dict:
-    """Stop the running chat. Only stops when called."""
-    logger.debug("[STOP API] Received stop request for chat_id=%s", chat_id)
+    """Report what happened to the local task, independent of SSE disconnect."""
     workspace = await get_agent_for_request(request)
-
-    # Try to stop with the provided chat_id first
-    logger.debug(
-        "[STOP API] Got workspace, calling task_tracker.request_stop...",
-    )
-    stopped = await workspace.task_tracker.request_stop(chat_id)
-
-    # If not found, the chat_id might be a session_id (timestamp)
-    # Try to resolve it to the actual chat UUID
-    if not stopped:
-        logger.debug(
-            "[STOP API] chat_id not found in tracker, trying to resolve "
-            "from session_id...",
+    tracker = workspace.task_tracker
+    scope = chat_scope()
+    if scope is not None:
+        # In the isolated profile, accept only the registered chat UUID.
+        await require_owned_chat(workspace.chat_manager, chat_id, scope)
+        status = await tracker.stop_run(chat_id)
+        return {"stopped": status != "not_running", "status": status}
+    if workspace.chat_manager:
+        existing = await workspace.chat_manager.get_chat(chat_id)
+        if existing is not None:
+            reject_reserved_legacy_namespace(existing.user_id, existing.session_id)
+    reject_reserved_legacy_namespace("", chat_id)
+    status = await tracker.stop_run(chat_id)
+    if status == "not_running" and workspace.chat_manager:
+        # Preserve legacy clients that send a session ID instead of a UUID.
+        resolved_chat_id = await workspace.chat_manager.get_chat_id_by_session(
+            session_id=chat_id, channel="console",
         )
-        chat_manager = workspace.chat_manager
-        if chat_manager:
-            resolved_chat_id = await chat_manager.get_chat_id_by_session(
-                session_id=chat_id,
-                channel="console",
-            )
-            if resolved_chat_id:
-                logger.debug(
-                    "[STOP API] Resolved session_id=%s to chat_id=%s",
-                    chat_id[:12] if len(chat_id) >= 12 else chat_id,
-                    resolved_chat_id,
-                )
-                stopped = await workspace.task_tracker.request_stop(
-                    resolved_chat_id,
-                )
-
-    logger.debug(
-        "[STOP API] task_tracker.request_stop returned: stopped=%s",
-        stopped,
-    )
-    return {"stopped": stopped}
+        if resolved_chat_id and resolved_chat_id != chat_id:
+            await require_owned_chat(workspace.chat_manager, resolved_chat_id, None)
+            status = await tracker.stop_run(resolved_chat_id)
+    return {"stopped": status != "not_running", "status": status}
 
 
 @router.post("/upload", response_model=dict, summary="Upload file for chat")
@@ -552,6 +546,8 @@ async def post_console_chat_task(
 
     task_id = f"task-{uuid.uuid4().hex[:12]}"
     native_payload = _extract_session_and_payload(request_data)
+    scope = chat_scope()
+    authorize_chat_payload(native_payload, scope)
     session_id = console_channel.resolve_session_id(
         sender_id=native_payload["sender_id"],
         channel_meta=native_payload["meta"],
@@ -564,6 +560,7 @@ async def post_console_chat_task(
         task_timeout = getattr(request_data, "timeout", None)
 
     bg = _BackgroundTask(
+        owner=scope.owner if scope is not None else None,
         status="running",
         started_at=time.time(),
     )
@@ -636,7 +633,8 @@ async def get_console_chat_task(task_id: str) -> dict:
     """Return the current status of a background chat task."""
     async with _bg_lock:
         bg = _bg_tasks.get(task_id)
-    if bg is None:
+    scope = chat_scope()
+    if bg is None or bg.owner != (scope.owner if scope is not None else None):
         raise HTTPException(
             status_code=404,
             detail=f"Task not found: {task_id}",

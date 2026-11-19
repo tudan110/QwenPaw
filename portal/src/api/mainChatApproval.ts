@@ -101,8 +101,8 @@ export async function stopMainChatApprovalTask(
   agentId: string,
   chatId: string,
   signal: AbortSignal,
-): Promise<void> {
-  const response = await approvalRequest<{ stopped: boolean }>(
+): Promise<{ stopped: boolean; status?: string }> {
+  const response = await approvalRequest<{ stopped: boolean; status?: string }>(
     `/console/chat/stop?chat_id=${encodeURIComponent(chatId)}`,
     agentId,
     signal,
@@ -111,4 +111,5 @@ export async function stopMainChatApprovalTask(
   if (response.stopped !== true) {
     throw new Error("任务未停止，请刷新状态后重试。");
   }
+  return response;
 }

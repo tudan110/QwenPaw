@@ -20,6 +20,7 @@ from qwenpaw.extensions.api.access_session import (
     user_subject,
 )
 from qwenpaw.extensions.api import sso_settings_store
+from qwenpaw.extensions.api.chat_isolation import chat_isolation_enabled
 from qwenpaw.extensions.api.sso_backend import _validate_inoe_token
 from qwenpaw.extensions.api.sso_auth import extract_user
 from .business_reads import MCP_READ_TOOLS
@@ -106,6 +107,11 @@ def check_path(path_value: str) -> None:
     path = (
         Path(get_current_workspace_dir() or WORKING_DIR) / candidate
     ).resolve()
+    if chat_isolation_enabled() and (
+        any(part.casefold() in {"sessions", "chat_traces"} for part in path.parts)
+        or path.name.casefold().startswith("chats.json")
+    ):
+        raise PermissionError("会话数据只能通过已授权的会话接口访问")
     secret = Path(SECRET_DIR).resolve()
     if path == secret or secret in path.parents:
         raise PermissionError("禁止工具读取或修改秘密目录")
@@ -137,7 +143,7 @@ def check_path(path_value: str) -> None:
         raise PermissionError("完整运行配置只能通过授权管理接口访问")
     if path.name == ".env" or path.suffix in {".pem", ".key", ".env"}:
         raise PermissionError("禁止工具访问凭据文件")
-    if path.name in {
+    if database_name in {
         "audit.db",
         "audit.log",
         "audit.sqlite",

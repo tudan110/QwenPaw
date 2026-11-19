@@ -399,3 +399,73 @@ async def test_concurrent_attach_or_start_only_one_producer():
             item = await asyncio.wait_for(q.get(), timeout=1)
             if item is None:
                 break
+
+
+@pytest.mark.asyncio
+async def test_stop_run_confirms_only_after_stream_cleanup():
+    tracker = TaskTracker()
+    running = asyncio.Event()
+    cleaning = asyncio.Event()
+    release = asyncio.Event()
+
+    async def stream(_payload):
+        try:
+            yield "data: partial\n\n"
+            running.set()
+            await asyncio.Future()
+        finally:
+            cleaning.set()
+            await release.wait()
+
+    queue, _ = await tracker.attach_or_start("run", None, stream)
+    await asyncio.wait_for(running.wait(), 1)
+    assert await tracker.stop_run("run", timeout=0.01) == "accepted"
+    assert cleaning.is_set()
+    assert await tracker.get_status("run") == "running"
+    # A concurrent stop must not interrupt generator cleanup a second time.
+    waiter = asyncio.create_task(tracker.stop_run("run"))
+    await asyncio.sleep(0)
+    release.set()
+    assert await waiter == "cancelled"
+    assert await _drain(queue, 2) == ["data: partial\n\n", None]
+
+
+@pytest.mark.asyncio
+async def test_stop_does_not_misreport_cancellation_when_stream_completes():
+    tracker = TaskTracker()
+    running = asyncio.Event()
+
+    async def stream(_payload):
+        try:
+            running.set()
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            yield "data: finished anyway\n\n"
+
+    queue, _ = await tracker.attach_or_start("run", None, stream)
+    await asyncio.wait_for(running.wait(), 1)
+    assert await tracker.stop_run("run") == "completed"
+    assert await _drain(queue, 2) == ["data: finished anyway\n\n", None]
+
+
+@pytest.mark.asyncio
+async def test_stop_before_first_event_terminates_subscribers():
+    tracker = TaskTracker()
+
+    async def stream(_payload):
+        pytest.fail("cancelled job reached execution")
+        yield "never"
+
+    queue, _ = await tracker.attach_or_start("early", None, stream)
+    assert await tracker.stop_run("early") == "cancelled"
+    assert await _drain(queue, 1) == [None]
+    assert "early" not in tracker._runs
+
+
+@pytest.mark.asyncio
+async def test_stop_never_treats_external_placeholder_as_cancel_handle():
+    tracker = TaskTracker()
+    await tracker.register_external_task("external")
+    assert await tracker.stop_run("external") == "not_running"
+    assert await tracker.get_status("external") == "running"
+    await tracker.unregister_external_task("external")

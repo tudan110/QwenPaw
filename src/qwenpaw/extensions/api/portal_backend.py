@@ -3940,10 +3940,10 @@ async def recover_chat_trace_reply(request: Request, chat_id: str):
     This is a display-only fallback for Portal when the stream completed but
     the upstream chat history did not persist its final assistant message.
     """
+    from .chat_isolation import chat_scope, require_owned_chat
+
     workspace = await get_agent_for_request(request)
-    chat_spec = await workspace.chat_manager.get_chat(chat_id)
-    if not chat_spec:
-        raise HTTPException(status_code=404, detail=f"Chat not found: {chat_id}")
+    chat_spec = await require_owned_chat(workspace.chat_manager, chat_id, chat_scope())
 
     session_id = str(chat_spec.session_id or "")
     if not session_id:

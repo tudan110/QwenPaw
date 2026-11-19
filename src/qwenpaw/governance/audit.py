@@ -5,8 +5,8 @@ Storage: single-file SQLite (~/.qwenpaw/audit.db), global singleton.
 - record() writes immediately, no in-memory buffer
 - query() supports filtering by workspace / agent / tool / decision /
   time range, with pagination
-- purge() deletes expired records and VACUUMs to reclaim space
-- Auto-cleanup: when total records reach 100k, deletes the oldest 10k
+- Retains local evidence without capacity-based deletion.
+- Never erases old records during initialization.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import json
 import logging
 import sqlite3
 import threading
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -104,14 +105,9 @@ class AuditLog:
         true non-blocking audit writes.
     """
 
-    MAX_RECORDS = 100_000  # Threshold to trigger auto-cleanup
-    PURGE_COUNT = 10_000  # Number of records to delete per cleanup
-    _CHECK_INTERVAL = 1_000
-
     _instance: Optional[AuditLog] = None
     _db_path: Path
     _conn: sqlite3.Connection
-    _insert_count: int
     _lock: threading.Lock
 
     @classmethod
@@ -147,42 +143,54 @@ class AuditLog:
         )
         obj._conn.row_factory = sqlite3.Row
         obj._conn.execute("PRAGMA journal_mode=WAL")
-        # Drop legacy schema where ``ts`` was TEXT (ISO 8601). Audit data
-        # written before the migration is discarded; this is acceptable
-        # while the feature is still pre-release.
-        cls._migrate_legacy_schema(obj._conn)
-        obj._conn.executescript(_SCHEMA)
-        obj._conn.commit()
-        obj._insert_count = 0
+        obj._conn.execute("PRAGMA synchronous=FULL")
+        try:
+            cls._migrate_legacy_schema(obj._conn)
+            obj._conn.executescript(_SCHEMA)
+            obj._conn.commit()
+        except Exception:
+            obj._conn.close()
+            raise
         obj._lock = threading.Lock()
         return obj
 
     @staticmethod
     def _migrate_legacy_schema(conn: sqlite3.Connection) -> None:
-        """Drop the table if its ``ts`` column was created as TEXT."""
-        cursor = conn.execute("PRAGMA table_info(audit_events)")
-        for row in cursor.fetchall():
-            # row: (cid, name, type, notnull, dflt_value, pk)
-            if row[1] == "ts" and row[2].upper() != "INTEGER":
-                conn.execute("DROP TABLE audit_events")
-                conn.commit()
-                break
+        """Normalize existing timestamps atomically, keeping the original rows."""
+        with conn:
+            conn.execute("BEGIN IMMEDIATE")
+            types = {row[1]: row[2].upper() for row in conn.execute(
+                "PRAGMA table_info(audit_events)"
+            )}
+            if not types or types.get("ts") == "INTEGER":
+                return
+            # The original table retains its timestamps byte for byte. Drop
+            # no data; a failed conversion rolls back the schema change too.
+            conn.execute("ALTER TABLE audit_events RENAME TO audit_events_legacy")
+            for name in ("ts", "workspace", "agent", "tool"):
+                conn.execute(f"DROP INDEX IF EXISTS idx_audit_{name}")
+            conn.execute(_SCHEMA.split(";", 1)[0])
+            fields = "ts, workspace_dir, agent_id, session_id, tool_name, target, decision, reason, extra"
+            for row in conn.execute(f"SELECT {fields} FROM audit_events_legacy"):
+                timestamp = str(row[0])
+                if timestamp.isdecimal():
+                    milliseconds = int(timestamp)
+                else:
+                    value = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                    milliseconds = int(value.replace(
+                        tzinfo=value.tzinfo or timezone.utc,
+                    ).timestamp() * 1000)
+                conn.execute(
+                    f"INSERT INTO audit_events ({fields}) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (milliseconds, *tuple(row)[1:]),
+                )
 
     def close(self) -> None:
-        """Close the database connection and reset the singleton.
-
-        Runs VACUUM before closing to reclaim space from any prior
-        auto-purge DELETE operations (VACUUM is intentionally NOT run
-        inside ``_auto_purge`` to avoid blocking the event loop).
-        """
-        if self._conn:
-            try:
-                self._conn.execute("VACUUM")
-            except sqlite3.Error:
-                pass
+        """Close the database connection and reset the singleton."""
+        with self._lock:
             self._conn.close()
-            self._conn = None
-        AuditLog._instance = None
+            if AuditLog._instance is self:
+                AuditLog._instance = None
 
     def record(
         self,
@@ -190,62 +198,58 @@ class AuditLog:
         tc_spec: ToolCallSpec,
         decision: GovernanceDecision,
     ) -> None:
-        """Record a policy decision, writing to SQLite immediately.
+        """Record a policy decision as a separate event from execution."""
+        try:
+            self._append(AuditEvent(
+                ts=_now_unix_ms(), workspace_dir=workspace_dir,
+                agent_id=tc_spec.agent_id, session_id=tc_spec.session_id,
+                tool_name=tc_spec.tool_name, target=tc_spec.target,
+                decision=decision.action.value, reason=decision.reason,
+                extra=self._identity_fields(),
+            ))
+        except sqlite3.Error:
+            _logger.error("Cannot persist governance decision", exc_info=True)
 
-        Args:
-            workspace_dir: Workspace path this event belongs to
-            tc_spec: ToolCallSpec instance
-            decision: GovernanceDecision instance (action + reason)
-        Errors are caught and logged: an audit-write failure must NOT
-        propagate into ``assert_policy`` and disrupt the policy
-        decision returned to the caller.
-
-        TODO: honor ``GovernancePolicy.audit_level`` here.  The field
-        is currently declared (``"all"`` / ``"none"`` / ...) and
-        persisted in policy.yaml but ignored — every decision is
-        always written.  Once the level enum is finalised, gate the
-        INSERT on it (e.g. skip ALLOW events when level == "deny_only").
-        """
+    @staticmethod
+    def _identity_fields() -> dict:
         from ..extensions.api.access_session import CURRENT_IDENTITY
+
         identity = CURRENT_IDENTITY.get()
-        extra = (
+        return (
             {"auth_user_id": identity.user_id, "auth_source": identity.source}
             if identity is not None else {}
         )
-        try:
-            with self._lock:
-                self._conn.execute(
-                    "INSERT INTO audit_events "
-                    "(ts, workspace_dir, agent_id, session_id, "
-                    "tool_name, target, decision, reason, extra) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        _now_unix_ms(),
-                        workspace_dir,
-                        tc_spec.agent_id,
-                        tc_spec.session_id,
-                        tc_spec.tool_name,
-                        tc_spec.target,
-                        str(decision.action.value),
-                        decision.reason,
-                        json.dumps(extra),
-                    ),
-                )
-                self._conn.commit()
 
-                # Auto-cleanup check
-                self._insert_count += 1
-                if self._insert_count >= self._CHECK_INTERVAL:
-                    self._insert_count = 0
-                    if self.count >= self.MAX_RECORDS:
-                        self._auto_purge()
-        except sqlite3.Error as e:
-            _logger.error(
-                "AuditLog.record: SQLite error (tool=%s, target=%r): %s",
-                tc_spec.tool_name,
-                (tc_spec.target or "")[:120],
-                e,
-                exc_info=True,
+    def record_execution(
+        self, workspace_dir: str, *, agent_id: str, session_id: str,
+        tool_name: str, event_id: str, result: str,
+    ) -> None:
+        """Store observed execution status without saving tool inputs or output."""
+        if result not in {
+            "started", "success", "error", "denied", "cancelled", "returned",
+            "unconfirmed",
+        }:
+            raise ValueError("Unknown execution result")
+        self._append(AuditEvent(
+            ts=_now_unix_ms(), workspace_dir=workspace_dir,
+            agent_id=agent_id, session_id=session_id, tool_name=tool_name,
+            target=tool_name, decision="", extra={
+                **self._identity_fields(),
+                "kind": "tool_execution", "result": result, "call_id": event_id,
+            },
+        ))
+
+    def _append(self, event: AuditEvent) -> None:
+        extra = {"event_id": uuid.uuid4().hex, **event.extra}
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO audit_events "
+                "(ts, workspace_dir, agent_id, session_id, "
+                "tool_name, target, decision, reason, extra) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (event.ts, event.workspace_dir, event.agent_id, event.session_id,
+                 event.tool_name, event.target, event.decision, event.reason,
+                 json.dumps(extra)),
             )
 
     def query(
@@ -324,63 +328,11 @@ class AuditLog:
             return [], 0
 
     def purge(self, before: int) -> int:
-        """Delete records before the specified time and VACUUM to
-        reclaim space.
-
-        Args:
-            before: Cutoff time (unix ms, UTC), exclusive
-
-        Returns:
-            Number of deleted records, or ``0`` on SQLite error.
-        """
-        try:
-            cursor = self._conn.execute(
-                "DELETE FROM audit_events WHERE ts < ?",
-                (before,),
-            )
-            self._conn.commit()
-            deleted = cursor.rowcount
-            if deleted > 0:
-                self._conn.execute("VACUUM")
-            return deleted
-        except sqlite3.Error as e:
-            _logger.error(
-                "AuditLog.purge: SQLite error: %s",
-                e,
-                exc_info=True,
-            )
-            return 0
+        """Retain the only audit copy until independent archival is verified."""
+        return 0
 
     @property
     def count(self) -> int:
         """Total number of records."""
-        return self._conn.execute(
-            "SELECT COUNT(*) FROM audit_events",
-        ).fetchone()[0]
-
-    def _auto_purge(self) -> None:
-        """Delete the oldest PURGE_COUNT records (caller holds ``_lock``).
-
-        VACUUM is intentionally deferred to ``close()`` to avoid blocking
-        the event loop for seconds on a large database.
-        """
-        # ``OFFSET PURGE_COUNT - 1`` returns the rowid of the PURGE_COUNT-th
-        # oldest row; ``DELETE ... WHERE rowid <= ?`` then removes exactly
-        # PURGE_COUNT rows. Using ``OFFSET PURGE_COUNT`` would have left an
-        # off-by-one bug (deleting PURGE_COUNT + 1 rows).
-        row = self._conn.execute(
-            "SELECT rowid FROM audit_events "
-            "ORDER BY rowid ASC LIMIT 1 OFFSET ?",
-            (self.PURGE_COUNT - 1,),
-        ).fetchone()
-        if row:
-            self._conn.execute(
-                "DELETE FROM audit_events WHERE rowid <= ?",
-                (row["rowid"],),
-            )
-            self._conn.commit()
-            _logger.info(
-                "AuditLog: auto-purged %d oldest records "
-                "(VACUUM deferred to close).",
-                self.PURGE_COUNT,
-            )
+        with self._lock:
+            return self._conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0]

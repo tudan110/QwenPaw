@@ -387,7 +387,7 @@ async def _policy_tool_call(
     from agentscope.tool import FunctionTool
     from agentscope.message import ToolResultState
 
-    result = await FunctionTool.__call__(self, *args, **kwargs)
+    result = await _execute_audited(self, FunctionTool.__call__, *args, **kwargs)
 
     # Check if sandbox violation was returned (state=DENIED)
     if not (
@@ -488,7 +488,7 @@ async def _policy_tool_call(
         )
         kwargs.pop("sandbox_config", None)
         self._qp_sandbox_mode = False
-        return await FunctionTool.__call__(self, *args, **kwargs)
+        return await _execute_audited(self, FunctionTool.__call__, *args, **kwargs)
     else:
         # User denied: return the violation as DENIED
         return ToolChunk(
@@ -503,6 +503,31 @@ async def _policy_tool_call(
                 ),
             ],
         )
+
+
+async def _execute_audited(self: Any, execute: Any, *args: Any, **kwargs: Any) -> Any:
+    """Record the observed outcome of the governed call, including streams."""
+    from agentscope.tool import ToolChunk
+
+    from .execution_audit import audit_call
+
+    governor = getattr(self, "_qp_governor", None)
+    if governor is None:
+        return await execute(self, *args, **kwargs)
+    ctx = getattr(self, "_qp_request_context", None) or {}
+    return await audit_call(
+        lambda: execute(self, *args, **kwargs),
+        lambda call_id, result: governor.audit_log.record_execution(
+            str(governor.workspace_dir),
+            agent_id=str(ctx.get("agent_id") or ""),
+            session_id=str(ctx.get("session_id") or ""),
+            tool_name=str(self.name), event_id=call_id, result=result,
+        ),
+        lambda chunk: (
+            getattr(chunk.state, "value", None)
+            if isinstance(chunk, ToolChunk) and chunk.is_last else None
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

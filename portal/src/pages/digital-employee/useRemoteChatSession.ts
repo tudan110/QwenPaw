@@ -814,7 +814,7 @@ export function useRemoteChatSession({
     clearRemoteWaitNoticeTimers();
     clearRemoteWaitNotice();
     if (!silent && hadActiveStream) {
-      finalizePendingResponse("本轮对话已停止。");
+      finalizePendingResponse("已停止接收本轮回复。");
     }
     activeAssistantMessageIdRef.current = null;
     streamProcessBlocksRef.current = new Map();
@@ -831,11 +831,11 @@ export function useRemoteChatSession({
     const at = Date.now();
     const revision = ++stopRevision.current;
     setStopFeedback(undefined);
-    await stopMainChatApprovalTask(agentId, chatId, signal);
+    const result = await stopMainChatApprovalTask(agentId, chatId, signal);
     if (remoteAgentIdRef.current === agentId && currentChatIdRef.current === chatId) {
       stopActiveStream(false);
       if (!signal.aborted && stopRevision.current === revision) {
-        setStopFeedback({ agentId, chatId, at, status: "accepted" });
+        setStopFeedback({ agentId, chatId, at, status: stopResult(result) });
       }
     }
   }, [stopActiveStream]);

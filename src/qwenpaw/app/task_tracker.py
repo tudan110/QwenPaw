@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import weakref
+from contextlib import aclosing
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Callable, Coroutine, Optional
@@ -32,6 +33,8 @@ class _RunState:
     buffer: list[str] = field(default_factory=list)
     start_time: Optional[datetime] = None
     finish_time: Optional[datetime] = None
+    stop_requested: bool = False
+    outcome: str = "completed"
 
 
 class TaskTracker:
@@ -220,30 +223,33 @@ class TaskTracker:
             except ValueError:
                 pass
 
-    async def request_stop(self, run_key: str) -> bool:
-        """Cancel the run. Returns ``True`` if it was running."""
-        logger.debug("[STOP] request_stop called for run_key=%s", run_key)
+    async def _request_cancellation(self, run_key: str) -> _RunState | None:
         async with self._lock:
             state = self._runs.get(run_key)
-            logger.debug(
-                "[STOP] run_key=%s state=%s done=%s",
-                run_key,
-                "found" if state else "not_found",
-                state.task.done() if state else "N/A",
-            )
             if state is None or state.task.done():
-                logger.debug(
-                    "[STOP] Cannot stop run_key=%s (not running)",
-                    run_key,
-                )
-                return False
-            logger.debug(
-                "[STOP] Calling task.cancel() for run_key=%s",
-                run_key,
-            )
-            state.task.cancel()
-            logger.debug("[STOP] task.cancel() called for run_key=%s", run_key)
-            return True
+                return None
+            # An external placeholder isn't a handle to the actual job.
+            if not isinstance(state.task, asyncio.Task):
+                return None
+            if not state.stop_requested:
+                state.stop_requested = state.task.cancel()
+            return state if state.stop_requested else None
+
+    async def request_stop(self, run_key: str) -> bool:
+        """Preserve the legacy acknowledgement of local cancellation requests."""
+        return await self._request_cancellation(run_key) is not None
+
+    async def stop_run(self, run_key: str, timeout: float = 1.0) -> str:
+        """Observe the exact local run, bounded by the control response budget."""
+        state = await self._request_cancellation(run_key)
+        if state is None:
+            return "not_running"
+        _, pending = await asyncio.wait({state.task}, timeout=timeout)
+        if pending:
+            return "accepted"
+        if state.task.cancelled():
+            return "cancelled"
+        return state.outcome
 
     async def attach_or_start(
         self,
@@ -285,17 +291,20 @@ class TaskTracker:
                             # pylint: disable=protected-access
                             tracker._global_last_run_at = start_time
 
-                    async for sse in stream_fn(payload):
-                        tracker = tracker_ref()
-                        if tracker is None:
-                            return
-                        async with tracker.lock:
-                            run.buffer.append(sse)
-                            for q in run.queues:
-                                q.put_nowait(sse)
+                    async with aclosing(stream_fn(payload)) as stream:
+                        async for sse in stream:
+                            tracker = tracker_ref()
+                            if tracker is None:
+                                return
+                            async with tracker.lock:
+                                run.buffer.append(sse)
+                                for q in run.queues:
+                                    q.put_nowait(sse)
                 except asyncio.CancelledError:
+                    run.outcome = "cancelled"
                     logger.debug("run cancelled run_key=%s", run_key)
                 except Exception:
+                    run.outcome = "failed"
                     logger.exception("run error run_key=%s", run_key)
                     err_sse = (
                         "data: "
@@ -318,12 +327,30 @@ class TaskTracker:
                             for q in run.queues:
                                 q.put_nowait(_SENTINEL)
                             # pylint: disable=protected-access
-                            tracker._runs.pop(
-                                run_key,
-                                None,
-                            )
+                            if tracker._runs.get(run_key) is run:
+                                tracker._runs.pop(run_key, None)
 
             run.task = asyncio.create_task(_producer())
+
+            def finish_unstarted(task: asyncio.Task) -> None:
+                # If cancelled before the first step, _producer never gets a
+                # chance to close the queue. Don't touch a later run's state.
+                tracker = tracker_ref()
+                if tracker is None or not task.cancelled() or run.finish_time:
+                    return
+
+                async def cleanup() -> None:
+                    async with tracker.lock:
+                        run.finish_time = datetime.now(timezone.utc)
+                        tracker._global_last_finish_at = run.finish_time
+                        for queue in run.queues:
+                            queue.put_nowait(_SENTINEL)
+                        if tracker._runs.get(run_key) is run:
+                            tracker._runs.pop(run_key, None)
+
+                asyncio.create_task(cleanup())
+
+            run.task.add_done_callback(finish_unstarted)
             return my_queue, True
 
     async def stream_from_queue(

@@ -779,3 +779,6 @@ class HttpStatefulClient(_MCPClientMixin):
             != (destination.port or (443 if destination.scheme == "https" else 80))
         ):
             raise PermissionError("MCP 传输不能向其他来源转发凭据")
+        from ...extensions.security.mcp_boundary import validate_remote_request
+
+        validate_remote_request(self.transport, str(request.url))

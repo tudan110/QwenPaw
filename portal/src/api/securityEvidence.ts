@@ -10,7 +10,12 @@ export interface ProtectionEvidence {
     lexicon: string;
     patterns: { id: string; enabled: boolean }[];
   };
-  mcp_boundary: { production_guards: boolean; declared_host_count: number };
+  mcp_boundary: {
+    production_guards: boolean;
+    declared_host_count: number;
+    endpoint_policy?: "exact" | "invalid";
+    declared_endpoint_count?: number;
+  };
 }
 export interface RedactionCheck {
   checked_at: string;
@@ -32,6 +37,9 @@ export interface AuditRecord {
   target: string;
   decision: string;
   reason: string;
+  subject?: string;
+  execution_result?: string;
+  call_id?: string;
 }
 export interface AuditPage {
   records: AuditRecord[];

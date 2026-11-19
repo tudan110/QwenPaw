@@ -9,6 +9,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from agentscope.message import Msg
 from agentscope.state import AgentState
 
+from ...extensions.api.chat_isolation import (
+    chat_scope,
+    reject_reserved_legacy_namespace,
+    require_owned_chat,
+)
 from .session import SafeJSONSession
 from .manager import ChatManager
 from .models import (
@@ -81,10 +86,21 @@ async def list_chats(
         channel: Optional channel name to filter chats
         mgr: Chat manager dependency
     """
-    chats = await mgr.list_chats(user_id=user_id, channel=channel)
+    scope = chat_scope()
+    chats = await mgr.list_chats(
+        user_id=scope.owner if scope is not None else user_id,
+        channel=channel,
+    )
     tracker = workspace.task_tracker
     result = []
     for spec in chats:
+        if scope is not None and not scope.owns(spec):
+            continue
+        if scope is None:
+            try:
+                reject_reserved_legacy_namespace(spec.user_id, spec.session_id)
+            except HTTPException:
+                continue
         status = await tracker.get_status(spec.id)
         result.append(spec.model_copy(update={"status": status}))
     return result
@@ -106,12 +122,17 @@ async def create_chat(
     Returns:
         Created chat spec with UUID
     """
+    scope = chat_scope()
+    if scope is None:
+        reject_reserved_legacy_namespace(request.user_id, request.session_id)
+    elif request.channel != "console":
+        raise HTTPException(422, "该入口仅支持 Portal 会话")
     chat_id = str(uuid4())
     spec = ChatSpec(
         id=chat_id,
         name=request.name,
-        session_id=request.session_id,
-        user_id=request.user_id,
+        session_id=scope.session_id(request.session_id) if scope else request.session_id,
+        user_id=scope.owner if scope else request.user_id,
         channel=request.channel,
         meta=request.meta,
     )
@@ -132,6 +153,14 @@ async def batch_delete_chats(
         True if deleted, False if failed
 
     """
+    scope = chat_scope()
+    for chat_id in set(chat_ids):
+        if scope is not None:
+            await require_owned_chat(mgr, chat_id, scope)
+        else:
+            existing = await mgr.get_chat(chat_id)
+            if existing:
+                reject_reserved_legacy_namespace(existing.user_id, existing.session_id)
     deleted = await mgr.delete_chats(chat_ids=chat_ids)
     return {"deleted": deleted}
 
@@ -157,12 +186,7 @@ async def get_chat(
     Raises:
         HTTPException: If chat not found (404)
     """
-    chat_spec = await mgr.get_chat(chat_id)
-    if not chat_spec:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Chat not found: {chat_id}",
-        )
+    chat_spec = await require_owned_chat(mgr, chat_id, chat_scope())
 
     state = await session.get_session_state_dict(
         chat_spec.session_id,
@@ -216,6 +240,7 @@ async def update_chat(
     Raises:
         HTTPException: If chat not found (404)
     """
+    await require_owned_chat(mgr, chat_id, chat_scope())
     updated = await mgr.patch_chat(chat_id, spec)
     if updated is None:
         raise HTTPException(
@@ -245,6 +270,7 @@ async def delete_chat(
     Raises:
         HTTPException: If chat not found (404)
     """
+    await require_owned_chat(mgr, chat_id, chat_scope())
     deleted = await mgr.delete_chats(chat_ids=[chat_id])
     if not deleted:
         raise HTTPException(

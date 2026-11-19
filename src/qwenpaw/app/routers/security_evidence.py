@@ -6,6 +6,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 import re
+import json
 import logging
 import sqlite3
 from typing import Literal
@@ -92,7 +93,10 @@ def read_audit_page(db_path: Path, **filters) -> dict:
     base = {"records": [], "total": 0, "source": "governance/audit.db"}
     if not db_path.is_file():
         return {**base, "storage_status": "not_created"}
-    clauses = []
+    execution = filters.get("kind") == "tool_execution"
+    # Empty decision is reserved for observed runtime events. Policy
+    # decisions (including ALLOW) never stand in for a tool outcome.
+    clauses = ["decision = ''" if execution else "decision <> ''"]
     params = []
     for key in ("agent_id", "tool_name", "decision"):
         if filters.get(key):
@@ -114,7 +118,7 @@ def read_audit_page(db_path: Path, **filters) -> dict:
             conn.execute("PRAGMA query_only=ON")
             schema = conn.execute("PRAGMA table_info(audit_events)")
             types = {row["name"]: row["type"].upper() for row in schema}
-            if types.get("ts") != "INTEGER":
+            if types.get("ts") != "INTEGER" or "extra" not in types:
                 return {**base, "storage_status": "unsupported_schema"}
             conn.execute("BEGIN")
             total = conn.execute(
@@ -123,7 +127,7 @@ def read_audit_page(db_path: Path, **filters) -> dict:
             ).fetchone()[0]
             rows = conn.execute(
                 "SELECT rowid, ts, agent_id, session_id, tool_name, target, "
-                "decision, reason FROM audit_events"
+                "decision, reason, extra FROM audit_events"
                 + where
                 + " ORDER BY ts DESC, rowid DESC LIMIT ? OFFSET ?",
                 [*params, filters["limit"], filters["offset"]],
@@ -133,6 +137,7 @@ def read_audit_page(db_path: Path, **filters) -> dict:
                 record = {
                     key: safe_text(value) if isinstance(value, str) else value
                     for key, value in dict(row).items()
+                    if key != "extra"
                 }
                 # Shell/code targets may contain positional credentials.
                 record["target"] = (
@@ -144,6 +149,27 @@ def read_audit_page(db_path: Path, **filters) -> dict:
                     else safe_text(row["target"])
                 )
                 record["reason"] = safe_text(row["reason"])
+                try:
+                    extra = json.loads(row["extra"])
+                except (ValueError, TypeError):
+                    extra = {}
+                if not isinstance(extra, dict):
+                    extra = {}
+                subject = extra.get("auth_user_id")
+                record["subject"] = safe_text(subject) if isinstance(subject, str) else ""
+                if execution:
+                    result = extra.get("result")
+                    record["execution_result"] = (
+                        result if isinstance(result, str) and result in {
+                            "started", "success", "error", "denied", "cancelled",
+                            "unconfirmed", "returned",
+                        } else "unconfirmed"
+                    )
+                    call_id = extra.get("call_id")
+                    record["call_id"] = (
+                        call_id if isinstance(call_id, str)
+                        and re.fullmatch(r"[0-9a-f]{32}", call_id) else ""
+                    )
                 records.append(record)
             return {
                 **base,
@@ -162,6 +188,7 @@ def read_audit_page(db_path: Path, **filters) -> dict:
 @router.get("/audit")
 def get_audit(
     agent_id: str | None = Query(None, max_length=200),
+    kind: Literal["policy_decision", "tool_execution"] = "policy_decision",
     tool_name: str | None = Query(None, max_length=200),
     decision: Literal["allow", "deny", "ask", "sandbox_fallback"]
     | None = None,
@@ -175,6 +202,7 @@ def get_audit(
     return {
         **read_audit_page(
             WORKING_DIR / "governance" / "audit.db",
+            kind=kind,
             agent_id=agent_id,
             tool_name=tool_name,
             decision=decision,
@@ -184,8 +212,9 @@ def get_audit(
             offset=offset,
         ),
         "queried_at": datetime.now(timezone.utc).isoformat(),
-        "record_kind": "policy_decision",
-        "execution_result": "not_recorded",
+        "record_kind": kind,
+        "execution_result": "per_record" if kind == "tool_execution" else "not_recorded",
+        "retention": "local_no_automatic_purge",
     }
 
 
@@ -196,6 +225,17 @@ def get_protection() -> dict:
     from ...constant import EnvVarLoader
 
     settings = load_config()
+    from ...extensions.security.mcp_boundary import declared_endpoints
+
+    try:
+        endpoints = declared_endpoints()
+    except PermissionError:
+        endpoint_info = {"endpoint_policy": "invalid"}
+    else:
+        endpoint_info = (
+            {"endpoint_policy": "exact", "declared_endpoint_count": len(endpoints)}
+            if endpoints is not None else {}
+        )
     return {
         "queried_at": datetime.now(timezone.utc).isoformat(),
         "output_guard": {
@@ -213,6 +253,7 @@ def get_protection() -> dict:
             ],
         },
         "mcp_boundary": {
+            **endpoint_info,
             "production_guards": EnvVarLoader.get_str(
                 "QWENPAW_PRODUCTION_GUARDS",
                 "true",

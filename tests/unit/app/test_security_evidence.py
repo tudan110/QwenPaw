@@ -264,3 +264,23 @@ def test_config_snapshot_has_no_lexicon_path_or_values(client, monkeypatch):
 )
 def test_free_text_redaction(value, secret):
     assert secret not in evidence.safe_text(value)
+
+
+def test_execution_view_contains_only_observed_status(client, database):
+    with sqlite3.connect(database) as conn:
+        conn.execute(
+            "INSERT INTO audit_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (3000, "private/workspace", "agent-a", "session-a", "read_file",
+             "read_file", "", "",
+             '{"auth_user_id":"u1","kind":"tool_execution","result":"error",'
+             '"call_id":"0123456789abcdef0123456789abcdef","token":"secret-value"}'),
+        )
+    result = client.get(BASE + "/audit", params={"kind": "tool_execution"}, headers=ADMIN)
+    assert result.status_code == 200
+    assert "secret-value" not in result.text
+    data = result.json()
+    assert data["total"] == 1 and data["record_kind"] == "tool_execution"
+    assert data["records"][0]["execution_result"] == "error"
+    assert data["records"][0]["subject"] == "u1"
+    assert data["records"][0]["call_id"] == "0123456789abcdef0123456789abcdef"
+    assert client.get(BASE + "/audit", headers=ADMIN).json()["total"] == 2
