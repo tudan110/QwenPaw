@@ -74,11 +74,11 @@ class TestRecordAndSummarize:
         assert summary["total"] == 0
         assert summary["successRate"] == 0.0
 
-    def test_record_never_raises(self) -> None:
+    def test_record_never_raises(self, tmp_path: Path) -> None:
         # unwritable path → swallowed, generation must not break
         telemetry.record_generation(
             _event(),
-            path=Path("Z:/no/such/dir/x.sqlite3"),
+            path=tmp_path / "missing" / "x.sqlite3",
         )
 
 
