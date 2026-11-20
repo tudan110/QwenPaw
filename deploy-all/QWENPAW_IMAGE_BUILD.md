@@ -94,6 +94,44 @@ cd deploy-all/qwenpaw && ./build-arm64.sh
 
 同一版本的 amd64 与 arm64 镜像必须使用相同镜像 tag；导出的 tar 文件名可用架构区分。
 
+## 镜像压缩包归档
+
+构建并交付的镜像压缩包统一保存在仓库根目录的 `deploy-all/images/`。
+使用固定文件名；新版本通过临时文件校验后原子替换旧包：
+
+```text
+deploy-all/images/digital-workforce-portal-amd64.tar.gz
+deploy-all/images/digital-workforce-portal-arm64.tar.gz
+deploy-all/images/qwenpaw-amd64.tar.gz
+deploy-all/images/qwenpaw-arm64.tar.gz
+```
+
+前后端构建脚本复用各自的固定 Docker tag。若要生成两个架构，必须串行构建并在每次构建后立即导出，不能并行构建不同架构：
+
+```bash
+set -euo pipefail
+mkdir -p deploy-all/images
+
+package_image() {
+  local image="$1"
+  local output="$2"
+  docker save "$image" | gzip > "$output.partial"
+  gzip -t "$output.partial"
+  mv -f "$output.partial" "$output"
+}
+
+for arch in arm64 amd64; do
+  (cd deploy-all/qwenpaw && "./build-$arch.sh")
+  package_image qwenpaw:latest "deploy-all/images/qwenpaw-$arch.tar.gz"
+
+  (cd deploy-all/portal && "./build-$arch.sh")
+  package_image digital-workforce-portal:0.1.0 \
+    "deploy-all/images/digital-workforce-portal-$arch.tar.gz"
+done
+```
+
+打包后按目标服务器架构交付对应文件。`deploy-all/images/` 中是可再生成的交付制品，不应提交到 Git；新包校验成功后覆盖旧包即可。
+
 ## 受管技能完整性与旧 PVC 代码隔离
 
 同步结果现在单独提供 `integrity.execution_ready` 和各技能的 `blockers`。
