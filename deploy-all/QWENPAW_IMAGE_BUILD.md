@@ -225,8 +225,9 @@ JSON 到 Git，也不要按 `tmp*` 通配删除文件或关闭生产守护。
    `config.json` 放在根目录，先迁移布局。通过受控的离线存储管理操作，
    将这三个目录及内容的所有者改为 `10001:10001`，secret 目录权限 `0700`、
    `.master_key` 为 `0600`，working/backups 为 `0750`。不改变共享卷的其他数据。
-3. 目标环境显式创建 `qwenpaw-runtime-secrets`（或用 `envFrom` 指定自己的
-   Secret）。默认 `optional: false`，不存在则 Pod 不启动；凭据不要放进
+3. 目标环境按需创建 `qwenpaw-runtime-secrets`（或用 `envFrom` 指定自己的
+   Secret）。默认 `optional: true`，不存在仍允许启动，但不会自动生成凭据；
+   如需强制检查 Secret 是否存在，可设为 `optional: false`。凭据不要放进
    Git、values 或镜像。已有 Provider 配置单独安全恢复到 `secret/`，或由
    授权操作员在启动后重新配置；不能从旧镜像自动复制。
    管理员 ID 列表通过目标 values 的 `env.QWENPAW_ADMIN_INOE_USER_IDS`

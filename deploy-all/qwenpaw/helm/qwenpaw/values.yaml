@@ -71,12 +71,12 @@ env:
   # 凭据由目标环境的 Secret/设置页注入，不将 token 提交到交付 Chart。
   INOE_API_TIMEOUT: "60"
 
-# 目标环境必须显式创建此 Secret。仅离线基础检索场景可显式 envFrom: []；
-# 该选择不授予管理/高危权限，也不会生成 INOE 或模型凭据。
+# 此 Secret 可由目标环境创建；不存在时仍允许启动，但不会生成 INOE 或模型凭据。
+# 可按需设为 optional: false 强制检查 Secret 是否存在。
 envFrom:
   - secretRef:
       name: qwenpaw-runtime-secrets
-      optional: false
+      optional: true
 
 # 资源限制
 resources:
