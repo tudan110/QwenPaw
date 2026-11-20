@@ -107,7 +107,14 @@ async def lookup_portal_cmdb_asset(name: str) -> ToolChunk:
         else:
             data = {}
         if str(status) == "401":
-            return _response("authentication_required", "智观 CMDB 未接受当前用户凭据，请重新登录。")
+            # CMDB can reject a token that is still accepted by INOE userinfo.
+            # Treat this as a CMDB refusal, not a failed Portal login or a
+            # confirmed data-scope denial.
+            return _response(
+                "upstream_auth_rejected",
+                "智观 CMDB 拒绝了当前账号的查询请求（401）。"
+                "若仍能正常登录智观，请联系管理员核对该账号的 CMDB 访问权限。",
+            )
         if str(status) == "403":
             return _response("access_denied", "智观 CMDB 拒绝了当前登录用户的查询请求。")
         response.raise_for_status()

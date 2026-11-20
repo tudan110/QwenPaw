@@ -78,8 +78,8 @@ async def test_refuses_shared_credentials_and_query_operators(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status, code, expected", [
-    (401, None, "authentication_required"), (403, None, "access_denied"),
-    (200, 401, "authentication_required"), (200, 403, "access_denied"),
+    (401, None, "upstream_auth_rejected"), (403, None, "access_denied"),
+    (200, 401, "upstream_auth_rejected"), (200, 403, "access_denied"),
     (200, 500, "query_failed"), (302, None, "query_failed"),
     (500, None, "query_failed"),
 ])
@@ -99,7 +99,12 @@ async def test_failure_is_not_reported_as_empty_result(monkeypatch, status, code
     ))
     reset = CURRENT_IDENTITY.set(AccessIdentity({"userId": 2}, "test-token"))
     try:
-        assert result(await lookup.lookup_portal_cmdb_asset("device"))["status"] == expected
+        failure = result(await lookup.lookup_portal_cmdb_asset("device"))
+        assert failure["status"] == expected
+        assert "assets" not in failure
+        if expected == "upstream_auth_rejected":
+            assert "CMDB" in failure["message"]
+            assert "请重新登录" not in failure["message"]
         assert hits == ["inoe.example"]
     finally:
         CURRENT_IDENTITY.reset(reset)
