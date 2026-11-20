@@ -309,17 +309,6 @@ export function createKnowledgeManualEntry(payload: {
   );
 }
 
-export function archiveKnowledgeSources(sourceRecordIds: number[], reason = "portal archive") {
-  return requestPortalApi<Record<string, unknown>>(
-    "/knowledge-base/sources/archive",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source_record_ids: sourceRecordIds, reason }),
-    },
-  );
-}
-
 export function updateKnowledgeSource(payload: {
   sourceRecordId: number;
   displayTitle?: string;
@@ -354,16 +343,33 @@ export function unarchiveKnowledgeSources(sourceRecordIds: number[]) {
   );
 }
 
-export function deleteKnowledgeSources(sourceRecordIds: number[], reason = "portal delete") {
-  return requestPortalApi<Record<string, unknown>>(
-    "/knowledge-base/sources/delete",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source_record_ids: sourceRecordIds, reason }),
-    },
-  );
+export type KnowledgeSourceOperation = "archive" | "delete";
+export type KnowledgeDeletePreview = {
+  confirmation_token: string; source_id: number; title: string; unit_count: number;
+  expires_at: number; risk: string; impact: string; operation: KnowledgeSourceOperation;
+};
+export type KnowledgeDeleteAudit = {
+  id: number; updated: string; subject: string; process: string; pid: number;
+  source_id: number; title: string; unit_count: number; status: string; operation: KnowledgeSourceOperation;
+  expected_files: number | null; removed_files: number | null;
+};
+
+function requestKnowledgeDelete<T>(operation: KnowledgeSourceOperation, path: string, data: object) {
+  return requestPortalApi<T>(`/knowledge-base/sources/${operation}${path}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
+  });
 }
+
+export const prepareKnowledgeDelete = (source_id: number, operation: KnowledgeSourceOperation) =>
+  requestKnowledgeDelete<KnowledgeDeletePreview>(operation, "/prepare", { source_id });
+
+export const decideKnowledgeDelete = (preview: KnowledgeDeletePreview, phrase?: string) =>
+  requestKnowledgeDelete<{ status: string }>(preview.operation, phrase === undefined ? "/cancel" : "", {
+    source_id: preview.source_id, confirmation_token: preview.confirmation_token, phrase,
+  });
+
+export const getKnowledgeDeleteAudit = () =>
+  requestPortalApi<{ items: KnowledgeDeleteAudit[] }>("/knowledge-base/sources/operations/audit");
 
 export function toggleKnowledgeEmbedding(enabled: boolean) {
   return requestPortalApi<KnowledgeBaseHealth["embedding"] & { changed?: boolean; reject_reason?: string | null }>(

@@ -141,6 +141,29 @@ def read_document(identifier: str, actor: Actor) -> dict:
         return {**store.document_summary(doc, actor), "content": preview, "masked": preview != doc["content"]}
 
 
+class PublishInput(BaseModel):
+    reviewed_for_sharing: Literal[True]
+
+
+@router.post("/admin/documents/{identifier}/publish")
+@with_errors
+def publish_to_knowledge_base(identifier: str, body: PublishInput, actor: Admin) -> dict:
+    from ...extensions.integrations import knowledge_base
+
+    with store.transaction(actor, "document.publish_knowledge", identifier) as db:
+        store.assert_open(db, actor)
+        doc = store.owned_document(db, actor, identifier)
+        try:
+            result = knowledge_base.manual_entry(
+                {"title": doc["title"], "content": store.mask(doc["content"]), "tags": ["受控资料发布"]},
+                controlled_document_id=identifier,
+            )
+        except ValueError as exc:
+            raise store.Rejected(409, str(exc)) from exc
+        store.event(db, actor, "document.publish_knowledge", identifier, "success", f"知识库资料 #{result['id']}")
+        return {"source_id": result["id"], "already_published": bool(result.get("already_published"))}
+
+
 @router.post("/operations", status_code=201)
 @with_errors
 def request_operation(body: OperationInput, actor: Actor) -> dict:

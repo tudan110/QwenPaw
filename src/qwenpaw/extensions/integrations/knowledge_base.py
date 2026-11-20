@@ -447,7 +447,9 @@ def source_detail(
 # ---------- /manual-entry ----------
 
 
-def manual_entry(payload: dict[str, Any] | None) -> dict[str, Any]:
+def manual_entry(
+    payload: dict[str, Any] | None, *, controlled_document_id: str | None = None,
+) -> dict[str, Any]:
     _ensure_engine()
     body = payload or {}
     title = str(body.get("title") or "").strip()
@@ -469,6 +471,21 @@ def manual_entry(payload: dict[str, Any] | None) -> dict[str, Any]:
         "scope_label": "运行时沉淀",
         "display_title": title,
     }
+    if controlled_document_id is not None:
+        from core import db as _db
+
+        with _db.connect() as conn:
+            prior = conn.execute(
+                """SELECT id, archived_at FROM document WHERE
+                   json_extract(CASE WHEN json_valid(meta_json) THEN meta_json END,
+                                '$.controlled_document_id') = ? LIMIT 1""",
+                (controlled_document_id,),
+            ).fetchone()
+        if prior:
+            if prior["archived_at"]:
+                raise ValueError("知识库中的对应资料已归档，请从知识库恢复")
+            return {"id": prior["id"], "already_published": True}
+        meta["controlled_document_id"] = controlled_document_id
     src_query = str(
         body.get("source_query") or body.get("sourceQuery") or ""
     ).strip()
@@ -574,23 +591,8 @@ def _archive_helper(ids, reason, *, archived: bool) -> dict[str, Any]:
     from core import db as _db
 
     if archived:
-        now = _now_iso()
         with _db.connect() as conn:
-            conn.execute(
-                f"""UPDATE document SET archived_at=?, archive_reason=?
-                   WHERE id IN ({placeholders}) AND archived_at IS NULL""",
-                [now, reason, *int_ids],
-            )
-            conn.execute(
-                f"""UPDATE parent_chunk SET archived_at=?
-                   WHERE document_id IN ({placeholders}) AND archived_at IS NULL""",
-                [now, *int_ids],
-            )
-            conn.execute(
-                f"""UPDATE child_chunk SET archived_at=?
-                   WHERE document_id IN ({placeholders}) AND archived_at IS NULL""",
-                [now, *int_ids],
-            )
+            _archive_source_rows(conn, int_ids, reason)
         return {"archived": len(int_ids), "ids": int_ids}
 
     with _db.connect() as conn:
@@ -610,6 +612,22 @@ def _archive_helper(ids, reason, *, archived: bool) -> dict[str, Any]:
             int_ids,
         )
     return {"unarchived": len(int_ids), "ids": int_ids}
+
+
+def _archive_source_rows(conn, ids: list[int], reason: str) -> None:
+    placeholders = ",".join("?" * len(ids))
+    now = _now_iso()
+    conn.execute(
+        f"""UPDATE document SET archived_at=?, archive_reason=?
+            WHERE id IN ({placeholders}) AND archived_at IS NULL""",
+        [now, reason, *ids],
+    )
+    for table in ("parent_chunk", "child_chunk"):
+        conn.execute(
+            f"""UPDATE {table} SET archived_at=?
+                WHERE document_id IN ({placeholders}) AND archived_at IS NULL""",
+            [now, *ids],
+        )
 
 
 def delete_sources(payload: dict[str, Any] | None) -> dict[str, Any]:
@@ -634,34 +652,32 @@ def delete_sources(payload: dict[str, Any] | None) -> dict[str, Any]:
     if not int_ids:
         return {"deleted": 0, "ids": [], "removed_files": 0}
 
-    placeholders = ",".join("?" * len(int_ids))
     from core import db as _db
 
     with _db.connect() as conn:
-        rows = conn.execute(
-            f"""SELECT id, filename, storage_path FROM document
-               WHERE id IN ({placeholders})""",
-            int_ids,
-        ).fetchall()
-        existing_ids = [int(row["id"]) for row in rows]
-        storage_paths = [
-            str(row["storage_path"]) for row in rows if row["storage_path"]
-        ]
-        if existing_ids:
-            ph = ",".join("?" * len(existing_ids))
-            conn.execute(
-                f"DELETE FROM child_chunk WHERE document_id IN ({ph})",
-                existing_ids,
-            )
-            conn.execute(
-                f"DELETE FROM parent_chunk WHERE document_id IN ({ph})",
-                existing_ids,
-            )
-            conn.execute(
-                f"DELETE FROM document WHERE id IN ({ph})",
-                existing_ids,
-            )
+        existing_ids, storage_paths = _delete_source_rows(conn, int_ids)
+    return _finish_source_deletion(existing_ids, storage_paths, reason)
 
+
+def _delete_source_rows(conn, ids: list[int]) -> tuple[list[int], list[str]]:
+    placeholders = ",".join("?" * len(ids))
+    rows = conn.execute(
+        f"SELECT id, storage_path FROM document WHERE id IN ({placeholders})",
+        ids,
+    ).fetchall()
+    existing_ids = [int(row["id"]) for row in rows]
+    storage_paths = [str(row["storage_path"]) for row in rows if row["storage_path"]]
+    for table in ("child_chunk", "parent_chunk", "document"):
+        column = "id" if table == "document" else "document_id"
+        conn.execute(
+            f"DELETE FROM {table} WHERE {column} IN ({placeholders})", ids,
+        )
+    return existing_ids, storage_paths
+
+
+def _finish_source_deletion(
+    existing_ids: list[int], storage_paths: list[str], reason: str,
+) -> dict[str, Any]:
     # Best-effort removal of the uploaded originals. Only files inside the
     # knowledge data dir are touched, so a corrupted storage_path can never
     # delete anything outside the knowledge base.

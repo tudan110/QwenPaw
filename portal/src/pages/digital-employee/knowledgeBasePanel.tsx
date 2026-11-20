@@ -1,8 +1,13 @@
+import { Modal } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  archiveKnowledgeSources,
   createKnowledgeManualEntry,
-  deleteKnowledgeSources,
+  decideKnowledgeDelete,
+  getKnowledgeDeleteAudit,
+  prepareKnowledgeDelete,
+  type KnowledgeDeletePreview,
+  type KnowledgeDeleteAudit,
+  type KnowledgeSourceOperation,
   getKnowledgeBaseHealth,
   getKnowledgeIngestProgress,
   getKnowledgeSourceDetail,
@@ -29,6 +34,7 @@ import {
   type KnowledgeSourceSummaryItem,
   type KnowledgeUnit,
 } from "../../api/knowledgeBase";
+import { KNOWLEDGE_BASE_CHANGE_EVENT, KNOWLEDGE_BASE_CHANGE_CHANNEL, KNOWLEDGE_BASE_CHANGE_STORAGE_KEY, createKnowledgeBaseChangeId, emitKnowledgeBaseChanged, type KnowledgeBaseChangeDetail } from "../../api/knowledgeBaseChange";
 import "./knowledge-base.css";
 
 type AnswerMode = "evidence" | "plugin";
@@ -60,52 +66,6 @@ const KNOWLEDGE_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   hour12: false,
 });
 const INGEST_FOLLOW_UP_REFRESH_DELAY_MS = 1200;
-const KNOWLEDGE_BASE_CHANGE_EVENT = "portal:knowledge-base-changed";
-const KNOWLEDGE_BASE_CHANGE_CHANNEL = "portal-knowledge-base-changes";
-const KNOWLEDGE_BASE_CHANGE_STORAGE_KEY = "portal:knowledge-base:last-change";
-
-type KnowledgeBaseChangeDetail = {
-  id: string;
-  sourceId: string;
-  reason: string;
-  timestamp: number;
-};
-
-function createKnowledgeBaseChangeId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function emitKnowledgeBaseChanged(sourceId: string, reason: string) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  const detail: KnowledgeBaseChangeDetail = {
-    id: createKnowledgeBaseChangeId(),
-    sourceId,
-    reason,
-    timestamp: Date.now(),
-  };
-  window.dispatchEvent(new CustomEvent<KnowledgeBaseChangeDetail>(
-    KNOWLEDGE_BASE_CHANGE_EVENT,
-    { detail },
-  ));
-  try {
-    const channel = new BroadcastChannel(KNOWLEDGE_BASE_CHANGE_CHANNEL);
-    channel.postMessage(detail);
-    channel.close();
-  } catch {
-    // BroadcastChannel is not available in every embedded browser surface.
-  }
-  try {
-    window.localStorage.setItem(KNOWLEDGE_BASE_CHANGE_STORAGE_KEY, JSON.stringify(detail));
-  } catch {
-    // Storage may be blocked in private or sandboxed iframe contexts.
-  }
-}
-
 function normalizeKnowledgeDate(value: string) {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -213,7 +173,22 @@ function ingestStageLabel(stage?: string | null) {
   return INGEST_STAGE_LABELS[key] || stage || "";
 }
 
+const DELETE_RESULTS: Record<string, string> = {
+  prepared: "待确认", cancelled: "已取消", deleted: "已删除", archived: "已归档",
+  expired: "已过期", changed: "资料状态已变化", index_deleted: "检索记录已移除，文件清理结果未记录",
+  file_cleanup_incomplete: "检索记录已移除，原始文件未全部清理",
+};
+
 export function KnowledgeBasePanel() {
+  const [deleteDraft, setDeleteDraft] = useState<{ source: KnowledgeSourceRecord; operation: KnowledgeSourceOperation }>();
+  const isArchiveDraft = deleteDraft?.operation === "archive";
+  const operationLabel = isArchiveDraft ? "归档" : "彻底删除";
+  const confirmationPhrase = isArchiveDraft ? "确认归档" : "确认删除";
+  const [deletePreview, setDeletePreview] = useState<KnowledgeDeletePreview>();
+  const [deletePhrase, setDeletePhrase] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleteAudit, setDeleteAudit] = useState<KnowledgeDeleteAudit[]>();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const queryResultRef = useRef<HTMLDivElement | null>(null);
   const errorDismissButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -545,21 +520,6 @@ export function KnowledgeBasePanel() {
     }
   }
 
-  async function handleArchive(source: KnowledgeSourceRecord) {
-    setLoading(true);
-    setError("");
-    try {
-      await archiveKnowledgeSources([source.id], "portal archive");
-      setNotice("资料已归档");
-      publishKnowledgeBaseChange("source-archived");
-      await refresh();
-    } catch (err: any) {
-      setError(err?.message || "归档失败");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleUnarchive(source: KnowledgeSourceRecord) {
     setLoading(true);
     setError("");
@@ -575,24 +535,42 @@ export function KnowledgeBasePanel() {
     }
   }
 
-  async function handleDelete(source: KnowledgeSourceRecord) {
-    const title = source.meta?.display_title || source.filename || `#${source.id}`;
-    const confirmed = window.confirm(
-      `确定要彻底删除「${title}」吗？\n将同时删除其分块与向量索引及原始文件，删除后不可恢复（归档才可恢复）。`,
-    );
-    if (!confirmed) return;
-    setLoading(true);
-    setError("");
+  function closeDelete() {
+    setDeleteDraft(undefined);
+    setDeletePreview(undefined);
+    setDeletePhrase("");
+    setDeleteError("");
+  }
+
+  async function proceedDelete(confirm: boolean) {
+    if (!deleteDraft || deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError("");
     try {
-      await deleteKnowledgeSources([source.id], "portal delete");
-      setNotice("资料已彻底删除");
-      publishKnowledgeBaseChange("source-deleted");
-      await refresh();
+      if (!deletePreview) {
+        if (confirm) setDeletePreview(await prepareKnowledgeDelete(deleteDraft.source.id, deleteDraft.operation));
+        else closeDelete();
+        return;
+      }
+      const result = await decideKnowledgeDelete(deletePreview, confirm ? deletePhrase : undefined);
+      closeDelete();
+      if (confirm) {
+        setNotice(result.status === "archived" ? "资料已归档，智能体不再检索此资料，可在知识库恢复" : result.status === "deleted" ? "资料已彻底删除" : "资料已从知识库移除，原始文件清理未完整完成，请查看操作记录");
+        publishKnowledgeBaseChange(isArchiveDraft ? "source-archived" : "source-deleted");
+        await refresh();
+      } else setNotice(`已取消${operationLabel}，资料未变更`);
     } catch (err: any) {
-      setError(err?.message || "删除失败");
+      if (!confirm) closeDelete();
+      else setDeleteError(err?.message || "资料操作未完成");
+      if (!confirm) setError(err?.message || "未能登记取消；未提交执行请求");
     } finally {
-      setLoading(false);
+      setDeleteBusy(false);
     }
+  }
+
+  async function openDeleteAudit() {
+    try { setDeleteAudit((await getKnowledgeDeleteAudit()).items); }
+    catch (err: any) { setError(err?.message || "读取资料操作记录失败"); }
   }
 
   async function openSourceDetail(source: KnowledgeSourceRecord) {
@@ -782,6 +760,9 @@ export function KnowledgeBasePanel() {
                 <i className={`fas ${uploading ? "fa-spinner fa-spin" : "fa-upload"}`} />
                 {uploading ? "上传中" : "上传文件"}
               </button>
+              <button type="button" className="portal-model-btn compact" onClick={() => void openDeleteAudit()}>
+                资料操作记录
+              </button>
               <input
                 ref={fileInputRef}
                 className="kb-file-input"
@@ -834,13 +815,13 @@ export function KnowledgeBasePanel() {
                       {source.archived_at ? (
                         <button type="button" onClick={() => void handleUnarchive(source)}>恢复</button>
                       ) : (
-                        <button type="button" onClick={() => void handleArchive(source)}>归档</button>
+                        <button type="button" onClick={() => setDeleteDraft({ source, operation: "archive" })}>归档</button>
                       )}
                       <button
                         type="button"
                         className="kb-delete-btn"
                         title="彻底删除：移除分块、向量索引及原始文件，不可恢复"
-                        onClick={() => void handleDelete(source)}
+                        onClick={() => setDeleteDraft({ source, operation: "delete" })}
                       >
                         删除
                       </button>
@@ -1188,6 +1169,38 @@ export function KnowledgeBasePanel() {
         </div>
       ) : null}
 
+      <Modal
+        open={!!deleteDraft}
+        title={deletePreview ? `第 2 步：确认${operationLabel}` : `第 1 步：核对${operationLabel}对象`}
+        okText={deletePreview ? operationLabel : "查看风险与影响"}
+        cancelText="取消"
+        confirmLoading={deleteBusy}
+        okButtonProps={{ danger: !!deletePreview && !isArchiveDraft, disabled: !!deletePreview && deletePhrase !== confirmationPhrase }}
+        onOk={() => void proceedDelete(true)}
+        onCancel={() => void proceedDelete(false)}
+        maskClosable={false}
+      >
+        <p>资料：{deletePreview?.title || deleteDraft?.source.filename}（#{deleteDraft?.source.id}）</p>
+        {deletePreview ? <>
+          <p><strong>风险等级：{deletePreview.risk}</strong> · {deletePreview.unit_count} 个检索片段</p>
+          <p>{deletePreview.impact}</p>
+          <label>请输入「{confirmationPhrase}」 <input value={deletePhrase} onChange={(event) => setDeletePhrase(event.target.value)} /></label>
+          <p>确认有效期至 {new Date(deletePreview.expires_at * 1000).toLocaleTimeString()}。</p>
+        </> : <p>{isArchiveDraft ? "此操作会暂停该资料的检索，归档后可恢复。" : "仍需要此资料时可以选择归档，归档后可恢复。"}继续查看系统评估的影响。</p>}
+        {deleteError && <p role="alert">{deleteError}</p>}
+      </Modal>
+      <Modal open={!!deleteAudit} title="知识库资料操作记录（最近 30 条）" onCancel={() => setDeleteAudit(undefined)} footer={null} width={880}>
+        <div className="kb-source-table"><table>
+          <thead><tr><th>时间 / 主体</th><th>进程</th><th>操作 / 参数</th><th>结果</th></tr></thead>
+          <tbody>{deleteAudit?.map((item) => <tr key={item.id}>
+            <td>{new Date(item.updated).toLocaleString()}<small>智观 ID {item.subject}</small></td>
+            <td>{item.process}<small>PID {item.pid}</small></td>
+            <td>{item.operation === "archive" ? "归档" : "彻底删除"} <small>资料 #{item.source_id} · {item.title} · {item.unit_count} 个片段</small></td>
+            <td>{DELETE_RESULTS[item.status] || item.status}{item.expected_files ? <small>原件已清理 {item.removed_files ?? "未知"}/{item.expected_files}</small> : null}</td>
+          </tr>)}</tbody>
+        </table></div>
+        {deleteAudit?.length === 0 && <p>暂无删除记录。</p>}
+      </Modal>
       {error ? (
         <div
           className="kb-error-modal-backdrop"

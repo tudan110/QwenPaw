@@ -136,3 +136,94 @@ def test_delete_accepts_camel_case_payload(kb_env):
     doc_id = _create_doc(kb_env)
     result = knowledge_base.delete_sources({"sourceRecordIds": [doc_id]})
     assert result["deleted"] == 1
+
+
+def test_guarded_delete_binds_account_scope_target_and_one_use(kb_env, monkeypatch):
+    from fastapi import HTTPException
+    from qwenpaw.extensions.integrations import knowledge_source_control as control
+
+    monkeypatch.setenv("QWENPAW_DELETE_OPS_DISABLED", "false")
+    doc = _create_doc(kb_env)
+    other_doc = _create_doc(kb_env)
+    preview = control.prepare("admin-session-a", "admin-a", doc)
+    token = preview["confirmation_token"]
+    assert preview["unit_count"] > 0
+    with pytest.raises(HTTPException, match="409"):
+        control.decide("admin-session-b", doc, token, confirm=True, phrase="确认删除")
+    with pytest.raises(HTTPException, match="409"):
+        control.decide("admin-session-a", other_doc, token, confirm=True, phrase="确认删除")
+    with pytest.raises(HTTPException, match="400"):
+        control.decide("admin-session-a", doc, token, confirm=True, phrase="确认")
+    assert _counts(kb_env, doc)["doc"] == 1
+    result = control.decide("admin-session-a", doc, token, confirm=True, phrase="确认删除")
+    assert result["status"] == "deleted"
+    with pytest.raises(HTTPException, match="409"):
+        control.decide("admin-session-a", doc, token, confirm=True, phrase="确认删除")
+    assert _counts(kb_env, doc) == {"doc": 0, "parents": 0, "children": 0}
+    assert _counts(kb_env, other_doc)["doc"] == 1
+    entry = control.recent()[0]
+    assert entry["source_id"] == doc and entry["status"] == "deleted"
+    assert entry["subject"] == "admin-a" and entry["pid"] > 0
+    assert token not in str(entry)
+
+
+def test_archive_cancellation_restore_and_global_delete_block(kb_env, monkeypatch):
+    from fastapi import HTTPException
+    from qwenpaw.extensions.integrations import knowledge_source_control as control
+
+    monkeypatch.setenv("QWENPAW_DELETE_OPS_DISABLED", "true")
+    doc = _create_doc(kb_env)
+    with pytest.raises(HTTPException, match="403"):
+        control.prepare("admin", "admin-a", doc)
+    token = control.prepare("admin", "admin-a", doc, operation="archive")["confirmation_token"]
+    assert control.decide("admin", doc, token, confirm=False, operation="archive")["status"] == "cancelled"
+    assert knowledge_base.source_detail(doc)["unit_count"] > 0
+    token = control.prepare("admin", "admin-a", doc, operation="archive")["confirmation_token"]
+    assert control.decide("admin", doc, token, confirm=True, phrase="确认归档", operation="archive")["status"] == "archived"
+    with pytest.raises(LookupError, match="archived"):
+        knowledge_base.source_detail(doc)
+    assert knowledge_base.source_detail(doc, include_archived=True)["archived_at"]
+    knowledge_base.unarchive_sources({"source_record_ids": [doc]})
+    assert knowledge_base.source_detail(doc)["unit_count"] > 0
+    assert [x["status"] for x in control.recent()] == ["archived", "cancelled"]
+
+
+def test_guarded_archive_rejects_expired_or_changed_source(kb_env, monkeypatch):
+    from fastapi import HTTPException
+    from qwenpaw.extensions.integrations import knowledge_source_control as control
+
+    doc = _create_doc(kb_env)
+    now = control.time.time()
+    token = control.prepare("admin", "admin-a", doc, operation="archive")["confirmation_token"]
+    with monkeypatch.context() as timed:
+        timed.setattr(control.time, "time", lambda: now + 185)
+        with pytest.raises(HTTPException, match="409"):
+            control.decide("admin", doc, token, confirm=True, phrase="确认归档", operation="archive")
+    token = control.prepare("admin", "admin-a", doc, operation="archive")["confirmation_token"]
+    knowledge_base.archive_sources({"source_record_ids": [doc]})
+    with pytest.raises(HTTPException, match="409"):
+        control.decide("admin", doc, token, confirm=True, phrase="确认归档", operation="archive")
+    assert [x["status"] for x in control.recent()] == ["changed", "expired"]
+
+
+def test_controlled_document_publishes_masked_searchable_copy_once(kb_env, monkeypatch):
+    from qwenpaw.app.routers import controlled_documents as routes
+    from qwenpaw.extensions.api import controlled_documents as store
+    from fastapi.responses import JSONResponse
+
+    monkeypatch.setattr(store, "STORE_DIR", knowledge_base.data_dir() / "controlled-test")
+    owner = store.Actor("test", "admin", True)
+    other = store.Actor("test", "other-admin", True)
+    body = routes.DocumentInput(title="取证答复操作手册", content="星云巡检基准为双机切换。联系号码 13800138000。")
+    item = routes.create_document(body, owner)
+    approval = routes.PublishInput(reviewed_for_sharing=True)
+    refused = routes.publish_to_knowledge_base(item["id"], approval, other)
+    assert isinstance(refused, JSONResponse) and refused.status_code == 404
+    published = routes.publish_to_knowledge_base(item["id"], approval, owner)
+    duplicate = routes.publish_to_knowledge_base(item["id"], approval, owner)
+    assert not published["already_published"] and duplicate["already_published"]
+    assert published["source_id"] == duplicate["source_id"]
+    units = str(knowledge_base.source_detail(published["source_id"])["units"])
+    assert "星云巡检" in units and "13800138000" not in units and "手机" in units
+    with store.connection(owner) as conn:
+        assert "13800138000" in store.owned_document(conn, owner, item["id"])["content"]

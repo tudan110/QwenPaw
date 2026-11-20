@@ -78,6 +78,7 @@ from qwenpaw.extensions.api.xingchen_openai_adapter import (
 from qwenpaw.extensions.api.kunlun_openai_adapter import (
     router as kunlun_openai_adapter_router,
 )
+from qwenpaw.extensions.integrations import knowledge_source_control
 from qwenpaw.extensions.api.proxy_api import (
     router as proxy_router,
 )
@@ -5412,19 +5413,6 @@ def update_knowledge_base_source(
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
-@router.post("/knowledge-base/sources/archive")
-def archive_knowledge_base_sources(
-    payload: dict[str, Any] | None = Body(default=None),
-):
-    try:
-        return knowledge_base.archive_sources(payload)
-    except Exception as exc:
-        error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] archive_knowledge_base_sources failed: {error_detail}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=error_detail) from exc
-
-
 @router.post("/knowledge-base/sources/unarchive")
 def unarchive_knowledge_base_sources(
     payload: dict[str, Any] | None = Body(default=None),
@@ -5440,25 +5428,63 @@ def unarchive_knowledge_base_sources(
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
-@router.post("/knowledge-base/sources/delete")
-def delete_knowledge_base_sources(
-    payload: dict[str, Any] | None = Body(default=None),
-):
-    """Permanently delete sources (rows + vectors + uploaded files).
+class KnowledgeSourceTarget(BaseModel):
+    source_id: int = Field(gt=0)
 
-    POST by convention: the global DeleteBlockMiddleware rejects the HTTP
-    DELETE method when ``security.delete_ops_disabled`` is on; this endpoint
-    is an explicit, user-confirmed exception scoped to knowledge sources.
-    """
-    try:
-        return knowledge_base.delete_sources(payload)
-    except Exception as exc:
-        error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(
-            f"[ERROR] delete_knowledge_base_sources failed: {error_detail}",
-        )
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=error_detail) from exc
+
+class KnowledgeSourceDecision(KnowledgeSourceTarget):
+    confirmation_token: str = Field(min_length=40, max_length=50)
+    phrase: str = Field(default="", max_length=16)
+
+
+@router.post("/knowledge-base/sources/archive/prepare")
+def prepare_knowledge_base_archive(request: Request, body: KnowledgeSourceTarget):
+    owner, subject = knowledge_source_control.actor(request)
+    result = knowledge_source_control.prepare(owner, subject, body.source_id, operation="archive")
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+
+@router.post("/knowledge-base/sources/archive/cancel")
+def cancel_knowledge_base_archive(request: Request, body: KnowledgeSourceDecision):
+    owner, _ = knowledge_source_control.actor(request)
+    return knowledge_source_control.decide(
+        owner, body.source_id, body.confirmation_token, confirm=False, operation="archive",
+    )
+
+
+@router.post("/knowledge-base/sources/archive")
+def archive_knowledge_base_sources(request: Request, body: KnowledgeSourceDecision):
+    owner, _ = knowledge_source_control.actor(request)
+    return knowledge_source_control.decide(
+        owner, body.source_id, body.confirmation_token, confirm=True, phrase=body.phrase, operation="archive",
+    )
+
+
+@router.post("/knowledge-base/sources/delete/prepare")
+def prepare_knowledge_base_delete(request: Request, body: KnowledgeSourceTarget):
+    owner, subject = knowledge_source_control.actor(request)
+    result = knowledge_source_control.prepare(owner, subject, body.source_id)
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+
+@router.post("/knowledge-base/sources/delete/cancel")
+def cancel_knowledge_base_delete(request: Request, body: KnowledgeSourceDecision):
+    owner, _ = knowledge_source_control.actor(request)
+    return knowledge_source_control.decide(owner, body.source_id, body.confirmation_token, confirm=False)
+
+
+@router.post("/knowledge-base/sources/delete")
+def delete_knowledge_base_sources(request: Request, body: KnowledgeSourceDecision):
+    owner, _ = knowledge_source_control.actor(request)
+    return knowledge_source_control.decide(
+        owner, body.source_id, body.confirmation_token, confirm=True, phrase=body.phrase,
+    )
+
+
+@router.get("/knowledge-base/sources/operations/audit")
+def knowledge_base_delete_audit(request: Request):
+    knowledge_source_control.actor(request)
+    return JSONResponse({"items": knowledge_source_control.recent()}, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/knowledge-base/embedding/toggle")
