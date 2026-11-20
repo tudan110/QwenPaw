@@ -196,3 +196,33 @@ async def test_text_continuation_updates_history_using_server_draft(portal, monk
             ("user", "续写测试"), ("assistant", DRAFT + "继续的正文。"),
         ]
         assert history["stopped_turn"] is None
+
+
+async def test_model_only_query_does_not_dispatch_agent_or_business_tools(portal, monkeypatch):
+    client, workspace, chat, scope = portal
+    business_stream = AsyncMock(side_effect=AssertionError("must not dispatch the agent"))
+    workspace.channel_manager = SimpleNamespace(get_channel=AsyncMock(return_value=SimpleNamespace(
+        stream_one=business_stream, resolve_session_id=lambda **kw: kw["channel_meta"]["session_id"],
+    )))
+    model_calls = []
+
+    async def model(messages, **kwargs):
+        model_calls.append(messages[-1].get_text_content())
+        assert kwargs == {}  # No tool declarations or callbacks go to the model.
+        return {"content": [{"type": "text", "text": "业务联网已关闭，本轮未查询 CMDB。"}]}
+
+    monkeypatch.setattr(model_factory, "create_model_and_formatter", lambda **_: (model, None))
+    payload = {"session_id": "session-a", "input": [{"role": "user", "type": "message", "content": [
+        {"type": "text", "text": QUERY},
+    ]}]}
+    async with client:
+        owner = scope["value"]
+        scope["value"] = None
+        assert (await client.post("/console/chat/model-only", json=payload)).status_code == 503
+        scope["value"] = owner
+        result = await client.post("/console/chat/model-only", json=payload)
+        assert result.status_code == 200 and '"portal_model_only": true' in result.text
+        assert model_calls == [QUERY]
+        business_stream.assert_not_called()
+        history = (await client.get(f"/chats/{chat.id}")).json()
+        assert history_text(history) == [("user", QUERY), ("assistant", "业务联网已关闭，本轮未查询 CMDB。")]

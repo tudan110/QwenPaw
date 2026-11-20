@@ -110,6 +110,7 @@ export function usePortalChatOrchestration({
   navigate,
   navigateToEmployeePage,
   handleRemoteSendMessage,
+  modelOnly = false,
   resetRemoteState,
   onConversationDispatchStart,
   homeComposerRef,
@@ -146,8 +147,10 @@ export function usePortalChatOrchestration({
       forceNewChat?: boolean;
       sessionId?: string;
       chatMeta?: any;
+      modelOnly?: boolean;
     },
   ) => Promise<boolean> | boolean;
+  modelOnly?: boolean;
   resetRemoteState: (options?: { initialMessages?: any[]; clearHistoryError?: boolean }) => void;
   onConversationDispatchStart?: () => void;
   homeComposerRef: MutableRefObject<HTMLTextAreaElement | null>;
@@ -400,6 +403,7 @@ export function usePortalChatOrchestration({
         forceNewChat,
         sessionId,
         chatMeta,
+        modelOnly,
       });
     }
 
@@ -409,6 +413,7 @@ export function usePortalChatOrchestration({
     currentEmployee,
     handleRemoteSendMessage,
     isRemoteEmployee,
+    modelOnly,
     onConversationDispatchStart,
     runLocalEmployeeFlow,
     setActivePortalResourceImportSessionId,
@@ -706,6 +711,10 @@ export function usePortalChatOrchestration({
       return;
     }
 
+    if (modelOnly && isRemoteEmployee) {
+      await dispatchActiveMessage(rawContent);
+      return;
+    }
     const mentionResult = extractMentionTarget(rawContent);
     if (mentionResult.employee) {
       if (
@@ -807,6 +816,8 @@ export function usePortalChatOrchestration({
 
     await dispatchActiveMessage(rawContent);
   }, [
+    isRemoteEmployee,
+    modelOnly,
     currentEmployee,
     dispatchActiveMessage,
     dispatchOrderCollaboration,
@@ -871,7 +882,7 @@ export function usePortalChatOrchestration({
       return;
     }
 
-    if (mentionSuggestions.length) {
+    if (!modelOnly && mentionSuggestions.length) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
         setMentionActiveIndex((prev) => (prev + 1) % mentionSuggestions.length);
@@ -908,6 +919,7 @@ export function usePortalChatOrchestration({
     isInteractionLocked,
     mentionActiveIndex,
     mentionSuggestions,
+    modelOnly,
   ]);
 
   const handleHomeComposerKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {

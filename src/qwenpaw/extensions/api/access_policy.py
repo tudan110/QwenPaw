@@ -57,6 +57,7 @@ _ADMIN_PREFIXES = (
 _USER_POST_PATHS = {
     "/api/chats",
     "/api/console/chat",
+    "/api/console/chat/model-only",
     "/api/console/chat/task",
     "/api/console/chat/stop",
     "/api/console/chat/continue",

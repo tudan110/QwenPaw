@@ -281,9 +281,10 @@ export function stopChat(agentId: string | undefined, chatId: string) {
 export async function streamChat(
   agentId: string | undefined,
   payload: Record<string, unknown>,
-  { signal, onEvent, continuation = false, retryCmdb = false }: StreamChatOptions & {
+  { signal, onEvent, continuation = false, retryCmdb = false, modelOnly = false }: StreamChatOptions & {
     continuation?: boolean;
     retryCmdb?: boolean;
+    modelOnly?: boolean;
   } = {},
 ) {
   const agentCandidates = getAgentCandidates(agentId);
@@ -304,7 +305,7 @@ export async function streamChat(
     let candidateResponse: Response;
     let keepAbortBound = false;
     try {
-      const action = retryCmdb ? "/retry-cmdb" : continuation ? "/continue" : "";
+      const action = modelOnly ? "/model-only" : retryCmdb ? "/retry-cmdb" : continuation ? "/continue" : "";
       candidateResponse = await fetch(`${API_BASE_URL}/console/chat${action}`, {
         method: "POST",
         signal: controller.signal,

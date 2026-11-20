@@ -45,6 +45,7 @@ from ..agent_context import get_agent_for_request
 from ..approvals.display import approval_display_fields
 from ..chats.portal_control import PortalChatControl, PortalChatStopPending, PortalChatsPaused
 from ..chats.cmdb_retry import cmdb_enabled, retry_cmdb_lookup
+from ..chats.model_only import stream_model_only
 from ..chats.stopped_turn import (
     cmdb_asset_name,
     get_checkpoint,
@@ -272,6 +273,7 @@ def _tail_text_file(
     description="Agent API Request Format. See runtime.agentscope.io. "
     "Use body.reconnect=true to attach to a running stream.",
 )
+@router.post("/chat/model-only", summary="Send a Portal chat without business tools")
 async def post_console_chat(
     request_data: Union[AgentRequest, dict],
     request: Request,
@@ -290,7 +292,10 @@ async def post_console_chat(
         native_payload = _extract_session_and_payload(request_data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    model_only = request.url.path.endswith("/chat/model-only")
     scope = chat_scope()
+    if model_only and (scope is None or getattr(workspace, "session", None) is None):
+        raise HTTPException(503, "当前部署未启用隔离会话，无法关闭业务联网。")
     authorize_chat_payload(native_payload, scope)
     await trusted_chat_text.check_portal_input(native_payload["content_parts"], isolated=scope is not None)
     session_id = console_channel.resolve_session_id(
@@ -310,11 +315,14 @@ async def post_console_chat(
 
     is_reconnect = isinstance(request_data, dict) and request_data.get("reconnect") is True
     if is_reconnect:
+        if model_only:
+            raise HTTPException(status_code=400, detail="Use the normal chat endpoint to reconnect.")
         queue = await tracker.attach(chat.id)
         if queue is None:
             return
     else:
         stop_options = {}
+        stream_fn = console_channel.stream_one
         if scope is not None and getattr(workspace, "session", None) is not None:
             turn_id = uuid.uuid4().hex
             native_payload["meta"]["portal_turn_id"] = turn_id
@@ -322,19 +330,29 @@ async def post_console_chat(
             question = visible_question(parts)
             text_only = all(trusted_chat_text.get_text_block(part) is not None for part in parts)
 
+            if model_only:
+                if not text_only or not question.strip() or len(question) > trusted_chat_text.MAX_INPUT:
+                    raise HTTPException(422, "关闭业务联网时仅支持非空的纯文本输入。")
+
+                def stream_fn(_payload):
+                    return stream_model_only(workspace, chat, turn_id, question)
+
             async def save_stop(buffer):
                 return await save_stopped_turn(
                     workspace.session, chat, turn_id, question, buffer,
-                    cmdb_available=text_only and bool(cmdb_asset_name(question)) and cmdb_enabled(workspace),
+                    cmdb_available=(not model_only and text_only and bool(cmdb_asset_name(question))
+                                    and cmdb_enabled(workspace)),
                 )
 
             stop_options["on_stop"] = save_stop
         queue, started = await _start_chat_stream(
-            request, scope, tracker, chat.id, native_payload, console_channel.stream_one,
-            **stop_options,
+            request, scope, tracker, chat.id, native_payload, stream_fn,
+            join_existing=not model_only, **stop_options,
         )
+        if queue is None:
+            raise HTTPException(409, "当前对话已有任务运行，请先停止或等待任务结束。")
         # Do not start title generation for blocked requests or reconnects.
-        if started and first_text and chat.name == name:
+        if started and not model_only and first_text and chat.name == name:
             asyncio.create_task(generate_and_update_title(
                 workspace=workspace,
                 chat_id=chat.id,

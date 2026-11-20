@@ -1409,7 +1409,8 @@ export function useRemoteChatSession({
         );
         const lastHistoryMessage = nextMessages[nextMessages.length - 1];
         const rawMessages = history.messages || [];
-        const hasResumedReply = rawMessages[rawMessages.length - 1]?.metadata?.metadata?.portal_resumed === true;
+        const lastMetadata = rawMessages[rawMessages.length - 1]?.metadata?.metadata;
+        const hasResumedReply = lastMetadata?.portal_resumed === true || lastMetadata?.portal_model_only === true;
         const lastAgentContent = String(lastHistoryMessage?.content || "").trim();
         const hasFinalAgentReply =
           lastHistoryMessage?.type === "agent"
@@ -1666,7 +1667,7 @@ export function useRemoteChatSession({
             replace: true,
           });
         }
-        if (resolvedFinalText) {
+        if (resolvedFinalText && event.portal_model_only !== true) {
           void maybeEnhanceAlarmAnalystMessage({
             frontendMessageId: assistantState.frontendId,
             backendMessageId: event.id,
@@ -1696,7 +1697,9 @@ export function useRemoteChatSession({
       if (streamMeta?.role === "assistant" && streamMeta?.type === "message") {
         const assistantState = ensureAssistantMessage(event.msg_id, employee);
         if (event.text) {
-          appendAssistantResponseBlock(assistantState.frontendId, event.msg_id, event.text);
+          appendAssistantResponseBlock(assistantState.frontendId, event.msg_id, event.text, {
+            replace: event.portal_model_only === true,
+          });
         }
         return;
       }
@@ -1719,12 +1722,14 @@ export function useRemoteChatSession({
       chatMeta = null,
       forceNewChat = false,
       sessionId = "",
+      modelOnly = false,
     }: {
       visibleContent?: string;
       chatName?: string;
       chatMeta?: any;
       forceNewChat?: boolean;
       sessionId?: string;
+      modelOnly?: boolean;
     } = {},
   ) => {
     const nextEmployee = currentEmployeeRef.current;
@@ -1749,7 +1754,7 @@ export function useRemoteChatSession({
     streamPendingTextRef.current = new Map();
     streamResponseTextRef.current = new Map();
     activeAssistantMessageIdRef.current = null;
-    pendingResourceImportGuideRef.current = isResourceImportIntent(
+    pendingResourceImportGuideRef.current = !modelOnly && isResourceImportIntent(
       `${normalizedVisibleContent}\n${content}`,
     );
     hasStreamOutputRef.current = false;
@@ -1764,7 +1769,7 @@ export function useRemoteChatSession({
     let streamSucceeded = false;
 
     try {
-      const scenarioResult = await maybeHandleFaultScenarioMessage({
+      const scenarioResult = modelOnly ? null : await maybeHandleFaultScenarioMessage({
         currentEmployee: nextEmployee,
         content,
         visibleContent: normalizedVisibleContent,
@@ -1776,7 +1781,7 @@ export function useRemoteChatSession({
         setMessages,
       });
       if (controller.signal.aborted) return false;
-      if (scenarioResult.handled) {
+      if (scenarioResult?.handled) {
         setIsStreaming(false);
         setCurrentChatStatus("idle");
         return scenarioResult.succeeded;
@@ -1853,12 +1858,13 @@ export function useRemoteChatSession({
           user_id: ensuredChat.user_id,
           channel: ensuredChat.channel || COPAW_CHANNEL,
           stream: true,
-          request_context: manualFaultRequestContext(
+          request_context: modelOnly ? undefined : manualFaultRequestContext(
             content, currentChatMetaRef.current,
           ),
         }, requestApprovalLevel),
         {
           signal: controller.signal,
+          modelOnly,
           onEvent: (event) => {
             if (controller.signal.aborted) return;
             const cause = managedStopCause(event);

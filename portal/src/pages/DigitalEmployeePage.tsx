@@ -247,6 +247,8 @@ export default function DigitalEmployeePage({
     ? (REMOTE_AGENT_IDS[selectedEmployee.id] || null)
     : PORTAL_HOME_AGENT_ID;
   const isRemoteEmployee = Boolean(remoteAgentId);
+  const [businessToolsDisabled, setBusinessToolsDisabled] = useState(false);
+  const modelOnly = businessToolsDisabled && isRemoteEmployee;
   const currentEntry = routeSearchParams.get("entry");
   const currentView = parsePortalView(routeSection ?? routeSearchParams.get("view"));
   const activeAdvancedPanel = parsePortalAdvancedPanel(
@@ -774,6 +776,7 @@ export default function DigitalEmployeePage({
     navigate,
     navigateToEmployeePage,
     handleRemoteSendMessage,
+    modelOnly,
     resetRemoteState,
     onConversationDispatchStart: requestReplyFocusOnNextAssistant,
     homeComposerRef,
@@ -1220,7 +1223,7 @@ export default function DigitalEmployeePage({
     [messages],
   );
   const safeExecutionList = ensureObjectArray<ExecutionRecord>(executionList);
-  const safeQuickCommands = ensureStringArray(currentEmployee?.quickCommands);
+  const safeQuickCommands = modelOnly ? [] : ensureStringArray(currentEmployee?.quickCommands);
   const showModelSelector = currentView === "chat";
   const isGatewayPresentedChildView = Boolean(
     selectedEmployee?.id
@@ -1503,13 +1506,26 @@ export default function DigitalEmployeePage({
       error={approvalMode.storageError}
     />
   ) : null;
+  const businessToolsControl = isRemoteEmployee ? (
+    <Tooltip title="关闭后，新消息只调用配置的模型；不运行搜索、MCP、知识库或业务工具。" placement="top">
+      <button
+        type="button"
+        className="model-selector-trigger"
+        aria-pressed={!modelOnly}
+        disabled={isInteractionLocked || isConversationRunning || isCreatingChat}
+        onClick={() => setBusinessToolsDisabled((disabled) => !disabled)}
+      >
+        业务联网：{modelOnly ? "关" : "开"}
+      </button>
+    </Tooltip>
+  ) : null;
   const approvalPanel = (
     <>
       {canManageAi === true ? <MainChatApprovalPanel controls={approvals} /> : null}
       {stopFeedback ? (
         <MainChatStopNotice
           feedback={stopFeedback}
-          onResume={resumeStoppedReply}
+          onResume={modelOnly && stopFeedback.retry ? undefined : resumeStoppedReply}
           resumeKind={stopFeedback.retry ? "cmdb" : "text"}
           saved={stopFeedback.saved}
           continuationError={stopFeedback.continuationError}
@@ -1547,7 +1563,8 @@ export default function DigitalEmployeePage({
   const chatHeaderActions = (
     <>
       {chatModelControl}
-      {approvalModeSelector}
+      {businessToolsControl}
+      {!modelOnly ? approvalModeSelector : null}
       <>
         <Tooltip title="已处理任务" placement="bottom" mouseEnterDelay={0.1}>
           <button
@@ -2047,14 +2064,14 @@ export default function DigitalEmployeePage({
             >
               {showPortalHomeHero ? (
                 <PortalHomeHero
-                  approvalModeSelector={approvalModeSelector}
+                  approvalModeSelector={<>{businessToolsControl}{!modelOnly ? approvalModeSelector : null}</>}
                   approvalPanel={approvalPanel}
                   alertBell={renderAlertBell()}
                   themeToggleIcon={themeToggleIcon}
                   portalLogo={portalLogo}
                   inputMessage={inputMessage}
                   isInteractionLocked={isInteractionLocked}
-                  mentionSuggestions={mentionSuggestions}
+                  mentionSuggestions={modelOnly ? [] : mentionSuggestions}
                   mentionActiveIndex={mentionActiveIndex}
                   safeQuickCommands={safeQuickCommands}
                   resourceImportCommand={RESOURCE_IMPORT_COMMAND}
@@ -2134,7 +2151,7 @@ export default function DigitalEmployeePage({
                     onInputSelection={handleInputSelection}
                     onComposerChange={handleChatComposerChange}
                     onComposerKeyDown={handleChatComposerKeyDown}
-                    mentionSuggestions={mentionSuggestions}
+                    mentionSuggestions={modelOnly ? [] : mentionSuggestions}
                     mentionActiveIndex={mentionActiveIndex}
                     onApplyMentionSuggestion={applyMentionSuggestion}
                     isConversationRunning={isConversationRunning}

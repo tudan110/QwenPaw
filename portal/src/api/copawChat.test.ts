@@ -181,3 +181,41 @@ test("Portal streaming distinguishes a known input denial from unrelated HTTP fa
     await server.close();
   }
 });
+
+test("disabled business tools never fall back to normal chat when the backend lacks the route", async () => {
+  const server = await createServer({
+    root: fileURLToPath(new URL("../..", import.meta.url)),
+    configFile: false,
+    optimizeDeps: { noDiscovery: true, include: [] },
+    server: { middlewareMode: true, hmr: false },
+    appType: "custom",
+  });
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const originalFetch = globalThis.fetch;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { setTimeout, clearTimeout, localStorage: { getItem: () => null } },
+  });
+  const paths: string[] = [];
+  globalThis.fetch = async (input) => {
+    paths.push(String(input));
+    return Response.json({ detail: "Not Found" }, { status: 404 });
+  };
+  try {
+    const { streamChat } = await server.ssrLoadModule("/src/api/copawChat.ts");
+    await assert.rejects(
+      streamChat("gateway", { stream: true }, { modelOnly: true }),
+      /Not Found/,
+    );
+    assert.equal(paths.length, 1);
+    assert.match(paths[0], /\/console\/chat\/model-only$/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalWindow) {
+      Object.defineProperty(globalThis, "window", originalWindow);
+    } else {
+      Reflect.deleteProperty(globalThis, "window");
+    }
+    await server.close();
+  }
+});
