@@ -785,6 +785,20 @@ class GovernancePolicy:
                     source="user_rules",
                 )
 
+        # The fixed Portal CMDB reader performs only a validated exact-name
+        # GET with the current user's token. Keep configured rules, findings
+        # and strict-mode approval ahead of the default read allowance.
+        if (
+            tc_spec.tool_name == "LookupPortalCmdbAsset"
+            and not is_strict
+            and not findings
+        ):
+            return GovernanceDecision(
+                action=GovernanceAction.ALLOW,
+                reason="Fixed CMDB lookup with the current Portal identity",
+                source="fallback",
+            )
+
         # ── Phase 3: Fallback + execution_level threshold ──
         if tool_type == "shell":
             # STRICT mode: shell commands also require approval

@@ -54,6 +54,35 @@ def _make_governor(tmp_path) -> ResourceGovernor:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize(
+    ("level", "rule_action", "expected"),
+    [
+        ("smart", None, GovernanceAction.ALLOW),
+        ("auto", None, GovernanceAction.ALLOW),
+        ("strict", None, GovernanceAction.ASK),
+        ("smart", GovernanceAction.DENY, GovernanceAction.DENY),
+        ("smart", GovernanceAction.ASK, GovernanceAction.ASK),
+    ],
+)
+def test_portal_cmdb_lookup_honors_governance(
+    tmp_path, level, rule_action, expected,
+):
+    policy = load_governance_policy(
+        str(tmp_path / "governance"), str(tmp_path),
+    )
+    policy.execution_level = level
+    tool = DEFAULT_REGISTRY.python_to_policy_name("lookup_portal_cmdb_asset")
+    target = DEFAULT_REGISTRY.extract_target(tool, {"name": "test-device.example"})
+    if rule_action is not None:
+        policy.user_rules.insert(
+            0, GovernanceRule(match=f"{tool}(*)", action=rule_action),
+        )
+    assert policy.evaluate(_tc(tool, target)).action is expected
+    assert policy.evaluate(_tc("UnregisteredAssetTool", target)).action is (
+        GovernanceAction.DENY
+    )
+
+
 class TestDefaultPolicyLoad:
     """Verify default policy load produces expected builtin and user rules."""
 

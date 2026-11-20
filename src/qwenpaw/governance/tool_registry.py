@@ -154,6 +154,8 @@ def _register_builtin_tools(r: ToolRegistry) -> None:
 
     # ── Network / Shell ──
     r.register("Browser", "network", "url")
+    # The endpoint and request method are fixed inside this integration.
+    r.register("LookupPortalCmdbAsset", "network", "name")
     r.register("Bash", "shell", "command")
     r.register("RecallHistoryPython", "shell", "source")
 
