@@ -9,7 +9,7 @@ import "./controlledDocuments.css";
 
 const KINDS: Record<Kind, string> = { export: "导出原文", share: "限时共享脱敏预览", archive: "批量归档" };
 const STATES: Record<string, string> = {
-  pending_confirm: "待本人确认", pending_review: "待独立复核", ready: "已授权，待执行", export_ready: "单次下载已授权",
+  pending_confirm: "待本人确认", pending_review: "待管理员复核", ready: "已授权，待执行", export_ready: "单次下载已授权",
   running: "执行中", paused: "已暂停", stopped: "已停止", completed: "已完成", rejected: "复核拒绝", expired: "已过期",
   interrupted: "执行中断，检查点已保留", conflict: "资料状态冲突，操作已冻结", rolled_back: "已回退",
 };
@@ -219,7 +219,7 @@ export function ControlledDocumentsPanel() {
             <div>更新 {date(op.updated)} · 执行许可截至 {date(op.expires)}{op.reviewer ? ` · 复核人 ${op.reviewer}` : ""}</div>
             {op.kind === "archive" && <div>检查点 {op.cursor}/{op.targets.length} {op.control_ms === null ? "" : `· 服务端最近控制处理 ${op.control_ms} ms`}</div>}
             {op.status === "pending_confirm" && <p>{op.kind === "archive" ? "归档会移除可用资料并撤销已有共享。本批资料可回退，旧授权需重新申请。" : op.kind === "export" ? "下载将向当前浏览器交付未脱敏原文，许可仅可使用一次。" : "授权指定账号在有效期内读取脱敏预览，可主动撤销。"}
-              {op.sensitive ? " 此操作还须由另一管理员复核。" : ""}</p>}
+              {op.sensitive ? " 此操作还须经管理员复核。" : ""}</p>}
             <div className="controlled-line">
               {op.status === "pending_confirm" && <Button disabled={loading} onClick={() => update(`/operations/${op.id}/confirm`, "本人确认已记录")}>确认目标和后果</Button>}
               {op.status === "ready" && <Button type="primary" disabled={loading || !!workspace.policy.emergency} onClick={() => update(`/operations/${op.id}/execute`, "已开始执行，请查看当前状态")}>执行已授权操作</Button>}
@@ -248,16 +248,16 @@ export function ControlledDocumentsPanel() {
           {lastControl && <p role="status">{lastControl}</p>}
         </section>
         <section>
-          <h4>待独立复核</h4>
+          <h4>待管理员复核</h4>
           {oversight?.reviews.length === 0 && <p>暂无待复核操作。</p>}
           {oversight?.reviews.map((op) => <div className="controlled-record" key={op.id}>
             <strong>{KINDS[op.kind]}</strong> · 申请人 {op.subject} · {op.targets.length} 个目标
             <div>资料编号：{op.targets.join("、")}</div><code>{op.id}</code>
             {op.recipient_label && <p>接收方 {op.recipient_label} · {op.minutes} 分钟</p>}
-            {op.subject === workspace.actor ? <Tag>本人申请不能自审</Tag> : <div className="controlled-line">
+            <div className="controlled-line">
               <Button type="primary" disabled={loading} onClick={() => update(`/admin/review/${op.id}`, "已通过复核，等待申请人执行", { approve: true })}>批准</Button>
               <Button danger disabled={loading} onClick={() => update(`/admin/review/${op.id}`, "已拒绝操作", { approve: false })}>拒绝</Button>
-            </div>}
+            </div>
           </div>)}
         </section>
         <section>

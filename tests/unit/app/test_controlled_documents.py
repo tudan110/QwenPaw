@@ -121,14 +121,29 @@ def test_shared_preview_expires_and_is_revocable(client):
     assert get(client, "/state", B)["documents"] == []
 
 
-def test_admin_cannot_review_own_request(client):
+@pytest.mark.parametrize("approve_request", [True, False])
+def test_admin_can_review_own_request(client, approve_request):
     identifier = create(client, owner=ADMIN)
     op = operation(client, "export", [identifier], ADMIN)
+    review_path = f"/admin/review/{op}"
+    post(client, review_path, ADMIN, 409, approve=approve_request)
     post(client, f"/operations/{op}/confirm", ADMIN)
-    post(client, f"/admin/review/{op}", ADMIN, 403, approve=True)
-    response = post(client, f"/admin/review/{op}", {"X-Inoe-Token": "reviewer2"}, approve=False)
-    assert response.json()["status"] == "rejected"
-    post(client, f"/operations/{op}/execute", ADMIN, 409)
+    post(client, review_path, A, 403, approve=approve_request)
+    post(client, f"/operations/{op}/execute", ADMIN, 403)
+
+    result = post(client, review_path, ADMIN, approve=approve_request).json()
+    assert result["reviewer"] == "reviewer"
+    assert result["status"] == ("ready" if approve_request else "rejected")
+    assert any(
+        row["action"] == "operation.review" and row["object_id"] == op
+        and row["subject"] == "reviewer"
+        and row["result"] == ("success" if approve_request else "rejected")
+        for row in get(client, "/admin/state", ADMIN)["events"]
+    )
+    if approve_request:
+        assert post(client, f"/operations/{op}/execute", ADMIN).json()["status"] == "export_ready"
+    else:
+        post(client, f"/operations/{op}/execute", ADMIN, 409)
 
 
 def wait_cursor(client, op, minimum):

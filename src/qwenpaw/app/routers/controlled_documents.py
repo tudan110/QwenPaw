@@ -188,7 +188,7 @@ def request_operation(body: OperationInput, actor: Actor) -> dict:
                    (identifier, actor.key, actor.subject, body.kind, json.dumps(targets), int(risk),
                     actor.key_for(recipient) if recipient else None, recipient, body.minutes if recipient else None,
                     "pending_confirm", now, now, now + store.APPROVAL_SECONDS))
-        store.event(db, actor, f"{body.kind}.request", identifier, "pending", "需要独立复核" if risk else "需本人确认")
+        store.event(db, actor, f"{body.kind}.request", identifier, "pending", "需要管理员复核" if risk else "需本人确认")
         return store.operation_summary(store.owned_operation(db, actor, identifier))
 
 
@@ -211,8 +211,6 @@ def review_operation(identifier: str, body: ReviewInput, actor: Admin) -> dict:
         row = store.one(db, "SELECT * FROM operations WHERE id=?", (identifier,))
         if row is None:
             raise store.Rejected(404, "申请不存在")
-        if row["owner"] == actor.key:
-            raise store.Rejected(403, "复核人必须是另一位已认证的管理员", security=True)
         store.assert_live(row, "pending_review")
         db.execute("UPDATE operations SET status=?,reviewer=?,updated=? WHERE id=?",
                    ("ready" if body.approve else "rejected", actor.subject, time.time(), identifier))
@@ -246,7 +244,7 @@ def execute_operation(identifier: str, actor: Actor, background_tasks: Backgroun
         store.assert_open(db, actor)
         row = store.owned_operation(db, actor, identifier)
         if row["status"] == "pending_review":
-            raise store.Rejected(403, "未完成独立复核，禁止执行", security=True)
+            raise store.Rejected(403, "未完成管理员复核，禁止执行", security=True)
         store.assert_live(row, "ready")
         targets = json.loads(row["targets"])
         for target in targets:
