@@ -60,8 +60,6 @@ export function RuntimeSecurityMonitor({ windowS, reloadNonce, onIncident, onTra
   return <section className="gov-page">
     <Space orientation="vertical" size="middle" className="gov-stack">
       <Typography.Title level={3}>运行安全监测</Typography.Title>
-      <Alert type="info" showIcon title="监控来源：自监控规则引擎与链路追踪"
-        description="每 15 秒刷新页面数据，工具统计可能有约 1 分钟缓存。告警列表来自后端规则引擎；页面未验证外部通知送达。" />
       {(rules.error || tools.error || alerts.error) && <Alert showIcon type="warning" title={`读取失败：${[rules.error && "规则", tools.error && "工具统计", alerts.error && "告警"].filter(Boolean).join("、")}`} />}
       <Row gutter={[12, 12]}>
         <Col xs={24} sm={12} xl={6}><Card size="small"><Statistic title="窗口工具调用" value={totals?.calls ?? "—"} /></Card></Col>
@@ -69,17 +67,7 @@ export function RuntimeSecurityMonitor({ windowS, reloadNonce, onIncident, onTra
         <Col xs={24} sm={12} xl={6}><Card size="small"><Statistic title="触发中的运行告警" value={alerts.value && rules.value?.enabled ? active.length : "—"} /></Card></Col>
         <Col xs={24} sm={12} xl={6}><Card size="small"><Statistic title="规则引擎" value={state} valueStyle={{ fontSize: 19 }} /></Card></Col>
       </Row>
-      <Card size="small" title="安全信号覆盖" extra={<Button type="link" onClick={onTraces}>前往链路异常核查</Button>}>
-        <Table size="small" pagination={false} rowKey="signal" scroll={{ x: 710 }} dataSource={[
-          { signal: "异常工具调用", source: "工具统计、工具调用事件", state: "窗口统计 + 逐次链路", action: "门限告警尚未接入" },
-          { signal: "权限拒绝", source: "已接入的授权校验事件", state: "按会话查看原因和校验编号", action: "汇总及门限告警尚未接入" },
-          { signal: "违规输出", source: "此页没有覆盖全部输出通道的事件源", state: "生产监测覆盖待核验", action: "门限告警尚未接入" },
-          { signal: "核心运行故障", source: "自监控规则引擎", state: "按下方实际配置触发和恢复", action: state },
-        ]} columns={[
-          { title: "指标 / 信号", dataIndex: "signal" }, { title: "来源", dataIndex: "source" }, { title: "当前覆盖", dataIndex: "state" }, { title: "告警状态", dataIndex: "action" },
-        ]} />
-      </Card>
-      <Card size="small" title="告警阈值 · 后端已加载规则" extra={rules.value?.evaluationIntervalS ? <Tag>每 {rules.value.evaluationIntervalS} 秒评估</Tag> : undefined}>
+      <Card size="small" title="告警阈值" extra={rules.value?.evaluationIntervalS ? <Tag>每 {rules.value.evaluationIntervalS} 秒评估</Tag> : undefined}>
         <Table<SelfMonitorAlertRule> size="small" rowKey="id" dataSource={rules.value?.items ?? []} scroll={{ x: 800 }} pagination={{ pageSize: 6, hideOnSinglePage: true }}
           locale={{ emptyText: rules.error ? "无法读取规则" : rules.value?.enabled === false ? "自监控已停用" : rules.value ? "没有可展示的规则" : "正在读取规则" }} columns={[
             { title: "规则", dataIndex: "name" }, { title: "指标 / 标签", render: (_, row) => <>{row.metric || "规则计算指标"}{Object.keys(row.labels).length ? <><br /><small>{Object.entries(row.labels).map(([key, value]) => `${key}=${value}`).join("、")}</small></> : null}</> },
@@ -87,7 +75,7 @@ export function RuntimeSecurityMonitor({ windowS, reloadNonce, onIncident, onTra
             { title: "级别", render: (_, row) => <Tag color={row.severity === "critical" ? "red" : "orange"}>{row.severity === "critical" ? "严重" : "警告"}</Tag> },
           ]} />
       </Card>
-      <Card size="small" title="真实运行告警" extra={<Button size="small" onClick={() => setShowHistory(!showHistory)}>{showHistory ? "仅显示触发中" : "显示近期历史"}</Button>}>
+      <Card size="small" title="运行告警" extra={<Button size="small" onClick={() => setShowHistory(!showHistory)}>{showHistory ? "仅显示触发中" : "显示近期历史"}</Button>}>
         <Table<SelfMonitorAlert> size="small" rowKey="id" dataSource={visibleAlerts} scroll={{ x: 950 }} pagination={{ pageSize: 7, hideOnSinglePage: true }}
           locale={{ emptyText: alerts.error ? "无法读取告警" : alerts.value ? "接口未返回告警记录" : "正在读取告警" }} columns={[
             { title: "告警 / 编号", render: (_, row) => <>{row.name}<br /><small>#{row.id} · {row.ruleId}</small></> },
@@ -96,6 +84,16 @@ export function RuntimeSecurityMonitor({ windowS, reloadNonce, onIncident, onTra
             { title: "触发时间", render: (_, row) => showTs(row.startedAt) }, { title: "恢复时间", render: (_, row) => showTs(row.resolvedAt) },
             { title: "处置", render: (_, row) => <Button type="link" size="small" onClick={() => onIncident(row)}>登记事件</Button> },
           ]} />
+      </Card>
+      <Card size="small" title="安全信号覆盖" extra={<Button type="link" onClick={onTraces}>前往链路异常核查</Button>}>
+        <Table size="small" pagination={false} rowKey="signal" scroll={{ x: 710 }} dataSource={[
+          { signal: "异常工具调用", source: "工具统计、工具调用事件", state: "窗口统计 + 逐次链路", action: "门限告警尚未接入" },
+          { signal: "权限拒绝", source: "已接入的授权校验事件", state: "按会话查看原因和校验编号", action: "汇总及门限告警尚未接入" },
+          { signal: "违规输出", source: "此页没有覆盖全部输出通道的事件源", state: "生产监测覆盖待核验", action: "门限告警尚未接入" },
+          { signal: "核心运行故障", source: "自监控规则引擎", state: "按规则阈值触发和恢复", action: state },
+        ]} columns={[
+          { title: "指标 / 信号", dataIndex: "signal" }, { title: "来源", dataIndex: "source" }, { title: "当前覆盖", dataIndex: "state" }, { title: "告警状态", dataIndex: "action" },
+        ]} />
       </Card>
     </Space>
   </section>;

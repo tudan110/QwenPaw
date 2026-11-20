@@ -80,7 +80,8 @@ export function ComponentAdmissionPanel() {
         <Table size="small" pagination={false} rowKey="case" dataSource={probe.cases} columns={[
           { title: "检查对象", render: (_, row) => caseNames[row.case] },
           { title: "预期", render: (_, row) => decisions[row.expected] },
-          { title: "实际策略判定", render: (_, row) => <Tag color={row.decision === row.expected ? "green" : "red"}>{decisions[row.decision]}</Tag> },
+          { title: "实际策略判定", render: (_, row) => <Tag color={row.decision === "allow" ? "green" : "red"}>{decisions[row.decision]}</Tag> },
+          { title: "核对结果", render: (_, row) => row.decision === row.expected ? <Tag color="green">符合预期</Tag> : <Tag color="volcano">与预期不符</Tag> },
         ]} />
       </>}
       {probe && probe.state !== "ready" && probe.state !== "host_policy" && <Alert showIcon type="warning" title={probe.state === "guards_disabled" ? "未执行：生产守卫已关闭" : probe.state === "invalid_policy" ? "未执行：精确白名单格式有误" : "未执行：没有精确白名单"} />}
