@@ -232,16 +232,27 @@ function ApprovalCard({
   );
 }
 
-export function MainChatStopNotice({ feedback, onDismiss }: { feedback: StopFeedback; onDismiss: () => void }) {
+export function MainChatStopNotice({ feedback, onDismiss, onResume, continuationError }: {
+  feedback: StopFeedback;
+  onDismiss: () => void;
+  onResume?: () => void;
+  continuationError?: string;
+}) {
   return (
     <section className="main-chat-approval-panel" aria-label="任务停止反馈">
       <div className="main-chat-stop-notice" role="status">
         <div>
-          <strong>{STOP_LABELS[feedback.status]}</strong>
+          <strong>{onResume && feedback.status === "cancelled" ? "已停止" : STOP_LABELS[feedback.status]}</strong>
           {" · "}<time dateTime={new Date(feedback.at).toISOString()}>{new Date(feedback.at).toLocaleString()}</time>
-          <div>此提示只反映当前取消请求；远程操作是否停止或回退尚未确认。</div>
+          <div>{onResume
+            ? "已保留当前回复。继续生成只续写正文，不会重新执行原操作。"
+            : "此提示只反映当前取消请求；远程操作是否停止或回退尚未确认。"}</div>
+          {continuationError ? <div role="alert">{continuationError}</div> : null}
         </div>
-        <button type="button" className="main-chat-approval-button quiet" onClick={onDismiss}>关闭</button>
+        <div className="main-chat-stop-actions">
+          {onResume ? <button type="button" className="main-chat-approval-button" onClick={onResume}>继续生成</button> : null}
+          <button type="button" className="main-chat-approval-button quiet" onClick={onDismiss}>关闭</button>
+        </div>
       </div>
     </section>
   );

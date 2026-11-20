@@ -51,13 +51,29 @@ import {
   FAULT_SCENARIO_ANALYZING_PLACEHOLDER,
   maybeHandleFaultScenarioMessage,
 } from "./faultScenario";
-import { getChatUserId } from "../../auth/ssoSession";
+import { getChatUserId, getSession } from "../../auth/ssoSession";
 import { stopMainChatApprovalTask } from "../../api/mainChatApproval";
 import { withMainChatApprovalLevel } from "./mainChatApproval";
 import { useMainChatApprovalMode, useMainChatApprovals } from "./useMainChatApproval";
 
 const COPAW_CHANNEL = "console";
 const REMOTE_WAIT_BLOCK_ID = "portal-remote-waiting-status";
+const CONTINUATION_LIMIT = 32_000;
+
+type ReplyCheckpoint = {
+  question: string;
+  draft: string;
+  messageId: string;
+  responseId: string;
+  username: string;
+};
+
+type ChatStopFeedback = StopFeedback & {
+  reply?: ReplyCheckpoint;
+  continuationError?: string;
+};
+
+const currentUsername = () => getSession()?.user.username || "";
 
 type FaultDisposalHistoryMessage = {
   id?: string;
@@ -136,7 +152,7 @@ export function useRemoteChatSession({
   const [remoteSessions, setRemoteSessions] = useState<any[]>([]);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [stopFeedback, setStopFeedback] = useState<StopFeedback>();
+  const [stopFeedback, setStopFeedback] = useState<ChatStopFeedback>();
   const stopRevision = useRef(0);
   const clearStopFeedback = useCallback(() => {
     stopRevision.current += 1;
@@ -150,7 +166,8 @@ export function useRemoteChatSession({
   const alarmWorkorderCountdownIntervalRef = useRef(0);
 
   const streamAbortRef = useRef<AbortController | null>(null);
-  const streamAbortNoticeModeRef = useRef<"show" | "silent" | null>(null);
+  const activeTextQuestionRef = useRef<{ question: string; username: string } | null>(null);
+  const activeContinuationRef = useRef<ReplyCheckpoint | null>(null);
   const activeAssistantMessageIdRef = useRef<string | null>(null);
   const streamAssistantMapRef = useRef(new Map());
   const streamMessageMetaRef = useRef(new Map());
@@ -782,31 +799,49 @@ export function useRemoteChatSession({
       || isStreamingRef.current
       || currentChatStatusRef.current === "running",
     );
+    const wasContinuing = activeContinuationRef.current !== null;
     if (silent) clearStopFeedback();
     if (requestStop && !silent) {
+      const messageId = activeAssistantMessageIdRef.current;
+      const responses = messageId ? streamResponseTextRef.current.get(messageId) : undefined;
+      const question = activeTextQuestionRef.current;
+      let reply = activeContinuationRef.current;
+      if (!reply && question && messageId && responses?.size === 1) {
+        const [responseId, draft] = responses.entries().next().value;
+        reply = { ...question, messageId, responseId, draft };
+      }
+      if (reply && (!reply.draft.trim() || reply.draft.length > CONTINUATION_LIMIT
+        || reply.question.length > CONTINUATION_LIMIT || reply.username !== currentUsername())) {
+        reply = null;
+      }
       const revision = ++stopRevision.current;
       const agentId = remoteAgentIdRef.current;
       const chatId = currentChatIdRef.current;
       const at = Date.now();
-      const publish = (status: StopStatus) => {
+      const publish = (status: StopStatus, canContinue = false) => {
         if (stopRevision.current !== revision || remoteAgentIdRef.current !== agentId
           || currentChatIdRef.current !== chatId) return;
-        setStopFeedback({ agentId, chatId, at, status });
+        setStopFeedback({ agentId, chatId, at, status, reply: canContinue ? reply ?? undefined : undefined });
       };
       if (isRemoteEmployeeRef.current && chatId) {
         publish("requesting");
         void stopChat(agentId || undefined, chatId).then(
-          (result) => publish(stopResult(result)),
+          (result) => publish(stopResult(result), result.text_continuation === true),
           () => publish("failed"),
         );
       } else {
         publish("unavailable");
       }
     }
-    streamAbortNoticeModeRef.current = silent ? "silent" : "show";
     flushStreamUpdates();
     streamAbortRef.current?.abort();
     streamAbortRef.current = null;
+    isStreamingRef.current = false;
+    currentChatStatusRef.current = "idle";
+    setIsCreatingChat(false);
+    isCreatingChatRef.current = false;
+    activeTextQuestionRef.current = null;
+    activeContinuationRef.current = null;
     streamAssistantMapRef.current = new Map();
     streamMessageMetaRef.current = new Map();
     streamPendingTextRef.current = new Map();
@@ -815,7 +850,7 @@ export function useRemoteChatSession({
     pendingResourceImportGuideRef.current = false;
     clearRemoteWaitNoticeTimers();
     clearRemoteWaitNotice();
-    if (!silent && hadActiveStream) {
+    if (!silent && hadActiveStream && !wasContinuing) {
       finalizePendingResponse("已停止接收本轮回复。");
     }
     activeAssistantMessageIdRef.current = null;
@@ -823,6 +858,64 @@ export function useRemoteChatSession({
     setIsStreaming(false);
     setCurrentChatStatus("idle");
   }, [clearStopFeedback, finalizePendingResponse]);
+
+  const resumeStoppedReply = async () => {
+    const reply = stopFeedback?.reply;
+    const agentId = remoteAgentIdRef.current;
+    const chatId = currentChatIdRef.current;
+    if (!reply || !agentId || stopFeedback.chatId !== chatId || stopFeedback.agentId !== agentId
+      || reply.username !== currentUsername() || streamAbortRef.current || isStreamingRef.current
+      || isCreatingChatRef.current) return;
+
+    const controller = new AbortController();
+    streamAbortRef.current = controller;
+    activeContinuationRef.current = reply;
+    isStreamingRef.current = true;
+    currentChatStatusRef.current = "running";
+    clearStopFeedback();
+    const revision = stopRevision.current;
+    setIsStreaming(true);
+    setCurrentChatStatus("running");
+
+    const stillCurrent = () => streamAbortRef.current === controller
+      && stopRevision.current === revision && currentChatIdRef.current === chatId
+      && remoteAgentIdRef.current === agentId && currentUsername() === reply.username;
+    let completed = false;
+    try {
+      await streamChat(agentId, { chat_id: chatId, question: reply.question, draft: reply.draft }, {
+        continuation: true,
+        signal: controller.signal,
+        onEvent: (event) => {
+          if (!stillCurrent() || event.object !== "text_continuation") return;
+          if (event.status === "completed") completed = true;
+          if (typeof event.text !== "string") return;
+          const draft = reply.draft + event.text;
+          activeContinuationRef.current = { ...reply, draft };
+          appendAssistantResponseBlock(reply.messageId, reply.responseId, draft, { replace: true });
+        },
+      });
+      if (!completed && !controller.signal.aborted) throw new Error("续写连接已断开，请重试。");
+    } catch (error) {
+      if (stillCurrent() && !controller.signal.aborted) {
+        const updated = activeContinuationRef.current || reply;
+        setStopFeedback({
+          ...stopFeedback,
+          reply: updated.draft.length <= CONTINUATION_LIMIT ? updated : undefined,
+          continuationError: normalizeRemoteChatErrorMessage(error),
+        });
+      }
+    } finally {
+      if (streamAbortRef.current === controller) {
+        streamAbortRef.current = null;
+        activeContinuationRef.current = null;
+        streamResponseTextRef.current = new Map();
+        isStreamingRef.current = false;
+        currentChatStatusRef.current = "idle";
+        setIsStreaming(false);
+        setCurrentChatStatus("idle");
+      }
+    }
+  };
 
   const cancelApprovalTask = useCallback(async (signal: AbortSignal) => {
     const agentId = remoteAgentIdRef.current;
@@ -1107,7 +1200,6 @@ export function useRemoteChatSession({
     const frontendMessageId = seedStreamStateFromMessages(messages);
     const controller = new AbortController();
     streamAbortRef.current = controller;
-    streamAbortNoticeModeRef.current = null;
     currentChatIdRef.current = chatId;
     currentSessionIdRef.current = normalizedSessionId;
     isStreamingRef.current = true;
@@ -1129,10 +1221,14 @@ export function useRemoteChatSession({
         userId,
         channel,
         signal: controller.signal,
-        onEvent: (event) => handleRemoteStreamEvent(event, employee),
+        onEvent: (event) => {
+          if (!controller.signal.aborted) handleRemoteStreamEvent(event, employee);
+        },
       });
-      finalizePendingResponse("");
-      setCurrentChatStatus("idle");
+      if (!controller.signal.aborted) {
+        finalizePendingResponse("");
+        setCurrentChatStatus("idle");
+      }
     } catch (error: any) {
       if (!controller.signal.aborted) {
         console.warn("Failed to reconnect running chat:", error);
@@ -1141,17 +1237,16 @@ export function useRemoteChatSession({
     } finally {
       if (streamAbortRef.current === controller) {
         streamAbortRef.current = null;
+        clearRemoteWaitNoticeTimers();
+        isStreamingRef.current = false;
+        setIsStreaming(false);
+        streamMessageMetaRef.current = new Map();
+        streamPendingTextRef.current = new Map();
+        streamResponseTextRef.current = new Map();
+        streamProcessBlocksRef.current = new Map();
+        hasStreamOutputRef.current = false;
+        await refreshRemoteSessions(false);
       }
-      clearRemoteWaitNoticeTimers();
-      isStreamingRef.current = false;
-      setIsStreaming(false);
-      streamAbortNoticeModeRef.current = null;
-      streamMessageMetaRef.current = new Map();
-      streamPendingTextRef.current = new Map();
-      streamResponseTextRef.current = new Map();
-      streamProcessBlocksRef.current = new Map();
-      hasStreamOutputRef.current = false;
-      await refreshRemoteSessions(false);
     }
   }, [finalizePendingResponse, refreshRemoteSessions]);
 
@@ -1388,6 +1483,10 @@ export function useRemoteChatSession({
       return;
     }
 
+    if (event.object === "message" && (event.type === "plugin_call" || event.type === "plugin_call_output")) {
+      activeTextQuestionRef.current = null;
+    }
+
     if (event.object === "message" && event.id) {
       streamMessageMetaRef.current.set(event.id, {
         role: event.role,
@@ -1529,9 +1628,9 @@ export function useRemoteChatSession({
     }
 
     clearStopFeedback();
+    activeTextQuestionRef.current = null;
     const normalizedVisibleContent = (visibleContent || content).trim();
     const userMessage = createUserMessage(normalizedVisibleContent);
-    streamAbortNoticeModeRef.current = null;
     streamAssistantMapRef.current = new Map();
     streamMessageMetaRef.current = new Map();
     streamPendingTextRef.current = new Map();
@@ -1563,6 +1662,7 @@ export function useRemoteChatSession({
         },
         setMessages,
       });
+      if (controller.signal.aborted) return false;
       if (scenarioResult.handled) {
         setIsStreaming(false);
         setCurrentChatStatus("idle");
@@ -1595,10 +1695,11 @@ export function useRemoteChatSession({
             meta: { ...chatMeta, portalSessionGroup: nextEmployee.id },
           });
         } finally {
-          setIsCreatingChat(false);
+          if (streamAbortRef.current === controller) setIsCreatingChat(false);
         }
       }
 
+      if (controller.signal.aborted) return false;
       if (ensuredChat.session_id !== approvalSessionId) {
         approvalMode.rememberForSession(ensuredChat.session_id, requestApprovalLevel);
       }
@@ -1613,6 +1714,11 @@ export function useRemoteChatSession({
         || (reusingChat ? currentChatMetaRef.current : null);
       manualAdviceOnlyRef.current = isManualFaultAdviceOnly(content, currentChatMetaRef.current);
 
+      const username = currentUsername();
+      if (username && normalizedVisibleContent === content.trim()
+        && !manualAdviceOnlyRef.current && !pendingResourceImportGuideRef.current) {
+        activeTextQuestionRef.current = { question: content, username };
+      }
       await streamChat(
         nextRemoteAgentId,
         withMainChatApprovalLevel({
@@ -1639,39 +1745,39 @@ export function useRemoteChatSession({
         }, requestApprovalLevel),
         {
           signal: controller.signal,
-          onEvent: (event) => handleRemoteStreamEvent(event, nextEmployee),
+          onEvent: (event) => {
+            if (!controller.signal.aborted) handleRemoteStreamEvent(event, nextEmployee);
+          },
         },
       );
 
+      if (controller.signal.aborted) return false;
       finalizePendingResponse("本轮对话未返回可展示内容。");
       setCurrentChatStatus("idle");
       streamSucceeded = true;
       streamProcessBlocksRef.current = new Map();
     } catch (error: any) {
-      if (controller.signal.aborted) {
-        if (streamAbortNoticeModeRef.current == null) {
-          finalizePendingResponse("本轮对话已停止。");
-        }
-      } else {
+      if (!controller.signal.aborted) {
         finalizePendingResponse(`对话失败：${normalizeRemoteChatErrorMessage(error)}`);
         setCurrentChatStatus("idle");
       }
     } finally {
+      // Stop/navigation already cleaned up. Do not reset a newer stream's refs.
       if (streamAbortRef.current === controller) {
         streamAbortRef.current = null;
+        activeTextQuestionRef.current = null;
+        clearRemoteWaitNoticeTimers();
+        setIsCreatingChat(false);
+        isStreamingRef.current = false;
+        setIsStreaming(false);
+        streamMessageMetaRef.current = new Map();
+        streamPendingTextRef.current = new Map();
+        streamResponseTextRef.current = new Map();
+        streamProcessBlocksRef.current = new Map();
+        hasStreamOutputRef.current = false;
+        pendingResourceImportGuideRef.current = false;
+        await refreshRemoteSessions(false);
       }
-      clearRemoteWaitNoticeTimers();
-      setIsCreatingChat(false);
-      isStreamingRef.current = false;
-      setIsStreaming(false);
-      streamAbortNoticeModeRef.current = null;
-      streamMessageMetaRef.current = new Map();
-      streamPendingTextRef.current = new Map();
-      streamResponseTextRef.current = new Map();
-      streamProcessBlocksRef.current = new Map();
-      hasStreamOutputRef.current = false;
-      pendingResourceImportGuideRef.current = false;
-      await refreshRemoteSessions(false);
     }
 
     return streamSucceeded;
@@ -1738,6 +1844,9 @@ export function useRemoteChatSession({
     stopActiveStream,
     stopFeedback: stopFeedback?.agentId === remoteAgentId && stopFeedback?.chatId === currentChatId
       ? stopFeedback : undefined,
+    resumeStoppedReply: stopFeedback?.reply && stopFeedback.agentId === remoteAgentId
+      && stopFeedback.chatId === currentChatId && stopFeedback.reply.username === currentUsername()
+      ? resumeStoppedReply : undefined,
     clearStopFeedback,
     refreshRemoteSessions,
     handleOpenHistory,

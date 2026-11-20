@@ -246,7 +246,7 @@ export function deleteChat(agentId: string | undefined, chatId: string) {
 }
 
 export function stopChat(agentId: string | undefined, chatId: string) {
-  return requestCopaw<{ stopped: boolean; status?: string }>(`/console/chat/stop?chat_id=${encodeURIComponent(chatId)}`, {
+  return requestCopaw<{ stopped: boolean; status?: string; text_continuation?: boolean }>(`/console/chat/stop?chat_id=${encodeURIComponent(chatId)}`, {
     agentId,
     method: "POST",
   });
@@ -255,7 +255,7 @@ export function stopChat(agentId: string | undefined, chatId: string) {
 export async function streamChat(
   agentId: string | undefined,
   payload: Record<string, unknown>,
-  { signal, onEvent }: StreamChatOptions = {},
+  { signal, onEvent, continuation = false }: StreamChatOptions & { continuation?: boolean } = {},
 ) {
   const agentCandidates = getAgentCandidates(agentId);
   let response: Response | null = null;
@@ -275,7 +275,7 @@ export async function streamChat(
     let candidateResponse: Response;
     let keepAbortBound = false;
     try {
-      candidateResponse = await fetch(`${API_BASE_URL}/console/chat`, {
+      candidateResponse = await fetch(`${API_BASE_URL}/console/chat${continuation ? "/continue" : ""}`, {
         method: "POST",
         signal: controller.signal,
         headers: {

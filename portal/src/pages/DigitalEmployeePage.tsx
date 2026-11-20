@@ -570,6 +570,7 @@ export default function DigitalEmployeePage({
     handleRemoteSendMessage,
     stopActiveStream,
     stopFeedback,
+    resumeStoppedReply,
     clearStopFeedback,
     refreshRemoteSessions,
     handleOpenHistory,
@@ -1505,7 +1506,14 @@ export default function DigitalEmployeePage({
   const approvalPanel = (
     <>
       {canManageAi === true ? <MainChatApprovalPanel controls={approvals} /> : null}
-      {stopFeedback ? <MainChatStopNotice feedback={stopFeedback} onDismiss={clearStopFeedback} /> : null}
+      {stopFeedback ? (
+        <MainChatStopNotice
+          feedback={stopFeedback}
+          onResume={resumeStoppedReply}
+          continuationError={stopFeedback.continuationError}
+          onDismiss={clearStopFeedback}
+        />
+      ) : null}
     </>
   );
   const chatModelControl = showModelSelector ? (

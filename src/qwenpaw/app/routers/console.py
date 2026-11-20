@@ -20,7 +20,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
 from qwenpaw.schemas import (
@@ -37,6 +37,7 @@ from ...extensions.api import trusted_chat_text
 from ...utils.logging import LOG_FILE_PATH
 from ..agent_context import get_agent_for_request
 from ..approvals.display import approval_display_fields
+from ..chats.text_continuation import stream_text_continuation
 from ..chats.title_generator import generate_and_update_title
 from ..utils import check_upload_size
 
@@ -257,10 +258,14 @@ async def post_console_chat(
             console_channel.stream_one,
         )
 
+    return _chat_stream(tracker, queue, chat.id)
+
+
+def _chat_stream(tracker, queue, chat_id: str) -> StreamingResponse:
     async def event_generator() -> AsyncGenerator[str, None]:
         # Hold iterator so finally can aclose(); guarantees stream_from_queue's
         # finally (detach_subscriber) on client abort / generator teardown.
-        stream_it = tracker.stream_from_queue(queue, chat.id)
+        stream_it = tracker.stream_from_queue(queue, chat_id)
         try:
             try:
                 async for event_data in stream_it:
@@ -307,7 +312,11 @@ async def post_console_chat_stop(
         # In the isolated profile, accept only the registered chat UUID.
         await require_owned_chat(workspace.chat_manager, chat_id, scope)
         status = await tracker.stop_run(chat_id)
-        return {"stopped": status != "not_running", "status": status}
+        return {
+            "stopped": status != "not_running",
+            "status": status,
+            "text_continuation": status in {"cancelled", "accepted"},
+        }
     if workspace.chat_manager:
         existing = await workspace.chat_manager.get_chat(chat_id)
         if existing is not None:
@@ -323,6 +332,40 @@ async def post_console_chat_stop(
             await require_owned_chat(workspace.chat_manager, resolved_chat_id, None)
             status = await tracker.stop_run(resolved_chat_id)
     return {"stopped": status != "not_running", "status": status}
+
+
+class TextContinuationRequest(BaseModel):
+    chat_id: str = Field(min_length=1, max_length=64)
+    question: str = Field(min_length=1, max_length=trusted_chat_text.MAX_INPUT)
+    draft: str = Field(min_length=1, max_length=trusted_chat_text.MAX_INPUT)
+
+
+@router.post("/chat/continue", summary="Continue a stopped Portal text reply")
+async def post_console_chat_continue(
+    payload: TextContinuationRequest,
+    request: Request,
+) -> StreamingResponse:
+    scope = chat_scope()
+    if scope is None:
+        raise HTTPException(404, "当前未启用会话隔离，无法继续生成。")
+    workspace = await get_agent_for_request(request)
+    chat = await require_owned_chat(workspace.chat_manager, payload.chat_id, scope)
+    await trusted_chat_text.check_portal_input([payload.question], isolated=True)
+    await trusted_chat_text.check_portal_input([payload.draft], isolated=True)
+    if not payload.question.strip() or not payload.draft.strip():
+        raise HTTPException(422, "缺少可继续生成的正文。")
+
+    def generate(checkpoint):
+        return stream_text_continuation(
+            workspace.agent_id, checkpoint.question, checkpoint.draft,
+        )
+
+    queue, _ = await workspace.task_tracker.attach_or_start(
+        chat.id, payload, generate, join_existing=False,
+    )
+    if queue is None:
+        raise HTTPException(409, "当前对话仍有任务在运行，请稍后再继续生成。")
+    return _chat_stream(workspace.task_tracker, queue, chat.id)
 
 
 @router.post("/upload", response_model=dict, summary="Upload file for chat")

@@ -365,6 +365,14 @@
   font-size: 13px;
 }
 
+.portal-digital-employee .main-chat-stop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: none;
+}
+
 .portal-digital-employee .main-chat-stop-notice time {
   font-size: 12px;
 }

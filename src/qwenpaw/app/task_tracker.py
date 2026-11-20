@@ -256,14 +256,19 @@ class TaskTracker:
         run_key: str,
         payload: Any,
         stream_fn: Callable[..., Coroutine],
-    ) -> tuple[asyncio.Queue, bool]:
+        *,
+        join_existing: bool = True,
+    ) -> tuple[asyncio.Queue | None, bool]:
         """Attach to an existing run or start a new one.
 
-        Returns ``(queue, is_new_run)``.
+        Returns ``(queue, is_new_run)``; the queue is None when busy and
+        the caller opted out of joining the existing run.
         """
         async with self._lock:
             state = self._runs.get(run_key)
             if state is not None and not state.task.done():
+                if not join_existing:
+                    return None, False
                 q: asyncio.Queue = asyncio.Queue()
                 for sse in state.buffer:
                     q.put_nowait(sse)
