@@ -1941,7 +1941,7 @@ export default function DigitalEmployeePage({
           ) : isTracesMode ? (
             renderDeferredPanel(<TracesCenterPanel />)
           ) : isSelfMonitorMode ? (
-            renderDeferredPanel(<SelfMonitorPanel />)
+            renderDeferredPanel(<SelfMonitorPanel canManageAi={canManageAi === true} />)
           ) : isAlarmRegistryMode ? (
             renderDeferredPanel(<AlarmRegistryPanel pageTheme={pageTheme} onOpenChat={(chatId, sessionId) => {
               const employee = getEmployeeById("fault");

@@ -53,6 +53,7 @@ _ADMIN_PREFIXES = (
     "/api/coding",
     "/api/coding-mode",
     "/api/loops",
+    "/api/portal/self-monitor/alert-rules",
 )
 _USER_POST_PATHS = {
     "/api/chats",

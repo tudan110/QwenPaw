@@ -10,6 +10,7 @@ import {
 } from "../../api/traces";
 import { EChart } from "../../components/big-screen/charts/EChart";
 import "./tracesCenterPanel.css";
+import { TraceSecurityReview } from "./traceSecurityReview";
 
 const REFRESH_INTERVAL_MS = 15000;
 const DEFAULT_LIST_LIMIT = 50;
@@ -797,7 +798,7 @@ export function TracesCenterPanel() {
   const [spanRows, setSpanRows] = useState<TraceSpan[]>([]);
   const [spanType, setSpanType] = useState<"all" | "llm_call" | "tool_call">("all");
   const [detailTab, setDetailTab] = useState<
-    "tree" | "timeline" | "trajectory" | "analysis" | "authorization"
+    "tree" | "timeline" | "trajectory" | "analysis" | "authorization" | "security-review"
   >("tree");
 
   const loadTrends = useCallback(async (signal?: AbortSignal) => {
@@ -1354,6 +1355,7 @@ export function TracesCenterPanel() {
                     ["trajectory", "推理轨迹"],
                     ["analysis", "链路分析"],
                     ["authorization", "权限校验"],
+                    ["security-review", "异常核查"],
                   ] as const
                 ).map(([id, label]) => (
                   <button
@@ -1376,6 +1378,8 @@ export function TracesCenterPanel() {
                 <TimelineView detail={detail} />
               ) : detailTab === "authorization" ? (
                 <AuthorizationView detail={detail} />
+              ) : detailTab === "security-review" ? (
+                <TraceSecurityReview key={detail.session_id} detail={detail} onAuthorization={() => setDetailTab("authorization")} />
               ) : detailTab === "analysis" ? (
                 <AnalysisView detail={detail} />
               ) : (

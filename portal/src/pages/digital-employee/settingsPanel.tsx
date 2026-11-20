@@ -36,6 +36,10 @@ import ProviderSettingsSection, {
 import ResourceImportLlmSection from "./ResourceImportLlmSection";
 import { PortalChatControlPanel } from "./portalChatControlPanel";
 
+const GovernanceSettings = lazy(() =>
+  import("./governanceSettings").then((module) => ({ default: module.GovernanceSettings })),
+);
+
 const PortalSecurityEvidence = lazy(() =>
   import("./securityEvidencePanel").then((module) => ({ default: module.PortalSecurityEvidence })),
 );
@@ -307,6 +311,12 @@ function isMaskedSecret(value: unknown): value is MaskedSecret {
 }
 
 const SETTINGS_TABS = [
+  {
+    id: "governance",
+    label: "组件治理与策略",
+    iconClass: "fa-layer-group",
+    description: "组件清单、供应链变更、扫描处置与数据策略",
+  },
   {
     id: "controlled-documents",
     label: "受控资料",
@@ -1632,7 +1642,7 @@ export function SettingsPanel({ canManageAi = false }: { canManageAi?: boolean }
                 role="tablist"
                 aria-label="设置分类"
               >
-                {SETTINGS_TABS.map((tab) => {
+                {SETTINGS_TABS.filter((tab) => tab.id !== "governance" || canManageAi).map((tab) => {
                   const active = activeTab === tab.id;
                   return (
                     <button
@@ -1659,6 +1669,11 @@ export function SettingsPanel({ canManageAi = false }: { canManageAi?: boolean }
             </aside>
 
             <section className="portal-advanced-config-panel settings-content-panel">
+              {canManageAi && activeTab === "governance" ? (
+                <Suspense fallback={<p role="status">正在加载组件治理与策略…</p>}>
+                  <GovernanceSettings />
+                </Suspense>
+              ) : null}
               {activeTab === "controlled-documents" ? (
                 <Suspense fallback={<p role="status">正在加载受控资料…</p>}>
                   <ControlledDocumentsPanel />

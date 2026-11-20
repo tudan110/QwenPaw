@@ -5,9 +5,11 @@
 from __future__ import annotations
 
 from enum import Enum
+from importlib import metadata
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Path, Request
+from packaging.requirements import Requirement
 from pydantic import BaseModel, Field
 
 from ...config import load_config
@@ -147,6 +149,31 @@ def _build_tool_info(tool_config: Any, tool_name: str) -> ToolInfo:
             tool_info.config_values = masked_config
 
     return tool_info
+
+
+@router.get("/component-dependencies")
+def list_component_dependencies() -> dict:
+    """Direct base dependencies only; avoid exposing paths or index URLs."""
+    try:
+        requirements = metadata.requires("qwenpaw") or []
+    except metadata.PackageNotFoundError:
+        return {"available": False, "items": []}
+    items: dict[str, dict] = {}
+    for raw in requirements:
+        requirement = Requirement(raw)
+        if requirement.marker and not requirement.marker.evaluate({"extra": ""}):
+            continue
+        name = requirement.name
+        try:
+            installed = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            installed = None
+        items[name] = {
+            "name": name,
+            "declared": str(requirement.specifier),
+            "installed": installed,
+        }
+    return {"available": True, "items": sorted(items.values(), key=lambda item: item["name"].lower())}
 
 
 @router.get("", response_model=List[ToolInfo])

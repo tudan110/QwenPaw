@@ -21,6 +21,7 @@ import {
 import { EChart } from "../../components/big-screen/charts/EChart";
 import { buildTopologySeries } from "../../components/topologyLayout";
 import { TracesCenterPanel } from "./tracesCenterPanel";
+import { IncidentRegister, RuntimeSecurityMonitor } from "./runtimeSecurityMonitor";
 import { workspaceDisplayName } from "./workspaceDisplay";
 import "../self-monitor.css";
 
@@ -86,7 +87,7 @@ function num(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-export function SelfMonitorPanel() {
+export function SelfMonitorPanel({ canManageAi = false }: { canManageAi?: boolean } = {}) {
   const [windowS, setWindowS] = useState<number>(3600);
   const [overview, setOverview] = useState<SelfMonitorOverview | null>(null);
   const [events, setEvents] = useState<SelfMonitorEvent[]>([]);
@@ -182,7 +183,7 @@ export function SelfMonitorPanel() {
   // AI Agent observability IA (对标阿里云):
   // 总览 | 链路追踪(内嵌追溯中心) | 会话分析 | 场景化分析(四个子维度)
   const navigate = useNavigate();
-  type TopTab = "overview" | "traces" | "sessions" | "scenario";
+  type TopTab = "overview" | "traces" | "sessions" | "scenario" | "runtime-security" | "incidents";
   type ScenarioTab = "tokens" | "model-perf" | "tools" | "users";
   const [activeTab, setActiveTab] = useState<TopTab>(() => {
     // deep-links from the folded-in standalone pages keep working
@@ -193,6 +194,7 @@ export function SelfMonitorPanel() {
       ? wanted
       : "overview";
   });
+  const [incidentAlert, setIncidentAlert] = useState<SelfMonitorAlert | null>(null);
   const [scenarioTab, setScenarioTab] = useState<ScenarioTab>("tokens");
   const [models, setModels] = useState<SelfMonitorModels | null>(null);
   const [tokensData, setTokensData] = useState<SelfMonitorTokens | null>(null);
@@ -815,8 +817,10 @@ export function SelfMonitorPanel() {
             ["traces", "链路追踪"],
             ["sessions", "会话分析"],
             ["scenario", "场景化分析"],
+            ["runtime-security", "运行安全"],
+            ["incidents", "事件与复盘"],
           ] as const
-        ).map(([id, label]) => (
+        ).filter(([id]) => canManageAi || (id !== "runtime-security" && id !== "incidents")).map(([id, label]) => (
           <button
             key={id}
             className={activeTab === id ? "on" : ""}
@@ -831,6 +835,15 @@ export function SelfMonitorPanel() {
         <div className="sm-view sm-traces-embed">
           <TracesCenterPanel />
         </div>
+      ) : null}
+
+      {canManageAi && activeTab === "runtime-security" ? (
+        <div className="sm-view"><RuntimeSecurityMonitor windowS={windowS} reloadNonce={reloadNonce}
+          onTraces={() => setActiveTab("traces")} onIncident={(alert) => { setIncidentAlert(alert); setActiveTab("incidents"); }} /></div>
+      ) : null}
+
+      {canManageAi && activeTab === "incidents" ? (
+        <div className="sm-view"><IncidentRegister alert={incidentAlert} /></div>
       ) : null}
 
       {activeTab === "scenario" ? (

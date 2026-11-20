@@ -39,6 +39,19 @@ export interface SelfMonitorAlert {
   resolvedAt: number | null;
 }
 
+export interface SelfMonitorAlertRule {
+  id: string;
+  name: string;
+  severity: string;
+  kind: string;
+  metric: string;
+  labels: Record<string, string>;
+  op: string;
+  threshold: number | null;
+  windowS: number;
+  forS: number;
+}
+
 export interface SelfMonitorTopology {
   generatedAt: number;
   windowS: number;
@@ -264,6 +277,11 @@ export const selfMonitorApi = {
     requestPortalApi<{ active: SelfMonitorAlert[]; recent: SelfMonitorAlert[] }>(
       `/self-monitor/alerts${buildQuery({ limit })}`,
       { signal },
+    ),
+
+  alertRules: (signal?: AbortSignal) =>
+    requestPortalApi<{ enabled: boolean; evaluationIntervalS: number | null; items: SelfMonitorAlertRule[] }>(
+      "/self-monitor/alert-rules", { signal },
     ),
 
   topology: (windowS = 3600, signal?: AbortSignal) =>

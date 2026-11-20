@@ -1,0 +1,13 @@
+.gov-page { padding: 16px; min-width: 0; }
+.gov-stack.ant-space, .gov-stack { width: 100%; min-width: 0; }
+.gov-stack > .ant-space-item { min-width: 0; }
+.gov-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
+.gov-full { grid-column: 1 / -1; }
+.gov-inline-status { margin-inline-start: 12px; }
+.gov-revision { margin-block: 12px 18px; }
+.gov-revision .ant-descriptions { margin-top: 8px; overflow-wrap: anywhere; }
+.gov-preview { margin: 0; min-height: 9em; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .gov-form-grid { grid-template-columns: 1fr; }
+  .gov-page { padding: 8px; }
+}

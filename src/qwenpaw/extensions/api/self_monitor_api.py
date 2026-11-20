@@ -28,6 +28,7 @@ from ...self_monitor.prometheus import CONTENT_TYPE, render_prometheus
 from ...self_monitor.sampler import (
     ROLLUP_INTERVAL_SECONDS,
     SELF_MONITOR_ENABLED,
+    get_self_monitor,
 )
 from ...self_monitor.store import SelfMonitorStore
 from ...self_monitor.topology import build_topology
@@ -315,6 +316,32 @@ def self_monitor_alerts(
     return {
         "active": store.active_alerts(),
         "recent": store.recent_alerts(limit=limit),
+    }
+
+
+@router.get("/alert-rules")
+def self_monitor_alert_rules() -> dict:
+    """Return thresholds loaded by the self-monitor service, without secrets."""
+    if not SELF_MONITOR_ENABLED:
+        return {"enabled": False, "evaluationIntervalS": None, "items": []}
+    return {
+        "enabled": True,
+        "evaluationIntervalS": ROLLUP_INTERVAL_SECONDS,
+        "items": [
+            {
+                "id": rule.id,
+                "name": rule.name,
+                "severity": rule.severity,
+                "kind": rule.kind,
+                "metric": rule.metric,
+                "labels": dict(rule.label_filter or {}),
+                "op": rule.op,
+                "threshold": None if rule.kind == "cost_daily" else rule.threshold,
+                "windowS": rule.window_s,
+                "forS": rule.for_s,
+            }
+            for rule in get_self_monitor().alert_engine.rules
+        ],
     }
 
 
