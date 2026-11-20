@@ -136,3 +136,48 @@ test("HTTP 200 failed SSE preserves safe model categories for user-facing advice
     await server.close();
   }
 });
+
+
+test("Portal streaming distinguishes a known input denial from unrelated HTTP failures", async () => {
+  const server = await createServer({
+    root: fileURLToPath(new URL("../..", import.meta.url)),
+    configFile: false,
+    optimizeDeps: { noDiscovery: true, include: [] },
+    server: { middlewareMode: true, hmr: false },
+    appType: "custom",
+  });
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const originalFetch = globalThis.fetch;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { setTimeout, clearTimeout },
+  });
+
+  try {
+    const { streamChat } = await server.ssrLoadModule("/src/api/copawChat.ts");
+    const { toFriendlyChatError: displayError } = await server.ssrLoadModule("/src/lib/chatErrorMessage.ts");
+    const denial = "安全策略拦截了疑似越权指令，请改用正常业务描述。（规则：identity-spoof）";
+    const fallback = "服务暂时遇到点问题，请稍后重试。";
+    const cases = [
+      [403, denial, "安全策略已拦截本次请求（疑似冒用管理员或系统身份），请改用正常业务描述。"],
+      [403, "当前账号没有权限。", fallback],
+      [403, `${denial} /tmp/internal-detail`, fallback],
+      [500, denial, fallback],
+    ] as const;
+    for (const [status, detail, expected] of cases) {
+      globalThis.fetch = async () => Response.json({ detail }, { status });
+      await assert.rejects(streamChat("gateway", { stream: true }), (error: unknown) => {
+        assert.equal(displayError(error), expected);
+        return true;
+      });
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalWindow) {
+      Object.defineProperty(globalThis, "window", originalWindow);
+    } else {
+      Reflect.deleteProperty(globalThis, "window");
+    }
+    await server.close();
+  }
+});

@@ -9,6 +9,35 @@
 // Generic, always-safe fallback shown when we can't (or shouldn't) say more.
 const GENERIC_FRIENDLY = "服务暂时遇到点问题，请稍后重试。";
 
+const TRUSTED_INPUT_REJECTIONS = new Map([
+  ["role-override", "疑似要求覆盖系统指令"],
+  ["identity-spoof", "疑似冒用管理员或系统身份"],
+  ["secret-extraction", "疑似请求受保护的内部信息"],
+]);
+
+class TrustedInputRejection extends Error {
+  constructor(category: string) {
+    super(`安全策略已拦截本次请求（${category}），请改用正常业务描述。`);
+    this.name = "TrustedInputRejection";
+  }
+}
+
+// Only classify the current FastAPI guard's exact HTTP denial. Other 403s may
+// be authentication or permissions errors and must not look like input blocks.
+export function trustedInputRejectionFromHttp(
+  status: number,
+  body: unknown,
+): Error | undefined {
+  if (status !== 403 || !body || typeof body !== "object") return;
+  const detail = (body as { detail?: unknown }).detail;
+  if (typeof detail !== "string") return;
+  for (const [rule, category] of TRUSTED_INPUT_REJECTIONS) {
+    if (detail === `安全策略拦截了疑似越权指令，请改用正常业务描述。（规则：${rule}）`) {
+      return new TrustedInputRejection(category);
+    }
+  }
+}
+
 // Stack-trace signatures (Python / JS) that must never reach end users.
 const TRACEBACK_PATTERN =
   /Traceback \(most recent call last\)|File "[^"]+", line \d+|\n\s*at [\w.$<>]+ \(/i;
@@ -81,6 +110,8 @@ export function extractRuntimeErrorText(errorLike: unknown): string {
 }
 
 export function toFriendlyChatError(error: unknown): string {
+  if (error instanceof TrustedInputRejection) return error.message;
+
   const raw = extractRuntimeErrorText(error).trim();
 
   if (!raw) {

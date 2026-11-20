@@ -1,5 +1,6 @@
 import { requestPortalApi } from "./portalWorkorders";
 import { getChatUserId } from "../auth/ssoSession";
+import { trustedInputRejectionFromHttp } from "../lib/chatErrorMessage";
 
 const DEFAULT_API_BASE_URL = "/copaw-api/api";
 const DEFAULT_FALLBACK_AGENT_ID = "default";
@@ -304,6 +305,10 @@ export async function streamChat(
 
     lastStatus = candidateResponse.status;
     lastErrorText = await candidateResponse.text().catch(() => "");
+    if (lastStatus === 403) {
+      const rejection = trustedInputRejectionFromHttp(lastStatus, safeJsonParse(lastErrorText));
+      if (rejection) throw rejection;
+    }
     if (!isMissingAgentResponse(candidateResponse.status, lastErrorText)) {
       throw new Error(
         extractErrorMessage(lastErrorText) ||
