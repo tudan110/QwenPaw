@@ -295,7 +295,7 @@ export function AdvancedModelEntry({
   onOpenNlCustomization: () => void;
   onOpenAiBigScreen: () => void;
   onOpenAppMarket: () => void;
-  onOpenConfig: () => void;
+  onOpenConfig?: () => void;
   onOpenSettings: () => void;
   onOpenCronJobs: () => void;
   onOpenTokenUsage: () => void;
@@ -370,7 +370,7 @@ export function AdvancedModelEntry({
 
   if (sidebarCollapsed) {
     const configItems = [
-      {
+      ...(onOpenConfig ? [{
         id: "config",
         name: "模型配置",
         desc: activeProviderName ? `${activeProviderName} · ${activeModelLabel}` : "配置大模型底座",
@@ -381,7 +381,7 @@ export function AdvancedModelEntry({
         ),
         active: isActive,
         onClick: onOpenConfig,
-      },
+      }] : []),
       {
         id: "mcp",
         name: "MCP管理",
@@ -708,7 +708,7 @@ export function AdvancedModelEntry({
         </span>
       </button>
       <div className={configOpen ? "sidebar-advanced-grid" : "sidebar-advanced-grid collapsed"}>
-        <button
+        {onOpenConfig ? <button
           className={isActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
           onClick={onOpenConfig}
         >
@@ -724,7 +724,7 @@ export function AdvancedModelEntry({
           <div className="sidebar-advanced-item-meta" title={activeModelLabel}>
             {activeModelLabel}
           </div>
-        </button>
+        </button> : null}
         <button
           className={isMcpActive ? "sidebar-advanced-item active" : "sidebar-advanced-item"}
           onClick={onOpenMcp}

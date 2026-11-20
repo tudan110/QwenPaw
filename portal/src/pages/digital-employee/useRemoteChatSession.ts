@@ -115,19 +115,21 @@ export function useRemoteChatSession({
   remoteAgentId,
   setMessages,
   approvalEnabled = false,
+  canManageAi = true,
 }: {
   currentEmployee: any;
   isRemoteEmployee: boolean;
   remoteAgentId: string | null;
   setMessages: Dispatch<SetStateAction<any[]>>;
   approvalEnabled?: boolean;
+  canManageAi?: boolean;
 }) {
   const [currentSessionId, setCurrentSessionId] = useState("");
   const [currentChatId, setCurrentChatId] = useState("");
   const [currentChatStatus, setCurrentChatStatus] = useState("idle");
   const approvalMode = useMainChatApprovalMode(remoteAgentId, currentSessionId);
   const approvalLevelRef = useRef(approvalMode.level);
-  approvalLevelRef.current = approvalMode.level;
+  approvalLevelRef.current = canManageAi ? approvalMode.level : null;
   const [historyVisible, setHistoryVisible] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");

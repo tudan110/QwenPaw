@@ -180,12 +180,15 @@ def requires_admin(method: str, path: str) -> bool:
     return True
 
 
+def can_manage_ai(identity: AccessIdentity | None) -> bool:
+    """Match the administrative API policy for the current request."""
+    from qwenpaw.extensions.security.execution_policy import enabled
+
+    return not enabled() or (identity is not None and identity.is_admin)
+
+
 def authorize_request(
     identity: AccessIdentity, method: str, path: str
 ) -> None:
-    from qwenpaw.extensions.security.execution_policy import enabled
-
-    if not enabled():
-        return
-    if requires_admin(method, path) and not identity.is_admin:
+    if requires_admin(method, path) and not can_manage_ai(identity):
         raise HTTPException(403, "此操作仅允许授权的 AI 管理员执行")

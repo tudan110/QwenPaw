@@ -479,3 +479,47 @@ async def test_concurrent_streams_keep_separate_verified_credentials(
         assert inoe_settings_store.CURRENT_REQUEST_TOKEN.get() is None
     finally:
         await validator.aclose()
+
+
+def test_portal_management_capability_matches_enforced_permissions(monkeypatch):
+    from qwenpaw.extensions.api.sso_backend import router as sso_router
+
+    monkeypatch.setenv("QWENPAW_SSO_TOKEN_REQUIRED", "true")
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
+    monkeypatch.setenv("QWENPAW_ADMIN_INOE_USER_IDS", "7")
+    app = FastAPI()
+    app.include_router(sso_router, prefix="/api/portal")
+    validator = AsyncMock()
+
+    async def validate(token, url, *, use_cache):
+        return {"userId": 7 if token == "admin-test-token" else 8}
+
+    validator.validate.side_effect = validate
+    app.add_middleware(SsoTokenMiddleware, validator=validator)
+
+    @app.get("/api/models")
+    @app.get("/api/models/active")
+    @app.get("/api/approval/list")
+    async def management_read():
+        return {"reached": True}
+
+    @app.put("/api/models/active")
+    @app.post("/api/console/chat")
+    async def write():
+        return {"reached": True}
+
+    with TestClient(app) as client:
+        route = "/api/portal/sso/capabilities"
+        assert client.get(route).status_code == 401
+        for is_admin, token in ((False, "ordinary-test-token"), (True, "admin-test-token")):
+            headers = {"X-Inoe-Token": token}
+            response = client.get(route, headers=headers)
+            assert response.status_code == 200
+            assert response.json() == {"can_manage_ai": is_admin}
+            assert response.headers["cache-control"] == "no-store"
+            assert client.get("/api/models/active", headers=headers).status_code == 200
+            assert client.post("/api/console/chat", headers=headers).status_code == 200
+            expected = 200 if is_admin else 403
+            assert client.get("/api/models", headers=headers).status_code == expected
+            assert client.put("/api/models/active", headers=headers).status_code == expected
+            assert client.get("/api/approval/list", headers=headers).status_code == expected

@@ -21,7 +21,7 @@ from fastapi import APIRouter, Body, HTTPException, Request, Response
 
 from qwenpaw.extensions.api import sso_settings_store
 from qwenpaw.constant import EnvVarLoader
-from .access_policy import require_browser_origin
+from .access_policy import can_manage_ai, require_browser_origin
 from .access_session import (
     ACCESS_COOKIE,
     INOE_LOGIN_COOKIE as _INOE_LOGIN_COOKIE,
@@ -391,6 +391,13 @@ async def logout(request: Request, response: Response) -> dict[str, bool]:
     response.delete_cookie(ACCESS_COOKIE, path="/")
     _clear_inoe_login_cookies(response)
     return {"logged_out": True}
+
+
+@router.get("/capabilities")
+async def capabilities(request: Request, response: Response) -> dict[str, bool]:
+    response.headers["Cache-Control"] = "no-store"
+    identity = getattr(request.state, "access_identity", None)
+    return {"can_manage_ai": can_manage_ai(identity)}
 
 
 @router.get("/session")

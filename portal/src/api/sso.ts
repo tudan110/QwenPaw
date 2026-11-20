@@ -86,6 +86,12 @@ export async function exchangeSsoCode(
   });
 }
 
+export function getPortalCapabilities(signal: AbortSignal) {
+  return requestPortalApi<{ can_manage_ai: boolean }>(
+    "/sso/capabilities", { signal }, 10_000,
+  );
+}
+
 /** Whether the backend has the credentials to perform an exchange. */
 export async function getSsoStatus(): Promise<{ configured: boolean }> {
   return requestPortalApi<{ configured: boolean }>("/sso/status");

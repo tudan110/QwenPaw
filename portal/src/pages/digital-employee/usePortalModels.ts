@@ -161,9 +161,11 @@ function parseGenerateConfig(text?: string) {
 export function usePortalModels({
   agentId,
   enabled = true,
+  canManageAi = false,
 }: {
   agentId?: string | null;
   enabled?: boolean;
+  canManageAi?: boolean;
 }) {
   const resolvedAgentId = agentId || DEFAULT_MODEL_AGENT_ID;
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
@@ -177,6 +179,7 @@ export function usePortalModels({
   const [notice, setNotice] = useState<ModelNoticeState | null>(null);
 
   const providersRef = useRef<ProviderInfo[]>([]);
+  const fetchRevision = useRef(0);
   const noticeTimerRef = useRef<number>(0);
 
   const clearNotice = useCallback(() => {
@@ -215,48 +218,53 @@ export function usePortalModels({
       return;
     }
 
+    const requested = ++fetchRevision.current;
     setLoading(true);
     try {
-      const [providerList, active, globalActive, agentActive] = await Promise.all([
-        modelsApi.listProviders(),
-        modelsApi.getActiveModels({
-          scope: "effective",
-          agent_id: resolvedAgentId,
-        }),
-        modelsApi.getActiveModels({
-          scope: "global",
-        }),
-        modelsApi.getActiveModels({
-          scope: "agent",
-          agent_id: resolvedAgentId,
-        }),
-      ]);
-      const effectiveActive = active?.active_llm
-        ? active
-        : globalActive?.active_llm
-          ? globalActive
-          : null;
+      const active = await modelsApi.getActiveModels({
+        scope: "effective", agent_id: resolvedAgentId,
+      });
+      if (requested !== fetchRevision.current) return;
+      // This read is available to signed-in users and does not depend on the
+      // separate provider configuration request succeeding.
+      setActiveModels(active?.active_llm ? active : null);
+      if (!canManageAi) return;
 
+      const [providerList, globalActive, agentActive] = await Promise.all([
+        modelsApi.listProviders(),
+        modelsApi.getActiveModels({ scope: "global" }),
+        modelsApi.getActiveModels({ scope: "agent", agent_id: resolvedAgentId }),
+      ]);
+      if (requested !== fetchRevision.current) return;
       const nextAllProviders = Array.isArray(providerList) ? providerList : [];
       const nextProviders = nextAllProviders.filter((provider) => provider.is_custom);
       setAllProviders(nextAllProviders);
       setProviders(nextProviders);
       providersRef.current = nextProviders;
-      setActiveModels(effectiveActive);
+      if (!active?.active_llm && globalActive?.active_llm) setActiveModels(globalActive);
       setGlobalActiveModels(globalActive?.active_llm ? globalActive : null);
       setUsesGlobalDefault(!agentActive?.active_llm);
     } catch (error: any) {
-      pushNotice("error", error?.message || "模型配置加载失败");
+      if (canManageAi && requested === fetchRevision.current) {
+        pushNotice("error", error?.message || "模型配置加载失败");
+      }
     } finally {
-      setLoading(false);
+      if (requested === fetchRevision.current) setLoading(false);
     }
-  }, [enabled, pushNotice, resolvedAgentId]);
+  }, [canManageAi, enabled, pushNotice, resolvedAgentId]);
 
   useEffect(() => {
     setActiveModels(null);
     setGlobalActiveModels(null);
+    if (!canManageAi) {
+      clearNotice();
+      setProviders([]);
+      setAllProviders([]);
+      providersRef.current = [];
+    }
     void fetchModelState();
-  }, [fetchModelState, resolvedAgentId]);
+    return () => { fetchRevision.current += 1; };
+  }, [canManageAi, clearNotice, fetchModelState]);
 
   const eligibleProviders = useMemo<EligibleProvider[]>(
     () =>

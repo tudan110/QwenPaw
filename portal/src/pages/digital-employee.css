@@ -5032,10 +5032,15 @@
   transition: all 0.2s;
 }
 
-.portal-digital-employee .model-selector-trigger:hover,
+.portal-digital-employee button.model-selector-trigger:hover,
 .portal-digital-employee .model-selector-trigger.active {
   border-color: rgba(59, 130, 246, 0.28);
   color: var(--primary);
+}
+
+.portal-digital-employee .model-selector-readonly {
+  min-width: 0;
+  cursor: default;
 }
 
 .portal-digital-employee .model-selector-trigger:disabled {

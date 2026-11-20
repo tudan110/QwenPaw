@@ -61,6 +61,7 @@ import { usePortalChatOrchestration } from "./digital-employee/usePortalChatOrch
 import { usePortalDashboard } from "./digital-employee/usePortalDashboard";
 import { usePortalNavigationSidebar } from "./digital-employee/usePortalNavigationSidebar";
 import { usePortalModels } from "./digital-employee/usePortalModels";
+import { usePortalManagement } from "./digital-employee/usePortalManagement";
 import { usePortalKnowledgeBase } from "./digital-employee/usePortalKnowledgeBase";
 import { usePortalResourceImport } from "./digital-employee/usePortalResourceImport";
 import { usePortalSessionHistory } from "./digital-employee/usePortalSessionHistory";
@@ -227,6 +228,7 @@ export default function DigitalEmployeePage({
   const { employeeId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const canManageAi = usePortalManagement();
   const locationState = (location.state || null) as PortalLocationState | null;
   const routeSearchParams = useMemo(
     () => new URLSearchParams(location.search),
@@ -580,7 +582,8 @@ export default function DigitalEmployeePage({
     isRemoteEmployee,
     remoteAgentId,
     setMessages,
-    approvalEnabled: currentView === "chat" && !activeAdvancedPanel,
+    approvalEnabled: canManageAi === true && currentView === "chat" && !activeAdvancedPanel,
+    canManageAi: canManageAi === true,
   });
   const isRemoteConversationRunning = isStreaming || currentChatStatus === "running";
 
@@ -640,6 +643,7 @@ export default function DigitalEmployeePage({
   } = usePortalModels({
     agentId: modelAgentId,
     enabled: Boolean(currentEmployee),
+    canManageAi: canManageAi === true,
   });
 
   const {
@@ -669,11 +673,9 @@ export default function DigitalEmployeePage({
     isMcpMode,
   });
 
-  const openModelConfig = () => {
-    updateCurrentEmployeeRoute({
-      panel: "model-config",
-    });
-  };
+  const openModelConfig = canManageAi === true ? () => {
+    updateCurrentEmployeeRoute({ panel: "model-config" });
+  } : undefined;
 
   const {
     resourceImportEmployee,
@@ -1491,7 +1493,7 @@ export default function DigitalEmployeePage({
     </Tooltip>
   ) : null;
   const chatHeaderStatusLabel = !isRemoteEmployee && isAlarmWorkbenchMode ? "告警触发" : null;
-  const approvalModeSelector = isRemoteEmployee ? (
+  const approvalModeSelector = isRemoteEmployee && canManageAi === true ? (
     <MainChatApprovalModeSelector
       key={`${remoteAgentId}:${currentSessionId}`}
       level={approvalMode.level}
@@ -1502,27 +1504,39 @@ export default function DigitalEmployeePage({
   ) : null;
   const approvalPanel = (
     <>
-      <MainChatApprovalPanel controls={approvals} />
+      {canManageAi === true ? <MainChatApprovalPanel controls={approvals} /> : null}
       {stopFeedback ? <MainChatStopNotice feedback={stopFeedback} onDismiss={clearStopFeedback} /> : null}
     </>
   );
+  const chatModelControl = showModelSelector ? (
+    openModelConfig ? (
+      <ChatModelSelector
+        activeModelLabel={activeModelLabel}
+        activeProviderId={activeProviderId}
+        activeModelId={activeModelId}
+        eligibleProviders={eligibleProviders}
+        loading={modelsLoading}
+        switching={modelsSwitching}
+        disabled={isInteractionLocked}
+        notice={modelNotice}
+        onSelectModel={handleSelectModel}
+        onOpenConfig={openModelConfig}
+        onRefresh={() => void fetchModelState()}
+      />
+    ) : (
+      <span className="model-selector-trigger model-selector-readonly" aria-label="当前会话模型">
+        <span className="model-selector-trigger-copy">
+          <i className="fas fa-cube" aria-hidden="true" />
+          <span className="model-selector-trigger-text">
+            {activeModelId ? activeModelLabel : "默认模型"}
+          </span>
+        </span>
+      </span>
+    )
+  ) : null;
   const chatHeaderActions = (
     <>
-      {showModelSelector ? (
-        <ChatModelSelector
-          activeModelLabel={activeModelLabel}
-          activeProviderId={activeProviderId}
-          activeModelId={activeModelId}
-          eligibleProviders={eligibleProviders}
-          loading={modelsLoading}
-          switching={modelsSwitching}
-          disabled={isInteractionLocked}
-          notice={modelNotice}
-          onSelectModel={handleSelectModel}
-          onOpenConfig={openModelConfig}
-          onRefresh={() => void fetchModelState()}
-        />
-      ) : null}
+      {chatModelControl}
       {approvalModeSelector}
       <>
         <Tooltip title="已处理任务" placement="bottom" mouseEnterDelay={0.1}>
@@ -1790,6 +1804,7 @@ export default function DigitalEmployeePage({
             </div>
           ) : null}
           {isModelConfigMode ? (
+            canManageAi === true ? (
               <ModelConfigModal
                 open
                 activeProviderId={activeProviderId}
@@ -1820,6 +1835,11 @@ export default function DigitalEmployeePage({
                 onProbeMultimodal={handleProbeMultimodal}
                 onDiscoverModels={handleDiscoverModels}
               />
+            ) : (
+              <div className="history-empty" role="status">
+                {canManageAi === null ? "正在确认管理权限…" : "模型配置由 AI 管理员维护。"}
+              </div>
+            )
           ) : isSettingsMode ? (
             renderDeferredPanel(<SettingsPanel />)
           ) : isTokenUsageMode ? (
@@ -2040,21 +2060,7 @@ export default function DigitalEmployeePage({
                   onOpenResourceImport={() => openResourceImport()}
                   onOpenHistory={() => void handleOpenHistory()}
                   onSendPreset={handleQuickCommand}
-                  modelSelector={showModelSelector ? (
-                    <ChatModelSelector
-                      activeModelLabel={activeModelLabel}
-                      activeProviderId={activeProviderId}
-                      activeModelId={activeModelId}
-                      eligibleProviders={eligibleProviders}
-                      loading={modelsLoading}
-                      switching={modelsSwitching}
-                      disabled={isInteractionLocked}
-                      notice={modelNotice}
-                      onSelectModel={handleSelectModel}
-                      onOpenConfig={openModelConfig}
-                      onRefresh={() => void fetchModelState()}
-                    />
-                  ) : null}
+                  modelSelector={chatModelControl}
                   onPrimaryAction={() => {
                     if (isKnowledgeBaseRunning) {
                       stopKnowledgeBaseTask();
