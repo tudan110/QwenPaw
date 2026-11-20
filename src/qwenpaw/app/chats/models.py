@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -83,10 +83,19 @@ class ChatUpdate(BaseModel):
     )
 
 
+class StoppedTurn(BaseModel):
+    """Server checkpoint for the latest interrupted turn."""
+
+    id: str
+    at: int
+    mode: Literal["none", "text", "cmdb"]
+
+
 class ChatHistory(BaseModel):
     """Complete chat view with spec and state."""
 
     messages: list[Message] = Field(default_factory=list)
+    stopped_turn: StoppedTurn | None = None
     status: str = Field(
         default="idle",
         description="Conversation status: idle or running",

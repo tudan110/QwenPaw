@@ -232,10 +232,12 @@ function ApprovalCard({
   );
 }
 
-export function MainChatStopNotice({ feedback, onDismiss, onResume, continuationError }: {
+export function MainChatStopNotice({ feedback, onDismiss, onResume, resumeKind, saved, continuationError }: {
   feedback: StopFeedback;
   onDismiss: () => void;
   onResume?: () => void;
+  resumeKind?: "text" | "cmdb";
+  saved?: boolean;
   continuationError?: string;
 }) {
   return (
@@ -246,15 +248,18 @@ export function MainChatStopNotice({ feedback, onDismiss, onResume, continuation
             : feedback.cause === "timeout" ? "运行超时，已停止对话"
             : onResume && feedback.status === "cancelled" ? "已停止" : STOP_LABELS[feedback.status]}</strong>
           {" · "}<time dateTime={new Date(feedback.at).toISOString()}>{new Date(feedback.at).toLocaleString()}</time>
-          <div>{onResume
-            ? feedback.cause === "admin"
-              ? "已保留当前回复。管理员解除关停后可继续生成；续写不会重新执行原操作。"
-              : "已保留当前回复。继续生成只续写正文，不会重新执行原操作。"
-            : "此提示只反映当前取消请求；远程操作是否停止或回退尚未确认。"}</div>
+          <div>{onResume && resumeKind === "cmdb"
+            ? "已保留当前对话。继续查询会用当前账号权限重新执行这条只读 CMDB 查询。"
+            : onResume
+              ? feedback.cause === "admin"
+                ? "已保留当前回复。管理员解除关停后可继续生成。"
+                : "已保留当前回复。继续生成只续写正文，不会重新执行原操作。"
+              : saved ? "已保留本轮提问和已生成的正文。远程操作是否回退尚未确认。"
+                : "此提示只反映当前取消请求；远程操作是否停止或回退尚未确认。"}</div>
           {continuationError ? <div role="alert">{continuationError}</div> : null}
         </div>
         <div className="main-chat-stop-actions">
-          {onResume ? <button type="button" className="main-chat-approval-button" onClick={onResume}>继续生成</button> : null}
+          {onResume ? <button type="button" className="main-chat-approval-button" onClick={onResume}>{resumeKind === "cmdb" ? "继续查询" : "继续生成"}</button> : null}
           <button type="button" className="main-chat-approval-button quiet" onClick={onDismiss}>关闭</button>
         </div>
       </div>

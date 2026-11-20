@@ -60,6 +60,7 @@ _USER_POST_PATHS = {
     "/api/console/chat/task",
     "/api/console/chat/stop",
     "/api/console/chat/continue",
+    "/api/console/chat/retry-cmdb",
     "/api/console/upload",
     "/api/console/inbox/read",
     "/api/portal/sso/logout",

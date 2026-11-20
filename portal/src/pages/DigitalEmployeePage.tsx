@@ -1510,6 +1510,8 @@ export default function DigitalEmployeePage({
         <MainChatStopNotice
           feedback={stopFeedback}
           onResume={resumeStoppedReply}
+          resumeKind={stopFeedback.retry ? "cmdb" : "text"}
+          saved={stopFeedback.saved}
           continuationError={stopFeedback.continuationError}
           onDismiss={clearStopFeedback}
         />

@@ -262,6 +262,11 @@ class Runtime:
         root_session_id = getattr(request, "root_session_id", "") or session_id
         root_agent_id = getattr(request, "root_agent_id", "") or agent_id
 
+        input_msgs = _request_input_to_msgs(request.input)
+        turn_id = (getattr(request, "channel_meta", None) or {}).get("portal_turn_id")
+        if turn_id and len(input_msgs) == 1 and input_msgs[0].role == "user":
+            input_msgs[0].id = turn_id
+
         return HookContext(
             request=request,
             session_id=session_id,
@@ -271,7 +276,7 @@ class Runtime:
             workspace_dir=workspace_dir,
             workspace=self.workspace,
             app_services=self.app_services,
-            input_msgs=_request_input_to_msgs(request.input),
+            input_msgs=input_msgs,
         )
 
     @staticmethod

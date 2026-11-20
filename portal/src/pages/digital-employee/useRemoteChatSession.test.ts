@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
 
-test("reopening failed chats restores messages without replacing the error with an old reply", async () => {
+test("reopening failed, stopped, and resumed chats restores their latest saved messages", async () => {
   const server = await createServer({
     root: fileURLToPath(new URL("../../..", import.meta.url)),
     configFile: false,
@@ -32,12 +32,19 @@ test("reopening failed chats restores messages without replacing the error with 
     const { useRemoteChatSession } = await server.ssrLoadModule(
       "/src/pages/digital-employee/useRemoteChatSession.ts",
     );
-    for (const mode of ["persisted", "trace-only", "user-already-saved", "previous-answer"]) {
+    for (const mode of ["persisted", "trace-only", "user-already-saved", "previous-answer", "stopped", "resumed"]) {
       let messages: any[] = [];
       let recoveryRequests = 0;
       const previousAnswer = {
         id: "old-answer", role: "assistant", type: "message",
         content: [{ type: "text", text: "之前的回答" }],
+      };
+      const stopped = mode === "stopped";
+      const resumed = mode === "resumed";
+      const draft = {
+        id: "draft", role: "assistant", type: "message",
+        content: [{ type: "text", text: resumed ? "查询到资产。" : "我来为您查询。" }],
+        metadata: resumed ? { metadata: { portal_resumed: true } } : undefined,
       };
       globalThis.fetch = async (input) => {
         const url = String(input);
@@ -50,7 +57,8 @@ test("reopening failed chats restores messages without replacing the error with 
         }
         assert.match(url, /\/chats\/failed-chat$/);
         return Response.json({
-          messages: mode === "persisted" ? [user, failure]
+          stopped_turn: stopped ? { id: "turn", at: 1, mode: "cmdb" } : null,
+          messages: stopped || resumed ? [user, draft] : mode === "persisted" ? [user, failure]
             : mode === "user-already-saved" ? [user]
               : mode === "previous-answer" ? [user, previousAnswer] : [],
           status: "idle",
@@ -72,8 +80,15 @@ test("reopening failed chats restores messages without replacing the error with 
       renderToStaticMarkup(createElement(Harness));
       await selectHistory!({
         id: "failed-chat", sessionId: "failed-session",
-        userId: "alice", channel: "console",
+        userId: "alice", channel: "console", status: stopped ? "running" : "idle",
       });
+      if (stopped || resumed) {
+        assert.equal(messages.length, 2, mode);
+        assert.equal(messages[0].content, "你好", mode);
+        assert.equal(messages[1].processBlocks[0].content, draft.content[0].text, mode);
+        assert.equal(recoveryRequests, 0, mode);
+        continue;
+      }
       assert.equal(messages.length, mode === "previous-answer" ? 4 : 2, mode);
       assert.equal(messages.at(-2).content, "你好", mode);
       assert.equal(messages.at(-1).chatError, true, mode);

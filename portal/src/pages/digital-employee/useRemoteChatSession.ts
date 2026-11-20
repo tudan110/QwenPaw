@@ -14,6 +14,7 @@ import {
   reconnectChat,
   stopChat,
   streamChat,
+  type StoppedTurn,
 } from "../../api/copawChat";
 import { stopResult, type StopFeedback, type StopStatus } from "./evidenceDisplay";
 import { getFaultDisposalHistory } from "../../api/faultDisposalBridge";
@@ -66,10 +67,15 @@ type ReplyCheckpoint = {
   messageId: string;
   responseId: string;
   username: string;
+  turnId?: string;
 };
+
+type CmdbRetry = { turnId: string; messageId: string; username: string };
 
 type ChatStopFeedback = StopFeedback & {
   reply?: ReplyCheckpoint;
+  retry?: CmdbRetry;
+  saved?: boolean;
   continuationError?: string;
 };
 
@@ -174,12 +180,14 @@ export function useRemoteChatSession({
   const streamAbortRef = useRef<AbortController | null>(null);
   const activeTextQuestionRef = useRef<{ question: string; username: string } | null>(null);
   const activeContinuationRef = useRef<ReplyCheckpoint | null>(null);
+  const activeCmdbRetryRef = useRef<CmdbRetry | null>(null);
   const activeAssistantMessageIdRef = useRef<string | null>(null);
   const streamAssistantMapRef = useRef(new Map());
   const streamMessageMetaRef = useRef(new Map());
   const streamPendingTextRef = useRef(new Map());
   const streamResponseTextRef = useRef(new Map());
   const remoteHistoryRequestIdRef = useRef(0);
+  const historySelectionRef = useRef(0);
   const pendingProcessBlocksRef = useRef(new Map());
   const streamProcessBlocksRef = useRef(new Map());
   const remoteWaitNoticeTimersRef = useRef<number[]>([]);
@@ -809,7 +817,10 @@ export function useRemoteChatSession({
     return reply;
   }, []);
 
-  const publishManagedStop = useCallback((cause: "admin" | "timeout") => {
+  const publishManagedStop = useCallback((cause: "admin" | "timeout", checkpoint?: StoppedTurn) => {
+    const messageId = activeCmdbRetryRef.current?.messageId || activeAssistantMessageIdRef.current;
+    const reply = captureTextReply();
+    const username = currentUsername();
     ++stopRevision.current;
     setStopFeedback({
       agentId: remoteAgentIdRef.current,
@@ -817,9 +828,12 @@ export function useRemoteChatSession({
       at: Date.now(),
       status: "cancelled",
       cause,
-      reply: captureTextReply(),
+      saved: Boolean(checkpoint),
+      reply: reply && (!checkpoint || checkpoint.mode === "text") ? { ...reply, turnId: checkpoint?.id || reply.turnId } : undefined,
+      retry: checkpoint?.mode === "cmdb" && messageId && username
+        ? { turnId: checkpoint.id, messageId, username } : undefined,
     });
-    if (!activeContinuationRef.current) {
+    if (!activeContinuationRef.current && !activeCmdbRetryRef.current) {
       finalizePendingResponse(cause === "admin" ? "管理员已停止本轮对话。" : "本轮对话已超时停止。");
     }
   }, [captureTextReply, finalizePendingResponse]);
@@ -834,23 +848,46 @@ export function useRemoteChatSession({
       || isStreamingRef.current
       || currentChatStatusRef.current === "running",
     );
-    const wasContinuing = activeContinuationRef.current !== null;
+    const wasContinuing = Boolean(activeContinuationRef.current || activeCmdbRetryRef.current);
     if (silent) clearStopFeedback();
     if (requestStop && !silent) {
       const reply = captureTextReply();
+      const messageId = activeCmdbRetryRef.current?.messageId || activeAssistantMessageIdRef.current;
+      const username = currentUsername();
       const revision = ++stopRevision.current;
       const agentId = remoteAgentIdRef.current;
       const chatId = currentChatIdRef.current;
       const at = Date.now();
-      const publish = (status: StopStatus, canContinue = false) => {
-        if (stopRevision.current !== revision || remoteAgentIdRef.current !== agentId
-          || currentChatIdRef.current !== chatId) return;
-        setStopFeedback({ agentId, chatId, at, status, reply: canContinue ? reply ?? undefined : undefined });
+      const stillCurrent = () => stopRevision.current === revision && remoteAgentIdRef.current === agentId
+        && currentChatIdRef.current === chatId && currentUsername() === username;
+      const publish = (status: StopStatus, canContinue = false, checkpoint?: StoppedTurn) => {
+        if (!stillCurrent()) return;
+        setStopFeedback({
+          agentId, chatId, at, status, saved: Boolean(checkpoint),
+          reply: canContinue && reply ? { ...reply, turnId: checkpoint?.id || reply.turnId } : undefined,
+          retry: checkpoint?.mode === "cmdb" && messageId && username
+            ? { turnId: checkpoint.id, messageId, username } : undefined,
+        });
       };
       if (isRemoteEmployeeRef.current && chatId) {
         publish("requesting");
         void stopChat(agentId || undefined, chatId).then(
-          (result) => publish(stopResult(result), result.text_continuation === true),
+          async (result) => {
+            const status = stopResult(result);
+            publish(status, status === "cancelled" && result.text_continuation === true, result.checkpoint);
+            // A slow tool may still be cancelling when the stop endpoint returns.
+            if (status !== "accepted") return;
+            for (let attempt = 0; attempt < 5 && stillCurrent(); attempt += 1) {
+              await new Promise((resolve) => window.setTimeout(resolve, 800));
+              if (!stillCurrent()) return;
+              const history = await getChatHistory(agentId || undefined, chatId).catch(() => null);
+              if (history && !isRunningRemoteStatus(history.status)) {
+                const checkpoint: StoppedTurn | undefined = history.stopped_turn || undefined;
+                if (checkpoint) publish("cancelled", checkpoint.mode === "text", checkpoint);
+                return;
+              }
+            }
+          },
           () => publish("failed"),
         );
       } else {
@@ -866,6 +903,7 @@ export function useRemoteChatSession({
     isCreatingChatRef.current = false;
     activeTextQuestionRef.current = null;
     activeContinuationRef.current = null;
+    activeCmdbRetryRef.current = null;
     streamAssistantMapRef.current = new Map();
     streamMessageMetaRef.current = new Map();
     streamPendingTextRef.current = new Map();
@@ -885,15 +923,18 @@ export function useRemoteChatSession({
 
   const resumeStoppedReply = async () => {
     const reply = stopFeedback?.reply;
+    const retry = stopFeedback?.retry;
+    const action = retry || reply;
     const agentId = remoteAgentIdRef.current;
     const chatId = currentChatIdRef.current;
-    if (!reply || !agentId || stopFeedback.chatId !== chatId || stopFeedback.agentId !== agentId
-      || reply.username !== currentUsername() || streamAbortRef.current || isStreamingRef.current
+    if (!action || !stopFeedback || !agentId || stopFeedback.chatId !== chatId || stopFeedback.agentId !== agentId
+      || action.username !== currentUsername() || streamAbortRef.current || isStreamingRef.current
       || isCreatingChatRef.current) return;
 
     const controller = new AbortController();
     streamAbortRef.current = controller;
-    activeContinuationRef.current = reply;
+    activeContinuationRef.current = reply || null;
+    activeCmdbRetryRef.current = retry || null;
     isStreamingRef.current = true;
     currentChatStatusRef.current = "running";
     clearStopFeedback();
@@ -903,35 +944,53 @@ export function useRemoteChatSession({
 
     const stillCurrent = () => streamAbortRef.current === controller
       && stopRevision.current === revision && currentChatIdRef.current === chatId
-      && remoteAgentIdRef.current === agentId && currentUsername() === reply.username;
+      && remoteAgentIdRef.current === agentId && currentUsername() === action.username;
     let completed = false;
+    let baseDraft = reply?.draft || "";
     try {
-      await streamChat(agentId, { chat_id: chatId, question: reply.question, draft: reply.draft }, {
-        continuation: true,
+      const payload = retry
+        ? { chat_id: chatId, turn_id: retry.turnId, approval_level: approvalLevelRef.current || "smart" }
+        : { chat_id: chatId, turn_id: reply?.turnId, question: reply?.question, draft: reply?.draft };
+      await streamChat(agentId, payload, {
+        continuation: !retry,
+        retryCmdb: Boolean(retry),
         signal: controller.signal,
         onEvent: (event) => {
           if (!stillCurrent()) return;
           const cause = managedStopCause(event);
           if (cause) {
             completed = true;
-            publishManagedStop(cause);
+            publishManagedStop(cause, event.checkpoint);
             return;
           }
-          if (event.object !== "text_continuation") return;
+          if (retry && event.object === "portal_cmdb_retry" && typeof event.text === "string") {
+            completed = event.status === "completed";
+            setMessages((previous) => previous.map((message) => message.id !== retry.messageId ? message : {
+              ...message,
+              content: event.text,
+              processBlocks: [
+                ...(message.processBlocks || []).filter((block: any) => block.kind !== "response"),
+                buildResponseBlock({ id: retry.turnId }, event.text),
+              ],
+            }));
+            return;
+          }
+          if (!reply || event.object !== "text_continuation") return;
           if (event.status === "completed") completed = true;
           if (typeof event.text !== "string") return;
-          const draft = reply.draft + event.text;
+          if (typeof event.draft === "string") baseDraft = event.draft;
+          const draft = baseDraft + event.text;
           activeContinuationRef.current = { ...reply, draft };
           appendAssistantResponseBlock(reply.messageId, reply.responseId, draft, { replace: true });
         },
       });
-      if (!completed && !controller.signal.aborted) throw new Error("续写连接已断开，请重试。");
+      if (!completed && !controller.signal.aborted) throw new Error("继续请求已断开，请重试。");
     } catch (error) {
       if (stillCurrent() && !controller.signal.aborted) {
         const updated = activeContinuationRef.current || reply;
         setStopFeedback({
           ...stopFeedback,
-          reply: updated.draft.length <= CONTINUATION_LIMIT ? updated : undefined,
+          reply: updated && updated.draft.length <= CONTINUATION_LIMIT ? updated : undefined,
           continuationError: normalizeRemoteChatErrorMessage(error),
         });
       }
@@ -939,6 +998,7 @@ export function useRemoteChatSession({
       if (streamAbortRef.current === controller) {
         streamAbortRef.current = null;
         activeContinuationRef.current = null;
+        activeCmdbRetryRef.current = null;
         streamResponseTextRef.current = new Map();
         isStreamingRef.current = false;
         currentChatStatusRef.current = "idle";
@@ -1255,7 +1315,7 @@ export function useRemoteChatSession({
         onEvent: (event) => {
           if (controller.signal.aborted) return;
           const cause = managedStopCause(event);
-          if (cause) publishManagedStop(cause);
+          if (cause) publishManagedStop(cause, event.checkpoint);
           else handleRemoteStreamEvent(event, employee);
         },
       });
@@ -1292,6 +1352,11 @@ export function useRemoteChatSession({
     }
 
     stopActiveStream(false, { silent: true });
+    const revision = stopRevision.current;
+    const selection = ++historySelectionRef.current;
+    const username = currentUsername();
+    const stillCurrent = () => stopRevision.current === revision
+      && remoteAgentIdRef.current === nextRemoteAgentId && currentUsername() === username;
     setHistoryLoading(true);
     setHistoryError("");
 
@@ -1342,7 +1407,9 @@ export function useRemoteChatSession({
           nextEmployee,
           session,
         );
-        const lastHistoryMessage = nextMessages.at(-1);
+        const lastHistoryMessage = nextMessages[nextMessages.length - 1];
+        const rawMessages = history.messages || [];
+        const hasResumedReply = rawMessages[rawMessages.length - 1]?.metadata?.metadata?.portal_resumed === true;
         const lastAgentContent = String(lastHistoryMessage?.content || "").trim();
         const hasFinalAgentReply =
           lastHistoryMessage?.type === "agent"
@@ -1352,7 +1419,7 @@ export function useRemoteChatSession({
             || lastAgentContent.includes("# PORTAL ALARM ANALYST CARD MODE")
             || lastAgentContent.includes("# PORTAL FAULT WORKORDER MODE")
             || lastAgentContent.length > 500);
-        if (!isRunningRemoteStatus(history.status) && !hasFinalAgentReply) {
+        if (!isRunningRemoteStatus(history.status) && !history.stopped_turn && !hasResumedReply && !hasFinalAgentReply) {
           try {
             const recovery = await getChatTraceRecovery(nextRemoteAgentId, session.id);
             if (recovery.available && recovery.is_error && recovery.message) {
@@ -1362,7 +1429,7 @@ export function useRemoteChatSession({
                 session,
               );
               const recoveredUser = recoveredMessages.find((message: any) => message.type === "user");
-              const recoveredError = recoveredMessages.at(-1);
+              const recoveredError = recoveredMessages[recoveredMessages.length - 1];
               const lastUserIndex = nextMessages
                 .map((message: any) => message.type)
                 .lastIndexOf("user");
@@ -1444,13 +1511,9 @@ export function useRemoteChatSession({
         });
       }
 
+      if (!stillCurrent()) return;
       const selectedSessionId = enhancementSessionId || session.sessionId || "";
-      const selectedStatus =
-        recoveredTraceReply
-          ? "idle"
-          : isRunningRemoteStatus(history.status) || isRunningRemoteStatus(session.status)
-            ? "running"
-            : history.status || session.status || "idle";
+      const selectedStatus = recoveredTraceReply ? "idle" : history.status || session.status || "idle";
       setCurrentChatId(session.id);
       setCurrentSessionId(selectedSessionId);
       currentChatIdRef.current = session.id;
@@ -1461,9 +1524,25 @@ export function useRemoteChatSession({
       currentChatMetaRef.current = session?.meta || history?.meta || null;
       setMessages(nextMessages);
       setHistoryVisible(false);
+      const checkpoint: StoppedTurn | undefined = history.stopped_turn || undefined;
+      const agentReply = nextMessages?.[nextMessages.length - 1];
+      const userQuestion = nextMessages?.[nextMessages.length - 2];
+      if (checkpoint && !isRunningRemoteStatus(selectedStatus) && username
+        && agentReply?.type === "agent" && userQuestion?.type === "user") {
+        const block = agentReply.processBlocks?.find((item: any) => item.kind === "response");
+        setStopFeedback({
+          agentId: nextRemoteAgentId, chatId: session.id, status: "cancelled", at: checkpoint.at, saved: true,
+          retry: checkpoint.mode === "cmdb" ? { turnId: checkpoint.id, messageId: agentReply.id, username } : undefined,
+          reply: checkpoint.mode === "text" && block ? {
+            question: userQuestion.content, draft: block.content, messageId: agentReply.id, responseId: block.id,
+            username, turnId: checkpoint.id,
+          } : undefined,
+        });
+      }
 
       if (!recoveredTraceReply && isRunningRemoteStatus(selectedStatus)) {
         window.setTimeout(() => {
+          if (!stillCurrent() || currentChatIdRef.current !== session.id) return;
           void reconnectRunningChat({
             agentId: nextRemoteAgentId,
             employee: nextEmployee,
@@ -1476,9 +1555,9 @@ export function useRemoteChatSession({
         }, 0);
       }
     } catch (error: any) {
-      setHistoryError(error.message || "获取聊天历史失败");
+      if (stillCurrent()) setHistoryError(error.message || "获取聊天历史失败");
     } finally {
-      setHistoryLoading(false);
+      if (historySelectionRef.current === selection) setHistoryLoading(false);
     }
   }, [hydrateAlarmAnalystCardsForHistory, reconnectRunningChat, stopActiveStream]);
 
@@ -1785,7 +1864,7 @@ export function useRemoteChatSession({
             const cause = managedStopCause(event);
             if (cause) {
               managedStopped = true;
-              publishManagedStop(cause);
+              publishManagedStop(cause, event.checkpoint);
             } else {
               handleRemoteStreamEvent(event, nextEmployee);
             }
@@ -1839,6 +1918,8 @@ export function useRemoteChatSession({
     stopActiveStream(false, { silent: true });
     setCurrentChatStatus("idle");
     setHistoryVisible(false);
+    ++historySelectionRef.current;
+    setHistoryLoading(false);
     if (clearHistoryError) {
       setHistoryError("");
     }
@@ -1890,8 +1971,8 @@ export function useRemoteChatSession({
     stopActiveStream,
     stopFeedback: stopFeedback?.agentId === remoteAgentId && stopFeedback?.chatId === currentChatId
       ? stopFeedback : undefined,
-    resumeStoppedReply: stopFeedback?.reply && stopFeedback.agentId === remoteAgentId
-      && stopFeedback.chatId === currentChatId && stopFeedback.reply.username === currentUsername()
+    resumeStoppedReply: (stopFeedback?.retry || stopFeedback?.reply) && stopFeedback.agentId === remoteAgentId
+      && stopFeedback.chatId === currentChatId && (stopFeedback.retry || stopFeedback.reply)?.username === currentUsername()
       ? resumeStoppedReply : undefined,
     clearStopFeedback,
     refreshRemoteSessions,

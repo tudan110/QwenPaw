@@ -21,6 +21,7 @@ from .models import (
     ChatUpdate,
     ChatHistory,
 )
+from .stopped_turn import latest_stopped_turn
 from .utils import agentscope_msg_to_message, parse_legacy_memory_state
 
 logger = logging.getLogger(__name__)
@@ -218,7 +219,8 @@ async def get_chat(
             memories, _summary = parse_legacy_memory_state(memory_raw)
 
     messages = agentscope_msg_to_message(memories)
-    return ChatHistory(messages=messages, status=status)
+    checkpoint = latest_stopped_turn(memories) if chat_scope() is not None else None
+    return ChatHistory(messages=messages, status=status, stopped_turn=checkpoint)
 
 
 @router.put("/{chat_id}", response_model=ChatSpec)

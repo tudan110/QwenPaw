@@ -8,6 +8,7 @@ import logging
 import re
 import time
 import uuid
+from contextlib import aclosing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Optional, Union
@@ -43,7 +44,17 @@ from ...utils.logging import LOG_FILE_PATH
 from ..agent_context import get_agent_for_request
 from ..approvals.display import approval_display_fields
 from ..chats.portal_control import PortalChatControl, PortalChatStopPending, PortalChatsPaused
-from ..chats.text_continuation import stream_text_continuation
+from ..chats.cmdb_retry import cmdb_enabled, retry_cmdb_lookup
+from ..chats.stopped_turn import (
+    cmdb_asset_name,
+    get_checkpoint,
+    redact_reply,
+    save_stopped_turn,
+    stream_events,
+    update_checkpoint_reply,
+    visible_question,
+)
+from ..chats.text_continuation import _sse, stream_text_continuation
 from ..chats.title_generator import generate_and_update_title
 from ..utils import check_upload_size
 
@@ -303,8 +314,24 @@ async def post_console_chat(
         if queue is None:
             return
     else:
+        stop_options = {}
+        if scope is not None and getattr(workspace, "session", None) is not None:
+            turn_id = uuid.uuid4().hex
+            native_payload["meta"]["portal_turn_id"] = turn_id
+            parts = native_payload["content_parts"]
+            question = visible_question(parts)
+            text_only = all(trusted_chat_text.get_text_block(part) is not None for part in parts)
+
+            async def save_stop(buffer):
+                return await save_stopped_turn(
+                    workspace.session, chat, turn_id, question, buffer,
+                    cmdb_available=text_only and bool(cmdb_asset_name(question)) and cmdb_enabled(workspace),
+                )
+
+            stop_options["on_stop"] = save_stop
         queue, started = await _start_chat_stream(
             request, scope, tracker, chat.id, native_payload, console_channel.stream_one,
+            **stop_options,
         )
         # Do not start title generation for blocked requests or reconnects.
         if started and first_text and chat.name == name:
@@ -368,12 +395,16 @@ async def post_console_chat_stop(
     if scope is not None:
         # In the isolated profile, accept only the registered chat UUID.
         await require_owned_chat(workspace.chat_manager, chat_id, scope)
-        status = await tracker.stop_run(chat_id)
-        return {
+        status, checkpoint = await tracker.stop_run_details(chat_id)
+        feedback = {
             "stopped": status != "not_running",
             "status": status,
-            "text_continuation": status in {"cancelled", "accepted"},
+            "text_continuation": status in {"cancelled", "accepted"}
+                and (checkpoint is None or checkpoint["mode"] == "text"),
         }
+        if checkpoint is not None:
+            feedback["checkpoint"] = checkpoint
+        return feedback
     if workspace.chat_manager:
         existing = await workspace.chat_manager.get_chat(chat_id)
         if existing is not None:
@@ -395,6 +426,7 @@ class TextContinuationRequest(BaseModel):
     chat_id: str = Field(min_length=1, max_length=64)
     question: str = Field(min_length=1, max_length=trusted_chat_text.MAX_INPUT)
     draft: str = Field(min_length=1, max_length=trusted_chat_text.MAX_INPUT)
+    turn_id: str | None = Field(default=None, min_length=32, max_length=32)
 
 
 @router.post("/chat/continue", summary="Continue a stopped Portal text reply")
@@ -412,17 +444,90 @@ async def post_console_chat_continue(
     if not payload.question.strip() or not payload.draft.strip():
         raise HTTPException(422, "缺少可继续生成的正文。")
 
-    def generate(checkpoint):
-        return stream_text_continuation(
-            workspace.agent_id, checkpoint.question, checkpoint.draft,
-        )
+    async def generate(checkpoint):
+        stored = None
+        question, draft = checkpoint.question, checkpoint.draft
+        if checkpoint.turn_id:
+            stored = await get_checkpoint(workspace.session, chat, checkpoint.turn_id, "text")
+            if stored is None:
+                yield _sse({"error": "中止的回复已更新，请重新打开会话。"})
+                return
+            question, draft = stored[2:4]
+        tail = ""
+        sent_base = False
+        async with aclosing(stream_text_continuation(workspace.agent_id, question, draft)) as stream:
+            async for sse in stream:
+                for event in stream_events([sse]):
+                    if not stored:
+                        break
+                    if event.get("status") == "completed":
+                        await update_checkpoint_reply(workspace.session, chat, stored, draft + tail, completed=True)
+                    if isinstance(event.get("text"), str):
+                        tail = event["text"]
+                        if not sent_base:
+                            sent_base = True
+                            sse = _sse({**event, "draft": draft})
+                yield sse
+
+    async def save_continuation_stop(buffer):
+        if not payload.turn_id:
+            return None
+        stored = await get_checkpoint(workspace.session, chat, payload.turn_id, "text")
+        if stored is None:
+            return None
+        tail = ""
+        for event in stream_events(buffer):
+            if event.get("object") == "text_continuation" and isinstance(event.get("text"), str):
+                tail = event["text"]
+        return await update_checkpoint_reply(workspace.session, chat, stored, stored[3] + tail, completed=False)
 
     queue, _ = await _start_chat_stream(
         request, scope, workspace.task_tracker, chat.id, payload, generate, join_existing=False,
+        on_stop=save_continuation_stop if payload.turn_id else None,
     )
     if queue is None:
         raise HTTPException(409, "当前对话仍有任务在运行，请稍后再继续生成。")
     return _chat_stream(workspace.task_tracker, queue, chat.id)
+
+
+class CmdbRetryRequest(BaseModel):
+    chat_id: str = Field(min_length=1, max_length=64)
+    turn_id: str = Field(min_length=32, max_length=32)
+    approval_level: str = "smart"
+
+
+@router.post("/chat/retry-cmdb", summary="Retry a stopped Portal exact asset query")
+async def post_console_retry_cmdb(payload: CmdbRetryRequest, request: Request) -> StreamingResponse:
+    scope = chat_scope()
+    if scope is None:
+        raise HTTPException(404, "当前未启用会话隔离。")
+    workspace = await get_agent_for_request(request)
+    chat = await require_owned_chat(workspace.chat_manager, payload.chat_id, scope)
+    tracker = workspace.task_tracker
+
+    async def generate(checkpoint):
+        stored = await get_checkpoint(workspace.session, chat, checkpoint.turn_id, "cmdb")
+        name = cmdb_asset_name(stored[2]) if stored else None
+        if not name:
+            yield _sse({"error": "没有可继续的 CMDB 查询，请重新打开会话。"})
+            return
+        level = "strict" if checkpoint.approval_level == "strict" else "smart"
+        result = redact_reply(await retry_cmdb_lookup(workspace, chat, name, level))
+        draft = stored[3]
+        text = result if draft == "本轮已停止，未生成回复。" else f"{draft}\n\n{result}"
+        await update_checkpoint_reply(workspace.session, chat, stored, text, completed=True)
+        yield _sse({"object": "portal_cmdb_retry", "text": text, "status": "completed"})
+
+    async def preserve_checkpoint(_buffer):
+        stored = await get_checkpoint(workspace.session, chat, payload.turn_id, "cmdb")
+        return stored[-1].model_dump() if stored else None
+
+    queue, _ = await _start_chat_stream(
+        request, scope, tracker, chat.id, payload, generate, join_existing=False, on_stop=preserve_checkpoint,
+    )
+    if queue is None:
+        raise HTTPException(409, "当前对话仍有任务在运行，请稍后再继续查询。")
+    return _chat_stream(tracker, queue, chat.id)
 
 
 @router.post("/upload", response_model=dict, summary="Upload file for chat")

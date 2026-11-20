@@ -37,6 +37,7 @@ class _RunState:
     outcome: str = "completed"
     portal_chat: bool = False
     stop_cause: str | None = None
+    checkpoint: dict | None = None
 
     def stop_status(self) -> str:
         if not self.task.done():
@@ -47,6 +48,8 @@ class _RunState:
         if self.outcome not in {"cancelled", "timeout"} or not self.stop_cause:
             return None
         data = {"object": "portal_chat_stopped", "cause": self.stop_cause}
+        if self.checkpoint is not None:
+            data["checkpoint"] = self.checkpoint
         return f"data: {json.dumps(data)}\n\n"
 
 
@@ -244,8 +247,9 @@ class TaskTracker:
             # An external placeholder isn't a handle to the actual job.
             if not isinstance(state.task, asyncio.Task):
                 return None
-            if not state.stop_requested:
-                state.stop_requested = state.task.cancel()
+            if not state.stop_requested and not state.finish_time:
+                # Let a queued producer enter its finally block before stopping.
+                state.stop_requested = state.start_time is None or state.task.cancel()
             return state if state.stop_requested else None
 
     async def request_stop(self, run_key: str) -> bool:
@@ -254,22 +258,28 @@ class TaskTracker:
 
     async def stop_run(self, run_key: str, timeout: float = 1.0) -> str:
         """Observe the exact local run, bounded by the control response budget."""
+        status, _ = await self.stop_run_details(run_key, timeout)
+        return status
+
+    async def stop_run_details(
+        self, run_key: str, timeout: float = 1.0,
+    ) -> tuple[str, dict | None]:
         state = await self._request_cancellation(run_key)
         if state is None:
-            return "not_running"
+            return "not_running", None
         _, pending = await asyncio.wait({state.task}, timeout=timeout)
-        return "accepted" if pending else state.stop_status()
+        return ("accepted", None) if pending else (state.stop_status(), state.checkpoint)
 
     async def request_portal_stops(self) -> dict[str, _RunState]:
         """Cancel only registered Portal streams and return their exact runs."""
         async with self._lock:
             runs = {}
             for key, run in self._runs.items():
-                if not run.portal_chat or run.task.done():
+                if not run.portal_chat or run.task.done() or run.finish_time:
                     continue
                 run.stop_cause = "admin"
                 if not run.stop_requested:
-                    run.stop_requested = run.task.cancel()
+                    run.stop_requested = run.start_time is None or run.task.cancel()
                 if run.stop_requested:
                     runs[key] = run
             return runs
@@ -282,6 +292,7 @@ class TaskTracker:
         *,
         join_existing: bool = True,
         portal_timeout: float | None = None,
+        on_stop: Callable[[list[str]], Coroutine[Any, Any, dict | None]] | None = None,
     ) -> tuple[asyncio.Queue | None, bool]:
         """Attach to an existing run or start a new one.
 
@@ -320,6 +331,9 @@ class TaskTracker:
                             run.start_time = start_time
                             # pylint: disable=protected-access
                             tracker._global_last_run_at = start_time
+                            if run.stop_requested:
+                                run.outcome = "cancelled"
+                                return
 
                     deadline = asyncio.timeout(portal_timeout)
                     try:
@@ -354,13 +368,17 @@ class TaskTracker:
                             for q in run.queues:
                                 q.put_nowait(err_sse)
                 finally:
-                    finish_time = datetime.now(timezone.utc)
+                    run.finish_time = datetime.now(timezone.utc)
+                    if on_stop is not None and run.outcome in {"cancelled", "timeout"}:
+                        try:
+                            run.checkpoint = await on_stop(run.buffer)
+                        except Exception:
+                            logger.exception("Failed to save stopped run run_key=%s", run_key)
                     tracker = tracker_ref()
                     if tracker is not None:
                         async with tracker.lock:
-                            run.finish_time = finish_time
                             # pylint: disable=protected-access
-                            tracker._global_last_finish_at = finish_time
+                            tracker._global_last_finish_at = run.finish_time
                             closing_event = run.closing_event()
                             for q in run.queues:
                                 if closing_event:

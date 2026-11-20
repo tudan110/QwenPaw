@@ -269,8 +269,10 @@ export function setPortalChatPaused(paused: boolean) {
   });
 }
 
+export type StoppedTurn = { id: string; at: number; mode: "none" | "text" | "cmdb" };
+
 export function stopChat(agentId: string | undefined, chatId: string) {
-  return requestCopaw<{ stopped: boolean; status?: string; text_continuation?: boolean }>(`/console/chat/stop?chat_id=${encodeURIComponent(chatId)}`, {
+  return requestCopaw<{ stopped: boolean; status?: string; text_continuation?: boolean; checkpoint?: StoppedTurn }>(`/console/chat/stop?chat_id=${encodeURIComponent(chatId)}`, {
     agentId,
     method: "POST",
   });
@@ -279,7 +281,10 @@ export function stopChat(agentId: string | undefined, chatId: string) {
 export async function streamChat(
   agentId: string | undefined,
   payload: Record<string, unknown>,
-  { signal, onEvent, continuation = false }: StreamChatOptions & { continuation?: boolean } = {},
+  { signal, onEvent, continuation = false, retryCmdb = false }: StreamChatOptions & {
+    continuation?: boolean;
+    retryCmdb?: boolean;
+  } = {},
 ) {
   const agentCandidates = getAgentCandidates(agentId);
   let response: Response | null = null;
@@ -299,7 +304,8 @@ export async function streamChat(
     let candidateResponse: Response;
     let keepAbortBound = false;
     try {
-      candidateResponse = await fetch(`${API_BASE_URL}/console/chat${continuation ? "/continue" : ""}`, {
+      const action = retryCmdb ? "/retry-cmdb" : continuation ? "/continue" : "";
+      candidateResponse = await fetch(`${API_BASE_URL}/console/chat${action}`, {
         method: "POST",
         signal: controller.signal,
         headers: {

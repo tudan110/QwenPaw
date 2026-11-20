@@ -54,6 +54,17 @@ def _atomic_write_json(path: str, payload: dict) -> None:
                 pass
 
 
+async def _write_session_json(path: str, state: dict) -> None:
+    # Keep the caller's write lock until the thread can no longer replace
+    # the file. Cancellation recovery can then read the settled state.
+    write = asyncio.create_task(asyncio.to_thread(_atomic_write_json, path, state))
+    try:
+        await asyncio.shield(write)
+    except asyncio.CancelledError:
+        await write
+        raise
+
+
 # Characters forbidden in Windows filenames
 _UNSAFE_FILENAME_RE = re.compile(r'[\\/:*?"<>|]')
 
@@ -296,11 +307,7 @@ class SafeJSONSession:
             channel=channel,
         )
         async with self._get_write_lock(session_save_path):
-            await asyncio.to_thread(
-                _atomic_write_json,
-                session_save_path,
-                state_dicts,
-            )
+            await _write_session_json(session_save_path, state_dicts)
 
         logger.info(
             "Saved session state to %s successfully.",
@@ -408,11 +415,7 @@ class SafeJSONSession:
 
             cur[path[-1]] = value
 
-            await asyncio.to_thread(
-                _atomic_write_json,
-                session_save_path,
-                states,
-            )
+            await _write_session_json(session_save_path, states)
 
         logger.info(
             "Updated session state key '%s' in %s successfully.",
