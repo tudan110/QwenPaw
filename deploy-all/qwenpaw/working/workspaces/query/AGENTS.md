@@ -48,10 +48,10 @@ read_when:
 - 查询某一资源分类的告警时，禁止执行不带 `--ne_alias` 的 `summary` 全量统计；如果需要统计，也必须在统计命令中带上对应 `--ne_alias`。
 - 如果返回结果显示总数为全量告警（例如 81 条），或 Top 告警主要是丢包 / ping 异常，而用户问的是数据库告警，这说明漏传了 `neAlias`，必须重新执行带 `--ne_alias 数据库` 的查询后再回复。
 
-最短命令示例：
+最短命令示例：调用 `execute_shell_command`，`cwd` 设为当前工作区内 `skills/real-alarm` 的绝对路径。
 
 ```bash
-cd skills/real-alarm && uv run scripts/analyze_alarms.py --mode search --ne_alias 数据库 --alarm_status 1 --include-alarms --output markdown
+python3 scripts/analyze_alarms.py --mode search --ne_alias 数据库 --alarm_status 1 --include-alarms --output markdown
 ```
 
 <!-- memory:start -->

@@ -22,8 +22,7 @@ The general script examples below are for development and maintenance only.
 
 
 > **Important:** All `scripts/` paths are relative to this skill directory.
-> Run with: `cd {this_skill_dir} && python scripts/...`
-> Or use the `cwd` parameter of `execute_shell_command`.
+> For standalone development only, run `python scripts/...` with the Skill directory as `cwd`; in production, use `process_office_document` or `export_report`.
 
 # PDF Processing Guide
 

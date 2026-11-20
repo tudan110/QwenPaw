@@ -341,8 +341,10 @@ inspection__getMetricData(mulRes=[{"resId":"<CI_ID>"}], queryKeys=["<指标编�
 
 在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才使用聚合脚本（所有涉及能力均须允许脚本；混合通道时分别执行对应能力，禁止聚合脚本越过其他能力路由；脚本自动解析 ciType、并行查询、结构化输出）：
 
+使用 `execute_shell_command`，将 `cwd` 设为当前工作区内的 `skills/alarm-analyst` 绝对路径，`command` 写成一行（示例仅为排版换行）：
+
 ```bash
-cd skills/alarm-analyst && python scripts/analyze_alarm_context.py \
+python scripts/analyze_alarm_context.py \
   --res-id <CI_ID> --alarm-title "<告警标题>" \
   --device-name <设备名> --manage-ip <管理IP> \
   --event-time "<告警时间>" --output markdown
@@ -392,8 +394,10 @@ cd skills/alarm-analyst && python scripts/analyze_alarm_context.py \
 
 RCA结论形成后，沿用本任务的通知发送流程；用户明确禁止发送或工具/授权阻断时停止发送并记录原因。聊天报告、通知文案和实际通知发送是三件事：执行现有 `send_analysis_report.py` 并取得返回结果，才算尝试通知；报告写入文件、归档成功或输出「通知推送」章节均不算发送。不要加载 `report-export` 代替通知脚本，通知失败也不影响交付聊天中的完整卡片报告。
 
+使用 `execute_shell_command`，将 `cwd` 设为当前工作区内的 `skills/alarm-analyst` 绝对路径，`command` 写成一行（示例仅为排版换行）：
+
 ```bash
-cd skills/alarm-analyst && python scripts/send_analysis_report.py \
+python scripts/send_analysis_report.py \
   --alarm-id <alarmId> --alarm-title "<标题>" \
   --device-name <设备名> --manage-ip <IP> --level <告警等级> \
   --root-cause "<根因>" \

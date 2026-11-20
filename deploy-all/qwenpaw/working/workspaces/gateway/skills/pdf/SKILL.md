@@ -17,8 +17,7 @@ DOCX/XLSX/PPTX 的文字重排 PDF 可用 `process_office_document(operation="ex
 
 
 > **重要：** 所有 `scripts/` 路径均相对于此技能目录。
-> 运行方式：`cd {this_skill_dir} && python scripts/...`
-> 或使用 `execute_shell_command` 的 `cwd` 参数。
+> 以下脚本只用于独立开发测试，运行时用 `cwd` 指定本技能目录；生产环境请使用 `process_office_document` 或 `export_report`。
 
 # PDF 处理指南
 

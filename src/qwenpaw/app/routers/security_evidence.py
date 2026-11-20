@@ -274,8 +274,28 @@ def get_protection() -> dict:
     }
 
 
+@router.get("/admission")
+def get_admission() -> dict:
+    """Describe the running admission settings without exercising any tool."""
+    from ...extensions.security.execution_policy import (
+        known_tool_admissions,
+        managed_script_entries,
+    )
+
+    protection = get_protection()
+    return {
+        "queried_at": protection["queried_at"],
+        "mcp": protection["mcp_boundary"],
+        "tools": [
+            {"name": name, "policy": policy}
+            for name, policy in sorted(known_tool_admissions().items())
+        ],
+        "script_candidates": managed_script_entries(),
+    }
+
+
 @router.get("/mcp-admission-check")
-def check_mcp_admission() -> dict:
+def check_mcp_admission(include_host: bool = False) -> dict:
     """Evaluate the live endpoint matcher without DNS, a connection or credentials."""
     from uuid import uuid4
 
@@ -289,7 +309,7 @@ def check_mcp_admission() -> dict:
         declared = declared_endpoints()
     except PermissionError:
         return {**result, "state": "invalid_policy"}
-    if declared is None:
+    if declared is None and not include_host:
         return {**result, "state": "no_exact_policy"}
 
     def evaluate(label, transport, url, expected):
@@ -301,7 +321,14 @@ def check_mcp_admission() -> dict:
             decision = "allow"
         return {"case": label, "transport": transport, "expected": expected, "decision": decision}
 
-    if declared:
+    if declared is None:
+        # The default loopback is always in host mode. Never invent a site
+        # endpoint (or assume a client is configured) for the positive check.
+        result["state"] = "host_policy"
+        result["cases"].append(evaluate(
+            "default_host", "streamable_http", "http://127.0.0.1/", "allow",
+        ))
+    elif declared:
         transport, scheme, host, port, path = min(declared)
         host_part = f"[{host}]" if ":" in host else host
         result["cases"].append(evaluate("registered", transport, f"{scheme}://{host_part}:{port}{path}", "allow"))

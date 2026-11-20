@@ -277,6 +277,8 @@ const authorizationBasis: Record<string, string> = {
   driver_policy: "MCP 服务或工具策略拒绝",
   driver_approval_required: "未满足 MCP 审批要求",
   production_policy: "生产工具策略拒绝",
+  script_integrity_denied: "受管脚本完整性检查拒绝",
+  shell_syntax_denied: "禁止管道、重定向或多命令；固定脚本应使用 cwd",
   cmdb_current_user: "本地准入；使用当前账号权限，不切换主体",
   upstream_auth_rejected: "智观 CMDB 拒绝当前账号凭据（401）",
   access_denied: "智观 CMDB 拒绝当前查询（403）",
@@ -289,7 +291,7 @@ const authorizationBasis: Record<string, string> = {
 
 function AuthorizationView({ detail }: { detail: TraceSessionDetail }) {
   const events = detail.events.filter((event) => event.type === "authorization");
-  const fields: Record<string, string> = { mcp: "MCP", skill: "Skill", api: "业务 API" };
+  const fields: Record<string, string> = { mcp: "MCP", skill: "Skill", api: "业务 API", tool: "平台工具" };
   const decisions: Record<string, string> = { allow: "允许", deny: "拒绝", pending: "待确认", unconfirmed: "未确认" };
   return events.length ? (
     <section className="tc2-timeline-detail" aria-label="权限校验">

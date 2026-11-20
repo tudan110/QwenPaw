@@ -457,9 +457,10 @@ async def execute_shell_command(
 ) -> ToolChunk:
     """Execute a shell command and return its output.
 
-    Each call runs in a fresh subprocess — `cd`, `export`, `source`,
-    etc. do NOT persist. Pass `cwd=` or chain in one call
-    (`cd /repo && pytest`).
+    Each call runs in a fresh subprocess. Pass `cwd=` to set its
+    working directory. In production, use one registered Python script
+    invocation; arbitrary commands, shell chains, pipes, redirection and
+    expansion are rejected. Use structured tools for Office and reports.
 
     IMPORTANT: Check the 'Default Shell' field to
     determine which shell is active, and generate commands using the

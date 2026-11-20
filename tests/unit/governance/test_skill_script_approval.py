@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import shlex
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -82,6 +83,7 @@ def approval(monkeypatch, tmp_path):
         policy=SimpleNamespace(execution_level="off"),
         assert_policy=Mock(),
         audit=Mock(),
+        audit_log=SimpleNamespace(record_execution=Mock()),
     )
     tool = tool_adapter.PolicyGuardedTool(
         execute_shell_command,
@@ -273,6 +275,67 @@ async def test_ordinary_user_cannot_request_import_approval(approval):
     assert result.behavior == PermissionBehavior.DENY
     assert approval.requests == []
     assert approval.executing == []
+
+
+@pytest.fixture
+def legacy_shell(approval, tmp_path, monkeypatch):
+    # Exercise the POSIX admission path without mutating the shared sys module.
+    monkeypatch.setattr(execution_policy, "sys", SimpleNamespace(platform="linux"))
+    skill = tmp_path / "skills/zgops-cmdb-import"
+    command = "cd skills/zgops-cmdb-import && " + shlex.join([
+        "python3", "scripts/resource_import_bridge.py", "import",
+        "--context-file", str(approval.context),
+    ])
+    approval.params.update(command=command, cwd=str(tmp_path))
+    return approval, skill
+
+
+async def test_legacy_shell_dispatches_only_normalized_approved_command(legacy_shell):
+    approval, skill = legacy_shell
+    # Direct execution must still require approval.
+    with pytest.raises(PermissionError, match="审批"):
+        await approval.tool(**approval.params)
+    assert approval.executing == []
+    await _approve(approval)
+    result = await approval.tool(**approval.params)
+    assert result.state == ToolResultState.SUCCESS
+    [(command, cwd)] = approval.executing
+    assert shlex.split(command) == [
+        "python3", "scripts/resource_import_bridge.py", "import",
+        "--context-file", str(approval.context),
+    ]
+    assert Path(cwd) == skill
+    assert approval.requests[0]["tc_spec"].raw_params == {"cwd": cwd, "command": command}
+
+
+@pytest.mark.parametrize("case", ["pipe", "extra_command", "outside", "modified_script", "ordinary_user"])
+async def test_legacy_shell_rejection_never_dispatches_or_requests_approval(legacy_shell, case):
+    approval, skill = legacy_shell
+    identity_token = None
+    if case == "pipe":
+        approval.params["command"] += " | cat"
+    elif case == "extra_command":
+        approval.params["command"] += " && echo extra"
+    elif case == "outside":
+        approval.params["command"] = approval.params["command"].replace(
+            "cd skills/zgops-cmdb-import", "cd ..",
+        )
+    elif case == "modified_script":
+        (skill / "scripts/resource_import_bridge.py").write_text("# modified fixture\n")
+    else:
+        identity_token = CURRENT_IDENTITY.set(
+            AccessIdentity(user={"userId": 2}, inoe_token="fixture"),
+        )
+    try:
+        decision = await approval.tool.check_permissions(approval.params)
+        assert decision.behavior == PermissionBehavior.DENY
+        with pytest.raises(PermissionError):
+            await approval.tool(**approval.params)
+    finally:
+        if identity_token is not None:
+            CURRENT_IDENTITY.reset(identity_token)
+    assert approval.executing == []
+    assert approval.requests == []
 
 
 @pytest.fixture

@@ -22,8 +22,7 @@ metadata:
 输入须位于当前工作区；输出在 `artifacts/office/`，原文件不覆盖，交付用 `send_file_to_user`。限输入 10 MB、解压 50 MB、表格 20000 单元格；宏、嵌入对象、外部链接被拒绝。公式计算/编辑、旧版 Office、PPTX 从零创建、复杂版式及修订批注操作暂不由此入口支持；明确说明能力边界，不改用任意脚本绕过限制。
 
 > **重要：** 所有 `scripts/` 路径都相对于此技能目录。
-> 运行方式：`cd {this_skill_dir} && python scripts/...`
-> 或使用 `execute_shell_command` 的 `cwd` 参数。
+> 以下脚本只用于独立开发测试，运行时用 `cwd` 指定本技能目录；生产环境请使用 `process_office_document` 或 `export_report`。
 
 # PPTX 技能
 

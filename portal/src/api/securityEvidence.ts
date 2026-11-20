@@ -17,10 +17,16 @@ export interface ProtectionEvidence {
     declared_endpoint_count?: number;
   };
 }
+export interface AdmissionEvidence {
+  queried_at: string;
+  mcp: ProtectionEvidence["mcp_boundary"];
+  tools: { name: string; policy: "read_scope" | "bounded_artifact" | "operator_read_classification" }[];
+  script_candidates: string[];
+}
 export interface MCPAdmissionCheck {
   checked_at: string;
-  state: "ready" | "guards_disabled" | "invalid_policy" | "no_exact_policy";
-  cases: { case: "registered" | "unregistered"; transport: string; expected: "allow" | "deny"; decision: "allow" | "deny" }[];
+  state: "ready" | "host_policy" | "guards_disabled" | "invalid_policy" | "no_exact_policy";
+  cases: { case: "registered" | "default_host" | "unregistered"; transport: string; expected: "allow" | "deny"; decision: "allow" | "deny" }[];
 }
 export interface RedactionCheck {
   checked_at: string;
@@ -76,7 +82,8 @@ async function requestEvidence<T>(path: string, method: "GET" | "POST", signal?:
 
 export const securityEvidenceApi = {
   protection: (signal: AbortSignal) => requestEvidence<ProtectionEvidence>("protection", "GET", signal),
-  checkMCPAdmission: () => requestEvidence<MCPAdmissionCheck>("mcp-admission-check", "GET"),
+  admission: (signal: AbortSignal) => requestEvidence<AdmissionEvidence>("admission", "GET", signal),
+  checkMCPAdmission: (includeHost = false) => requestEvidence<MCPAdmissionCheck>(`mcp-admission-check${includeHost ? "?include_host=true" : ""}`, "GET"),
   checkRedaction: () => requestEvidence<RedactionCheck>("redaction-check", "POST"),
   audit: (filters: Record<string, string | number>, signal: AbortSignal) => {
     const query = new URLSearchParams(Object.entries(filters).map(([key, value]) => [key, String(value)]));

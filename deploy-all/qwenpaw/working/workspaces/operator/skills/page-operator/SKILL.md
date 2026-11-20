@@ -39,8 +39,9 @@ operator 负责"代填"。两者都只产出指令,真正的动作在前端执�
 血泪教训:你自己手写指令经常写成 YAML / `steps:` / 自然语言 → 前端解析失败、页面毫无反应。
 所以**一律用脚本生成**(脚本保证输出是合法 JSON),再把脚本输出**原样**返回给用户:
 
-    cd skills/page-operator
-    uv run scripts/emit_operate.py [参数...]
+> 使用 `execute_shell_command` 调用这些示例时，`cwd` 设为当前工作区内本技能目录的绝对路径，`command` 只传一条 Python 命令。
+
+    python3 scripts/emit_operate.py [参数...]
 
 按用户意图挑参数:
 - `--navigate <页面名>`:用户不在目标页时先跳过去。**必须用具体的叶子页名(如「待办工单」
@@ -66,19 +67,19 @@ operator 负责"代填"。两者都只产出指令,真正的动作在前端执�
 
 例(查看"待办工单"页第 3 条的详情):
 
-    uv run scripts/emit_operate.py --navigate 待办工单 --row-index 3 --row-click 详情 --risk query --title "查看待办工单第3条详情"
+    python3 scripts/emit_operate.py --navigate 待办工单 --row-index 3 --row-click 详情 --risk query --title "查看待办工单第3条详情"
 
 例(本页新建,如"新建一个"/"添加密钥"——用 `--open`,前端会读出真实字段并引导填、最后给确认提交卡):
 
-    uv run scripts/emit_operate.py --open 新建 --risk create --title "新建一条记录"
+    python3 scripts/emit_operate.py --open 新建 --risk create --title "新建一条记录"
 
 例(用户在新建弹窗里说"提交/确定/保存"):
 
-    uv run scripts/emit_operate.py --click 确定 --risk create --title "确认提交"
+    python3 scripts/emit_operate.py --click 确定 --risk create --title "确认提交"
 
 例(批量导入,如"在资产中心批量导入设备";导入是按资源类型分的,navigate 到具体资源页):
 
-    uv run scripts/emit_operate.py --navigate 设备资源 --open 导入 --upload --accept ".xlsx,.xls" --click 确定 --risk create --title "批量导入设备"
+    python3 scripts/emit_operate.py --navigate 设备资源 --open 导入 --upload --accept ".xlsx,.xls" --click 确定 --risk create --title "批量导入设备"
 
 脚本输出 = 一段话术 + 一个 ` ```qwenpaw:operate ``` ` 块。**原样返回,别改写、别自己再拼 JSON。**
 
@@ -90,8 +91,7 @@ operator 负责"代填"。两者都只产出指令,真正的动作在前端执�
 ### 1) 识别操作 + 看需要哪些参数
 
 ```bash
-cd skills/page-operator
-uv run scripts/find_op.py "<用户原话>"
+python3 scripts/find_op.py "<用户原话>"
 ```
 
 - **命中单个操作**:脚本会列出该操作的字段。**从用户原话里抽取他已经明确给出
@@ -107,13 +107,10 @@ uv run scripts/find_op.py "<用户原话>"
 
 ```bash
 # 推荐:逐项 key=value,免 JSON 转义
-uv run scripts/emit_action.py <op_id> --set 字段=值 --set 字段=值
+python3 scripts/emit_action.py <op_id> --set 字段=值 --set 字段=值
 # 或内联 JSON
-uv run scripts/emit_action.py <op_id> --params '{"字段":"值"}'
+python3 scripts/emit_action.py <op_id> --params '{"字段":"值"}'
 ```
-
-> 本工作区脚本统一用 `uv run`(与 real-alarm 等技能一致);若环境无 uv,可退回
-> `python3`(或运行时的 python 解释器)。
 
 - 脚本**总会**输出一段话术 **以及** 一段 ` ```qwenpaw:action ``` ` 指令块
   (匹配到即出,不会因缺参拦你)。**把脚本输出原样回复给用户,指令块必须逐字

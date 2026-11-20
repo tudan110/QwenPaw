@@ -42,13 +42,25 @@ async def _configured(workspace) -> list[dict]:
     skills = await asyncio.to_thread(
         resolve_effective_skills, workspace.workspace_dir or WORKING_DIR, "console",
     )
-    items = [{"kind": "skill", "name": name, "configured": True} for name in sorted(set(skills))]
+    items = [
+        {"kind": "skill", "name": name, "configured": True, "workspace_state": "active"}
+        for name in sorted(set(skills))
+    ]
     manager = workspace.driver_manager
     if manager is not None:
         drivers = await manager.list_drivers(protocol="mcp")
-        items.extend({"kind": "mcp", "name": driver.name,
-                      "configured": driver.enabled and driver.status == "active"}
-                     for driver in drivers if driver.protocol == "mcp")
+        for driver in drivers:
+            if driver.protocol != "mcp":
+                continue
+            active = driver.enabled and driver.status == "active"
+            state = "active" if active else (
+                "disabled" if not driver.enabled else
+                "error" if driver.status == "error" else "inactive"
+            )
+            items.append({
+                "kind": "mcp", "name": driver.name, "configured": active,
+                "workspace_state": state,
+            })
     return items
 
 

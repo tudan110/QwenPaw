@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Alert, Button, Card, Col, Descriptions, Form, Input, Row, Select, Space, Tabs, Tag, Typography } from "antd";
+import { ComponentAdmissionPanel } from "./componentAdmissionPanel";
 import { ComponentInventory, type ComponentRow } from "./componentInventory";
 import { field, Ledger, optional, getLedgerRows, governanceAccount, type RecordRow, type Values } from "./governanceLedger";
 import { configFields, localAccessFields, scanFields, supplyFields, validateConfig, validateScan, validateSupply } from "./governanceForms";
@@ -97,6 +98,7 @@ export function GovernanceSettings() {
     <Typography.Paragraph type="secondary">查看实际配置、登记核查和处置，或使用虚构样本预览规则。</Typography.Paragraph>
     <Tabs activeKey={tab} onChange={(key) => { setTab(key); setSeed(null); }} destroyOnHidden items={[
       { key: "inventory", label: "组件清单", children: <ComponentInventory onRegister={register} registeredScope={registeredScope} /> },
+      { key: "admission", label: "调用准入", children: <ComponentAdmissionPanel /> },
       { key: "scope", label: "权限范围台账", children: <Ledger {...recordProps("scope")} fields={scopeFields}
         description="登记组件权限、数据范围与风险。实际授权仍由原有工作区、个人权限和业务系统控制。" /> },
       { key: "supply", label: "供应链变更", children: <Ledger {...recordProps("supply")} fields={supplyFields} validate={validateSupply}

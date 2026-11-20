@@ -17,6 +17,12 @@ const modeLabel = {
   temporary: "临时允许",
 };
 
+const unavailable = {
+  disabled: "工作区已关闭",
+  inactive: "已配置启用 · 服务未就绪",
+  error: "工作区配置异常",
+};
+
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : "请求失败";
 }
@@ -57,7 +63,7 @@ export function AgentPermissionDialog({ agentId, agentName, onClose }: {
 
   return (
     <Modal open title={`${agentName} · 智能体权限`} onCancel={onClose} footer={null} width={800}>
-      <p>此处管理当前账号允许这个智能体使用的能力。开启后仍受工作区设置、工具审批和上游数据权限限制；撤销影响后续调用。</p>
+      <p>此处设置个人授权。若 MCP 在工作区关闭或未就绪，需由管理员在 MCP 管理中处理；个人授权不能开启服务。启用后仍受工具审批和智观数据权限限制。</p>
       {error ? <Alert message={error} type="error" showIcon /> : null}
       {temporary ? (
         <Alert
@@ -74,7 +80,7 @@ export function AgentPermissionDialog({ agentId, agentName, onClose }: {
         columns={[
           { title: "类型", dataIndex: "kind", render: (kind) => kind === "skill" ? "Skill" : "MCP 服务", filters: [{ text: "Skill", value: "skill" }, { text: "MCP 服务", value: "mcp" }], onFilter: (value, row) => row.kind === value },
           { title: "能力", dataIndex: "name" },
-          { title: "当前状态", render: (_, row) => row.configured ? <Space wrap><Tag color={row.mode === "revoked" ? "red" : row.mode === "ask" ? "gold" : "blue"}>{modeLabel[row.mode]}</Tag>{row.expires_at ? <span>截至 {new Date(row.expires_at * 1000).toLocaleTimeString()}</span> : null}</Space> : <Tag>工作区未启用</Tag> },
+          { title: "当前状态", render: (_, row) => row.configured ? <Space wrap><Tag color={row.mode === "revoked" ? "red" : row.mode === "ask" ? "gold" : "blue"}>{modeLabel[row.mode]}</Tag>{row.expires_at ? <span>截至 {new Date(row.expires_at * 1000).toLocaleTimeString()}</span> : null}</Space> : <Tag color={row.workspace_state === "error" ? "red" : row.workspace_state === "inactive" ? "orange" : undefined}>{row.workspace_state && row.workspace_state !== "active" ? unavailable[row.workspace_state] : "工作区暂不可用"}</Tag> },
           { title: "个人授权", render: (_, row) => <Space><Switch aria-label={`${row.name} 的个人权限`} checked={row.configured && row.mode !== "revoked"} disabled={!row.configured || saving} onChange={(checked) => void update(row, checked ? "default" : "revoked")} /><Button size="small" disabled={!row.configured || saving} onClick={() => setTemporary(row)}>临时允许</Button></Space> },
         ]}
       />

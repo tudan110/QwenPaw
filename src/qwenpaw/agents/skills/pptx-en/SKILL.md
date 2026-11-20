@@ -22,8 +22,7 @@ Prefer `process_office_document` in production. Do not bypass policy with tempor
 Inputs stay inside the active workspace; outputs are new files in `artifacts/office/`, delivered with `send_file_to_user`. Limits: 10 MB input, 50 MB expanded, 20000 spreadsheet cells. Macros, embedded objects and external links are rejected. Formula editing/calculation, legacy formats, PPTX creation, complex layouts and tracked-change/comment operations remain unsupported through this entry point. State the limitation rather than attempting arbitrary scripts.
 
 > **Important:** All `scripts/` paths are relative to this skill directory.
-> Run with: `cd {this_skill_dir} && python scripts/...`
-> Or use the `cwd` parameter of `execute_shell_command`.
+> For standalone development only, run `python scripts/...` with the Skill directory as `cwd`; in production, use `process_office_document` or `export_report`.
 
 # PPTX Skill
 

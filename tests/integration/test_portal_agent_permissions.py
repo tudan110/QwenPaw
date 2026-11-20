@@ -109,6 +109,36 @@ async def test_mcp_consent_controls_real_client_and_stays_owner_scoped(tmp_path,
         await manager.shutdown_all()
 
 
+async def test_unavailable_workspace_mcp_cannot_be_enabled_by_personal_grant(tmp_path, monkeypatch, isolate):
+    names = ("tavily_search", "not_ready")
+    drivers = [
+        SimpleNamespace(name=names[0], enabled=False, status="inactive", protocol="mcp"),
+        SimpleNamespace(name=names[1], enabled=True, status="inactive", protocol="mcp"),
+    ]
+    workspace = SimpleNamespace(
+        agent_id="gateway", workspace_dir=tmp_path,
+        driver_manager=SimpleNamespace(list_drivers=AsyncMock(return_value=drivers)),
+    )
+    monkeypatch.setattr(agent_permissions, "get_agent_for_request", AsyncMock(return_value=workspace))
+    monkeypatch.setattr(agent_permissions, "resolve_effective_skills", lambda *_: [])
+    app = FastAPI()
+    app.include_router(agent_permissions.router, prefix="/api")
+    prefix = "/api/portal/agent-permissions"
+    token = CURRENT_IDENTITY.set(AccessIdentity({"userId": "A"}, "fixture-token"))
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get(prefix)
+            assert response.status_code == 200
+            assert [(item["name"], item["workspace_state"], item["configured"]) for item in response.json()["items"]] == [
+                (names[0], "disabled", False), (names[1], "inactive", False),
+            ]
+            for name in names:
+                grant = await client.post(prefix, json={"kind": "mcp", "name": name, "mode": "temporary"})
+                assert grant.status_code == 404
+    finally:
+        CURRENT_IDENTITY.reset(token)
+
+
 async def test_expired_skill_grant_rejects_a_queued_cmdb_or_script(isolate, tmp_path, monkeypatch):
     alice = user_scope("A", "gateway", "chat-1")
     bob = user_scope("B", "gateway", "chat-1")

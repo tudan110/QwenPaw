@@ -6,6 +6,7 @@ export interface AgentCapability {
   kind: CapabilityKind;
   name: string;
   configured: boolean;
+  workspace_state?: "active" | "disabled" | "inactive" | "error";
   mode: "inherited" | "ask" | "revoked" | "temporary";
   expires_at: number | null;
 }

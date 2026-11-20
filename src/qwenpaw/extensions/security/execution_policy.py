@@ -31,6 +31,7 @@ from .skill_scripts import (
     approval_files,
     check_arguments,
     check_web_identifiers,
+    workspace_path,
 )
 
 _READ_TOOLS = {
@@ -80,6 +81,14 @@ _ARTIFACT_TOOLS = {
     "process_office_document",
     "write_skill_context",
 }
+
+
+_PYTHON_NAMES = {"python", "python3", "python3.11", "python3.12", "python3.13"}
+_SHELL_SYNTAX_HINT = (
+    "生产环境禁止 shell 拼接、管道、重定向或展开。"
+    "若要运行已登记的业务脚本，请用工具的 cwd 参数指定技能目录，"
+    "command 只填写一条 Python 脚本命令。"
+)
 
 
 def enabled() -> bool:
@@ -294,6 +303,57 @@ def _approved_script(path: Path) -> bool:
     return True
 
 
+def normalize_managed_shell(name: str, params: dict[str, Any]) -> dict[str, Any]:
+    """Translate the legacy cd + managed Python form to a single invocation.
+
+    The original command is never sent to a shell. Both policy checks and
+    dispatch use the same normalized input. Other shell forms stay blocked.
+    """
+    if name != "execute_shell_command" or not enabled() or sys.platform == "win32":
+        return params
+    command = params.get("command")
+    if not isinstance(command, str) or not command.lstrip().startswith("cd "):
+        return params
+    if any(char in command for char in ("`", "$", "\n", "\r", "\x00")):
+        return params
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    try:
+        args = list(lexer)
+    except ValueError:
+        return params
+    has_shell_syntax = any(
+        token and all(char in ";|&<>()" for char in token)
+        for token in args[3:]
+    )
+    if (
+        len(args) < 5 or args[0] != "cd" or args[2] != "&&"
+        or args[1].startswith(("-", "~")) or has_shell_syntax
+        or args[3] not in _PYTHON_NAMES
+        or Path(args[4]).name not in _READ_SCRIPT_NAMES | SCRIPT_SKILLS.keys()
+    ):
+        return params
+    workspace = Path(get_current_workspace_dir() or WORKING_DIR).resolve()
+    try:
+        origin = workspace_path(
+            str(params.get("cwd") or workspace), workspace, workspace, check_path,
+        )
+        directory = workspace_path(args[1], origin, workspace, check_path)
+        script = workspace_path(args[4], directory, workspace, check_path)
+    except (OSError, RuntimeError):
+        # Invalid paths still go through the normal fail-closed rules.
+        return params
+    # This adapter only covers the documented in-workspace Skill form.
+    skill_root = workspace / "skills"
+    if not directory.is_dir() or not script.is_relative_to(skill_root):
+        return params
+    parts = script.relative_to(skill_root).parts
+    if len(parts) < 3 or parts[1] != "scripts" or not script.is_file():
+        return params
+    return {**params, "cwd": str(directory), "command": shlex.join(args[3:])}
+
+
 def check_shell(command: str, cwd: Any = None) -> bool:
     """Return True for actions requiring administrator approval."""
     if sys.platform == "win32" and any(char in command for char in ";|&<>%^!"):
@@ -303,7 +363,7 @@ def check_shell(command: str, cwd: Any = None) -> bool:
     if any(char in command for char in ("`", "$", "\n", "\r")) or any(
         token and all(char in ";|&<>()" for char in token) for token in lexer
     ):
-        raise PermissionError("生产环境禁止 shell 拼接、管道、重定向或展开")
+        raise PermissionError(_SHELL_SYNTAX_HINT)
     args = shlex.split(command)
     if not args:
         raise PermissionError("空命令不可执行")
@@ -355,14 +415,12 @@ def check_shell(command: str, cwd: Any = None) -> bool:
             )
         except OSError as exc:
             raise PermissionError("技能 CLI 输入文件不存在或无法访问") from exc
-    if len(args) < 2 or Path(args[0]).name not in {
-        "python",
-        "python3",
-        "python3.11",
-        "python3.12",
-        "python3.13",
-    }:
-        raise PermissionError("生产环境仅允许经哈希校验的固定 Python 脚本")
+    if len(args) < 2 or Path(args[0]).name not in _PYTHON_NAMES:
+        raise PermissionError(
+            "生产环境仅允许经哈希校验的固定 Python 脚本。"
+            "文件处理请优先使用 process_office_document，报告使用 export_report；"
+            "不要改用临时脚本或通用 shell。"
+        )
     if args[0] != Path(args[0]).name and (
         not Path(args[0]).is_absolute()
         or Path(args[0]).resolve() != Path(sys.executable).resolve()
@@ -446,6 +504,44 @@ def approval_binding(name: str, params: dict[str, Any]) -> dict[str, Any]:
     return binding
 
 
+def known_tool_admissions() -> dict[str, str]:
+    """Policy categories shared by the guard and its read-only Portal view."""
+    configured_reads = {
+        value.strip()
+        for value in EnvVarLoader.get_str(
+            "QWENPAW_READONLY_TOOL_NAMES", ""
+        ).split(",")
+        if value.strip()
+    }
+    mutating_words = (
+        "delete",
+        "remove",
+        "insert",
+        "update",
+        "create",
+        "write",
+        "execute",
+        "kill",
+        "restart",
+        "install",
+        "truncate",
+        "dispatch",
+    )
+    admissions = {
+        name: "read_scope" for name in _READ_TOOLS | MCP_READ_TOOLS
+    }
+    admissions.update({name: "bounded_artifact" for name in _ARTIFACT_TOOLS})
+    for name in configured_reads:
+        if not any(word in name.lower() for word in mutating_words):
+            admissions.setdefault(name, "operator_read_classification")
+    return admissions
+
+
+def managed_script_entries() -> list[str]:
+    """Candidate basenames; eligibility requires deployment and hash checks."""
+    return sorted(_READ_SCRIPT_NAMES | SCRIPT_SKILLS.keys())
+
+
 async def check_tool(name: str, params: dict[str, Any]) -> bool:
     """Return whether this call needs mandatory administrator approval."""
     if not enabled():
@@ -467,36 +563,7 @@ async def check_tool(name: str, params: dict[str, Any]) -> bool:
         )
         if not shell_write:
             return False
-    configured_reads = {
-        value.strip()
-        for value in EnvVarLoader.get_str(
-            "QWENPAW_READONLY_TOOL_NAMES", ""
-        ).split(",")
-        if value.strip()
-    }
-    mutating = any(
-        word in name.lower()
-        for word in (
-            "delete",
-            "remove",
-            "insert",
-            "update",
-            "create",
-            "write",
-            "execute",
-            "kill",
-            "restart",
-            "install",
-            "truncate",
-            "dispatch",
-        )
-    )
-    if not shell_write and (
-        name in _READ_TOOLS
-        or name in _ARTIFACT_TOOLS
-        or name in MCP_READ_TOOLS
-        or (name in configured_reads and not mutating)
-    ):
+    if not shell_write and name in known_tool_admissions():
         return False
     identity = CURRENT_IDENTITY.get()
     if identity is None or not identity.is_admin:

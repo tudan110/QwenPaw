@@ -289,7 +289,7 @@ def test_execution_view_contains_only_observed_status(client, database):
 def test_mcp_admission_checks_real_matcher_without_disclosing_endpoint(client, monkeypatch):
     monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
     monkeypatch.setenv("QWENPAW_MCP_ALLOWED_ENDPOINTS", '[{"transport":"sse","url":"https://private.invalid/service/mcp"}]')
-    response = client.get(BASE + "/mcp-admission-check", headers=ADMIN)
+    response = client.get(BASE + "/mcp-admission-check?include_host=true", headers=ADMIN)
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     assert response.json()["cases"] == [
@@ -312,3 +312,22 @@ def test_mcp_admission_reports_disabled_or_missing_policy(client, monkeypatch):
     assert data()["state"] == "invalid_policy"
     monkeypatch.setenv("QWENPAW_MCP_ALLOWED_ENDPOINTS", "[]")
     assert [row["case"] for row in data()["cases"]] == ["unregistered"]
+
+
+
+def test_admission_host_mode_reports_real_matcher_and_requires_admin(client, monkeypatch):
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
+    monkeypatch.delenv("QWENPAW_MCP_ALLOWED_ENDPOINTS", raising=False)
+    monkeypatch.setenv("QWENPAW_MCP_ALLOWED_HOSTS", "private-site.invalid")
+    overview = client.get(BASE + "/admission", headers=ADMIN)
+    assert overview.status_code == 200
+    assert overview.headers["cache-control"] == "no-store"
+    assert "private-site.invalid" not in overview.text
+    assert overview.json()["mcp"]["production_guards"] is True
+    assert "endpoint_policy" not in overview.json()["mcp"]
+    assert client.get(BASE + "/admission", headers={"X-Test-Role": "user"}).status_code == 403
+    result = client.get(BASE + "/mcp-admission-check?include_host=true", headers=ADMIN).json()
+    assert result["state"] == "host_policy"
+    assert [(case["case"], case["decision"]) for case in result["cases"]] == [
+        ("default_host", "allow"), ("unregistered", "deny"),
+    ]

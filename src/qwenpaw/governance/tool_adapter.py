@@ -197,21 +197,47 @@ async def _policy_tool_check_permissions(
     """
     from agentscope.permission import PermissionBehavior, PermissionDecision
     from fastapi import HTTPException
-    from ..extensions.security.execution_policy import check_tool
+    from ..extensions.security.execution_policy import (
+        check_tool,
+        normalize_managed_shell,
+    )
 
     self._qp_p0_approved_params = None
     self._qp_sandbox_mode = False
     self._qp_sandbox_config = None
-    from ..extensions.security.portal_capabilities import check_tool_skills
+    from ..extensions.security.portal_capabilities import (
+        audit as audit_authorization,
+        check_tool_skills,
+        invocation_from_context,
+    )
 
+    tool_name = getattr(self, "name", "")
+    request_ctx = getattr(self, "_qp_request_context", None)
+    skill_check = False
     try:
-        await check_tool_skills(
-            getattr(self, "_qp_request_context", None), getattr(self, "name", ""), input_data or {},
-        )
-        mandatory_approval = await check_tool(
-            getattr(self, "name", ""), input_data or {}
-        )
+        input_data = normalize_managed_shell(tool_name, input_data or {})
+        skill_check = True
+        await check_tool_skills(request_ctx, tool_name, input_data)
+        skill_check = False
+        mandatory_approval = await check_tool(tool_name, input_data)
     except (PermissionError, ValueError, HTTPException) as exc:
+        # User revocations have their own audit entry. For a production
+        # shell denial, keep a safe reason but no command or file data.
+        if tool_name == "execute_shell_command" and not skill_check:
+            scope = invocation_from_context(request_ctx)
+            if scope is not None:
+                message = str(exc)
+                basis = (
+                    "script_integrity_denied" if "SKILL_INTEGRITY_BLOCKED" in message
+                    else "shell_syntax_denied" if "生产环境禁止 shell 拼接" in message
+                    else "production_policy"
+                )
+                try:
+                    await audit_authorization(
+                        scope, "tool", tool_name, "固定脚本及参数校验", "deny", basis,
+                    )
+                except Exception:
+                    logger.debug("Could not record shell admission denial", exc_info=True)
         return PermissionDecision(
             behavior=PermissionBehavior.DENY,
             message=str(getattr(exc, "detail", exc)),
@@ -357,8 +383,13 @@ async def _policy_tool_call(
     If the user approves, retry without sandbox.
     """
     sandbox_mode = getattr(self, "_qp_sandbox_mode", False)
-    from ..extensions.security.execution_policy import check_tool, enabled
+    from ..extensions.security.execution_policy import (
+        check_tool,
+        enabled,
+        normalize_managed_shell,
+    )
 
+    kwargs = normalize_managed_shell(getattr(self, "name", ""), kwargs)
     mandatory_approval = await check_tool(
         getattr(self, "name", ""),
         {

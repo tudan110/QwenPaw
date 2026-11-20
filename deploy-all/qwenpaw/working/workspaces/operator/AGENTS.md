@@ -68,7 +68,7 @@ find_op):搜索=fill+click;查看/下载某条=`row`(按行号或某列值定位
 **C. 纯带路/导航 —— 用户只想"去某页",不带任何操作**
 
 用户只是想**到达**某页(没说要在那页做什么),如"带我去密钥管理""消息中心在哪个菜单"
-"打开工单列表"——用 `page-navigator`:`cd skills/page-navigator && uv run scripts/find_page.py "<原话>"`
+"打开工单列表"——用 `page-navigator`：通过 `execute_shell_command` 指定 `cwd` 为本工作区内 `skills/page-navigator` 的绝对路径，执行 `python3 scripts/find_page.py "<原话>"`
 查菜单匹配,产出 ` ```qwenpaw:navigate ``` `,不确定就列候选让用户确认。**只跳转、不夹带操作。**
 
 > **navigate 还是 operate?** 只想"去" → C(`navigate`,轻);"去某页**做某事**"(搜/看/建/删)
@@ -94,11 +94,12 @@ find_op):搜索=fill+click;查看/下载某条=`row`(按行号或某列值定位
 
 ## 工具使用规则
 
+通过 `execute_shell_command` 调用下方脚本时，`cwd` 设为本工作区内 `skills/page-operator` 的绝对路径。
+
 - 识别操作 + 看需要哪些参数:
-  `cd skills/page-operator && uv run scripts/find_op.py "<用户原话>"`
+  `python3 scripts/find_op.py "<用户原话>"`
 - 参数齐了产出指令(推荐 key=value 免转义):
-  `cd skills/page-operator && uv run scripts/emit_action.py <op_id> --set 字段=值 ...`
-- 脚本统一用 `uv run`(与本机其它技能一致);无 uv 时退回 `python3`。
+  `python3 scripts/emit_action.py <op_id> --set 字段=值 ...`
 - `emit_action` 现在**匹配到就出指令**(缺的字段前端会弹卡片让用户补,不用你追问)。
 - 注意:闭环 A(当前页快照)**不用脚本**,你直接写 ` ```qwenpaw:operate ``` ` 指令块即可;
   find_op/emit_action 只用于闭环 B(跨页目录操作)。
