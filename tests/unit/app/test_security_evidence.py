@@ -284,3 +284,31 @@ def test_execution_view_contains_only_observed_status(client, database):
     assert data["records"][0]["subject"] == "u1"
     assert data["records"][0]["call_id"] == "0123456789abcdef0123456789abcdef"
     assert client.get(BASE + "/audit", headers=ADMIN).json()["total"] == 2
+
+
+def test_mcp_admission_checks_real_matcher_without_disclosing_endpoint(client, monkeypatch):
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
+    monkeypatch.setenv("QWENPAW_MCP_ALLOWED_ENDPOINTS", '[{"transport":"sse","url":"https://private.invalid/service/mcp"}]')
+    response = client.get(BASE + "/mcp-admission-check", headers=ADMIN)
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json()["cases"] == [
+        {"case": "registered", "transport": "sse", "expected": "allow", "decision": "allow"},
+        {"case": "unregistered", "transport": "streamable_http", "expected": "deny", "decision": "deny"},
+    ]
+    assert "private.invalid" not in response.text and "/service/mcp" not in response.text
+    assert client.get(BASE + "/mcp-admission-check", headers={"X-Test-Role": "user"}).status_code == 403
+
+
+def test_mcp_admission_reports_disabled_or_missing_policy(client, monkeypatch):
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "false")
+    path = BASE + "/mcp-admission-check"
+    data = lambda: client.get(path, headers=ADMIN).json()
+    assert data()["state"] == "guards_disabled"
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
+    monkeypatch.delenv("QWENPAW_MCP_ALLOWED_ENDPOINTS", raising=False)
+    assert data()["state"] == "no_exact_policy"
+    monkeypatch.setenv("QWENPAW_MCP_ALLOWED_ENDPOINTS", "not-json")
+    assert data()["state"] == "invalid_policy"
+    monkeypatch.setenv("QWENPAW_MCP_ALLOWED_ENDPOINTS", "[]")
+    assert [row["case"] for row in data()["cases"]] == ["unregistered"]

@@ -274,6 +274,43 @@ def get_protection() -> dict:
     }
 
 
+@router.get("/mcp-admission-check")
+def check_mcp_admission() -> dict:
+    """Evaluate the live endpoint matcher without DNS, a connection or credentials."""
+    from uuid import uuid4
+
+    from ...extensions.security.execution_policy import enabled
+    from ...extensions.security.mcp_boundary import declared_endpoints, validate_endpoint
+
+    result = {"checked_at": datetime.now(timezone.utc).isoformat(), "state": "ready", "cases": []}
+    if not enabled():
+        return {**result, "state": "guards_disabled"}
+    try:
+        declared = declared_endpoints()
+    except PermissionError:
+        return {**result, "state": "invalid_policy"}
+    if declared is None:
+        return {**result, "state": "no_exact_policy"}
+
+    def evaluate(label, transport, url, expected):
+        try:
+            validate_endpoint({"transport": transport, "url": url})
+        except PermissionError:
+            decision = "deny"
+        else:
+            decision = "allow"
+        return {"case": label, "transport": transport, "expected": expected, "decision": decision}
+
+    if declared:
+        transport, scheme, host, port, path = min(declared)
+        host_part = f"[{host}]" if ":" in host else host
+        result["cases"].append(evaluate("registered", transport, f"{scheme}://{host_part}:{port}{path}", "allow"))
+    result["cases"].append(evaluate(
+        "unregistered", "streamable_http", f"https://evidence-{uuid4().hex}.invalid/mcp", "deny",
+    ))
+    return result
+
+
 @router.post("/redaction-check")
 def check_redaction() -> dict:
     """Evaluate fixed fictional samples through the existing redactor only."""

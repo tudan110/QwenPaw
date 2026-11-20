@@ -17,6 +17,11 @@ export interface ProtectionEvidence {
     declared_endpoint_count?: number;
   };
 }
+export interface MCPAdmissionCheck {
+  checked_at: string;
+  state: "ready" | "guards_disabled" | "invalid_policy" | "no_exact_policy";
+  cases: { case: "registered" | "unregistered"; transport: string; expected: "allow" | "deny"; decision: "allow" | "deny" }[];
+}
 export interface RedactionCheck {
   checked_at: string;
   active: boolean;
@@ -71,6 +76,7 @@ async function requestEvidence<T>(path: string, method: "GET" | "POST", signal?:
 
 export const securityEvidenceApi = {
   protection: (signal: AbortSignal) => requestEvidence<ProtectionEvidence>("protection", "GET", signal),
+  checkMCPAdmission: () => requestEvidence<MCPAdmissionCheck>("mcp-admission-check", "GET"),
   checkRedaction: () => requestEvidence<RedactionCheck>("redaction-check", "POST"),
   audit: (filters: Record<string, string | number>, signal: AbortSignal) => {
     const query = new URLSearchParams(Object.entries(filters).map(([key, value]) => [key, String(value)]));

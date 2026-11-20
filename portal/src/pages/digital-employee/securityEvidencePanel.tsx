@@ -3,7 +3,7 @@ import { Alert, Button, DatePicker, Descriptions, Input, Select, Space, Table, T
 import { Link } from "react-router-dom";
 import {
   securityEvidenceApi, SecurityEvidenceError,
-  type AuditPage, type AuditRecord, type ProtectionEvidence, type RedactionCheck,
+  type AuditPage, type AuditRecord, type MCPAdmissionCheck, type ProtectionEvidence, type RedactionCheck,
 } from "../../api/securityEvidence";
 import { auditCsvCell } from "./evidenceDisplay";
 
@@ -13,6 +13,34 @@ const ERROR_TEXT = (error: unknown) => error instanceof SecurityEvidenceError
   ? error.message : "无法读取安全取证数据，请稍后重试。";
 const DECISIONS = { allow: "允许", deny: "拒绝", ask: "请求确认", sandbox_fallback: "沙箱回退" };
 const PAGE_SIZE = 50;
+
+function MCPAdmissionSelfCheck() {
+  const [result, setResult] = useState<MCPAdmissionCheck>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const unavailable = { guards_disabled: "未执行：生产保护未启用。", invalid_policy: "未执行：精确白名单配置无效。", no_exact_policy: "未执行：当前不是精确白名单模式。" };
+  async function run() {
+    setLoading(true); setResult(undefined); setError("");
+    try { setResult(await securityEvidenceApi.checkMCPAdmission()); }
+    catch (err) { setError(ERROR_TEXT(err)); }
+    finally { setLoading(false); }
+  }
+  return <div style={{ marginTop: 12 }}>
+    <Button size="small" loading={loading} onClick={() => void run()}>验证 MCP 端点准入</Button>
+    <p>用当前后端的准入规则验证已登记端点和保留测试地址；不发送网络请求，不读取凭据。</p>
+    {error && <Alert type="error" showIcon message={error} />}
+    {result && result.state !== "ready" && <Alert type="warning" showIcon message={unavailable[result.state]} />}
+    {result?.state === "ready" && <>
+      <p>检查时间：{CLOCK(result.checked_at)}{!result.cases.some((row) => row.case === "registered") && " · 白名单无正向样本"}</p>
+      <Table size="small" rowKey="case" pagination={false} dataSource={result.cases} columns={[
+        { title: "检查对象", dataIndex: "case", render: (value) => value === "registered" ? "已登记端点（地址不展示）" : "未登记端点（保留测试地址）" },
+        { title: "传输协议", dataIndex: "transport" },
+        { title: "预期决策", dataIndex: "expected", render: (value) => value === "allow" ? "允许" : "拒绝" },
+        { title: "实测决策", dataIndex: "decision", render: (value, row) => <Tag color={value === row.expected ? "green" : "red"}>{value === "allow" ? "允许" : "拒绝"}</Tag> },
+      ]} />
+    </>}
+  </div>;
+}
 
 function ProtectionOverview() {
   const [snapshot, setSnapshot] = useState<ProtectionEvidence>();
@@ -103,6 +131,7 @@ function ProtectionOverview() {
           ? <p>精确匹配传输协议、地址协议、主机、端口和路径。网络可达性、证书及端侧管控需另行测试。</p>
           : <p>主机数不含内置本机和服务域名许可。网络可达性、证书、端侧管控与实际策略生效情况需要另行验证。</p>}
         <Link to="/mcp">查看 MCP 服务与工具权限</Link>
+        <MCPAdmissionSelfCheck />
       </section>
       <section className="settings-section" aria-label="技能扫描范围">
         <h4>技能扫描范围</h4>
