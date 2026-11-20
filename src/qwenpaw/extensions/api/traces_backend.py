@@ -24,13 +24,32 @@ from fastapi import APIRouter, HTTPException, Query
 
 from qwenpaw.extensions.traceability import trace_store
 
+from .access_session import CURRENT_IDENTITY
+from .chat_isolation import chat_scope
+
 router = APIRouter(prefix="/api/portal/traces", tags=["portal", "traces"])
+
+
+def _session_prefix() -> str | None:
+    scope = chat_scope()
+    if scope is None:
+        return None
+    identity = CURRENT_IDENTITY.get()
+    if identity and identity.is_admin and scope.human:
+        return None
+    return f"qpsession1{scope.digest}"
+
+
+def _check_session_scope(session_id: str) -> None:
+    prefix = _session_prefix()
+    if prefix is not None and not session_id.startswith(prefix):
+        raise HTTPException(status_code=404, detail="链路记录不存在")
 
 
 @router.get("/stats")
 def traces_stats() -> dict:
     """Return aggregate counts across all sessions for the header tiles."""
-    return trace_store.stats()
+    return trace_store.stats(session_prefix=_session_prefix())
 
 
 @router.get("/sessions")
@@ -46,6 +65,7 @@ def list_sessions(
     """Paginated index of sessions, freshest first."""
     return trace_store.list_sessions(
         agent_id=agent_id,
+        session_prefix=_session_prefix(),
         keyword=keyword,
         only_errors=only_errors,
         since_ts=since_ts,
@@ -67,6 +87,7 @@ def get_session(
     """
     if not session_id:
         raise HTTPException(status_code=422, detail="session_id is required")
+    _check_session_scope(session_id)
     result = trace_store.read_session(
         session_id,
         offset=offset,
@@ -92,7 +113,7 @@ def trace_trends(
     now = _time.time()
     since = now - window_s
     bucket_s = max(60, window_s // buckets)
-    index = trace_store.list_sessions(limit=500, since_ts=since)
+    index = trace_store.list_sessions(limit=500, since_ts=since, session_prefix=_session_prefix())
     rows: dict[int, dict[str, float]] = {}
     for item in index.get("items", []):
         first = float(item.get("first_event_at") or 0)
@@ -143,7 +164,7 @@ def list_spans(
     """
     wanted = ("llm_call", "tool_call") if span_type == "all" else (span_type,)
     needle = (keyword or "").strip().lower()
-    sessions = trace_store.list_sessions(limit=max_sessions).get("items", [])
+    sessions = trace_store.list_sessions(limit=max_sessions, session_prefix=_session_prefix()).get("items", [])
     spans: list[dict] = []
     for item in sessions:
         session_id = str(item.get("session_id") or "")
@@ -198,6 +219,7 @@ async def remove_session(session_id: str) -> dict:
     """Clear a single session's trace file and drop its index entry."""
     if not session_id:
         raise HTTPException(status_code=422, detail="session_id is required")
+    _check_session_scope(session_id)
     deleted = await trace_store.delete_session(session_id)
     if not deleted:
         raise HTTPException(

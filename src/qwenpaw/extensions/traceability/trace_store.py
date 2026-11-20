@@ -305,6 +305,7 @@ def read_session(
 def list_sessions(
     *,
     agent_id: str | None = None,
+    session_prefix: str | None = None,
     keyword: str | None = None,
     only_errors: bool = False,
     since_ts: float | None = None,
@@ -321,6 +322,8 @@ def list_sessions(
     sessions = list(index.get("sessions", {}).values())
 
     def _ok(entry: dict[str, Any]) -> bool:
+        if session_prefix and not str(entry.get("session_id", "")).startswith(session_prefix):
+            return False
         if agent_id and entry.get("agent_id") != agent_id:
             return False
         if only_errors and entry.get("status") != "error":
@@ -362,10 +365,11 @@ def list_sessions(
     }
 
 
-def stats() -> dict[str, Any]:
+def stats(*, session_prefix: str | None = None) -> dict[str, Any]:
     """Quick aggregate counts for the dashboard header."""
     index = _read_index()
-    sessions = list(index.get("sessions", {}).values())
+    sessions = [entry for entry in index.get("sessions", {}).values()
+                if not session_prefix or str(entry.get("session_id", "")).startswith(session_prefix)]
     total_events = sum(int(e.get("event_count", 0)) for e in sessions)
     total_tools = sum(int(e.get("tool_call_count", 0)) for e in sessions)
     total_errors = sum(int(e.get("error_count", 0)) for e in sessions)

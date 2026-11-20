@@ -564,6 +564,17 @@ async def _skill_fallback_handler(
     if skill_dir is None or not skill_dir.exists():
         return None
 
+    from ..extensions.security import portal_capabilities as permissions
+
+    scope = permissions.invocation_from_runtime(ctx)
+    if scope is not None:
+        settings = await permissions.read_settings(scope)
+        if settings.get(("skill", skill_dir.name), (None, None))[0] == "revoked":
+            await permissions.audit(scope, "skill", skill_dir.name, "斜杠调用", "deny", "user_revoked")
+            return Msg(name="assistant", role="assistant", content=[TextBlock(
+                type="text", text=f"你已撤销此智能体的 {skill_dir.name} 权限，本次未使用该 Skill。",
+            )])
+
     skill_md = skill_dir / "SKILL.md"
     if not skill_md.exists():
         return None

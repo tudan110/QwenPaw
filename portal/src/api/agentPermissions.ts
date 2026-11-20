@@ -1,0 +1,49 @@
+import { requestPortalApi } from "./portalWorkorders";
+
+export type CapabilityKind = "skill" | "mcp";
+export type CapabilityChange = "default" | "revoked" | "temporary";
+export interface AgentCapability {
+  kind: CapabilityKind;
+  name: string;
+  configured: boolean;
+  mode: "inherited" | "ask" | "revoked" | "temporary";
+  expires_at: number | null;
+}
+export interface AgentConsent {
+  id: string;
+  service: string;
+  tool: string;
+  expires: number;
+}
+
+const endpoint = "/agent-permissions";
+
+export function listAgentPermissions(agentId: string, signal?: AbortSignal) {
+  return requestPortalApi<{ agent_id: string; items: AgentCapability[] }>(endpoint, {
+    signal, headers: { "X-Agent-Id": agentId },
+  });
+}
+
+export function setAgentPermission(agentId: string, item: AgentCapability, mode: CapabilityChange) {
+  return requestPortalApi(endpoint, {
+    method: "POST",
+    headers: { "X-Agent-Id": agentId, "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: item.kind, name: item.name, mode }),
+  });
+}
+
+export function listAgentConsent(agentId: string, sessionId: string, signal?: AbortSignal) {
+  return requestPortalApi<{ items: AgentConsent[] }>(
+    `${endpoint}/requests?${new URLSearchParams({ session_id: sessionId })}`, {
+      signal, headers: { "X-Agent-Id": agentId },
+    }, 5000,
+  );
+}
+
+export function resolveAgentConsent(agentId: string, sessionId: string, requestId: string, decision: "allow" | "deny") {
+  return requestPortalApi(`${endpoint}/requests/${encodeURIComponent(requestId)}`, {
+    method: "POST",
+    headers: { "X-Agent-Id": agentId, "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, decision }),
+  });
+}

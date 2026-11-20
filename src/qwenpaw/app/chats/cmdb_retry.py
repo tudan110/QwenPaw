@@ -46,6 +46,11 @@ async def retry_cmdb_lookup(workspace, chat, name: str, approval_level: str) -> 
             "channel": chat.channel,
             "approval_level": approval_level,
         }
+        from ...extensions.security import portal_capabilities as permissions
+
+        context[permissions.CONTEXT_KEY] = permissions.invocation_for(
+            chat.user_id, workspace.agent_id, chat.session_id, chat.channel,
+        )
         tool = AgentBuilder._wrap_tool(lookup_portal_cmdb_asset, workspace.agent_id, context, governor)
         decision = await tool.check_permissions(params)
         if decision.behavior != PermissionBehavior.ALLOW:
@@ -55,6 +60,8 @@ async def retry_cmdb_lookup(workspace, chat, name: str, approval_level: str) -> 
             async with aclosing(result):
                 result = await anext(result)
         payload = json.loads(result.content[0].text)
+    except PermissionError as exc:
+        return str(exc)
     except (ValueError, AttributeError, IndexError, StopAsyncIteration):
         return "智观 CMDB 未返回可用的查询结果。"
     finally:

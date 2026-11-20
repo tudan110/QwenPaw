@@ -176,6 +176,14 @@ class AgentBuilder:
         except Exception:
             effective_skills = []
 
+        from ..extensions.security import portal_capabilities as permissions
+
+        portal_scope = permissions.invocation_from_context(request_context)
+        if portal_scope is not None:
+            portal_settings = await permissions.read_settings(portal_scope)
+            effective_skills = [name for name in effective_skills
+                                if portal_settings.get(("skill", name), (None, None))[0] != "revoked"]
+
         # Compute active modes.
         active_modes: set[str] = set()
         workspace = getattr(ctx, "workspace", None)
@@ -506,6 +514,16 @@ class AgentBuilder:
         )
         if isinstance(_payload_ctx, dict):
             rc.update(_payload_ctx)
+        from ..extensions.security import portal_capabilities as permissions
+        from ..constant import WORKING_DIR
+
+        # Bind only from the server-resolved request namespace. Never use
+        # request_context fields to select the user, agent, or conversation.
+        rc.pop(permissions.CONTEXT_KEY, None)
+        portal_scope = permissions.invocation_from_runtime(ctx)
+        if portal_scope is not None:
+            rc[permissions.CONTEXT_KEY] = portal_scope
+            rc["_portal_workspace_dir"] = str(getattr(ctx, "workspace_dir", None) or WORKING_DIR)
         return rc
 
     @staticmethod

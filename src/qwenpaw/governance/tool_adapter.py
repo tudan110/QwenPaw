@@ -202,7 +202,12 @@ async def _policy_tool_check_permissions(
     self._qp_p0_approved_params = None
     self._qp_sandbox_mode = False
     self._qp_sandbox_config = None
+    from ..extensions.security.portal_capabilities import check_tool_skills
+
     try:
+        await check_tool_skills(
+            getattr(self, "_qp_request_context", None), getattr(self, "name", ""), input_data or {},
+        )
         mandatory_approval = await check_tool(
             getattr(self, "name", ""), input_data or {}
         )
@@ -383,11 +388,19 @@ async def _policy_tool_call(
         if sandbox_config is not None:
             kwargs["sandbox_config"] = sandbox_config
 
+    from ..extensions.security import portal_capabilities as permissions
+
+    # Recheck after any approval wait, immediately before dispatch.
+    ctx = getattr(self, "_qp_request_context", None)
+    cmdb_call = uuid.uuid4().hex if self.name == "lookup_portal_cmdb_asset" else None
+    await permissions.check_tool_skills(ctx, self.name, kwargs, dispatch=True, call_id=cmdb_call)
     # Call the original function
     from agentscope.tool import FunctionTool
     from agentscope.message import ToolResultState
 
     result = await _execute_audited(self, FunctionTool.__call__, *args, **kwargs)
+    if cmdb_call is not None:
+        result = await permissions.track_cmdb_outcome(ctx, result, cmdb_call)
 
     # Check if sandbox violation was returned (state=DENIED)
     if not (

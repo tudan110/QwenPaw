@@ -54,6 +54,7 @@ def _response(status: str, message: str, **fields) -> ToolChunk:
     return ToolChunk(
         is_last=True,
         state=ToolResultState.SUCCESS,
+        metadata={"portal_cmdb_status": status},
         content=[TextBlock(type="text", text=json.dumps(payload, ensure_ascii=False))],
     )
 

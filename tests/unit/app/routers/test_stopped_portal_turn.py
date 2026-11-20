@@ -40,6 +40,12 @@ def portal(monkeypatch, tmp_path):
         chat_manager=SimpleNamespace(get_chat=AsyncMock(return_value=chat),
                                      get_or_create_chat=AsyncMock(return_value=chat)),
     )
+    from qwenpaw.extensions.api.access_session import AccessSessionStore
+    from qwenpaw.extensions.security import portal_capabilities as permissions
+
+    db = AccessSessionStore(tmp_path / "test-access.db")
+    monkeypatch.setattr(permissions, "get_access_store", lambda: db)
+    monkeypatch.setattr(permissions.trace_store, "record_event", AsyncMock())
     monkeypatch.setenv("QWENPAW_TRUSTED_CHAT_ISOLATION", "true")
     monkeypatch.setenv("QWENPAW_TRUSTED_CHAT_TEXT_GUARD", "false")
     monkeypatch.setenv("INOE_API_BASE_URL", "https://cmdb.test")
@@ -144,6 +150,12 @@ async def test_stopped_cmdb_reopens_and_retries_as_original_owner(portal, monkey
             response = await client.post("/console/chat/retry-cmdb", json=params)
             assert "portal_cmdb_retry" in response.text and "cmdb-asset-id" in response.text
             assert upstream_tokens == ["Bearer caller-token"]
+            from qwenpaw.extensions.traceability import trace_store
+
+            audit_events = [c.args[2] for c in trace_store.record_event.await_args_list
+                            if len(c.args) >= 3 and c.args[1] == "authorization"]
+            assert [e["basis"] for e in audit_events] == ["cmdb_current_user", "ok"]
+            assert audit_events[0]["authorization_id"] == audit_events[1]["authorization_id"]
             assert calls[0]["approval_level"] == "strict"
             history = (await client.get("/chats/chat-a")).json()
             assert history["stopped_turn"] is None
@@ -226,3 +238,28 @@ async def test_model_only_query_does_not_dispatch_agent_or_business_tools(portal
         business_stream.assert_not_called()
         history = (await client.get(f"/chats/{chat.id}")).json()
         assert history_text(history) == [("user", QUERY), ("assistant", "业务联网已关闭，本轮未查询 CMDB。")]
+
+
+async def test_revoked_cmdb_skill_blocks_resume_before_any_upstream_request(portal, monkeypatch):
+    from qwenpaw.extensions.security import portal_capabilities as permissions
+
+    client, workspace, chat, _ = portal
+    audit = AsyncMock()
+    monkeypatch.setattr(permissions, "audit", audit)
+    from unittest.mock import Mock
+
+    upstream = Mock(side_effect=AssertionError("a revoked Skill must not query CMDB"))
+    monkeypatch.setattr(portal_asset_lookup.httpx, "AsyncClient", upstream)
+    monkeypatch.setattr(cmdb_retry.AgentBuilder, "_init_governor", lambda *_: None)
+    identity = CURRENT_IDENTITY.set(AccessIdentity({"userId": "test-user"}, "caller-token"))
+    try:
+        async with client:
+            marker = await stop_query(client, workspace, QUERY, tool=True)
+            assert marker["mode"] == "cmdb"
+            permissions.change(chat.user_id, workspace.agent_id, "skill", "zgops-cmdb", "revoked")
+            response = await client.post("/console/chat/retry-cmdb", json={"chat_id": chat.id, "turn_id": marker["id"]})
+            assert response.status_code == 200
+            upstream.assert_not_called()
+            assert audit.await_args.args[-2:] == ("deny", "user_revoked")
+    finally:
+        CURRENT_IDENTITY.reset(identity)

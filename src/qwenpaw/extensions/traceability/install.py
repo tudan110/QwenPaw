@@ -126,8 +126,13 @@ def _install_tool_trace() -> None:
         # them here silently dropped every tool_call since the Runtime
         # 2.0 rework (same failure mode as the llm_call spans).
         trace_ctx = getattr(getattr(self, "model", None), "_qp_trace_ctx", None)
+        outcome = "ok"
         try:
             async for chunk in _orig_acting(self, tool_call):
+                state = getattr(chunk, "state", None)
+                state = getattr(state, "value", state)
+                if state in {"error", "denied", "timeout"}:
+                    outcome = state
                 yield chunk
         except Exception as exc:  # noqa: BLE001 - re-raised after tracing
             await _emit_tool_call(
@@ -140,7 +145,7 @@ def _install_tool_trace() -> None:
             raise
         await _emit_tool_call(
             tool_call,
-            outcome="ok",
+            outcome=outcome,
             started_at=started,
             trace_ctx=trace_ctx,
         )

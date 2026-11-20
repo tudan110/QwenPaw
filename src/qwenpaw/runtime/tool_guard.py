@@ -46,6 +46,7 @@ class GuardedFunctionTool:
                         _guarded_tool_resolve_execution_level
                     ),
                     "check_permissions": _guarded_tool_check_permissions,
+                    "__call__": _guarded_tool_call,
                     "__doc__": cls.__doc__,
                 },
             )
@@ -182,6 +183,13 @@ async def _guarded_tool_check_permissions(
         PermissionBehavior,
         PermissionDecision,
     )
+
+    from ..extensions.security.portal_capabilities import check_tool_skills
+
+    try:
+        await check_tool_skills(self._qp_request_context, self.name, input_data or {})
+    except PermissionError as exc:
+        return PermissionDecision(behavior=PermissionBehavior.DENY, message=str(exc))
 
     level = self._resolve_execution_level()  # pylint: disable=protected-access
 
@@ -334,6 +342,21 @@ def _format_guard_message(tool_name: str, guard_result: Any) -> str:
         f"findings={guard_result.findings_count}):\n"
         f"{format_findings_summary(guard_result)}"
     )
+
+
+async def _guarded_tool_call(self: Any, *args: Any, **kwargs: Any) -> Any:
+    from agentscope.tool import FunctionTool
+    from ..extensions.security import portal_capabilities as permissions
+
+    # This fallback wrapper also serves the CMDB retry path when the
+    # governor is unavailable. A personal revocation still applies.
+    ctx = self._qp_request_context
+    cmdb_call = uuid.uuid4().hex if self.name == "lookup_portal_cmdb_asset" else None
+    await permissions.check_tool_skills(ctx, self.name, kwargs, dispatch=True, call_id=cmdb_call)
+    result = await FunctionTool.__call__(self, *args, **kwargs)
+    if cmdb_call is not None:
+        result = await permissions.track_cmdb_outcome(ctx, result, cmdb_call)
+    return result
 
 
 async def _ask_user_approval(

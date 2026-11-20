@@ -115,14 +115,23 @@ class MCPDriverHandler(DriverHandler):
     ) -> Any:
         """Call MCP tool on underlying client."""
         from ...extensions.security.execution_policy import check_tool
-        needs_approval = await check_tool(
-            f"{self.name}__{str(kwargs['tool_name'])}",
-            dict(kwargs.get("arguments") or {}),
-        )
-        if needs_approval:
-            raise PermissionError(
-                "未接入强制审批业务连接器的 MCP 写操作已禁用"
+        from ...extensions.security import portal_capabilities as permissions
+
+        scope = kwargs.pop("_portal_invocation", None)
+        tool_name = str(kwargs["tool_name"])
+        try:
+            needs_approval = await check_tool(
+                f"{self.name}__{tool_name}", dict(kwargs.get("arguments") or {}),
             )
+            if needs_approval:
+                raise PermissionError("未接入强制审批业务连接器的 MCP 写操作已禁用")
+        except PermissionError:
+            if scope is not None:
+                await permissions.audit(scope, "mcp", f"{self.name} / {tool_name}",
+                                        "调用单个工具", "deny", "production_policy")
+            raise
+        if scope is not None:
+            await permissions.authorize_mcp(scope, self.name, tool_name)
         del credential
         del context
         if self._client is None:
@@ -198,6 +207,9 @@ class MCPDriverHandler(DriverHandler):
             )
         subjects = _subjects_from_context(invocation.request_context)
         subject = subjects[0]
+        from ...extensions.security import portal_capabilities as permissions
+
+        scope = permissions.invocation_from_context(invocation.request_context)
         try:
             value = await self._guarded_execute(
                 subject,
@@ -209,6 +221,9 @@ class MCPDriverHandler(DriverHandler):
                 arguments=dict(invocation.payload or {}),
             )
         except DriverPermissionDeniedError as exc:
+            if scope is not None:
+                await permissions.audit(scope, "mcp", f"{self.name} / {tool_name}",
+                                        "调用单个工具", "deny", "driver_policy")
             return DriverInvocationResult(
                 ok=False,
                 error_type="driver_policy_denied",
@@ -216,11 +231,16 @@ class MCPDriverHandler(DriverHandler):
                 metadata=exc.to_result(),
             )
         except ApprovalRequiredError as exc:
+            if scope is not None:
+                await permissions.audit(scope, "mcp", f"{self.name} / {tool_name}",
+                                        "调用单个工具", "deny", "driver_approval_required")
             return DriverInvocationResult(
                 ok=False,
                 error_type="driver_policy_approval_required",
                 message=str(exc),
             )
+        except PermissionError as exc:
+            return DriverInvocationResult(ok=False, error_type="permission_denied", message=str(exc))
         except Exception as exc:
             logger.warning(
                 "MCP capability invocation failed for Driver '%s' "
@@ -256,7 +276,12 @@ class MCPDriverHandler(DriverHandler):
             subjects=subjects,
             extras=dict(kwargs),
         )
+        from ...extensions.security import portal_capabilities as permissions
+
         credential = await self._credential_provider.resolve()
+        scope = permissions.invocation_from_context(request_context)
+        if scope is not None:
+            kwargs["_portal_invocation"] = scope
         return await self._execute(credential, context, **kwargs)
 
 

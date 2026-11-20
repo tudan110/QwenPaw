@@ -176,6 +176,9 @@ def requires_admin(method: str, path: str) -> bool:
     # The resource router checks owner/grant on user requests and admin on its admin subtree.
     if path.startswith("/api/portal/controlled-documents/"):
         return path.startswith("/api/portal/controlled-documents/admin/")
+    # The agent permissions router validates the human owner and session.
+    if path == "/api/portal/agent-permissions" or path.startswith("/api/portal/agent-permissions/requests/"):
+        return False
     if method in {"GET", "HEAD", "OPTIONS"}:
         return False
     if method == "POST" and path in _USER_POST_PATHS:

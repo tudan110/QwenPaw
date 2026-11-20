@@ -263,6 +263,54 @@ function groupRounds(events: TraceEvent[]): TraceRound[] {
   return rounds;
 }
 
+const authorizationBasis: Record<string, string> = {
+  user_consent: "等待当前用户确认",
+  allow: "当前用户本次允许",
+  deny: "当前用户拒绝",
+  revoked: "用户权限已撤销",
+  user_revoked: "用户权限已撤销",
+  temporary: "当前用户限时授权",
+  expired: "本次授权已超时",
+  cancelled: "对话取消，授权作废",
+  inherited: "工作区配置及现有工具策略",
+  driver_policy: "MCP 服务或工具策略拒绝",
+  driver_approval_required: "未满足 MCP 审批要求",
+  production_policy: "生产工具策略拒绝",
+  cmdb_current_user: "本地准入；使用当前账号权限，不切换主体",
+  upstream_auth_rejected: "智观 CMDB 拒绝当前账号凭据（401）",
+  access_denied: "智观 CMDB 拒绝当前查询（403）",
+  authentication_required: "当前用户缺少业务凭据",
+  ok: "智观 CMDB 接受查询并返回匹配",
+  no_visible_match: "智观 CMDB 接受查询，未返回可见匹配",
+  query_failed: "未能确认智观 CMDB 的授权结果",
+  invalid_name: "输入不满足查询范围，未发送请求",
+};
+
+function AuthorizationView({ detail }: { detail: TraceSessionDetail }) {
+  const events = detail.events.filter((event) => event.type === "authorization");
+  const fields: Record<string, string> = { mcp: "MCP", skill: "Skill", api: "业务 API" };
+  const decisions: Record<string, string> = { allow: "允许", deny: "拒绝", pending: "待确认", unconfirmed: "未确认" };
+  return events.length ? (
+    <section className="tc2-timeline-detail" aria-label="权限校验">
+      <p>以下为后端记录的逐次校验。允许调用与业务执行成功分别记录。</p>
+      <table className="tc2-kv">
+        <thead><tr><th>时间 / 校验编号</th><th>调用方</th><th>目标及权限范围</th><th>决定</th><th>授权依据</th><th>有效期</th></tr></thead>
+        <tbody>{events.map((event, idx) => {
+          const decision = String(event.decision || "");
+          return <tr key={`${String(event.authorization_id)}:${idx}`}>
+            <td>{formatTs(event.ts)}<br /><code>{String(event.authorization_id || "").slice(0, 12)}</code></td>
+            <td>{event.agent_id || "—"}<br />会话用户 {event.user_id ? `#${event.user_id.slice(-8)}` : "—"}</td>
+            <td>{fields[String(event.target_kind)] || "调用"} · {String(event.target || "—")}<br />{String(event.permission || "—")}</td>
+            <td><span className={`trace-outcome ${decision === "allow" ? "ok" : decision === "deny" ? "err" : ""}`}>{decisions[decision] || "—"}</span></td>
+            <td>{authorizationBasis[String(event.basis)] || "—"}</td>
+            <td>{typeof event.expires_at === "number" ? formatTs(event.expires_at) : "—"}</td>
+          </tr>;
+        })}</tbody>
+      </table>
+    </section>
+  ) : <div className="traces-detail-empty">该会话没有已接入的权限校验记录。历史工具结果不能还原授权决定或委托关系。</div>;
+}
+
 function spanName(event: TraceEvent): string {
   if (event.type === "llm_call") {
     const model = String(event.model || "llm");
@@ -749,7 +797,7 @@ export function TracesCenterPanel() {
   const [spanRows, setSpanRows] = useState<TraceSpan[]>([]);
   const [spanType, setSpanType] = useState<"all" | "llm_call" | "tool_call">("all");
   const [detailTab, setDetailTab] = useState<
-    "tree" | "timeline" | "trajectory" | "analysis"
+    "tree" | "timeline" | "trajectory" | "analysis" | "authorization"
   >("tree");
 
   const loadTrends = useCallback(async (signal?: AbortSignal) => {
@@ -1305,6 +1353,7 @@ export function TracesCenterPanel() {
                     ["timeline", "时序线"],
                     ["trajectory", "推理轨迹"],
                     ["analysis", "链路分析"],
+                    ["authorization", "权限校验"],
                   ] as const
                 ).map(([id, label]) => (
                   <button
@@ -1325,6 +1374,8 @@ export function TracesCenterPanel() {
                 <CallTreeView detail={detail} />
               ) : detailTab === "timeline" ? (
                 <TimelineView detail={detail} />
+              ) : detailTab === "authorization" ? (
+                <AuthorizationView detail={detail} />
               ) : detailTab === "analysis" ? (
                 <AnalysisView detail={detail} />
               ) : (

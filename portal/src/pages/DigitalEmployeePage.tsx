@@ -61,6 +61,7 @@ import { usePortalChatOrchestration } from "./digital-employee/usePortalChatOrch
 import { usePortalDashboard } from "./digital-employee/usePortalDashboard";
 import { usePortalNavigationSidebar } from "./digital-employee/usePortalNavigationSidebar";
 import { usePortalModels } from "./digital-employee/usePortalModels";
+import { AgentPermissionDialog, AgentConsentDialog } from "./digital-employee/agentPermissionControls";
 import { usePortalManagement } from "./digital-employee/usePortalManagement";
 import { usePortalKnowledgeBase } from "./digital-employee/usePortalKnowledgeBase";
 import { usePortalResourceImport } from "./digital-employee/usePortalResourceImport";
@@ -248,6 +249,7 @@ export default function DigitalEmployeePage({
     : PORTAL_HOME_AGENT_ID;
   const isRemoteEmployee = Boolean(remoteAgentId);
   const [businessToolsDisabled, setBusinessToolsDisabled] = useState(false);
+  const [permissionAgent, setPermissionAgent] = useState<string | null>(null);
   const modelOnly = businessToolsDisabled && isRemoteEmployee;
   const currentEntry = routeSearchParams.get("entry");
   const currentView = parsePortalView(routeSection ?? routeSearchParams.get("view"));
@@ -1519,6 +1521,21 @@ export default function DigitalEmployeePage({
       </button>
     </Tooltip>
   ) : null;
+  const permissionControl = remoteAgentId ? (
+    <button type="button" className="model-selector-trigger" onClick={() => setPermissionAgent(remoteAgentId)}>
+      智能体权限
+    </button>
+  ) : null;
+  const agentPermissionDialogs = remoteAgentId ? (
+    <>
+      {permissionAgent === remoteAgentId ? (
+        <AgentPermissionDialog key={remoteAgentId} agentId={remoteAgentId}
+          agentName={currentEmployee?.name || "当前智能体"} onClose={() => setPermissionAgent(null)} />
+      ) : null}
+      <AgentConsentDialog key={`${remoteAgentId}:${currentSessionId}`} agentId={remoteAgentId}
+        agentName={currentEmployee?.name || "当前智能体"} sessionId={currentSessionId} running={isRemoteConversationRunning} />
+    </>
+  ) : null;
   const approvalPanel = (
     <>
       {canManageAi === true ? <MainChatApprovalPanel controls={approvals} /> : null}
@@ -1564,6 +1581,7 @@ export default function DigitalEmployeePage({
     <>
       {chatModelControl}
       {businessToolsControl}
+      {permissionControl}
       {!modelOnly ? approvalModeSelector : null}
       <>
         <Tooltip title="已处理任务" placement="bottom" mouseEnterDelay={0.1}>
@@ -2064,7 +2082,7 @@ export default function DigitalEmployeePage({
             >
               {showPortalHomeHero ? (
                 <PortalHomeHero
-                  approvalModeSelector={<>{businessToolsControl}{!modelOnly ? approvalModeSelector : null}</>}
+                  approvalModeSelector={<>{businessToolsControl}{permissionControl}{!modelOnly ? approvalModeSelector : null}</>}
                   approvalPanel={approvalPanel}
                   alertBell={renderAlertBell()}
                   themeToggleIcon={themeToggleIcon}
@@ -2204,6 +2222,7 @@ export default function DigitalEmployeePage({
         onSelect={(session) => handleSelectDashboardHistory(dashboardHistoryEmployeeId, session)}
       />
 
+      {agentPermissionDialogs}
       <SessionHistoryModal
         open={historyVisible}
         actionError={historyActionError}

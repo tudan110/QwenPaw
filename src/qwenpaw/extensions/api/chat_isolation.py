@@ -16,6 +16,7 @@ _SESSION = re.compile(r"^qpsession1([0-9a-f]{32})([0-9a-f]{32})$")
 @dataclass(frozen=True)
 class PortalChatScope:
     digest: str
+    human: bool = True
 
     @property
     def owner(self) -> str:
@@ -69,7 +70,7 @@ def chat_scope() -> PortalChatScope | None:
     else:
         raise HTTPException(401, "请先通过智观认证")
     digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:32]
-    return PortalChatScope(digest)
+    return PortalChatScope(digest, human=identity.source != SOURCE)
 
 
 def reject_reserved_legacy_namespace(owner: str, session_id: str) -> None:
@@ -98,6 +99,7 @@ def authorize_chat_payload(payload: dict, scope: PortalChatScope | None) -> None
     payload["sender_id"] = scope.owner
     meta["user_id"] = scope.owner
     meta["session_id"] = scope.session_id(meta["session_id"])
+    meta["portal_human_session"] = scope.human
     # Request context otherwise accepts keys consumed by the runtime, such
     # as project paths. Keep only the supported per-chat approval setting.
     request_context = meta.get("request_context")

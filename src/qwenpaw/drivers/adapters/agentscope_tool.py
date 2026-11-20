@@ -124,9 +124,10 @@ def _tool_chunk_from_driver_result(result: DriverInvocationResult) -> Any:
         "message": result.message,
         "metadata": result.metadata,
     }
+    denied = result.error_type in {"permission_denied", "driver_policy_denied", "driver_policy_approval_required"}
     return ToolChunk(
         content=[_text_block(_stringify(error_payload))],
-        state=ToolResultState.ERROR,
+        state=ToolResultState.DENIED if denied else ToolResultState.ERROR,
         is_last=True,
         metadata=dict(result.metadata or {}),
     )
@@ -203,9 +204,16 @@ async def build_driver_agent_tools(
         logger.warning("Could not list Drivers for tool discovery")
         return [], []
 
+    from ...extensions.security import portal_capabilities as permissions
+
+    scope = permissions.invocation_from_context(request_context)
+    overrides = await permissions.read_settings(scope) if scope is not None else {}
     tools: list[ToolBase] = []
     for driver in drivers:
         if not driver.enabled or driver.status != "active":
+            continue
+        if getattr(driver, "protocol", None) == "mcp" and overrides.get(("mcp", driver.name), (None, None))[0] == "revoked":
+            states[driver.name] = "user_revoked"
             continue
         try:
             capabilities = await driver_manager.list_driver_capabilities(

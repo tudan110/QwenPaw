@@ -33,6 +33,7 @@ from .coding_project import router as coding_project_router
 from .access_control import router as access_control_router
 from .controlled_documents import router as controlled_documents_router
 from .security_evidence import router as security_evidence_router
+from .agent_permissions import router as agent_permissions_router
 
 router = APIRouter()
 
@@ -65,6 +66,7 @@ router.include_router(git_router)
 router.include_router(coding_project_router)
 router.include_router(access_control_router)
 router.include_router(security_evidence_router)
+router.include_router(agent_permissions_router)
 router.include_router(controlled_documents_router)
 
 
