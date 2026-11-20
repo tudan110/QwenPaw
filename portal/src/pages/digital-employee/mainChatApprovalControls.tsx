@@ -242,10 +242,14 @@ export function MainChatStopNotice({ feedback, onDismiss, onResume, continuation
     <section className="main-chat-approval-panel" aria-label="任务停止反馈">
       <div className="main-chat-stop-notice" role="status">
         <div>
-          <strong>{onResume && feedback.status === "cancelled" ? "已停止" : STOP_LABELS[feedback.status]}</strong>
+          <strong>{feedback.cause === "admin" ? "管理员已停止对话"
+            : feedback.cause === "timeout" ? "运行超时，已停止对话"
+            : onResume && feedback.status === "cancelled" ? "已停止" : STOP_LABELS[feedback.status]}</strong>
           {" · "}<time dateTime={new Date(feedback.at).toISOString()}>{new Date(feedback.at).toLocaleString()}</time>
           <div>{onResume
-            ? "已保留当前回复。继续生成只续写正文，不会重新执行原操作。"
+            ? feedback.cause === "admin"
+              ? "已保留当前回复。管理员解除关停后可继续生成；续写不会重新执行原操作。"
+              : "已保留当前回复。继续生成只续写正文，不会重新执行原操作。"
             : "此提示只反映当前取消请求；远程操作是否停止或回退尚未确认。"}</div>
           {continuationError ? <div role="alert">{continuationError}</div> : null}
         </div>

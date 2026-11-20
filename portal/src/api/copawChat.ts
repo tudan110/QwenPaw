@@ -245,6 +245,30 @@ export function deleteChat(agentId: string | undefined, chatId: string) {
   });
 }
 
+export type PortalChatControl = {
+  enabled: boolean;
+  paused?: boolean;
+  timeout_seconds?: number;
+  last_stop?: {
+    id: string;
+    at: number;
+    elapsed_ms: number | null;
+    total: number | null;
+    counts: Record<string, number>;
+  } | null;
+};
+
+export function getPortalChatControl() {
+  return requestCopaw<PortalChatControl>("/console/chat/control");
+}
+
+export function setPortalChatPaused(paused: boolean) {
+  return requestCopaw<PortalChatControl>("/console/chat/control", {
+    method: "POST",
+    body: { paused },
+  });
+}
+
 export function stopChat(agentId: string | undefined, chatId: string) {
   return requestCopaw<{ stopped: boolean; status?: string; text_continuation?: boolean }>(`/console/chat/stop?chat_id=${encodeURIComponent(chatId)}`, {
     agentId,

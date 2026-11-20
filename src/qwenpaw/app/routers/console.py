@@ -18,17 +18,22 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     UploadFile,
 )
 from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
+from qwenpaw.constant import EnvVarLoader, SECRET_DIR
 from qwenpaw.schemas import (
     AgentRequest,
     _coerce_content_item,
 )
+from ...extensions.api.access_policy import require_browser_origin
+from ...extensions.api.access_session import CURRENT_IDENTITY
 from ...extensions.api.chat_isolation import (
     authorize_chat_payload,
+    chat_isolation_enabled,
     chat_scope,
     reject_reserved_legacy_namespace,
     require_owned_chat,
@@ -37,6 +42,7 @@ from ...extensions.api import trusted_chat_text
 from ...utils.logging import LOG_FILE_PATH
 from ..agent_context import get_agent_for_request
 from ..approvals.display import approval_display_fields
+from ..chats.portal_control import PortalChatControl, PortalChatStopPending, PortalChatsPaused
 from ..chats.text_continuation import stream_text_continuation
 from ..chats.title_generator import generate_and_update_title
 from ..utils import check_upload_size
@@ -45,6 +51,67 @@ from ..utils import check_upload_size
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/console", tags=["console"])
+
+
+def _chat_control(request: Request) -> PortalChatControl:
+    control = getattr(request.app.state, "portal_chat_control", None)
+    if control is None:
+        control = PortalChatControl(
+            SECRET_DIR / "portal-chat-control" / "state.json",
+            EnvVarLoader.get_int("QWENPAW_PORTAL_CHAT_TIMEOUT_SECONDS", 900, min_value=1),
+        )
+        request.app.state.portal_chat_control = control
+    return control
+
+
+async def _start_chat_stream(request, scope, tracker, chat_id, payload, stream_fn, **kwargs):
+    if scope is None:
+        return await tracker.attach_or_start(chat_id, payload, stream_fn, **kwargs)
+    try:
+        return await _chat_control(request).start(tracker, chat_id, payload, stream_fn, **kwargs)
+    except PortalChatsPaused as exc:
+        raise HTTPException(503, "Portal 对话已被管理员关停，请等待管理员解除关停。") from exc
+
+
+def _require_control_admin(request: Request):
+    identity = CURRENT_IDENTITY.get()
+    if identity is None or identity.source not in {"inoe", "qwenpaw", "mixed"}:
+        raise HTTPException(401, "请先通过智观认证")
+    if not identity.is_admin:
+        raise HTTPException(403, "需要智观 AI 管理员权限")
+    if request.method != "GET":
+        require_browser_origin(request)
+    return identity
+
+
+class ChatControlRequest(BaseModel):
+    paused: bool
+
+
+@router.get("/chat/control")
+async def get_portal_chat_control(request: Request, response: Response) -> dict:
+    _require_control_admin(request)
+    response.headers["Cache-Control"] = "no-store"
+    if not chat_isolation_enabled():
+        return {"enabled": False}
+    return {"enabled": True, **await _chat_control(request).status()}
+
+
+@router.post("/chat/control")
+async def set_portal_chat_control(payload: ChatControlRequest, request: Request) -> dict:
+    identity = _require_control_admin(request)
+    if not chat_isolation_enabled():
+        raise HTTPException(404, "当前未启用 Portal 会话隔离")
+    control = _chat_control(request)
+    try:
+        if payload.paused:
+            # A dropped admin connection must not interrupt a received stop command.
+            state = await asyncio.shield(control.stop(identity.user_id))
+        else:
+            state = await control.reopen()
+    except PortalChatStopPending as exc:
+        raise HTTPException(409, "仍有本地任务待确认停止，请刷新状态后再解除关停。") from exc
+    return {"enabled": True, **state}
 
 
 # ── Background task store ──
@@ -230,33 +297,23 @@ async def post_console_chat(
     )
     tracker = workspace.task_tracker
 
-    # Kick off an LLM-backed title generation in the background when the chat
-    # was just created with the truncated placeholder. This runs detached so
-    # the streaming response is never blocked by title generation latency.
-    if first_text and chat.name == name:
-        asyncio.create_task(
-            generate_and_update_title(
-                workspace=workspace,
-                chat_id=chat.id,
-                user_message=first_text,
-                placeholder_name=name,
-            ),
-        )
-
-    is_reconnect = False
-    if isinstance(request_data, dict):
-        is_reconnect = request_data.get("reconnect") is True
-
+    is_reconnect = isinstance(request_data, dict) and request_data.get("reconnect") is True
     if is_reconnect:
         queue = await tracker.attach(chat.id)
         if queue is None:
             return
     else:
-        queue, _ = await tracker.attach_or_start(
-            chat.id,
-            native_payload,
-            console_channel.stream_one,
+        queue, started = await _start_chat_stream(
+            request, scope, tracker, chat.id, native_payload, console_channel.stream_one,
         )
+        # Do not start title generation for blocked requests or reconnects.
+        if started and first_text and chat.name == name:
+            asyncio.create_task(generate_and_update_title(
+                workspace=workspace,
+                chat_id=chat.id,
+                user_message=first_text,
+                placeholder_name=name,
+            ))
 
     return _chat_stream(tracker, queue, chat.id)
 
@@ -360,8 +417,8 @@ async def post_console_chat_continue(
             workspace.agent_id, checkpoint.question, checkpoint.draft,
         )
 
-    queue, _ = await workspace.task_tracker.attach_or_start(
-        chat.id, payload, generate, join_existing=False,
+    queue, _ = await _start_chat_stream(
+        request, scope, workspace.task_tracker, chat.id, payload, generate, join_existing=False,
     )
     if queue is None:
         raise HTTPException(409, "当前对话仍有任务在运行，请稍后再继续生成。")

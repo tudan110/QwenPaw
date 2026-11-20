@@ -9,6 +9,12 @@ import {
 
 const GENERIC = "服务暂时遇到点问题，请稍后重试。";
 
+test("explains an administrative chat freeze without revealing other 503 details", () => {
+  const freeze = "Portal 对话已被管理员关停，请等待管理员解除关停。";
+  assert.equal(toFriendlyChatError(new Error(freeze)), freeze);
+  assert.equal(toFriendlyChatError(new Error("internal 503 detail")), GENERIC);
+});
+
 test("persisted errors support both session and trace metadata without exposing raw detail", () => {
   for (const metadata of [
     { portal_chat_error: "MODEL_API_KEY_MISSING" },

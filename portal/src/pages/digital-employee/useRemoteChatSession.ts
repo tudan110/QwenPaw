@@ -75,6 +75,12 @@ type ChatStopFeedback = StopFeedback & {
 
 const currentUsername = () => getSession()?.user.username || "";
 
+function managedStopCause(event: Record<string, any>) {
+  if (event.object !== "portal_chat_stopped") return undefined;
+  return event.cause === "admin" || event.cause === "timeout"
+    ? event.cause as "admin" | "timeout" : undefined;
+}
+
 type FaultDisposalHistoryMessage = {
   id?: string;
   type?: string;
@@ -789,6 +795,35 @@ export function useRemoteChatSession({
     );
   }, [setMessages]);
 
+  const captureTextReply = useCallback(() => {
+    const messageId = activeAssistantMessageIdRef.current;
+    const responses = messageId ? streamResponseTextRef.current.get(messageId) : undefined;
+    const question = activeTextQuestionRef.current;
+    let reply = activeContinuationRef.current;
+    if (!reply && question && messageId && responses?.size === 1) {
+      const [responseId, draft] = responses.entries().next().value;
+      reply = { ...question, messageId, responseId, draft };
+    }
+    if (!reply?.draft.trim() || reply.draft.length > CONTINUATION_LIMIT
+      || reply.question.length > CONTINUATION_LIMIT || reply.username !== currentUsername()) return undefined;
+    return reply;
+  }, []);
+
+  const publishManagedStop = useCallback((cause: "admin" | "timeout") => {
+    ++stopRevision.current;
+    setStopFeedback({
+      agentId: remoteAgentIdRef.current,
+      chatId: currentChatIdRef.current,
+      at: Date.now(),
+      status: "cancelled",
+      cause,
+      reply: captureTextReply(),
+    });
+    if (!activeContinuationRef.current) {
+      finalizePendingResponse(cause === "admin" ? "管理员已停止本轮对话。" : "本轮对话已超时停止。");
+    }
+  }, [captureTextReply, finalizePendingResponse]);
+
   const stopActiveStream = useCallback((
     requestStop = true,
     { silent = false }: { silent?: boolean } = {},
@@ -802,18 +837,7 @@ export function useRemoteChatSession({
     const wasContinuing = activeContinuationRef.current !== null;
     if (silent) clearStopFeedback();
     if (requestStop && !silent) {
-      const messageId = activeAssistantMessageIdRef.current;
-      const responses = messageId ? streamResponseTextRef.current.get(messageId) : undefined;
-      const question = activeTextQuestionRef.current;
-      let reply = activeContinuationRef.current;
-      if (!reply && question && messageId && responses?.size === 1) {
-        const [responseId, draft] = responses.entries().next().value;
-        reply = { ...question, messageId, responseId, draft };
-      }
-      if (reply && (!reply.draft.trim() || reply.draft.length > CONTINUATION_LIMIT
-        || reply.question.length > CONTINUATION_LIMIT || reply.username !== currentUsername())) {
-        reply = null;
-      }
+      const reply = captureTextReply();
       const revision = ++stopRevision.current;
       const agentId = remoteAgentIdRef.current;
       const chatId = currentChatIdRef.current;
@@ -857,7 +881,7 @@ export function useRemoteChatSession({
     streamProcessBlocksRef.current = new Map();
     setIsStreaming(false);
     setCurrentChatStatus("idle");
-  }, [clearStopFeedback, finalizePendingResponse]);
+  }, [captureTextReply, clearStopFeedback, finalizePendingResponse]);
 
   const resumeStoppedReply = async () => {
     const reply = stopFeedback?.reply;
@@ -886,7 +910,14 @@ export function useRemoteChatSession({
         continuation: true,
         signal: controller.signal,
         onEvent: (event) => {
-          if (!stillCurrent() || event.object !== "text_continuation") return;
+          if (!stillCurrent()) return;
+          const cause = managedStopCause(event);
+          if (cause) {
+            completed = true;
+            publishManagedStop(cause);
+            return;
+          }
+          if (event.object !== "text_continuation") return;
           if (event.status === "completed") completed = true;
           if (typeof event.text !== "string") return;
           const draft = reply.draft + event.text;
@@ -1222,7 +1253,10 @@ export function useRemoteChatSession({
         channel,
         signal: controller.signal,
         onEvent: (event) => {
-          if (!controller.signal.aborted) handleRemoteStreamEvent(event, employee);
+          if (controller.signal.aborted) return;
+          const cause = managedStopCause(event);
+          if (cause) publishManagedStop(cause);
+          else handleRemoteStreamEvent(event, employee);
         },
       });
       if (!controller.signal.aborted) {
@@ -1248,7 +1282,7 @@ export function useRemoteChatSession({
         await refreshRemoteSessions(false);
       }
     }
-  }, [finalizePendingResponse, refreshRemoteSessions]);
+  }, [finalizePendingResponse, publishManagedStop, refreshRemoteSessions]);
 
   const handleSelectRemoteHistory = useCallback(async (session: any) => {
     const nextEmployee = currentEmployeeRef.current;
@@ -1719,6 +1753,7 @@ export function useRemoteChatSession({
         && !manualAdviceOnlyRef.current && !pendingResourceImportGuideRef.current) {
         activeTextQuestionRef.current = { question: content, username };
       }
+      let managedStopped = false;
       await streamChat(
         nextRemoteAgentId,
         withMainChatApprovalLevel({
@@ -1746,12 +1781,23 @@ export function useRemoteChatSession({
         {
           signal: controller.signal,
           onEvent: (event) => {
-            if (!controller.signal.aborted) handleRemoteStreamEvent(event, nextEmployee);
+            if (controller.signal.aborted) return;
+            const cause = managedStopCause(event);
+            if (cause) {
+              managedStopped = true;
+              publishManagedStop(cause);
+            } else {
+              handleRemoteStreamEvent(event, nextEmployee);
+            }
           },
         },
       );
 
       if (controller.signal.aborted) return false;
+      if (managedStopped) {
+        setCurrentChatStatus("idle");
+        return false;
+      }
       finalizePendingResponse("本轮对话未返回可展示内容。");
       setCurrentChatStatus("idle");
       streamSucceeded = true;
@@ -1781,7 +1827,7 @@ export function useRemoteChatSession({
     }
 
     return streamSucceeded;
-  }, [clearStopFeedback, refreshRemoteSessions, approvalMode.rememberForSession]);
+  }, [clearStopFeedback, publishManagedStop, refreshRemoteSessions, approvalMode.rememberForSession]);
 
   const resetRemoteState = useCallback(({
     initialMessages = [],

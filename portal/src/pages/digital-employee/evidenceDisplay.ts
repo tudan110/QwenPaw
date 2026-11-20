@@ -58,6 +58,7 @@ export interface StopFeedback {
   chatId: string;
   at: number;
   status: StopStatus;
+  cause?: "admin" | "timeout";
 }
 
 export const STOP_LABELS: Record<StopStatus, string> = {

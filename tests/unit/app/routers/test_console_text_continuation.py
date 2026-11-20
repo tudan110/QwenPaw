@@ -13,6 +13,7 @@ from fastapi import FastAPI
 
 from qwenpaw.agents import model_factory
 from qwenpaw.app.chats.models import ChatSpec
+from qwenpaw.app.chats.portal_control import PortalChatControl
 from qwenpaw.app.routers import console
 from qwenpaw.app.task_tracker import TaskTracker
 from qwenpaw.extensions.api.access_policy import requires_admin
@@ -27,7 +28,7 @@ def _events(response):
 
 
 @pytest.fixture
-def portal(monkeypatch):
+def portal(monkeypatch, tmp_path):
     owner = PortalChatScope("a" * 32)
     scope = {"value": owner}
     chat = ChatSpec(
@@ -42,6 +43,7 @@ def portal(monkeypatch):
     monkeypatch.setattr(console, "chat_scope", lambda: scope["value"])
     monkeypatch.setattr(console, "get_agent_for_request", AsyncMock(return_value=workspace))
     app = FastAPI()
+    app.state.portal_chat_control = PortalChatControl(tmp_path / "control.json", 30)
     app.include_router(console.router)
     return httpx.ASGITransport(app=app), workspace.task_tracker, scope
 

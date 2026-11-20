@@ -126,6 +126,7 @@ export function ControlledDocumentsPanel() {
   return <div className="controlled-documents">
     <header>
       <h3>受控资料</h3>
+      <p>这是独立的资料管理功能。上传的资料不会自动加入智能体知识库或对话。</p>
       <p>管理个人文本资料、限时共享和需要复核的资料操作。该工作区和聊天附件分开保存。</p>
       {workspace && <p>当前智观账号：<strong>{workspace.actor}</strong> <Tag>{workspace.admin ? "AI 管理员" : "普通用户"}</Tag>
         <Tag color={workspace.policy.emergency ? "red" : "green"}>{workspace.policy.emergency ? "紧急关停中" : "受控操作开放"}</Tag></p>}

@@ -1849,7 +1849,7 @@ export default function DigitalEmployeePage({
               </div>
             )
           ) : isSettingsMode ? (
-            renderDeferredPanel(<SettingsPanel />)
+            renderDeferredPanel(<SettingsPanel canManageAi={canManageAi === true} />)
           ) : isTokenUsageMode ? (
             renderDeferredPanel(
               <TokenUsagePanel

@@ -35,6 +35,19 @@ class _RunState:
     finish_time: Optional[datetime] = None
     stop_requested: bool = False
     outcome: str = "completed"
+    portal_chat: bool = False
+    stop_cause: str | None = None
+
+    def stop_status(self) -> str:
+        if not self.task.done():
+            return "accepted"
+        return "cancelled" if self.task.cancelled() else self.outcome
+
+    def closing_event(self) -> str | None:
+        if self.outcome not in {"cancelled", "timeout"} or not self.stop_cause:
+            return None
+        data = {"object": "portal_chat_stopped", "cause": self.stop_cause}
+        return f"data: {json.dumps(data)}\n\n"
 
 
 class TaskTracker:
@@ -245,11 +258,21 @@ class TaskTracker:
         if state is None:
             return "not_running"
         _, pending = await asyncio.wait({state.task}, timeout=timeout)
-        if pending:
-            return "accepted"
-        if state.task.cancelled():
-            return "cancelled"
-        return state.outcome
+        return "accepted" if pending else state.stop_status()
+
+    async def request_portal_stops(self) -> dict[str, _RunState]:
+        """Cancel only registered Portal streams and return their exact runs."""
+        async with self._lock:
+            runs = {}
+            for key, run in self._runs.items():
+                if not run.portal_chat or run.task.done():
+                    continue
+                run.stop_cause = "admin"
+                if not run.stop_requested:
+                    run.stop_requested = run.task.cancel()
+                if run.stop_requested:
+                    runs[key] = run
+            return runs
 
     async def attach_or_start(
         self,
@@ -258,6 +281,7 @@ class TaskTracker:
         stream_fn: Callable[..., Coroutine],
         *,
         join_existing: bool = True,
+        portal_timeout: float | None = None,
     ) -> tuple[asyncio.Queue | None, bool]:
         """Attach to an existing run or start a new one.
 
@@ -280,6 +304,7 @@ class TaskTracker:
                 task=asyncio.Future(),  # placeholder, replaced below
                 queues=[my_queue],
                 buffer=[],
+                portal_chat=portal_timeout is not None,
             )
             self._runs[run_key] = run
 
@@ -296,15 +321,22 @@ class TaskTracker:
                             # pylint: disable=protected-access
                             tracker._global_last_run_at = start_time
 
-                    async with aclosing(stream_fn(payload)) as stream:
-                        async for sse in stream:
-                            tracker = tracker_ref()
-                            if tracker is None:
-                                return
-                            async with tracker.lock:
-                                run.buffer.append(sse)
-                                for q in run.queues:
-                                    q.put_nowait(sse)
+                    deadline = asyncio.timeout(portal_timeout)
+                    try:
+                        async with deadline, aclosing(stream_fn(payload)) as stream:
+                            async for sse in stream:
+                                tracker = tracker_ref()
+                                if tracker is None:
+                                    return
+                                async with tracker.lock:
+                                    run.buffer.append(sse)
+                                    for q in run.queues:
+                                        q.put_nowait(sse)
+                    except TimeoutError:
+                        if not deadline.expired():
+                            raise
+                        run.outcome = "timeout"
+                        run.stop_cause = run.stop_cause or "timeout"
                 except asyncio.CancelledError:
                     run.outcome = "cancelled"
                     logger.debug("run cancelled run_key=%s", run_key)
@@ -329,7 +361,10 @@ class TaskTracker:
                             run.finish_time = finish_time
                             # pylint: disable=protected-access
                             tracker._global_last_finish_at = finish_time
+                            closing_event = run.closing_event()
                             for q in run.queues:
+                                if closing_event:
+                                    q.put_nowait(closing_event)
                                 q.put_nowait(_SENTINEL)
                             # pylint: disable=protected-access
                             if tracker._runs.get(run_key) is run:
@@ -348,7 +383,11 @@ class TaskTracker:
                     async with tracker.lock:
                         run.finish_time = datetime.now(timezone.utc)
                         tracker._global_last_finish_at = run.finish_time
+                        run.outcome = "cancelled"
+                        closing_event = run.closing_event()
                         for queue in run.queues:
+                            if closing_event:
+                                queue.put_nowait(closing_event)
                             queue.put_nowait(_SENTINEL)
                         if tracker._runs.get(run_key) is run:
                             tracker._runs.pop(run_key, None)

@@ -34,6 +34,7 @@ import ProviderSettingsSection, {
   type ProviderFieldDesc,
 } from "./ProviderSettingsSection";
 import ResourceImportLlmSection from "./ResourceImportLlmSection";
+import { PortalChatControlPanel } from "./portalChatControlPanel";
 
 const PortalSecurityEvidence = lazy(() =>
   import("./securityEvidencePanel").then((module) => ({ default: module.PortalSecurityEvidence })),
@@ -848,7 +849,7 @@ function serializeNotificationForm(
   };
 }
 
-export function SettingsPanel() {
+export function SettingsPanel({ canManageAi = false }: { canManageAi?: boolean } = {}) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>("conversation");
   const [processRecordDisplayMode, setProcessRecordDisplayMode] =
     useState<ConversationProcessRecordDisplayMode>(() =>
@@ -1670,6 +1671,7 @@ export function SettingsPanel() {
               ) : null}
               {activeTab === "conversation" ? (
                 <div className="portal-model-shell">
+                  {canManageAi ? <PortalChatControlPanel /> : null}
                   <section className="settings-section">
                     <div className="portal-model-block-head">
                       <div>

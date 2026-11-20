@@ -113,6 +113,7 @@ export function toFriendlyChatError(error: unknown): string {
   if (error instanceof TrustedInputRejection) return error.message;
 
   const raw = extractRuntimeErrorText(error).trim();
+  if (raw === "Portal 对话已被管理员关停，请等待管理员解除关停。") return raw;
 
   if (!raw) {
     return GENERIC_FRIENDLY;
