@@ -21,7 +21,7 @@ export function IncidentRegister({ alert }: { alert: SelfMonitorAlert | null }) 
     <Typography.Title level={3}>安全事件与复盘</Typography.Title>
     <Typography.Paragraph type="secondary">记录告警、处置、恢复和复盘，或登记风险测试与演练计划。</Typography.Paragraph>
     <Ledger id="incidents" scope={scope} fields={incidentFields} validate={validateIncident} initial={initial}
-      seedKey={alert ? String(alert.id) : undefined} description="可从真实告警带入编号与时间；告警恢复不代表人工处置完成。已演练状态需填写实际演练记录。" />
+      seedKey={alert ? String(alert.id) : undefined} />
   </section>;
 }
 

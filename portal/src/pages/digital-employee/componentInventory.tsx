@@ -118,8 +118,6 @@ export function ComponentInventory({ onRegister, registeredScope }: {
     `${row.name} ${row.usage} ${row.source}`.toLowerCase().includes(query.trim().toLowerCase()));
   const failures = [...globalFailures, ...agentFailures];
   return <Space orientation="vertical" size="middle" className="gov-stack">
-    <Alert type="info" showIcon title="组件目录与调用边界"
-      description="按工作区读取工具、技能、MCP 和模型配置，汇总插件、平台连接器与直接依赖。启用状态仅代表配置，权限覆盖、实际调用结果和完整部署物料以对应执行策略和发布清单为准。登记权限范围不会改变实际调用权限。" />
     {failures.length > 0 && <Alert type="warning" showIcon title={`以下来源不可用：${failures.join("、")}`} description="未将无法读取的来源计为未接入。" />}
     <Card size="small"><Space wrap>
       <span>工作区</span><Select aria-label="工作区" value={agent} onChange={setAgent} options={workspaces.map(([value, label]) => ({ value, label }))} style={{ minWidth: 140 }} />

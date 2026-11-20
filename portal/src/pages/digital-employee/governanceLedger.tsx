@@ -36,11 +36,10 @@ function getRecords(key: string): RecordRow[] {
   return parsed;
 }
 
-export function Ledger({ id, scope, fields, description, initial, seedKey, adorn, validate, onSaved, actionLabel = "新增记录" }: {
+export function Ledger({ id, scope, fields, initial, seedKey, adorn, validate, onSaved, actionLabel = "新增记录" }: {
   id: string;
   scope: string;
   fields: Field[];
-  description: string;
   initial?: Values;
   seedKey?: string;
   adorn?: (row: RecordRow) => React.ReactNode;
@@ -97,16 +96,14 @@ export function Ledger({ id, scope, fields, description, initial, seedKey, adorn
   // previous seeds when this tab next mounts; offer the prefilled form explicitly.
   const prefilled = Boolean(seedKey && seedKey !== lastSeed);
   return <Space orientation="vertical" size="middle" className="gov-stack">
-    <Alert type="info" showIcon title="人工台账 · 本浏览器保存"
-      description={`${description} 记录按当前账号分开保存；跨浏览器不共享，不接收真实业务数据或凭据。`} />
     {(store.error || !scope) && <Alert type="warning" title={store.error || "无法识别当前账号，台账编辑不可用。"} showIcon />}
     <Space wrap>
       <Button type="primary" disabled={Boolean(store.error) || !scope} onClick={() => {
         if (seedKey) setLastSeed(seedKey);
         open((!seedKey || prefilled ? initial : undefined) ?? {});
       }}>{prefilled ? "按所选条目登记" : actionLabel}</Button>
-      <Input.Search allowClear placeholder="搜索当前台账" onChange={(e) => setQuery(e.target.value)} value={query} />
-      <Tag color="blue">{visible.length} 条记录</Tag>
+      <Input.Search allowClear placeholder="搜索记录" onChange={(e) => setQuery(e.target.value)} value={query} />
+      <Tag color="blue" title="当前账号在本浏览器中的记录">{visible.length} 条记录</Tag>
     </Space>
     <Table<RecordRow> size="small" rowKey="id" dataSource={visible} pagination={{ pageSize: 7, hideOnSinglePage: true }}
       scroll={{ x: 820 }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query ? "没有匹配的记录" : "还没有登记记录"} /> }}

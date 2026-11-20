@@ -17,8 +17,8 @@ export const supplyFields: Field[] = [
 
 export const scanFields: Field[] = [
   field("component", "组件名称"), field("version", "版本或镜像标识"),
-  field("result", "扫描结果", ["待扫描", "未发现（见报告）", "发现问题（见报告）", "扫描失败（见报告）"]),
-  field("disposition", "处置状态", ["待评估", "待停用", "已停用（人工记录）", "已隔离（人工记录）", "已下线（人工记录）", "已复测（人工记录）"]),
+  field("result", "扫描报告结论", ["待扫描", "未发现（见报告）", "发现问题（见报告）", "扫描失败（见报告）"]),
+  field("disposition", "处置登记", ["待评估", "待停用", "已停用（人工记录）", "已隔离（人工记录）", "已下线（人工记录）", "已复测（人工记录）"]),
   field("risk", "风险等级", ["待分级", "低", "中", "高", "严重"]), optional("scannedAt", "扫描时间", "datetime-local"),
   optional("reviewBy", "复核有效期", "date"), optional("found", "漏洞编号及受影响范围", "textarea"),
   optional("action", "处置措施 / 复测结论 / 恢复条件", "textarea"), evidence("报告来源 / 工单编号"),

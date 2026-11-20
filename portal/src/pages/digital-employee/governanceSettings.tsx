@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Button, Card, Col, Descriptions, Form, Input, Row, Select, Space, Tabs, Tag, Typography } from "antd";
+import { Button, Card, Col, Descriptions, Form, Input, Row, Select, Space, Tabs, Tag, Typography } from "antd";
 import { ComponentAdmissionPanel } from "./componentAdmissionPanel";
 import { ComponentInventory, type ComponentRow } from "./componentInventory";
 import { field, Ledger, optional, getLedgerRows, governanceAccount, type RecordRow, type Values } from "./governanceLedger";
@@ -33,15 +33,13 @@ function SensitivePolicy({ scope }: { scope: string }) {
     setProfile(values);
     try {
       localStorage.setItem(`portal.governance.v1.${encodeURIComponent(scope)}.sensitive-preview`, JSON.stringify(values));
-      setNotice("已保存预览设置。下方仅处理固定虚构样本。");
+      setNotice("已更新规则预览");
     } catch { setNotice("已更新本页预览，但浏览器存储不可用，无法保留设置。"); }
   };
   const example = previewSensitiveData(profile.mask);
   const sampleDecision = profile.range === "禁止批量敏感采集" ? "拒绝示例采集" : "示例采集等待人工审批";
   return <Space orientation="vertical" size="middle" className="gov-stack">
-    <Alert type="warning" showIcon title="敏感数据规则预览 · 未应用到运行环境"
-      description="可登记批量采集、留存、删除、日志、缓存及调试规则。此入口只在浏览器演算固定虚构样本；不会改动会话、真实数据或服务端日志。" />
-    <Card size="small" title="登记策略">
+    <Card size="small" title="敏感数据规则预览">
       <Form layout="vertical" initialValues={profile} onFinish={apply}>
         <div className="gov-form-grid">
           <Form.Item label="批量敏感数据采集" name="range"><Select options={["批量敏感采集须审批", "禁止批量敏感采集"].map((value) => ({ value }))} /></Form.Item>
@@ -54,25 +52,23 @@ function SensitivePolicy({ scope }: { scope: string }) {
       </Form>
     </Card>
     <Row gutter={[12, 12]}>
-      <Col xs={24} lg={12}><Card size="small" title="预览前：虚构样本"><pre className="gov-preview">{JSON.stringify(syntheticData, null, 2)}</pre></Card></Col>
-      <Col xs={24} lg={12}><Card size="small" title="预览后：脱敏结果"><pre className="gov-preview">{JSON.stringify(example, null, 2)}</pre></Card></Col>
+      <Col xs={24} lg={12}><Card size="small" title="示例输入"><pre className="gov-preview">{JSON.stringify(syntheticData, null, 2)}</pre></Card></Col>
+      <Col xs={24} lg={12}><Card size="small" title="脱敏预览"><pre className="gov-preview">{JSON.stringify(example, null, 2)}</pre></Card></Col>
     </Row>
     <Descriptions size="small" bordered title="此次规则预览" column={{ xs: 1, sm: 2, md: 2 }} items={[
       { key: "collect", label: "批量采集", children: `${profile.range} → ${sampleDecision}` },
       { key: "retention", label: "留存与处置", children: `${profile.retention} 天 · ${profile.deletion}` },
       { key: "logs", label: "日志 / 缓存 / 调试", children: <>{profile.logs}<br /><code>{'{ "event": "DEMO-POLICY-001", "payload": "不写入" }'}</code></> },
-      { key: "mode", label: "下发状态", children: <Tag color="gold">只预览，未下发</Tag> },
     ]} />
   </Space>;
 }
 
 function scanBadge(row: RecordRow) {
-  const { reviewBy, result, risk, disposition } = row.values;
+  const { reviewBy, result, risk } = row.values;
   return <Space wrap size={4}>
     {reviewExpired(reviewBy) && <Tag color="red">复核已过期</Tag>}
     {result === "待扫描" && <Tag>待扫描</Tag>}
     {(risk === "高" || risk === "严重") && <Tag color="red">{risk}风险</Tag>}
-    {disposition.startsWith("已") && <Tag color="blue">人工处置记录</Tag>}
     {!reviewBy && <Tag>未定复核期</Tag>}
   </Space>;
 }
@@ -95,30 +91,24 @@ export function GovernanceSettings() {
   const registeredScope = new Map(getLedgerRows(scope, "scope").filter((row) => row.values.componentId).reverse().map((row) => [row.values.componentId, row.values]));
   return <section className="gov-page">
     <Typography.Title level={3}>组件治理与策略</Typography.Title>
-    <Typography.Paragraph type="secondary">查看实际配置、登记核查和处置，或使用虚构样本预览规则。</Typography.Paragraph>
     <Tabs activeKey={tab} onChange={(key) => { setTab(key); setSeed(null); }} destroyOnHidden items={[
       { key: "inventory", label: "组件清单", children: <ComponentInventory onRegister={register} registeredScope={registeredScope} /> },
       { key: "admission", label: "调用准入", children: <ComponentAdmissionPanel /> },
-      { key: "scope", label: "权限范围台账", children: <Ledger {...recordProps("scope")} fields={scopeFields}
-        description="登记组件权限、数据范围与风险。实际授权仍由原有工作区、个人权限和业务系统控制。" /> },
-      { key: "supply", label: "供应链变更", children: <Ledger {...recordProps("supply")} fields={supplyFields} validate={validateSupply}
-        description="登记新增、升级、替换和下线的来源核对、扫描、兼容检查、审批与回退。不会发布或下线组件。" /> },
-      { key: "scan", label: "扫描与处置", children: <Ledger {...recordProps("scan")} fields={scanFields} validate={validateScan} adorn={scanBadge}
-        description="记录外部扫描报告或待扫描任务，按复核日期标注到期。停用、隔离、下线和复测是处置登记，不会触发运行时动作。" /> },
+      { key: "scope", label: "权限范围台账", children: <Ledger {...recordProps("scope")} fields={scopeFields} /> },
+      { key: "supply", label: "供应链变更", children: <Ledger {...recordProps("supply")} fields={supplyFields} validate={validateSupply} /> },
+      { key: "scan", label: "扫描与处置", children: <Ledger {...recordProps("scan")} fields={scanFields} validate={validateScan} adorn={scanBadge} actionLabel="登记扫描记录" /> },
       { key: "sensitive", label: "敏感数据", children: <SensitivePolicy scope={scope} /> },
       { key: "local", label: "本地部署策略", children: <Space orientation="vertical" className="gov-stack">
-        <Alert type="info" showIcon title="81 验收范围：端侧部署不涉及" description="面向其他本地部署环境登记模型文件、缓存和本地接口的访问条件。站点若存在本地接口，请另行核对其监听范围、身份验证与文件权限。页面不读取主机路径，也不会下发系统权限。" />
-        <Card size="small" title="本地部署访问模板（未验证、未下发）">
+        <Card size="small" title="本地部署访问模板" extra={<Tag>81：端侧部署不涉及</Tag>}>
           <Descriptions size="small" bordered column={1} items={[
             { key: "model", label: "模型文件", children: "只向推理服务账号开放只读权限；模型更新由独立发布流程处理。" },
             { key: "cache", label: "推理缓存", children: "限制为本服务读写，按部署策略清理，避免共享目录与原始敏感数据落盘。" },
             { key: "api", label: "本地接口", children: "优先绑定回环或专用监听地址；需要跨服务访问时核验身份和调用范围。" },
           ]} />
         </Card>
-        <Ledger {...recordProps("local")} fields={localAccessFields} description="本地资源访问模板与环境核查记录。" />
+        <Ledger {...recordProps("local")} fields={localAccessFields} />
       </Space> },
-      { key: "config", label: "配置变更记录", children: <Ledger {...recordProps("config")} fields={configFields} validate={validateConfig}
-        description="记录提示词、安全规则、模型配置和工具编排的变更人、生效时间与回退。页面不自动采集系统变更，不写入运行配置。" /> },
+      { key: "config", label: "配置变更记录", children: <Ledger {...recordProps("config")} fields={configFields} validate={validateConfig} /> },
     ]} />
   </section>;
 }

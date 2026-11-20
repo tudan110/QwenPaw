@@ -55,11 +55,10 @@ export function ComponentAdmissionPanel() {
     <Space wrap>
       <Typography.Text strong>工具、业务 API 与 MCP 调用准入</Typography.Text>
       {mcp && <Tag color={mcp.production_guards ? "green" : "orange"}>生产守卫{mcp.production_guards ? "启用" : "关闭"}</Tag>}
+      {!mcp?.production_guards && <Tag>规则参考</Tag>}
       <Button size="small" loading={loading} disabled={checking} onClick={() => setRevision((n) => n + 1)}>刷新策略</Button>
       {evidence && <Typography.Text type="secondary">读取时间：{new Date(evidence.queried_at).toLocaleString("zh-CN")}</Typography.Text>}
     </Space>
-    <Alert type="info" showIcon title={mcp?.production_guards ? "后端有效配置与准入分层" : "准入规则说明"}
-      description={mcp?.production_guards ? "按工作区、工具分类、当前账号和上游授权逐层检查。实际调用结果可在原会话的链路追踪中查看。" : "下方说明各通道的设计规则。只有读取到已启用的生产守卫配置，才能按当前生效规则取证。"} />
     {loadError && <Alert type="error" showIcon title={loadError} />}
     <Table size="small" bordered rowKey="channel" pagination={false} scroll={{ x: 770 }} columns={[
       { title: "调用通道", dataIndex: "channel", width: 145 },
@@ -74,7 +73,7 @@ export function ComponentAdmissionPanel() {
         risk: <><Tag color="gold">按服务与工具规则</Tag>支持允许、审批或拒绝；实际规则看 <Link to="/mcp">MCP 管理</Link>。</> },
     ]} />
     <Card size="small" title="MCP 准入自检" extra={<Button type="primary" size="small" loading={checking} disabled={loading || !mcp} onClick={() => void runProbe()}>验证当前准入规则</Button>}>
-      <Typography.Paragraph type="secondary">仅在后端判断规则，不连接目标或读取凭据。主机模式用默认回环主机作正向用例；它不代表已启用该 MCP 服务。</Typography.Paragraph>
+      <Typography.Paragraph type="secondary">校验准入规则，不发起连接。</Typography.Paragraph>
       {probeError && <Alert type="error" showIcon title={probeError} />}
       {probe && (probe.state === "ready" || probe.state === "host_policy") && <>
         <p>{new Date(probe.checked_at).toLocaleString("zh-CN")} · {probe.state === "host_policy" ? "主机模式" : "精确端点模式"}</p>
@@ -87,10 +86,9 @@ export function ComponentAdmissionPanel() {
       {probe && probe.state !== "ready" && probe.state !== "host_policy" && <Alert showIcon type="warning" title={probe.state === "guards_disabled" ? "未执行：生产守卫已关闭" : probe.state === "invalid_policy" ? "未执行：精确白名单格式有误" : "未执行：没有精确白名单"} />}
     </Card>
     {evidence && <Card size="small" title="工具和脚本策略明细" extra={<Button size="small" onClick={() => setShowDetails((v) => !v)}>{showDetails ? "收起" : "展开明细"}</Button>}>
-      <Typography.Paragraph type="secondary">列出规则中已分类的工具和脚本入口候选。具体启用情况、版本和风险登记以「组件清单」为准。</Typography.Paragraph>
       {showDetails && <Descriptions bordered size="small" column={1} items={[
         ...Object.entries(policies).map(([key, label]) => ({ key, label, children: <Space size={[0, 4]} wrap>{evidence.tools.filter((tool) => tool.policy === key).map((tool) => <Tag key={tool.name}>{tool.name}</Tag>)}</Space> })),
-        { key: "scripts", label: "待哈希及参数检查的脚本入口", children: <Space size={[0, 4]} wrap>{evidence.script_candidates.map((name) => <Tag key={name}>{name}</Tag>)}</Space> },
+        { key: "scripts", label: "脚本入口候选（调用时校验）", children: <Space size={[0, 4]} wrap>{evidence.script_candidates.map((name) => <Tag key={name}>{name}</Tag>)}</Space> },
       ]} />}
     </Card>}
     <Link to="/traces">查看实际执行：自监控 → 链路追踪 → 权限校验 / 异常核查</Link>
