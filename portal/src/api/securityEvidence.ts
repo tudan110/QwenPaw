@@ -28,17 +28,6 @@ export interface MCPAdmissionCheck {
   state: "ready" | "host_policy" | "guards_disabled" | "invalid_policy" | "no_exact_policy";
   cases: { case: "registered" | "default_host" | "unregistered"; transport: string; expected: "allow" | "deny"; decision: "allow" | "deny" }[];
 }
-export interface RedactionCheck {
-  checked_at: string;
-  active: boolean;
-  results: {
-    label: string;
-    input: string;
-    output: string;
-    hit_ids: string[];
-    changed: boolean;
-  }[];
-}
 export interface AuditRecord {
   rowid: number;
   ts: number;
@@ -69,10 +58,9 @@ export class SecurityEvidenceError extends Error {
   }
 }
 
-async function requestEvidence<T>(path: string, method: "GET" | "POST", signal?: AbortSignal): Promise<T> {
+async function requestEvidence<T>(path: string, signal?: AbortSignal): Promise<T> {
   // Use the same SSO-aware fetch and backend route as other Portal features.
   const response = await fetch(`${API_BASE_URL}/security/evidence/${path}`, {
-    method,
     cache: "no-store",
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
   });
@@ -81,12 +69,11 @@ async function requestEvidence<T>(path: string, method: "GET" | "POST", signal?:
 }
 
 export const securityEvidenceApi = {
-  protection: (signal: AbortSignal) => requestEvidence<ProtectionEvidence>("protection", "GET", signal),
-  admission: (signal: AbortSignal) => requestEvidence<AdmissionEvidence>("admission", "GET", signal),
-  checkMCPAdmission: (includeHost = false) => requestEvidence<MCPAdmissionCheck>(`mcp-admission-check${includeHost ? "?include_host=true" : ""}`, "GET"),
-  checkRedaction: () => requestEvidence<RedactionCheck>("redaction-check", "POST"),
+  protection: (signal: AbortSignal) => requestEvidence<ProtectionEvidence>("protection", signal),
+  admission: (signal: AbortSignal) => requestEvidence<AdmissionEvidence>("admission", signal),
+  checkMCPAdmission: (includeHost = false, signal?: AbortSignal) => requestEvidence<MCPAdmissionCheck>(`mcp-admission-check${includeHost ? "?include_host=true" : ""}`, signal),
   audit: (filters: Record<string, string | number>, signal: AbortSignal) => {
     const query = new URLSearchParams(Object.entries(filters).map(([key, value]) => [key, String(value)]));
-    return requestEvidence<AuditPage>(`audit?${query}`, "GET", signal);
+    return requestEvidence<AuditPage>(`audit?${query}`, signal);
   },
 };

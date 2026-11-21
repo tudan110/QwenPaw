@@ -517,6 +517,7 @@ def execute(
     ci_id: str = None,
     ne_alias: str = None,
     resource_type: str = None,
+    last_24_hours: bool = False,
 ) -> Dict[str, Any]:
     """
     执行实时告警查询
@@ -528,6 +529,7 @@ def execute(
         api_base_url: API 基础地址（可选，默认从环境变量读取）
         begin_time: 开始时间，格式 YYYY-MM-DD HH:MM:SS
         end_time: 结束时间，格式 YYYY-MM-DD HH:MM:SS
+        last_24_hours: 固定滚动 24 小时，不能与显式起止时间一起使用
         alarm_severity: 告警级别（已废弃，使用 alarm_severitys）
         alarm_severitys: 告警级别列表，如 ["1", "2"]
         alarm_status: 告警状态，如 "1" 表示活跃
@@ -549,6 +551,8 @@ def execute(
     if paging_error:
         return paging_error
 
+    if last_24_hours and (begin_time or end_time):
+        return _make_error(400, "最近 24 小时不能与显式起止时间同时指定")
     time_error = _validate_time_range(begin_time, end_time)
     if time_error:
         return time_error
@@ -589,17 +593,17 @@ def execute(
         offset_h = 8.0
     query_timezone = timezone(timedelta(hours=offset_h))
     if not begin_time or not end_time:
-        try:
-            window_h = float(
-                os.getenv(
-                    "QWENPAW_PORTAL_REAL_ALARM_QUERY_WINDOW_HOURS", "24"
+        window_h = 24.0
+        if not last_24_hours:
+            try:
+                configured_hours = float(
+                    os.getenv("QWENPAW_PORTAL_REAL_ALARM_QUERY_WINDOW_HOURS", "24")
+                    or "24"
                 )
-                or "24"
-            )
-        except ValueError:
-            window_h = 24.0
-        if not 1 <= window_h <= 8760:
-            window_h = 24.0
+                if 1 <= configured_hours <= 8760:
+                    window_h = configured_hours
+            except ValueError:
+                pass
         now = datetime.now(query_timezone)
         begin_time = begin_time or (now - timedelta(hours=window_h)).strftime(
             "%Y-%m-%d %H:%M:%S"
@@ -754,6 +758,12 @@ def main():
     )
 
     parser.add_argument(
+        "--last_24_hours",
+        action="store_true",
+        help="按告警服务时区查询滚动 24 小时，不使用环境默认窗口",
+    )
+
+    parser.add_argument(
         "--alarm_severity",
         type=str,
         required=False,
@@ -814,6 +824,8 @@ def main():
     parser.add_argument("--alarm_title", type=str, required=False, help="告警标题")
 
     args = parser.parse_args()
+    if args.last_24_hours and (args.begin_time or args.end_time):
+        parser.error("--last_24_hours 不能与 --begin_time 或 --end_time 同时指定")
 
     # 获取 token：优先使用命令行参数，然后使用环境变量
     token = args.token or get_token()
@@ -843,6 +855,7 @@ def main():
         resource_type=args.resource_type,
         cities=args.cities,
         alarm_title=args.alarm_title,
+        last_24_hours=args.last_24_hours,
     )
 
     # 输出结果（JSON 格式）

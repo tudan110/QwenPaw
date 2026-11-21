@@ -118,6 +118,10 @@ export function ControlledDocumentsPanel() {
 
   const policyText = (policy: Policy) => `批量上限 ${policy.batch_cap} 项、5 分钟拒绝告警阈值 ${policy.alert_limit} 次`;
   const short = selected.filter((id) => workspace?.documents.some((doc) => doc.id === id && doc.owner && !doc.archived));
+  const exportRestricted = short.length === 1 && (
+    (preview?.id === short[0] && preview.raw_export_allowed === false)
+    || workspace?.documents.find((doc) => doc.id === short[0])?.raw_export_allowed === false
+  );
   const action = (op: Operation, control: string, text: string) => update(`/operations/${op.id}/control/${control}`, text);
   const emergency = (active: boolean) => void perform(async () => {
     const result = await writeControlled<{ active: boolean; affected: number }>("/admin/emergency", { active });
@@ -197,9 +201,10 @@ export function ControlledDocumentsPanel() {
           </div>)}
           {preview && <div className="controlled-record"><strong>{preview.title} · {preview.masked ? "已遮蔽命中内容" : "未命中已配置规则"}</strong>
             <code>{preview.id}</code><pre>{preview.content}</pre></div>}
+          {exportRestricted && <p>选中的资料命中技术秘密分类，仅可读取脱敏预览，不可导出原文。</p>}
           <p>已选 {short.length} 项。批量上限 {workspace.policy.batch_cap} 项；超过上限请分批申请。</p>
           <div className="controlled-line">
-            <Button disabled={loading || short.length !== 1 || !!workspace.policy.emergency} onClick={() => ask("export")}>申请原文导出</Button>
+            <Button disabled={loading || short.length !== 1 || exportRestricted || workspace.security_hold || !!workspace.policy.emergency} onClick={() => ask("export")}>申请原文导出</Button>
             <Button disabled={loading || !short.length || !!workspace.policy.emergency} onClick={() => ask("archive")}>申请批量归档</Button>
           </div>
           <div className="controlled-line">

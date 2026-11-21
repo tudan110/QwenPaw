@@ -1,6 +1,6 @@
 const base = (import.meta.env.VITE_COPAW_API_BASE_URL || "/copaw-api/api").replace(/\/$/, "") + "/portal/controlled-documents";
 
-export type DocumentItem = { id: string; title: string; labels: string[]; owner: boolean; archived: boolean; created: number };
+export type DocumentItem = { id: string; title: string; labels: string[]; owner: boolean; archived: boolean; created: number; raw_export_allowed?: boolean };
 export type Preview = DocumentItem & { content: string; masked: boolean };
 export type Kind = "export" | "share" | "archive";
 export type Policy = { batch_cap: number; alert_limit: number; emergency: 0 | 1 };

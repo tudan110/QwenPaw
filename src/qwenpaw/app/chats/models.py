@@ -96,6 +96,7 @@ class ChatHistory(BaseModel):
 
     messages: list[Message] = Field(default_factory=list)
     stopped_turn: StoppedTurn | None = None
+    portal_turn: dict | None = None
     status: str = Field(
         default="idle",
         description="Conversation status: idle or running",

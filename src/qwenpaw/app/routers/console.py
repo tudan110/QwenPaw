@@ -11,7 +11,7 @@ import uuid
 from contextlib import aclosing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, Optional, Union
+from typing import Any, AsyncGenerator, Dict, Literal, Optional, Union
 
 from fastapi import (
     APIRouter,
@@ -22,7 +22,7 @@ from fastapi import (
     Response,
     UploadFile,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import StreamingResponse
 
 from qwenpaw.constant import EnvVarLoader, SECRET_DIR
@@ -36,6 +36,7 @@ from ...extensions.api.chat_isolation import (
     authorize_chat_payload,
     chat_isolation_enabled,
     chat_scope,
+    PortalChatScope,
     reject_reserved_legacy_namespace,
     require_owned_chat,
 )
@@ -43,7 +44,15 @@ from ...extensions.api import trusted_chat_text
 from ...utils.logging import LOG_FILE_PATH
 from ..agent_context import get_agent_for_request
 from ..approvals.display import approval_display_fields
-from ..chats.portal_control import PortalChatControl, PortalChatStopPending, PortalChatsPaused
+from ..chats.portal_control import (
+    PortalChatControl,
+    PortalChatStopPending,
+    PortalChatsPaused,
+    PortalIncidentChanged,
+    PortalIncidentReviewRequired,
+    PortalRollbackUnavailable,
+)
+from ..chats.session import portal_turn_status
 from ..chats.cmdb_retry import cmdb_enabled, retry_cmdb_lookup
 from ..chats.model_only import stream_model_only
 from ..chats.stopped_turn import (
@@ -120,10 +129,107 @@ async def set_portal_chat_control(payload: ChatControlRequest, request: Request)
             # A dropped admin connection must not interrupt a received stop command.
             state = await asyncio.shield(control.stop(identity.user_id))
         else:
-            state = await control.reopen()
+            state = await control.reopen(identity.user_id)
+    except PortalIncidentReviewRequired as exc:
+        raise HTTPException(409, "请到安全与审计的「异常中止」页面复核并恢复。") from exc
     except PortalChatStopPending as exc:
         raise HTTPException(409, "仍有本地任务待确认停止，请刷新状态后再解除关停。") from exc
     return {"enabled": True, **state}
+
+
+class ChatRollbackRequest(BaseModel):
+    batch_id: str = Field(min_length=32, max_length=32)
+
+
+@router.post("/chat/control/rollback")
+async def rollback_portal_chat_batch(payload: ChatRollbackRequest, request: Request) -> dict:
+    identity = _require_control_admin(request)
+    if not chat_isolation_enabled():
+        raise HTTPException(404, "当前未启用 Portal 会话隔离")
+
+    async def resolve_target(agent_id: str, chat_id: str):
+        workspace = await get_agent_for_request(request, agent_id=agent_id)
+        chat = await workspace.chat_manager.get_chat(chat_id)
+        if (
+            chat is not None and chat.user_id.startswith("qpowner1")
+            and PortalChatScope(chat.user_id.removeprefix("qpowner1")).owns(chat)
+        ):
+            return workspace, chat
+        return None
+
+    try:
+        state = await asyncio.shield(_chat_control(request).rollback(identity.user_id, payload.batch_id, resolve_target))
+    except PortalChatStopPending as exc:
+        raise HTTPException(409, "仍有对话待确认停止，请刷新状态后再回滚。") from exc
+    except PortalIncidentReviewRequired as exc:
+        raise HTTPException(409, "异常中止批次需保全现场，不可使用批量回滚。") from exc
+    except PortalRollbackUnavailable as exc:
+        raise HTTPException(409, "当前关停批次不可回滚，请刷新状态。") from exc
+    return {"enabled": True, **state}
+
+
+class IncidentStopRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: Literal["unauthorized_execution", "unauthorized_network", "data_exposure", "other_risk"]
+
+
+class IncidentResumeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    batch_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    confirm: Literal["确认复核并恢复"]
+
+
+@router.get("/chat/control/incidents")
+async def list_portal_incidents(request: Request, response: Response, page: int = Query(1, ge=1, le=100)) -> dict:
+    _require_control_admin(request)
+    response.headers["Cache-Control"] = "no-store"
+    if not chat_isolation_enabled():
+        return {"enabled": False}
+    return {"enabled": True, **await _chat_control(request).incidents(page)}
+
+
+@router.get("/chat/control/incidents/{batch_id}")
+async def get_portal_incident(batch_id: str, request: Request, response: Response, page: int = Query(1, ge=1)) -> dict:
+    _require_control_admin(request)
+    response.headers["Cache-Control"] = "no-store"
+    if not chat_isolation_enabled() or not re.fullmatch(r"[0-9a-f]{32}", batch_id):
+        raise HTTPException(404, "未找到处置批次。")
+    result = await _chat_control(request).incident(batch_id, page)
+    if result is None:
+        raise HTTPException(404, "未找到处置批次。")
+    return result
+
+
+@router.post("/chat/control/incidents/stop")
+async def stop_portal_incident(payload: IncidentStopRequest, request: Request, response: Response) -> dict:
+    identity = _require_control_admin(request)
+    response.headers["Cache-Control"] = "no-store"
+    if not chat_isolation_enabled():
+        raise HTTPException(404, "当前未启用 Portal 会话隔离。")
+    control = _chat_control(request)
+    try:
+        await asyncio.shield(control.stop(identity.user_id, payload.reason))
+    except PortalIncidentChanged as exc:
+        raise HTTPException(409, "已有中止批次，请刷新状态并核对当前记录。") from exc
+    return {"enabled": True, **await control.incidents(1)}
+
+
+@router.post("/chat/control/incidents/resume")
+async def resume_portal_incident(payload: IncidentResumeRequest, request: Request, response: Response) -> dict:
+    identity = _require_control_admin(request)
+    response.headers["Cache-Control"] = "no-store"
+    if not chat_isolation_enabled():
+        raise HTTPException(404, "当前未启用 Portal 会话隔离。")
+    control = _chat_control(request)
+    try:
+        await asyncio.shield(control.reopen(identity.user_id, reviewed_batch=payload.batch_id))
+    except PortalIncidentChanged as exc:
+        raise HTTPException(409, "待复核批次已变更，请刷新状态。") from exc
+    except PortalChatStopPending as exc:
+        raise HTTPException(409, "仍有本地任务未结束，请刷新核对后再恢复。") from exc
+    return {"enabled": True, **await control.incidents(1)}
 
 
 # ── Background task store ──
@@ -345,6 +451,12 @@ async def post_console_chat(
                 )
 
             stop_options["on_stop"] = save_stop
+            if scope.human:
+                async def prepare_turn():
+                    turn = await workspace.session.begin_portal_turn(chat, turn_id)
+                    return _sse({"object": "portal_chat_turn", **turn})
+
+                stop_options.update(portal_turn=(workspace.agent_id, turn_id), before_start=prepare_turn)
         queue, started = await _start_chat_stream(
             request, scope, tracker, chat.id, native_payload, stream_fn,
             join_existing=not model_only, **stop_options,
@@ -440,6 +552,41 @@ async def post_console_chat_stop(
     return {"stopped": status != "not_running", "status": status}
 
 
+class ChatRecallRequest(BaseModel):
+    chat_id: str = Field(min_length=1, max_length=64)
+    turn_id: str = Field(min_length=32, max_length=32)
+
+
+async def _recall_target(request: Request, chat_id: str):
+    scope = chat_scope()
+    if scope is None or not scope.human:
+        raise HTTPException(404, "当前未启用 Portal 对话撤回")
+    workspace = await get_agent_for_request(request)
+    chat = await require_owned_chat(workspace.chat_manager, chat_id, scope)
+    return workspace, chat
+
+
+@router.get("/chat/recall")
+async def get_recall_status(request: Request, response: Response, chat_id: str) -> dict:
+    workspace, chat = await _recall_target(request, chat_id)
+    response.headers["Cache-Control"] = "no-store"
+    state = await workspace.session.get_session_state_dict(chat.session_id, chat.user_id, chat.channel)
+    return {"portal_turn": portal_turn_status(state)}
+
+
+@router.post("/chat/recall")
+async def recall_portal_chat_turn(payload: ChatRecallRequest, request: Request) -> dict:
+    require_browser_origin(request)
+    workspace, chat = await _recall_target(request, payload.chat_id)
+    try:
+        result = await asyncio.shield(_chat_control(request).recall(workspace, chat, payload.turn_id))
+    except PortalChatStopPending as exc:
+        raise HTTPException(409, "对话仍在停止中，请稍后再撤回。") from exc
+    if result != "recalled":
+        raise HTTPException(409, "本轮对话已变化，请刷新会话后再撤回。")
+    return {"recalled": True}
+
+
 class TextContinuationRequest(BaseModel):
     chat_id: str = Field(min_length=1, max_length=64)
     question: str = Field(min_length=1, max_length=trusted_chat_text.MAX_INPUT)
@@ -502,6 +649,7 @@ async def post_console_chat_continue(
     queue, _ = await _start_chat_stream(
         request, scope, workspace.task_tracker, chat.id, payload, generate, join_existing=False,
         on_stop=save_continuation_stop if payload.turn_id else None,
+        portal_turn=(workspace.agent_id, payload.turn_id) if scope.human and payload.turn_id else None,
     )
     if queue is None:
         raise HTTPException(409, "当前对话仍有任务在运行，请稍后再继续生成。")
@@ -542,6 +690,7 @@ async def post_console_retry_cmdb(payload: CmdbRetryRequest, request: Request) -
 
     queue, _ = await _start_chat_stream(
         request, scope, tracker, chat.id, payload, generate, join_existing=False, on_stop=preserve_checkpoint,
+        portal_turn=(workspace.agent_id, payload.turn_id) if scope.human else None,
     )
     if queue is None:
         raise HTTPException(409, "当前对话仍有任务在运行，请稍后再继续查询。")

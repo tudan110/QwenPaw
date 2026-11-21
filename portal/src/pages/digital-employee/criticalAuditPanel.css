@@ -1,0 +1,14 @@
+.critical-audit :is(h4, .critical-audit-pager) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.critical-audit h4 { font-size: 16px; font-weight: 700; }
+.critical-audit .critical-audit-verify > .ant-input { flex: 1 1 240px; width: auto; max-width: 480px; }
+.critical-audit-filters > .ant-input { width: min(100%, 165px); }
+.critical-audit-filters > .ant-select { width: min(100%, 164px); }
+.critical-audit-filters > .ant-picker { width: min(100%, 360px); }
+.critical-audit-checkpoint { display: grid; gap: 8px; max-width: 720px; }
+.critical-audit .critical-audit-pager { justify-content: space-between; flex-wrap: wrap; }
+.critical-audit :is(td, .critical-audit-call-id) { overflow-wrap: anywhere; }
+.critical-audit-call-id { display: block; font-size: 12px; color: var(--text-secondary); }

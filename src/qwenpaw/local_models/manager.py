@@ -6,7 +6,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -15,13 +17,15 @@ from ..constant import DEFAULT_LOCAL_PROVIDER_DIR
 from .llamacpp import LlamaCppBackend, LlamaCppServerSetupResult
 from .model_manager import LocalModelInfo as RecommendedLocalModelInfo
 from .model_manager import ModelManager, DownloadSource
-
+from .resource_policy import protect_storage
 
 logger = logging.getLogger(__name__)
 
 
 class LocalModelConfig(BaseModel):
     """Persistent local runtime settings for embedded llama.cpp."""
+
+    access_mode: Literal["managed", "deny"] = "managed"
 
     max_context_length: int = Field(
         default=65536,
@@ -59,6 +63,7 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
         self._model_manager = model_manager or ModelManager()
         self._llamacpp_backend = llamacpp_backend or LlamaCppBackend()
         self._server_lifecycle_lock = asyncio.Lock()
+        self._access_update_in_progress = False
         self._config_path = DEFAULT_LOCAL_PROVIDER_DIR / self.CONFIG_FILE_NAME
         self._config = self._load_config()
 
@@ -77,7 +82,7 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
                 self._config_path,
                 exc,
             )
-            return LocalModelConfig()
+            return LocalModelConfig(access_mode="deny")
 
     @staticmethod
     def _write_config_file(
@@ -86,13 +91,48 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
     ) -> None:
         """Write local runtime settings to disk in a worker thread."""
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(config_path, "w", encoding="utf-8") as file_obj:
-            json.dump(
-                payload,
-                file_obj,
-                ensure_ascii=False,
-                indent=2,
+        from ..governance.component_events import record, snapshot
+
+        before = snapshot(config_path)
+        if before is not None and "access_mode" not in before:
+            before["access_mode"] = (
+                "managed"  # Effective default before opt-in.
             )
+        temp = None
+        try:
+            with NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=config_path.parent,
+                delete=False,
+            ) as file_obj:
+                temp = Path(file_obj.name)
+                json.dump(payload, file_obj, ensure_ascii=False, indent=2)
+            temp.replace(config_path)
+        finally:
+            if temp is not None:
+                temp.unlink(missing_ok=True)
+
+        def summary(settings):
+            if settings is None:
+                return None
+            return {
+                "access_mode": (
+                    "禁止受管本地运行"
+                    if settings.get("access_mode") == "deny"
+                    else "受管运行严格管控"
+                )
+            }
+
+        record(
+            "local",
+            "受管本地模型策略",
+            "全局",
+            before,
+            payload,
+            visible_fields={"access_mode", "max_context_length", "port"},
+            summaries=(summary(before), summary(payload)),
+        )
         try:
             config_path.chmod(0o600)
         except OSError:
@@ -109,6 +149,42 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
     def get_config(self) -> LocalModelConfig:
         """Return a defensive copy of the current local runtime settings."""
         return self._config.model_copy(deep=True)
+
+    async def set_access_mode(self, mode: Literal["managed", "deny"]) -> None:
+        async with self._server_lifecycle_lock:
+            if mode == self._config.access_mode:
+                return
+            if self.get_llamacpp_server_status().get("running"):
+                raise RuntimeError("请先停止受管本地推理服务，再变更访问策略")
+            active_downloads = {"pending", "downloading", "canceling"}
+            if (
+                self.get_model_download_progress().get("status")
+                in active_downloads
+                or self.get_llamacpp_download_progress().get("status")
+                in active_downloads
+            ):
+                raise RuntimeError("请先停止本地模型下载，再变更访问策略")
+            updated = self._config.model_copy(update={"access_mode": mode})
+            self._access_update_in_progress = True
+            try:
+                await asyncio.to_thread(
+                    self._write_config_file,
+                    self._config_path,
+                    updated.model_dump(),
+                )
+                self._config = updated
+            finally:
+                self._access_update_in_progress = False
+
+    def _require_local_storage(self) -> None:
+        if self._access_update_in_progress:
+            raise RuntimeError("本地资源访问策略正在更新，请稍后重试")
+        if self._config.access_mode == "deny":
+            raise RuntimeError("本地资源策略禁止受管本地模型运行或下载")
+        try:
+            protect_storage()
+        except OSError as exc:
+            raise RuntimeError("无法验证受管本地模型目录权限") from exc
 
     async def set_max_context_length(self, max_context_length: int) -> None:
         """Persist the max context length for future llama.cpp startups."""
@@ -136,6 +212,7 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
         Returns whether a running llama.cpp server was stopped first.
         """
         async with self._server_lifecycle_lock:
+            self._require_local_storage()
             server_was_running = bool(
                 self._llamacpp_backend.get_server_status().get("running"),
             )
@@ -197,6 +274,7 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
         source: DownloadSource | None = None,
     ) -> None:
         """Start downloading the requested model."""
+        self._require_local_storage()
         self._model_manager.download_model(model_id, source=source)
 
     def get_model_download_progress(self) -> dict[str, Any]:
@@ -217,8 +295,14 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
     ) -> LlamaCppServerSetupResult:
         """Start the llama.cpp server for the specified model."""
         async with self._server_lifecycle_lock:
+            self._require_local_storage()
+            model_dir = self._model_manager.get_model_dir(model_id).resolve()
+            if not model_dir.is_relative_to(
+                (DEFAULT_LOCAL_PROVIDER_DIR / "models").resolve()
+            ):
+                raise RuntimeError("模型必须位于受管本地模型目录")
             return await self._llamacpp_backend.setup_server(
-                model_path=self._model_manager.get_model_dir(model_id),
+                model_path=model_dir,
                 model_name=model_id,
                 max_context_length=self._config.max_context_length,
                 port=self._config.port,

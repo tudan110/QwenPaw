@@ -78,6 +78,7 @@ _READ_SCRIPT_NAMES = {
 # This does not grant general filesystem writes or shell execution.
 _ARTIFACT_TOOLS = {
     "export_report",
+    "prepare_alarm_export",
     "process_office_document",
     "write_skill_context",
 }
@@ -117,6 +118,10 @@ def check_path(path_value: str) -> None:
     path = (
         Path(get_current_workspace_dir() or WORKING_DIR) / candidate
     ).resolve()
+    from ...local_models.resource_policy import protected_evidence_or_model_path
+
+    if protected_evidence_or_model_path(path):
+        raise PermissionError("禁止工具访问受管本地模型和组件审计存储")
     if chat_isolation_enabled() and (
         any(part.casefold() in {"sessions", "chat_traces"} for part in path.parts)
         or path.name.casefold().startswith("chats.json")

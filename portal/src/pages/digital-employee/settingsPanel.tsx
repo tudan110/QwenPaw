@@ -327,7 +327,7 @@ const SETTINGS_TABS = [
     id: "security-evidence",
     label: "安全与审计",
     iconClass: "fa-shield-halved",
-    description: "查看防护配置、样例自检与策略审计",
+    description: "端点准入、脱敏配置与调用审计",
   },
   {
     id: "conversation",
@@ -859,7 +859,10 @@ function serializeNotificationForm(
   };
 }
 
-export function SettingsPanel({ canManageAi = false }: { canManageAi?: boolean } = {}) {
+export function SettingsPanel({ canManageAi = false, pageTheme = "light" }: {
+  canManageAi?: boolean;
+  pageTheme?: "light" | "dark";
+} = {}) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>("conversation");
   const [processRecordDisplayMode, setProcessRecordDisplayMode] =
     useState<ConversationProcessRecordDisplayMode>(() =>
@@ -1622,6 +1625,8 @@ export function SettingsPanel({ canManageAi = false }: { canManageAi?: boolean }
     }
   };
 
+  const showGovernance = canManageAi && activeTab === "governance";
+
   return (
     <div className="model-config-page settings-page">
       <div className="model-config-body">
@@ -1634,7 +1639,7 @@ export function SettingsPanel({ canManageAi = false }: { canManageAi?: boolean }
         </div>
 
         <div className="model-config-scroll">
-          <div className="settings-layout">
+          <div className={`settings-layout${showGovernance ? " settings-layout--governance" : ""}`}>
             <aside className="portal-advanced-config-panel settings-tab-panel">
               <div className="settings-tab-panel-title">设置分类</div>
               <div
@@ -1668,10 +1673,12 @@ export function SettingsPanel({ canManageAi = false }: { canManageAi?: boolean }
               </div>
             </aside>
 
-            <section className="portal-advanced-config-panel settings-content-panel">
-              {canManageAi && activeTab === "governance" ? (
-                <Suspense fallback={<p role="status">正在加载组件治理与策略…</p>}>
-                  <GovernanceSettings />
+            <section className={showGovernance
+              ? "settings-content-panel settings-content-panel--governance"
+              : "portal-advanced-config-panel settings-content-panel"}>
+              {showGovernance ? (
+                <Suspense fallback={<p className="gov-loading" role="status">正在加载组件治理与策略…</p>}>
+                  <GovernanceSettings pageTheme={pageTheme} />
                 </Suspense>
               ) : null}
               {activeTab === "controlled-documents" ? (
@@ -1681,7 +1688,7 @@ export function SettingsPanel({ canManageAi = false }: { canManageAi?: boolean }
               ) : null}
               {activeTab === "security-evidence" ? (
                 <Suspense fallback={<p role="status">正在加载安全与审计…</p>}>
-                  <PortalSecurityEvidence />
+                  <PortalSecurityEvidence pageTheme={pageTheme} canManageAi={canManageAi} />
                 </Suspense>
               ) : null}
               {activeTab === "conversation" ? (

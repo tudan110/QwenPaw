@@ -26,6 +26,9 @@ async def export_report(
     needed, including in production mode. PDF is the default. For Word use
     docx; use md only when Markdown is requested. Return the download link
     verbatim. Do not silently substitute a different format on failure.
+    Do not use for bulk alarm detail export, even if the user requests a
+    particular format. Use prepare_alarm_export and return its confirmation
+    link; do not work around an export limit by embedding rows in a report.
 
     Args:
         content: Full report text, with basic Markdown headings/tables.

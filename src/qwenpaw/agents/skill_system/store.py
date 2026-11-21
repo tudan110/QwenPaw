@@ -386,11 +386,27 @@ def mutate_json(
     default: dict[str, Any],
     mutator: Callable[[dict[str, Any]], _RegistryResult],
 ) -> _RegistryResult:
+    from copy import deepcopy
+    from ...governance.component_events import actor, record_skills
+
     with _file_write_lock(_lock_path_for(path)):
         payload = _read_json_unlocked(path, default)
+        audited = (
+            actor.get() is not None
+            and path.name == "skill.json"
+            and "skills" in default
+        )
+        before = deepcopy(payload) if audited else None
         result = mutator(payload)
         if result is not False:
             write_json_atomic(path, payload)
+            if before is not None:
+                scope = (
+                    "共享技能池"
+                    if path == get_pool_skill_manifest_path()
+                    else path.parent.name
+                )
+                record_skills(scope, before, payload)
         return result
 
 
@@ -657,6 +673,7 @@ def build_skill_metadata(
         "protected": protected,
         "requirements": requirements.model_dump(),
         "updated_at": get_skill_mtime(skill_dir),
+        "content_digest": compute_skill_md_hash(skill_dir),
     }
 
 

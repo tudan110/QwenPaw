@@ -87,22 +87,33 @@ class OpenAIProvider(Provider):
     )
 
     def _build_default_headers(self) -> dict:
+        if self.id == "qwenpaw-local":
+            return {}  # Internal Authorization may not be overridden by headers.
         from qwenpaw.extensions.api.model_access import local_model_headers
 
         headers = dict(self.custom_headers) if self.custom_headers else {}
         headers.update(local_model_headers(self.base_url))
         return headers
 
+    def _effective_api_key(self) -> str:
+        if self.id == "qwenpaw-local":
+            from ..local_models.resource_policy import runtime_key
+
+            return runtime_key(self.base_url)
+        return self.api_key
+
     def _client(self, timeout: float = 5) -> AsyncOpenAI:
         kwargs: dict = {
             "base_url": self.base_url,
-            "api_key": self.api_key,
+            "api_key": self._effective_api_key(),
             "timeout": timeout,
         }
         headers = self._build_default_headers()
         if headers:
             kwargs["default_headers"] = headers
-        if "X-QwenPaw-Model-Key" in headers:
+        if self.id == "qwenpaw-local":
+            kwargs["http_client"] = httpx.AsyncClient(trust_env=False, follow_redirects=False)
+        elif "X-QwenPaw-Model-Key" in headers:
             kwargs["http_client"] = httpx.AsyncClient(follow_redirects=False)
         return AsyncOpenAI(**kwargs)
 
@@ -210,7 +221,7 @@ class OpenAIProvider(Provider):
 
         credential = OpenAICredential(
             id=f"qwenpaw-{self.id}",
-            api_key=self.api_key,
+            api_key=self._effective_api_key(),
             base_url=self.base_url,
         )
 
@@ -252,6 +263,7 @@ class OpenAIProvider(Provider):
             pool=CHAT_CLIENT_READ_TIMEOUT,
         )
         client_kwargs["http_client"] = httpx.AsyncClient(
+            trust_env=self.id != "qwenpaw-local",
             timeout=httpx.Timeout(
                 connect=CHAT_CLIENT_CONNECT_TIMEOUT,
                 read=CHAT_CLIENT_READ_TIMEOUT,

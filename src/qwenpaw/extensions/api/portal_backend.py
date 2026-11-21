@@ -69,6 +69,7 @@ from qwenpaw.extensions.api.app_artifacts_api import (
 from qwenpaw.extensions.api.agent_reports import (
     router as agent_reports_router,
 )
+from .alarm_export import router as alarm_export_router
 from qwenpaw.extensions.api.qiming_openai_adapter import (
     router as qiming_openai_adapter_router,
 )
@@ -123,6 +124,7 @@ from qwenpaw.extensions.portal_alarm_clear_events import (
 from qwenpaw.extensions.portal_real_alarm_registry import (
     filter_visible_alarms,
     get_alarm_record,
+    filter_alarm_records,
     load_alarm_records,
     reset_zombie_analyzing_records,
     update_alarm_record,
@@ -187,6 +189,7 @@ router.include_router(notification_settings_router)
 router.include_router(app_artifacts_router)
 router.include_router(light_apps_router)
 router.include_router(agent_reports_router)
+router.include_router(alarm_export_router)
 router.include_router(qiming_openai_adapter_router)
 router.include_router(xingchen_openai_adapter_router)
 router.include_router(kunlun_openai_adapter_router)
@@ -3968,9 +3971,18 @@ async def recover_chat_trace_reply(request: Request, chat_id: str):
     workspace = await get_agent_for_request(request)
     chat_spec = await require_owned_chat(workspace.chat_manager, chat_id, chat_scope())
 
+    from ...app.chats.session import portal_turn_status
+
     session_id = str(chat_spec.session_id or "")
     if not session_id:
         return {"available": False, "reason": "missing_session_id"}
+    turn = None
+    if chat_scope() is not None and getattr(workspace, "session", None) is not None:
+        turn = portal_turn_status(await workspace.session.get_session_state_dict(
+            session_id, chat_spec.user_id, chat_spec.channel,
+        ))
+        if turn and turn["recalled"]:
+            return {"available": False, "reason": "turn_recalled"}
     trace_root = (constant.WORKING_DIR / "chat_traces").resolve()
     trace_path = (trace_root / f"{session_id}.jsonl").resolve()
     try:
@@ -3994,6 +4006,8 @@ async def recover_chat_trace_reply(request: Request, chat_id: str):
                 except json.JSONDecodeError:
                     continue
                 if not isinstance(event, dict):
+                    continue
+                if turn and (not isinstance(event.get("ts"), (int, float)) or event["ts"] < turn["at"]):
                     continue
                 if (
                     event.get("agent_id") == workspace.agent_id
@@ -6047,43 +6061,7 @@ async def list_alarm_registry_records(
 ):
     """List all alarm registry records with filtering and pagination."""
     try:
-        all_records = load_alarm_records()
-        items = list(all_records.values())
-
-        # Filter by status
-        if status.strip():
-            allowed_statuses = {
-                s.strip() for s in status.split(",") if s.strip()
-            }
-            items = [
-                r for r in items if r.get("status", "") in allowed_statuses
-            ]
-
-        # Search filter
-        search_term = search.strip().lower()
-        if search_term:
-            items = [
-                r
-                for r in items
-                if search_term in str(r.get("title", "")).lower()
-                or search_term in str(r.get("deviceName", "")).lower()
-                or search_term in str(r.get("manageIp", "")).lower()
-                or search_term in str(r.get("alarmId", "")).lower()
-                or search_term in str(r.get("resId", "")).lower()
-            ]
-
-        # Sort: eventLastTime → eventTime → handledAt/takenOverAt/updatedAt, all desc
-        items.sort(
-            key=lambda r: (
-                r.get("eventLastTime", "") or "",
-                r.get("eventTime", "") or "",
-                r.get("handledAt", "")
-                or r.get("takenOverAt", "")
-                or r.get("updatedAt", "")
-                or "",
-            ),
-            reverse=True,
-        )
+        items = filter_alarm_records(load_alarm_records().values(), status, search)
 
         total = len(items)
         start = (page - 1) * page_size
@@ -6178,47 +6156,6 @@ async def register_alarm_registry_record(
             source=str(payload.get("source", "manual-bell")).strip(),
         )
         return {"ok": True, "record": record}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@router.get("/alarm-registry/export")
-async def export_alarm_registry_records(
-    status: str = Query(
-        default="",
-        description="Filter by status (comma-separated)",
-    ),
-):
-    """Export alarm registry records as JSON."""
-    try:
-        all_records = load_alarm_records()
-        items = list(all_records.values())
-
-        if status.strip():
-            allowed_statuses = {
-                s.strip() for s in status.split(",") if s.strip()
-            }
-            items = [
-                r for r in items if r.get("status", "") in allowed_statuses
-            ]
-
-        items.sort(
-            key=lambda r: (
-                r.get("eventTime", "") or "",
-                r.get("handledAt", "")
-                or r.get("takenOverAt", "")
-                or r.get("updatedAt", "")
-                or "",
-            ),
-            reverse=True,
-        )
-
-        return JSONResponse(
-            content={"total": len(items), "items": items},
-            headers={
-                "Content-Disposition": "attachment; filename=alarm_registry_export.json",
-            },
-        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

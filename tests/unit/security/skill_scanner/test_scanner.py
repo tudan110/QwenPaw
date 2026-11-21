@@ -220,7 +220,12 @@ class TestSkillScannerDiscoverFiles:
         target = tmp_path / "real.txt"
         target.write_text("content")
         link = tmp_path / "link.txt"
-        link.symlink_to(target)
+        try:
+            link.symlink_to(target)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314:
+                pytest.skip("Windows host does not grant symbolic link creation")
+            raise
         files = scanner._discover_files(tmp_path)
         # Only the real file should appear
         names = [f.relative_path for f in files]

@@ -17,6 +17,7 @@ working dir under every deployment method); the env var is just an override.
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -30,7 +31,7 @@ _TRUE_STRINGS = {"true", "1", "yes", "on"}
 _FALSE_STRINGS = {"false", "0", "no", "off"}
 
 
-def _delete_ops_disabled() -> bool:
+def delete_ops_env_override() -> bool | None:
     raw = EnvVarLoader.get_str("QWENPAW_DELETE_OPS_DISABLED")
     if raw is not None and raw.strip():
         token = raw.strip().lower()
@@ -38,13 +39,24 @@ def _delete_ops_disabled() -> bool:
             return False
         if token in _TRUE_STRINGS:
             return True
-        # unrecognised value -> fall through to config
+    return None
+
+
+def resolve_delete_ops_policy() -> tuple[bool, Literal["environment", "config_or_default", "fail_closed"]]:
+    """Return the same effective setting and source used by enforcement."""
+    override = delete_ops_env_override()
+    if override is not None:
+        return override, "environment"
     try:
         from ...config import load_config
 
-        return bool(load_config().security.delete_ops_disabled)
+        return bool(load_config().security.delete_ops_disabled), "config_or_default"
     except Exception:  # pragma: no cover - defensive (config not ready)
-        return True
+        return True, "fail_closed"
+
+
+def _delete_ops_disabled() -> bool:
+    return resolve_delete_ops_policy()[0]
 
 
 class DeleteBlockMiddleware(BaseHTTPMiddleware):

@@ -9,7 +9,7 @@ import {
   type ReactNode,
   type WheelEvent,
 } from "react";
-import { Tooltip } from "antd";
+import { Button, Popconfirm, Tooltip } from "antd";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   digitalEmployees,
@@ -577,6 +577,9 @@ export default function DigitalEmployeePage({
     stopActiveStream,
     stopFeedback,
     resumeStoppedReply,
+    recallLatestTurn,
+    recalling,
+    recallError,
     clearStopFeedback,
     refreshRemoteSessions,
     handleOpenHistory,
@@ -738,7 +741,7 @@ export default function DigitalEmployeePage({
     createUserMessage,
   });
   const isConversationRunning = isRemoteConversationRunning || isKnowledgeBaseRunning;
-  const isInteractionLocked = isCreatingChat || isConversationRunning;
+  const isInteractionLocked = isCreatingChat || isConversationRunning || recalling;
 
   const {
     inputMessage,
@@ -1579,10 +1582,11 @@ export default function DigitalEmployeePage({
   const approvalPanel = (
     <>
       {canManageAi === true ? <MainChatApprovalPanel controls={approvals} /> : null}
+      {recallError ? <p className="main-chat-approval-error" role="alert">{recallError}</p> : null}
       {stopFeedback ? (
         <MainChatStopNotice
           feedback={stopFeedback}
-          onResume={modelOnly && stopFeedback.retry ? undefined : resumeStoppedReply}
+          onResume={recalling || (modelOnly && stopFeedback.retry) ? undefined : resumeStoppedReply}
           resumeKind={stopFeedback.retry ? "cmdb" : "text"}
           saved={stopFeedback.saved}
           continuationError={stopFeedback.continuationError}
@@ -1623,6 +1627,18 @@ export default function DigitalEmployeePage({
       {businessToolsControl}
       {permissionControl}
       {!modelOnly ? approvalModeSelector : null}
+      {recallLatestTurn ? (
+        <Popconfirm
+          title="撤回本轮对话？"
+          description="本轮提问和回复将从会话历史中移除；已执行的业务操作不会被撤销。"
+          okText="确认撤回"
+          cancelText="取消"
+          okButtonProps={{ danger: true }}
+          onConfirm={recallLatestTurn}
+        >
+          <Button size="small" disabled={recalling || historyLoading} loading={recalling}>撤回本轮</Button>
+        </Popconfirm>
+      ) : null}
       <>
         <Tooltip title="已处理任务" placement="bottom" mouseEnterDelay={0.1}>
           <button
@@ -1926,7 +1942,7 @@ export default function DigitalEmployeePage({
               </div>
             )
           ) : isSettingsMode ? (
-            renderDeferredPanel(<SettingsPanel canManageAi={canManageAi === true} />)
+            renderDeferredPanel(<SettingsPanel canManageAi={canManageAi === true} pageTheme={pageTheme} />)
           ) : isTokenUsageMode ? (
             renderDeferredPanel(
               <TokenUsagePanel

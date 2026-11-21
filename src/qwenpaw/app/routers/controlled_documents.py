@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from ...constant import EnvVarLoader
 from ...extensions.api import controlled_documents as store
+from ...extensions.api import sensitive_data_governance as sensitive
 from ...extensions.api.access_policy import require_browser_origin
 from ...extensions.api.access_session import CURRENT_IDENTITY
 from ...extensions.api.sso_settings_store import get_userinfo_url
@@ -107,7 +108,7 @@ def state(actor: Actor) -> dict:
             "documents": [store.document_summary(row, actor) for row in docs],
             "operations": [store.operation_summary(row) for row in ops],
             "grants": [{**{field: row[field] for field in row.keys() if field != "owner"},
-                        "outgoing": row["owner"] == actor.key} for row in grants],
+                        "title": store.mask(row["title"]), "outgoing": row["owner"] == actor.key} for row in grants],
         }
 
 
@@ -127,18 +128,17 @@ def create_document(body: DocumentInput, actor: Actor) -> dict:
         db.execute("INSERT INTO documents VALUES (?,?,?,?,?,?,NULL)",
                    (identifier, actor.key, title, body.content, json.dumps(labels), now))
         store.event(db, actor, "document.create", identifier, "success", "、".join(labels) or "未命中分类规则")
-        return {"id": identifier, "title": title, "labels": labels, "owner": True, "archived": False, "created": now}
+        return {"id": identifier, "title": title, "labels": labels, "owner": True, "archived": False, "created": now,
+                "raw_export_allowed": not store.NON_EXPORTABLE_LABELS.intersection(labels)}
 
 
 @router.get("/documents/{identifier}")
 @with_errors
 def read_document(identifier: str, actor: Actor) -> dict:
     with store.transaction(actor, "document.read", identifier) as db:
-        doc = store.accessible_document(db, actor, identifier)
-        own = doc["owner"] == actor.key
-        preview = store.mask(doc["content"])
+        preview = store.read_preview(db, actor, identifier)
         store.event(db, actor, "document.read", identifier, "success", "本人或限时授权的脱敏预览")
-        return {**store.document_summary(doc, actor), "content": preview, "masked": preview != doc["content"]}
+        return preview
 
 
 class PublishInput(BaseModel):
@@ -155,7 +155,7 @@ def publish_to_knowledge_base(identifier: str, body: PublishInput, actor: Admin)
         doc = store.owned_document(db, actor, identifier)
         try:
             result = knowledge_base.manual_entry(
-                {"title": doc["title"], "content": store.mask(doc["content"]), "tags": ["受控资料发布"]},
+                {"title": store.mask(doc["title"]), "content": store.mask(doc["content"]), "tags": ["受控资料发布"]},
                 controlled_document_id=identifier,
             )
         except ValueError as exc:
@@ -176,12 +176,14 @@ def request_operation(body: OperationInput, actor: Actor) -> dict:
         if len(targets) > cap:
             raise store.Rejected(422, f"超过单批上限 {cap} 项，请分成多批分别复核与执行")
         documents = [store.owned_document(db, actor, identifier) for identifier in targets]
+        if body.kind == "export":
+            store.assert_raw_export_allowed(documents[0])
         recipient = body.recipient.strip() if body.recipient else None
         if body.kind == "share" and (not recipient or recipient == actor.subject or not re.fullmatch(r"[a-zA-Z0-9_.@-]+", recipient)):
             raise store.Rejected(422, "请输入本认证来源下另一账号的智观用户 ID")
         if body.kind != "share":
             recipient = None
-        risk = body.kind == "archive" or any(json.loads(doc["labels"]) for doc in documents)
+        risk = body.kind == "archive" or any(store.document_labels(doc) for doc in documents)
         identifier, now = uuid4().hex, time.time()
         db.execute("""INSERT INTO operations(id,owner,subject,kind,targets,sensitive,recipient,recipient_label,
                       minutes,status,created,updated,expires) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -247,14 +249,14 @@ def execute_operation(identifier: str, actor: Actor, background_tasks: Backgroun
             raise store.Rejected(403, "未完成管理员复核，禁止执行", security=True)
         store.assert_live(row, "ready")
         targets = json.loads(row["targets"])
-        for target in targets:
-            store.owned_document(db, actor, target)
+        documents = [store.owned_document(db, actor, target) for target in targets]
         now = time.time()
         if row["kind"] == "archive":
             if len(targets) > store.current_policy(db)["batch_cap"]:
                 raise store.Rejected(422, "策略已变，请在新上限内重新提交")
             claim_archive(db, row, actor, background_tasks)
         elif row["kind"] == "share":
+            store.assert_sensitive_review(row, documents)
             if store.one(db, """SELECT 1 FROM grants WHERE document_id=? AND recipient=?
                         AND revoked IS NULL AND expires>?""", (targets[0], row["recipient"], now)):
                 raise store.Rejected(409, "该账号已有有效授权，请先撤销旧授权")
@@ -263,6 +265,8 @@ def execute_operation(identifier: str, actor: Actor, background_tasks: Backgroun
             db.execute("UPDATE operations SET status='completed',updated=? WHERE id=?", (now, identifier))
             store.event(db, actor, "grant.issue", targets[0], "success", identifier)
         else:
+            store.assert_raw_export_allowed(documents[0])
+            store.assert_sensitive_review(row, documents)
             db.execute("UPDATE operations SET status='export_ready',updated=? WHERE id=?", (now, identifier))
             store.event(db, actor, "export.authorize", targets[0], "success", identifier)
         return store.operation_summary(store.owned_operation(db, actor, identifier))
@@ -272,13 +276,7 @@ def execute_operation(identifier: str, actor: Actor, background_tasks: Backgroun
 @with_errors
 def download_document(identifier: str, actor: Actor) -> Response:
     with store.transaction(actor, "export.download", identifier) as db:
-        store.assert_open(db, actor)
-        row = store.owned_operation(db, actor, identifier)
-        if row["kind"] != "export" or row["status"] != "export_ready":
-            raise store.Rejected(403, "尚无有效导出许可或许可已经使用", security=True)
-        store.assert_live(row, "export_ready")
-        doc = store.owned_document(db, actor, json.loads(row["targets"])[0])
-        db.execute("UPDATE operations SET status='completed',updated=? WHERE id=?", (time.time(), identifier))
+        doc = store.consume_export(db, actor, identifier)
         store.event(db, actor, "export.download", doc["id"], "success", identifier)
         return Response(doc["content"], media_type="text/plain", headers={
             "Content-Disposition": f'attachment; filename="document-{doc["id"]}.txt"',
@@ -331,6 +329,18 @@ def revoke_grant(identifier: str, actor: Actor) -> dict:
             raise store.Rejected(404, "授权不存在或不可撤销", security=True)
         store.event(db, actor, "grant.revoke", identifier, "success")
         return {"revoked": now}
+
+
+@router.get("/admin/sensitive-data")
+def sensitive_data_status(actor: Admin) -> dict:
+    with store.connection(actor) as db:
+        return sensitive.status(db, actor)
+
+
+@router.post("/admin/sensitive-data/check")
+@with_errors
+def check_sensitive_data(actor: Admin) -> dict:
+    return sensitive.run_check(actor)
 
 
 @router.get("/admin/state")

@@ -8,7 +8,6 @@ import { AuditEvidence } from "./AuditEvidence";
 vi.mock("@/api/modules/securityEvidence", () => ({
   securityEvidenceApi: {
     protection: vi.fn(),
-    checkRedaction: vi.fn(),
     audit: vi.fn(),
   },
 }));
@@ -20,7 +19,7 @@ vi.mock("react-i18next", () => ({
 
 describe("read-only security evidence views", () => {
   beforeEach(() => vi.clearAllMocks());
-  it("does not run a sample check automatically and displays actual unchanged output", async () => {
+  it("shows the current redaction configuration without a sample check", async () => {
     vi.mocked(securityEvidenceApi.protection).mockResolvedValue({
       queried_at: "2026-11-17T08:00:00Z",
       output_guard: {
@@ -33,31 +32,14 @@ describe("read-only security evidence views", () => {
       },
       mcp_boundary: { production_guards: false, declared_host_count: 0 },
     });
-    vi.mocked(securityEvidenceApi.checkRedaction).mockResolvedValue({
-      checked_at: "2026-11-17T08:01:00Z",
-      active: false,
-      results: [
-        {
-          label: "Fictional sample",
-          input: "fictional-input",
-          output: "fictional-input",
-          changed: false,
-          hit_ids: [],
-        },
-      ],
-    });
     render(
       <MemoryRouter>
         <ProtectionEvidence />
       </MemoryRouter>,
     );
     await screen.findByText("off");
-    expect(securityEvidenceApi.checkRedaction).not.toHaveBeenCalled();
-    expect(screen.getByText("No check has been run")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Run sample check" }));
-    await screen.findByText("Fictional sample");
-    expect(screen.getAllByText("fictional-input")).toHaveLength(2);
-    expect(screen.getByText("trustedEvidence.unchanged")).toBeInTheDocument();
+    expect(screen.getByText("Output redaction")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run sample check" })).not.toBeInTheDocument();
   });
   it("shows a read error without inventing a successful empty audit result", async () => {
     vi.mocked(securityEvidenceApi.audit).mockRejectedValue(new Error("403"));

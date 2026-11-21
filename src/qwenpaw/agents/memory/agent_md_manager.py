@@ -24,6 +24,7 @@ class AgentMdManager:
             agent_id: Optional agent ID for loading memory_dir from config.
                       If None, uses default "memory" directory.
         """
+        self.agent_id = agent_id
         self.working_dir: Path = Path(working_dir)
         self.working_dir.mkdir(parents=True, exist_ok=True)
 
@@ -161,7 +162,26 @@ class AgentMdManager:
             md_name += ".md"
         file_path = self.working_dir / md_name
         self._assert_within_dir(file_path, self.working_dir)
+        from ...governance.component_events import actor, record
+
+        before = None
+        if actor.get() is not None and file_path.is_file():
+            # Compare in memory; never include prompt text in evidence.
+            try:
+                before = {
+                    "content": read_text_file_with_encoding_fallback(file_path)
+                }
+            except OSError:
+                pass  # An unreadable old revision must not block a permitted save.
         file_path.write_text(content, encoding="utf-8")
+        record(
+            "prompt",
+            md_name,
+            self.agent_id or self.working_dir.name,
+            before,
+            {"content": content},
+            visible_fields={"content"},
+        )
 
     def _memory_path_for_read_write(self, md_path: str) -> Path:
         rel_path = self._normalize_md_path(md_path)

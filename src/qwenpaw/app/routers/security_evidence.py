@@ -24,7 +24,7 @@ def require_evidence_admin(request: Request, response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
     identity = getattr(request.state, "access_identity", None)
     if identity is None or not identity.is_admin:
-        raise HTTPException(403, "安全取证仅允许已验证的管理员访问")
+        raise HTTPException(403, "安全取证仅允许已验证的管理员访问", headers={"Cache-Control": "no-store"})
 
 
 router = APIRouter(
@@ -97,6 +97,8 @@ def read_audit_page(db_path: Path, **filters) -> dict:
     # Empty decision is reserved for observed runtime events. Policy
     # decisions (including ALLOW) never stand in for a tool outcome.
     clauses = ["decision = ''" if execution else "decision <> ''"]
+    if execution:
+        clauses.append("(CASE WHEN json_valid(extra) THEN json_extract(extra, '$.kind') END) IS NOT 'governance_activity'")
     params = []
     for key in ("agent_id", "tool_name", "decision"):
         if filters.get(key):

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """AuditLog — Audit records for each assert_policy + audit call.
 
-Storage: single-file SQLite (~/.qwenpaw/audit.db), global singleton.
+Storage: SQLite with WAL (WORKING_DIR/governance/audit.db), global singleton.
 - record() writes immediately, no in-memory buffer
 - query() supports filtering by workspace / agent / tool / decision /
   time range, with pagination
@@ -23,6 +23,7 @@ from typing import List, Optional, Tuple
 
 from ..constant import WORKING_DIR
 
+from . import audit_integrity
 from .policy import GovernanceDecision, ToolCallSpec
 
 _logger = logging.getLogger(__name__)
@@ -106,6 +107,7 @@ class AuditLog:
     """
 
     _instance: Optional[AuditLog] = None
+    _instance_lock = threading.Lock()
     _db_path: Path
     _conn: sqlite3.Connection
     _lock: threading.Lock
@@ -123,31 +125,37 @@ class AuditLog:
                 exists in a different directory, the request is logged
                 and ignored (the singleton stays shared).
         """
-        if cls._instance is None:
-            if db_dir is not None:
-                resolved_dir = Path(db_dir)
-            else:
-                resolved_dir = WORKING_DIR / "governance"
-            cls._instance = cls._create(resolved_dir / "audit.db")
-        return cls._instance
+        with cls._instance_lock:
+            if cls._instance is None:
+                directory = Path(db_dir) if db_dir is not None else WORKING_DIR / "governance"
+                cls._instance = cls._create(directory / "audit.db")
+            return cls._instance
 
     @classmethod
     def _create(cls, db_path: Path) -> AuditLog:
         """Internal factory method: create instance and initialize database."""
         obj = object.__new__(cls)
         obj._db_path = db_path
-        obj._db_path.parent.mkdir(parents=True, exist_ok=True)
+        obj._db_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            obj._db_path.touch(mode=0o600, exist_ok=False)
+        except FileExistsError:
+            pass
         obj._conn = sqlite3.connect(
             str(obj._db_path),
             check_same_thread=False,
         )
         obj._conn.row_factory = sqlite3.Row
-        obj._conn.execute("PRAGMA journal_mode=WAL")
-        obj._conn.execute("PRAGMA synchronous=FULL")
         try:
-            cls._migrate_legacy_schema(obj._conn)
-            obj._conn.executescript(_SCHEMA)
-            obj._conn.commit()
+            obj._conn.execute("PRAGMA journal_mode=WAL")
+            obj._conn.execute("PRAGMA synchronous=FULL")
+            with obj._conn:
+                obj._conn.execute("BEGIN IMMEDIATE")
+                cls._migrate_legacy_schema(obj._conn)
+                for statement in _SCHEMA.split(";"):
+                    if statement.strip():
+                        obj._conn.execute(statement)
+                audit_integrity.install(obj._conn)
         except Exception:
             obj._conn.close()
             raise
@@ -157,37 +165,37 @@ class AuditLog:
     @staticmethod
     def _migrate_legacy_schema(conn: sqlite3.Connection) -> None:
         """Normalize existing timestamps atomically, keeping the original rows."""
-        with conn:
-            conn.execute("BEGIN IMMEDIATE")
-            types = {row[1]: row[2].upper() for row in conn.execute(
-                "PRAGMA table_info(audit_events)"
-            )}
-            if not types or types.get("ts") == "INTEGER":
-                return
-            # The original table retains its timestamps byte for byte. Drop
-            # no data; a failed conversion rolls back the schema change too.
-            conn.execute("ALTER TABLE audit_events RENAME TO audit_events_legacy")
-            for name in ("ts", "workspace", "agent", "tool"):
-                conn.execute(f"DROP INDEX IF EXISTS idx_audit_{name}")
-            conn.execute(_SCHEMA.split(";", 1)[0])
-            fields = "ts, workspace_dir, agent_id, session_id, tool_name, target, decision, reason, extra"
-            for row in conn.execute(f"SELECT {fields} FROM audit_events_legacy"):
-                timestamp = str(row[0])
-                if timestamp.isdecimal():
-                    milliseconds = int(timestamp)
-                else:
-                    value = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-                    milliseconds = int(value.replace(
-                        tzinfo=value.tzinfo or timezone.utc,
-                    ).timestamp() * 1000)
-                conn.execute(
-                    f"INSERT INTO audit_events ({fields}) VALUES (?,?,?,?,?,?,?,?,?)",
-                    (milliseconds, *tuple(row)[1:]),
-                )
+        types = {row[1]: row[2].upper() for row in conn.execute(
+            "PRAGMA table_info(audit_events)"
+        )}
+        if not types or types.get("ts") == "INTEGER":
+            return
+        if audit_integrity.status(conn)["state"] != "unsealed":
+            raise sqlite3.IntegrityError("refusing to migrate a previously sealed audit table")
+        # The original table retains its timestamps byte for byte. Drop
+        # no data; a failed conversion rolls back the schema change too.
+        conn.execute("ALTER TABLE audit_events RENAME TO audit_events_legacy")
+        for name in ("ts", "workspace", "agent", "tool"):
+            conn.execute(f"DROP INDEX IF EXISTS idx_audit_{name}")
+        conn.execute(_SCHEMA.split(";", 1)[0])
+        fields = audit_integrity.EVENT_FIELDS
+        for row in conn.execute(f"SELECT {fields} FROM audit_events_legacy"):
+            timestamp = str(row[0])
+            if timestamp.isdecimal():
+                milliseconds = int(timestamp)
+            else:
+                value = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                milliseconds = int(value.replace(
+                    tzinfo=value.tzinfo or timezone.utc,
+                ).timestamp() * 1000)
+            conn.execute(
+                f"INSERT INTO audit_events ({fields}) VALUES (?,?,?,?,?,?,?,?,?)",
+                (milliseconds, *tuple(row)[1:]),
+            )
 
     def close(self) -> None:
         """Close the database connection and reset the singleton."""
-        with self._lock:
+        with AuditLog._instance_lock, self._lock:
             self._conn.close()
             if AuditLog._instance is self:
                 AuditLog._instance = None
@@ -199,16 +207,13 @@ class AuditLog:
         decision: GovernanceDecision,
     ) -> None:
         """Record a policy decision as a separate event from execution."""
-        try:
-            self._append(AuditEvent(
-                ts=_now_unix_ms(), workspace_dir=workspace_dir,
-                agent_id=tc_spec.agent_id, session_id=tc_spec.session_id,
-                tool_name=tc_spec.tool_name, target=tc_spec.target,
-                decision=decision.action.value, reason=decision.reason,
-                extra=self._identity_fields(),
-            ))
-        except sqlite3.Error:
-            _logger.error("Cannot persist governance decision", exc_info=True)
+        self._append(AuditEvent(
+            ts=_now_unix_ms(), workspace_dir=workspace_dir,
+            agent_id=tc_spec.agent_id, session_id=tc_spec.session_id,
+            tool_name=tc_spec.tool_name, target=tc_spec.target,
+            decision=decision.action.value, reason=decision.reason,
+            extra=self._identity_fields(),
+        ))
 
     @staticmethod
     def _identity_fields() -> dict:
@@ -239,18 +244,29 @@ class AuditLog:
             },
         ))
 
+    def record_activity(
+        self, *, subject: str, operation: str, target: str, call_id: str,
+        result: str, http_status: int | None = None, unverified: bool = False,
+    ) -> None:
+        """Record an observed governance API outcome, not business success."""
+        self._append(AuditEvent(
+            ts=_now_unix_ms(), workspace_dir="", agent_id="", session_id="",
+            tool_name=operation, target=target, decision="", extra={
+                "auth_user_id": subject, "kind": "governance_activity",
+                "result": result, "call_id": call_id, "http_status": http_status,
+                "unverified": unverified,
+            },
+        ))
+
     def _append(self, event: AuditEvent) -> None:
         extra = {"event_id": uuid.uuid4().hex, **event.extra}
         with self._lock, self._conn:
-            self._conn.execute(
-                "INSERT INTO audit_events "
-                "(ts, workspace_dir, agent_id, session_id, "
-                "tool_name, target, decision, reason, extra) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (event.ts, event.workspace_dir, event.agent_id, event.session_id,
-                 event.tool_name, event.target, event.decision, event.reason,
-                 json.dumps(extra)),
-            )
+            self._conn.execute("BEGIN IMMEDIATE")
+            audit_integrity.append(self._conn, (
+                event.ts, event.workspace_dir, event.agent_id, event.session_id,
+                event.tool_name, event.target, event.decision, event.reason,
+                json.dumps(extra),
+            ))
 
     def query(
         self,

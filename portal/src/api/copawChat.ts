@@ -245,6 +245,20 @@ export function deleteChat(agentId: string | undefined, chatId: string) {
   });
 }
 
+export type PortalChatTurn = { id: string; at: number; recalled: boolean; after_recall?: boolean };
+
+export function getPortalChatTurn(agentId: string, chatId: string) {
+  return requestCopaw<{ portal_turn: PortalChatTurn | null }>(
+    `/console/chat/recall?chat_id=${encodeURIComponent(chatId)}`, { agentId },
+  );
+}
+
+export function recallPortalChatTurn(agentId: string, chatId: string, turnId: string) {
+  return requestCopaw<{ recalled: boolean }>("/console/chat/recall", {
+    agentId, method: "POST", body: { chat_id: chatId, turn_id: turnId },
+  });
+}
+
 export type PortalChatControl = {
   enabled: boolean;
   paused?: boolean;
@@ -255,6 +269,8 @@ export type PortalChatControl = {
     elapsed_ms: number | null;
     total: number | null;
     counts: Record<string, number>;
+    rollback_total?: number;
+    rollback?: { at: number; counts: Record<string, number> };
   } | null;
 };
 
@@ -266,6 +282,12 @@ export function setPortalChatPaused(paused: boolean) {
   return requestCopaw<PortalChatControl>("/console/chat/control", {
     method: "POST",
     body: { paused },
+  });
+}
+
+export function rollbackPortalChatBatch(batchId: string) {
+  return requestCopaw<PortalChatControl>("/console/chat/control/rollback", {
+    method: "POST", body: { batch_id: batchId },
   });
 }
 

@@ -223,9 +223,18 @@ curl "http://<host>:8088/api/portal/real-alarms?limit=50"
 { "total": 42, "byStatus": { "analyzing": 5, "analyzed": 30, "resolved": 7 } }
 ```
 
-### GET /api/portal/alarm-registry/export
+### 告警明细导出（Portal）
 
-导出为 JSON 文件（`Content-Disposition: attachment`），支持 `?status=` 过滤。
+此上限只适用于结构化告警明细的单次文件下载，不限制查询、统计或台账翻页。台账与智能体实时告警共用同一上限，默认 **10 条**；智观 AI 管理员可在「设置 → 安全与审计 → 导出管控」配置 **1–200 条**。
+
+- `GET /api/portal/alarm-export-settings`：读取 `{"max_rows": 10}`，仅管理员可用。
+- `PUT /api/portal/alarm-export-settings`：传入 `{"max_rows": 10}` 保存，仅管理员可用。
+- `POST /api/portal/alarm-export/preview`：核对完整筛选范围，不限于当前页。台账请求示例为 `{"source":"registry","status":"analyzed","search":"路由器"}`；实时告警请求使用 `source: "live"`，必填 `begin_time`、`end_time`（告警平台时间，`YYYY-MM-DD HH:mm:ss`）及 `is_clear`（`"0"` 未清除、`"1"` 已清除），可携带 `severity`、`keyword` 或 `manage_ip`、`resource_type`。实时告警使用当前账号的告警平台权限。
+- 预览返回 `count`、`max_rows` 和 `message`。仅有记录且未超限时返回一次性 `ticket`（有效期 5 分钟）。例如请求 100 条、上限 10 条时，响应不含 `ticket`，不会导出，也不会截断为前 10 条。
+- `POST /api/portal/alarm-export/download`：用户确认后提交 `{"selection": <与预览相同的筛选条件>, "ticket": "<预览返回的凭证>"}`。服务端重新检查上限和记录内容；通过后返回包含 `total`、`items` 的 `alarms.json`。记录变化需重新预览确认，超限时无文件。
+- 旧 `GET /api/portal/alarm-registry/export` 不再直接返回文件：超限返回 422，否则提示使用台账确认流程（409）。
+
+后端记录上限变更、超限拦截和放行等审计元数据，不记录告警正文。当前功能不包含累计配额、超限例外审批，也不是报告或其他文件类型的通用内容管控。
 
 ---
 

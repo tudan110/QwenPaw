@@ -104,7 +104,9 @@ class AsyncDriverCardStore:
 
     def _save_sync(self, card: DriverCard) -> Path:
         path = self.path_for(card.name, protocol=card.protocol)
+        before = _audit_card_snapshot(path)
         dump_card(card, path)
+        _record_card_change(path, before, _card_to_mapping(coerce_card(card)))
         delete_card_paths_for_name(self._cards_dir, card.name, keep=path)
         return path
 
@@ -260,12 +262,56 @@ def delete_card_paths_for_name(
 
 def delete_card(path: Path) -> None:
     """Delete one DriverCard YAML file if present."""
+    before = _audit_card_snapshot(path)
     try:
         path.unlink(missing_ok=True)
     except OSError as exc:
         raise DriverCardError(
             f"Failed to delete DriverCard {path}: {exc}",
         ) from exc
+    if before is not None:
+        _record_card_change(path, before, None)
+
+
+def _audit_card_snapshot(path: Path) -> dict | None:
+    from ..governance.component_events import actor
+
+    if actor.get() is None or not path.is_file():
+        return None
+    try:
+        return _card_to_mapping(load_card(path))
+    except DriverCardError:
+        logger.warning("Unable to read previous DriverCard for change audit")
+        return None
+
+
+def _record_card_change(
+    path: Path, before: dict | None, after: dict | None
+) -> None:
+    from ..governance.component_events import record
+
+    if (after or before or {}).get("protocol") != "mcp":
+        return
+    summaries = tuple(
+        {"enabled": state["enabled"]} if state else None
+        for state in (before, after)
+    )
+    record(
+        "mcp",
+        path.stem,
+        path.parent.parent.parent.name,
+        before,
+        after,
+        supply=True,
+        summaries=summaries,
+        visible_fields={
+            "endpoint",
+            "config",
+            "enabled",
+            "policy",
+            "credentials",
+        },
+    )
 
 
 def _is_visible_card_file(cards_dir: Path, path: Path) -> bool:

@@ -179,7 +179,7 @@ class SkillScanner:
             )
 
         # 1. Discover files ------------------------------------------------
-        files = self._discover_files(skill_path)
+        files, coverage_limited = self._discover_files_with_coverage(skill_path)
         logger.debug(
             "Discovered %d scannable files in %s",
             len(files),
@@ -230,6 +230,8 @@ class SkillScanner:
             scan_duration_seconds=round(elapsed, 4),
             analyzers_used=analyzers_used,
             analyzers_failed=analyzers_failed,
+            scannable_file_count=len(files),
+            coverage_limited=coverage_limited,
         )
 
         logger.info(
@@ -246,13 +248,17 @@ class SkillScanner:
     # ------------------------------------------------------------------
 
     def _discover_files(self, skill_dir: Path) -> list[SkillFile]:
+        return self._discover_files_with_coverage(skill_dir)[0]
+
+    def _discover_files_with_coverage(self, skill_dir: Path) -> tuple[list[SkillFile], bool]:
         """Walk *skill_dir* and return scannable :class:`SkillFile` objects."""
         result: list[SkillFile] = []
+        limited = False
         try:
             candidates = skill_dir.rglob("*")
         except OSError as exc:
             logger.warning("Cannot walk %s: %s", skill_dir, exc)
-            return result
+            return result, True
 
         for p in candidates:
             # Skip symlinks to prevent path-traversal attacks where a
@@ -260,6 +266,7 @@ class SkillScanner:
             # skill directory (e.g. /etc/shadow).
             if p.is_symlink():
                 logger.warning("Skipping symlink %s", p)
+                limited = True
                 continue
             if not p.is_file():
                 continue
@@ -268,6 +275,7 @@ class SkillScanner:
             try:
                 real = p.resolve(strict=True)
             except OSError:
+                limited = True
                 continue
             if not real.is_relative_to(skill_dir):
                 logger.warning(
@@ -275,15 +283,18 @@ class SkillScanner:
                     p,
                     real,
                 )
+                limited = True
                 continue
             if p.suffix.lower() in self._skip_ext:
                 continue
             try:
                 size = real.stat().st_size
             except OSError:
+                limited = True
                 continue
             if size > self._max_file_size:
                 logger.debug("Skipping large file %s (%d bytes)", p, size)
+                limited = True
                 continue
             if len(result) >= self._max_files:
                 logger.warning(
@@ -291,12 +302,13 @@ class SkillScanner:
                     self._max_files,
                     skill_dir,
                 )
+                limited = True
                 break
 
             sf = SkillFile.from_path(p, skill_dir)
             result.append(sf)
 
-        return result
+        return result, limited
 
     # ------------------------------------------------------------------
     # Default analyzer set

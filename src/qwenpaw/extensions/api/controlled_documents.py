@@ -19,16 +19,38 @@ MAX_BATCH = 20
 APPROVAL_SECONDS = 900
 LEASE_SECONDS = 15
 
+# A field may have its value on the next line, including legacy credential text.
+_FIELD_SEPARATOR = r"[\"']?[ \t]*[:：=]"
+_FIELD_VALUE = _FIELD_SEPARATOR + r"\s*[^\r\n]+"
+# For explicit core-configuration blocks, err on the side of masking too much.
+# Do not attempt to parse nested/possibly malformed structured document text.
+_CONFIG_VALUE = _FIELD_SEPARATOR + (
+    r"(?:\s*[\[{][\s\S]*"
+    r"|[ \t]*[|>][+\-]?[ \t]*\r?\n[\s\S]*"
+    r"|[ \t]*\r?\n[ \t]+[^\r\n][\s\S]*"
+    r"|\s*[^\r\n]+)"
+)
+
 # Identify bounded patterns; do not claim to recognize arbitrary secrets or PII.
 PATTERNS = {
     "身份证号": re.compile(r"(?<!\d)\d{6}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx](?![\dXx])"),
-    "银行卡号": re.compile(r"(?i)(?:银行卡(?:号)?|bank card)\s*[:：]\s*[0-9 -]{13,25}"),
+    "银行卡号": re.compile(r"(?i)(?:银行卡(?:号)?|bank card)[ \t]*[:：]\s*[0-9 -]{13,25}"),
     "手机号": re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"),
-    "位置轨迹": re.compile(r"(?:行踪轨迹|精确位置|经纬度)\s*[:：][^\r\n]+"),
-    "凭据": re.compile(r"(?i)(?:password|api[_ -]?key|access[_ -]?token|密钥|令牌|密码)\s*[:：=]\s*[^\s，,;；]+|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)"),
-    "商业秘密": re.compile(r"(?:商业秘密|机密数据)\s*[:：][^\r\n]+"),
-    "生物识别声明": re.compile(r"(?:生物识别信息|指纹特征|人脸特征)\s*[:：][^\r\n]+"),
+    "位置轨迹": re.compile(r"(?:行踪轨迹|精确位置|经纬度)" + _FIELD_VALUE),
+    "凭据": re.compile(r"(?i)(?:password|passwd|client[_ -]?secret|密码)" + _FIELD_VALUE),
+    "系统令牌": re.compile(
+        r"(?i)(?:(?:access|refresh|auth|session|system)[_ -]?token|(?<![A-Za-z0-9])token|(?:系统|访问|会话)?令牌)" + _FIELD_VALUE
+        + r"|\bBearer[ \t]+[A-Za-z0-9._~+/-]+=*|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b",
+    ),
+    "密钥": re.compile(r"(?i)(?:api[_ -]?key|private[_ -]?key|secret[_ -]?key|密钥|私钥)" + _FIELD_VALUE),
+    "私钥文件": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)"),
+    "核心配置": re.compile(r"(?i)(?:核心配置|生产配置|core[_ -]?config|database[_ -]?url)" + _CONFIG_VALUE),
+    "商业秘密": re.compile(r"(?:商业秘密|机密数据)" + _FIELD_VALUE),
+    "生物识别声明": re.compile(r"(?:生物识别信息|指纹特征|人脸特征)" + _FIELD_VALUE),
 }
+
+# Credentials and core configuration can only leave this workspace masked.
+NON_EXPORTABLE_LABELS = frozenset({"凭据", "系统令牌", "密钥", "私钥文件", "核心配置"})
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents (
@@ -103,9 +125,34 @@ def classify(text: str) -> list[str]:
 
 
 def mask(text: str) -> str:
-    for label, rule in PATTERNS.items():
-        text = rule.sub(f"[{label}已遮蔽]", text)
-    return text
+    # Match on the original text. Sequential substitutions could remove the
+    # header of an overlapping multiline private key but leave its body.
+    spans = sorted(
+        (match.start(), match.end(), label)
+        for label, rule in PATTERNS.items() for match in rule.finditer(text)
+    )
+    merged = []
+    for start, end, label in spans:
+        if merged and start < merged[-1][1]:
+            old_start, old_end, old_label = merged[-1]
+            merged[-1] = (old_start, max(end, old_end), old_label)
+        else:
+            merged.append((start, end, label))
+    parts, offset = [], 0
+    for start, end, label in merged:
+        parts.extend((text[offset:start], f"[{label}已遮蔽]"))
+        offset = end
+    return "".join((*parts, text[offset:]))
+
+
+def document_labels(doc) -> set[str]:
+    # Enforce new rules on old rows and pending grants, not only new uploads.
+    return set(json.loads(doc["labels"])) | set(classify(doc["content"])) | set(classify(doc["title"]))
+
+
+def assert_raw_export_allowed(doc) -> None:
+    if NON_EXPORTABLE_LABELS & document_labels(doc):
+        raise Rejected(403, "资料命中技术秘密分类，禁止导出原文；仅可读取脱敏预览")
 
 
 def safe_target(value: str) -> str:
@@ -207,11 +254,23 @@ def accessible_document(db, actor: Actor, identifier: str):
     return doc
 
 
-def document_summary(doc, actor: Actor) -> dict:
+def document_summary(doc, actor: Actor, *, current_labels=None) -> dict:
     own = doc["owner"] == actor.key
+    labels = sorted(current_labels if current_labels is not None else json.loads(doc["labels"]))
     return {
-        "id": doc["id"], "title": doc["title"], "labels": json.loads(doc["labels"]),
+        "id": doc["id"], "title": mask(doc["title"]), "labels": labels,
         "owner": own, "archived": bool(doc["archive_op"]), "created": doc["created"],
+        "raw_export_allowed": own and not doc["archive_op"] and not NON_EXPORTABLE_LABELS.intersection(labels),
+    }
+
+
+def read_preview(db, actor: Actor, identifier: str) -> dict:
+    doc = accessible_document(db, actor, identifier)
+    preview = mask(doc["content"])
+    return {
+        **document_summary(doc, actor, current_labels=document_labels(doc)),
+        "content": preview,
+        "masked": preview != doc["content"],
     }
 
 
@@ -244,6 +303,28 @@ def assert_open(db, actor: Actor):
         raise Rejected(423, "已启用紧急关停：资料导出、共享和批量归档已锁定")
     if on_hold(db, actor):
         raise Rejected(423, "该账号的资料操作已因安全告警冻结，请等待管理员处置")
+
+
+def assert_sensitive_review(operation, documents) -> None:
+    # A newly classified document must not use a confirmation-only authorization.
+    if not operation["reviewer"] and any(document_labels(doc) for doc in documents):
+        raise Rejected(403, "当前敏感分类要求管理员复核，请重新申请")
+
+
+def consume_export(db, actor: Actor, identifier: str):
+    """Re-check and consume a one-time grant within the caller's transaction."""
+    assert_open(db, actor)
+    row = owned_operation(db, actor, identifier)
+    if row["kind"] == "export" and row["status"] == "completed":
+        raise Rejected(403, "该一次性导出许可已经使用", security=True)
+    if row["kind"] != "export" or row["status"] != "export_ready":
+        raise Rejected(403, "尚无有效导出许可", security=True)
+    assert_live(row, "export_ready")
+    doc = owned_document(db, actor, json.loads(row["targets"])[0])
+    assert_raw_export_allowed(doc)
+    assert_sensitive_review(row, [doc])
+    db.execute("UPDATE operations SET status='completed',updated=? WHERE id=?", (time.time(), identifier))
+    return doc
 
 
 def step_archive(actor: Actor, identifier: str, lease: str) -> bool:

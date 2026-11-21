@@ -11,6 +11,7 @@ import json
 import logging
 import shutil
 import tempfile
+import time
 
 from typing import Union, Sequence
 
@@ -20,6 +21,16 @@ from ...exceptions import AgentStateError
 from ...utils.json_utils import safe_json_loads as _safe_json_loads
 
 logger = logging.getLogger(__name__)
+
+_PORTAL_TURN = "_portal_turn"
+EMPTY_RECALLED_CHAT_NAME = "新对话"
+
+
+def portal_turn_status(state: dict) -> dict | None:
+    turn = state.get(_PORTAL_TURN)
+    if turn is None:
+        return None
+    return {**{key: turn[key] for key in ("id", "at", "recalled")}, "after_recall": turn.get("after_recall", False)}
 
 
 def _atomic_write_json(path: str, payload: dict) -> None:
@@ -307,12 +318,55 @@ class SafeJSONSession:
             channel=channel,
         )
         async with self._get_write_lock(session_save_path):
+            if channel == "console" and user_id.startswith("qpowner1"):
+                saved = await self.get_session_state_dict(session_id, user_id, channel)
+                if _PORTAL_TURN in saved:
+                    state_dicts[_PORTAL_TURN] = saved[_PORTAL_TURN]
             await _write_session_json(session_save_path, state_dicts)
 
         logger.info(
             "Saved session state to %s successfully.",
             session_save_path,
         )
+
+    async def is_empty_recalled_chat(self, chat) -> bool:
+        saved = await self.get_session_state_dict(chat.session_id, chat.user_id, chat.channel)
+        return "agent" not in saved and bool(saved.get(_PORTAL_TURN, {}).get("recalled"))
+
+    async def begin_portal_turn(self, chat, turn_id: str) -> dict:
+        """Save one undo point, including any compacted agent context."""
+        args = (chat.session_id, chat.user_id, chat.channel)
+        path = self._get_save_path(*args)
+        async with self._get_write_lock(path):
+            saved = await self.get_session_state_dict(*args)
+            previous = saved.get(_PORTAL_TURN) or {}
+            turn = {
+                "id": turn_id, "at": time.time(), "recalled": False, "agent": saved.get("agent"),
+                "after_recall": previous.get("recalled", False) or previous.get("after_recall", False),
+            }
+            saved[_PORTAL_TURN] = turn
+            await _write_session_json(path, saved)
+            return portal_turn_status(saved)
+
+    async def recall_portal_turn(self, chat, turn_id: str) -> tuple[str, bool]:
+        """Atomically restore only the selected turn; never touch a newer turn."""
+        args = (chat.session_id, chat.user_id, chat.channel)
+        path = self._get_save_path(*args)
+        async with self._get_write_lock(path):
+            saved = await self.get_session_state_dict(*args)
+            turn = saved.get(_PORTAL_TURN)
+            if not turn or turn["id"] != turn_id:
+                return "stale", False
+            if turn["recalled"]:
+                return "recalled", "agent" not in saved
+            before = turn.pop("agent")
+            if before is None:
+                saved.pop("agent", None)
+            else:
+                saved["agent"] = before
+            turn.update(recalled=True, at=time.time())
+            await _write_session_json(path, saved)
+            return "recalled", before is None
 
     async def load_session_state(
         self,

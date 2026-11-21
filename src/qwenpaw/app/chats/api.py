@@ -14,7 +14,7 @@ from ...extensions.api.chat_isolation import (
     reject_reserved_legacy_namespace,
     require_owned_chat,
 )
-from .session import SafeJSONSession
+from .session import EMPTY_RECALLED_CHAT_NAME, SafeJSONSession, portal_turn_status
 from .manager import ChatManager
 from .models import (
     ChatSpec,
@@ -103,6 +103,13 @@ async def list_chats(
             except HTTPException:
                 continue
         status = await tracker.get_status(spec.id)
+        if (
+            scope is not None and status != "running"
+            and spec.name == EMPTY_RECALLED_CHAT_NAME
+            and getattr(workspace, "session", None) is not None
+            and await workspace.session.is_empty_recalled_chat(spec)
+        ):
+            continue
         result.append(spec.model_copy(update={"status": status}))
     return result
 
@@ -187,7 +194,8 @@ async def get_chat(
     Raises:
         HTTPException: If chat not found (404)
     """
-    chat_spec = await require_owned_chat(mgr, chat_id, chat_scope())
+    scope = chat_scope()
+    chat_spec = await require_owned_chat(mgr, chat_id, scope)
 
     state = await session.get_session_state_dict(
         chat_spec.session_id,
@@ -202,25 +210,31 @@ async def get_chat(
     memories: list[Msg] = []
 
     state_raw = agent_raw.get("state")
+    parsed_state = False
     if isinstance(state_raw, dict):
         try:
             agent_state = AgentState.model_validate(state_raw)
             memories = list(agent_state.context)
+            parsed_state = True
         except Exception:
             logger.debug(
                 "Failed to parse agent.state, falling back to legacy",
                 exc_info=True,
             )
 
-    # Legacy fallback: 1.x ``agent.memory`` format.
-    if not memories:
+    # Legacy fallback: 1.x ``agent.memory`` format. An explicitly empty
+    # current state must not resurrect a legacy copy of removed messages.
+    if not parsed_state:
         memory_raw = agent_raw.get("memory", {})
         if memory_raw:
             memories, _summary = parse_legacy_memory_state(memory_raw)
 
     messages = agentscope_msg_to_message(memories)
-    checkpoint = latest_stopped_turn(memories) if chat_scope() is not None else None
-    return ChatHistory(messages=messages, status=status, stopped_turn=checkpoint)
+    checkpoint = latest_stopped_turn(memories) if scope is not None else None
+    return ChatHistory(
+        messages=messages, status=status, stopped_turn=checkpoint,
+        portal_turn=portal_turn_status(state) if scope is not None else None,
+    )
 
 
 @router.put("/{chat_id}", response_model=ChatSpec)

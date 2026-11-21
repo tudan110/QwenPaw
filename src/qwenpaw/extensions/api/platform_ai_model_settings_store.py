@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from qwenpaw.config.config import ModelSlotConfig
+from qwenpaw.governance.component_events import record_default_model
 from qwenpaw.extensions.api import settings_store
 from qwenpaw.extensions.runtime_data_paths import (
     SETTINGS_DB_PATH as DEFAULT_DB_PATH,
@@ -74,15 +75,19 @@ def apply_settings_update(
     allowed = {"providerId", "modelId"}
     unknown = set(body).difference(allowed)
     if unknown:
-        raise ValueError(f"不支持的综合功能模型设置项：{', '.join(sorted(unknown))}")
+        raise ValueError(
+            f"不支持的综合功能模型设置项：{', '.join(sorted(unknown))}"
+        )
     if not allowed.issubset(body):
         raise ValueError("必须同时选择模型提供商和模型")
 
     provider_id = str(body.get("providerId") or "").strip()
     model_id = str(body.get("modelId") or "").strip()
+    old_slot = get_model_slot(db_path=db_path)
+    before = old_slot.model_dump() if old_slot else None
     if not provider_id and not model_id:
-        settings_store.delete_value(_NAMESPACE, _PROVIDER_KEY, db_path=db_path)
-        settings_store.delete_value(_NAMESPACE, _MODEL_KEY, db_path=db_path)
+        settings_store.replace_namespace(_NAMESPACE, {}, db_path=db_path)
+        record_default_model("Portal 综合功能", before, None)
         return
     if not provider_id or not model_id:
         raise ValueError("必须同时选择模型提供商和模型")
@@ -97,4 +102,9 @@ def apply_settings_update(
         _NAMESPACE,
         {_PROVIDER_KEY: provider_id, _MODEL_KEY: model_id},
         db_path=db_path,
+    )
+    record_default_model(
+        "Portal 综合功能",
+        before,
+        {"provider_id": provider_id, "model": model_id},
     )

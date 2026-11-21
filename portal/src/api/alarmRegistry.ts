@@ -96,12 +96,3 @@ export async function registerAlarmRecord(alarm: {
 export async function getAlarmRegistryStats(): Promise<AlarmRegistryStatsResponse> {
   return requestPortalApi<AlarmRegistryStatsResponse>("/alarm-registry/stats");
 }
-
-export async function exportAlarmRegistryRecords(params: {
-  status?: string;
-} = {}): Promise<{ total: number; items: AlarmRegistryRecord[] }> {
-  const searchParams = new URLSearchParams();
-  if (params.status) searchParams.set("status", params.status);
-  const qs = searchParams.toString();
-  return requestPortalApi(`/alarm-registry/export${qs ? `?${qs}` : ""}`);
-}

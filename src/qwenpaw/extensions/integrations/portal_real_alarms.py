@@ -221,6 +221,7 @@ def build_real_alarm_list_query_params(
     end_time: str,
     alarm_status: str | None = None,
     alarm_unique_id: str | None = None,
+    filters: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build query params for the INOE ``hisAlarmList`` GET endpoint.
 
@@ -239,6 +240,11 @@ def build_real_alarm_list_query_params(
     }
     if alarm_unique_id:
         params["alarmuniqueid"] = str(alarm_unique_id).strip()
+    for field in ("alarmSeverity", "isClear", "queryKey", "neIp", "alarmClassType"):
+        if filters is not None and field in filters:
+            params[field] = filters[field]
+    if params.get("neIp"):
+        params["isLike"] = "0"
     return params
 
 
@@ -281,6 +287,7 @@ def _post_real_alarm_list(
     end_time: str | None = None,
     alarm_status: str | None = None,
     alarm_unique_id: str | None = None,
+    filters: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     if not begin_time or not end_time:
         now = datetime.now(timezone.utc)
@@ -294,6 +301,7 @@ def _post_real_alarm_list(
         end_time=end_time,
         alarm_status=alarm_status,
         alarm_unique_id=alarm_unique_id,
+        filters=filters,
     )
     url = _get_gateway_real_alarm_url()
     headers = _build_real_alarm_headers()
@@ -590,6 +598,27 @@ def query_real_alarm_active_status(alarm_id: str) -> str:
         if candidate and candidate == normalized:
             return "still_active"
     return "cleared"
+
+
+def read_alarm_export_rows(
+    limit: int, begin_time: str, end_time: str, filters: dict[str, str],
+) -> tuple[int, list[dict[str, Any]]]:
+    result = _post_real_alarm_list(
+        limit=limit, begin_time=begin_time, end_time=end_time, filters=filters,
+    )
+    rows = result.get("rows")
+    total = result.get("total")
+    if isinstance(total, str) and total.isascii() and total.isdecimal():
+        total = int(total)
+    if (
+        type(total) is not int or total < 0 or not isinstance(rows, list)
+        or len(rows) > total or not all(isinstance(row, dict) for row in rows)
+        or (total <= limit and len(rows) != total)
+    ):
+        raise ValueError("Cannot determine the complete export record set")
+    if total > limit:
+        return total, []
+    return total, [_normalize_alarm_row(row) for row in rows]
 
 
 def query_portal_real_alarms(

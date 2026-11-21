@@ -6,7 +6,6 @@ import {
   Descriptions,
   Empty,
   Space,
-  Table,
   Tag,
   Typography,
 } from "antd";
@@ -15,30 +14,26 @@ import { Link } from "react-router-dom";
 import {
   securityEvidenceApi,
   type ProtectionEvidence as Evidence,
-  type RedactionCheck,
 } from "@/api/modules/securityEvidence";
 
 export function ProtectionEvidence() {
   const { t } = useTranslation();
   const [data, setData] = useState<Evidence>();
-  const [check, setCheck] = useState<RedactionCheck>();
-  const [error, setError] = useState<"adminReadError" | "checkError" | "">("");
-  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError("");
+    setError(false);
     setData(undefined);
-    setCheck(undefined);
     void securityEvidenceApi
       .protection()
       .then((result) => {
         if (!cancelled) setData(result);
       })
       .catch(() => {
-        if (!cancelled) setError("adminReadError");
+        if (!cancelled) setError(true);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -47,18 +42,6 @@ export function ProtectionEvidence() {
       cancelled = true;
     };
   }, [revision]);
-  const runCheck = async () => {
-    setChecking(true);
-    setError("");
-    setCheck(undefined);
-    try {
-      setCheck(await securityEvidenceApi.checkRedaction());
-    } catch {
-      setError("checkError");
-    } finally {
-      setChecking(false);
-    }
-  };
   const status = (value: boolean) => (
     <Tag color={value ? "blue" : "default"}>
       {t(
@@ -79,7 +62,6 @@ export function ProtectionEvidence() {
         <Button
           onClick={() => setRevision((value) => value + 1)}
           loading={loading}
-          disabled={checking}
         >
           {t("trustedEvidence.refresh", "Refresh snapshot")}
         </Button>
@@ -95,10 +77,8 @@ export function ProtectionEvidence() {
           type="error"
           showIcon
           message={t(
-            `trustedEvidence.${error}`,
-            error === "checkError"
-              ? "Sample check failed. No result has been recorded."
-              : "Unable to read evidence. A verified administrator session is required; check access and service status.",
+            "trustedEvidence.adminReadError",
+            "Unable to read evidence. A verified administrator session is required; check access and service status.",
           )}
         />
       )}
@@ -158,83 +138,6 @@ export function ProtectionEvidence() {
             description={t(
               "trustedEvidence.noSnapshot",
               "No readable snapshot",
-            )}
-          />
-        )}
-      </Card>
-      <Card
-        title={t("trustedEvidence.sampleTitle", "Fictional sample check")}
-        extra={
-          <Button
-            onClick={runCheck}
-            loading={checking}
-            disabled={!data || loading}
-          >
-            {t("trustedEvidence.runCheck", "Run sample check")}
-          </Button>
-        }
-      >
-        <Typography.Paragraph type="secondary">
-          {t(
-            "trustedEvidence.sampleBoundary",
-            "Runs fixed fictional values through the existing redactor. It sends no model or MCP requests, changes no settings, and does not test full conversations, prompt injection, or harmful-content handling.",
-          )}
-        </Typography.Paragraph>
-        {check ? (
-          <>
-            <Typography.Paragraph>
-              {t("trustedEvidence.checkedAt", "Checked at")}:{" "}
-              {new Date(check.checked_at).toLocaleString()} ·{" "}
-              {status(check.active)}
-            </Typography.Paragraph>
-            <Table
-              pagination={false}
-              size="small"
-              dataSource={check.results}
-              rowKey="label"
-              scroll={{ x: 760 }}
-              columns={[
-                {
-                  title: t("trustedEvidence.sample", "Sample"),
-                  dataIndex: "label",
-                },
-                {
-                  title: t("trustedEvidence.input", "Fictional input"),
-                  dataIndex: "input",
-                  render: (text: string) => (
-                    <Typography.Text code>{text}</Typography.Text>
-                  ),
-                },
-                {
-                  title: t("trustedEvidence.output", "Actual output"),
-                  dataIndex: "output",
-                  render: (text: string) => (
-                    <Typography.Text code>{text}</Typography.Text>
-                  ),
-                },
-                {
-                  title: t("trustedEvidence.change", "Observed change"),
-                  dataIndex: "changed",
-                  render: (value: boolean) =>
-                    t(
-                      value
-                        ? "trustedEvidence.changed"
-                        : "trustedEvidence.unchanged",
-                    ),
-                },
-                {
-                  title: t("trustedEvidence.hits", "Rule hits"),
-                  dataIndex: "hit_ids",
-                  render: (ids: string[]) => ids.join(", ") || "—",
-                },
-              ]}
-            />
-          </>
-        ) : (
-          <Empty
-            description={t(
-              "trustedEvidence.notChecked",
-              "No check has been run",
             )}
           />
         )}

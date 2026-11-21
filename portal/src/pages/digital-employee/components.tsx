@@ -3,6 +3,8 @@ import { employeeStepDescriptions } from "../../data/portalData";
 import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
 import { PortalVisualizationBlock } from "../../components/PortalVisualizationBlock";
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
+import { parseAlarmExportLink } from "../../api/alarmExport";
+import { AlarmExportButton } from "./alarmExportControls";
 import TurnUsageRing from "../../components/TurnUsageRing";
 import {
   getPortalOrderDetailMarkdownContent,
@@ -1040,7 +1042,6 @@ export const ChatMessageItem = memo(function ChatMessageItem({
                 isStreaming={isStreamingMessage}
               />
             )}
-            {isStreamingMessage ? <span className="streaming-cursor" /> : null}
           </div>
         ) : null}
 
@@ -1526,7 +1527,6 @@ function ResponseTraceBlock({
     return (
       <div className="response-trace-inline markdown-bubble">
         <MessageMarkdown content={block.content} isStreaming={isStreaming} />
-        {isStreaming ? <span className="streaming-cursor" /> : null}
       </div>
     );
   }
@@ -1541,7 +1541,6 @@ function ResponseTraceBlock({
         }
       >
         <MessageMarkdown content={block.content} isStreaming={isStreaming} />
-        {isStreaming ? <span className="streaming-cursor" /> : null}
       </div>
       {!isStreaming ? (
         <div className="message-copy-row">
@@ -1692,6 +1691,12 @@ function MarkdownChatAnchor({
 }) {
   delete (rest as Record<string, unknown>).node;
   const url = String(href || "");
+  const alarmSelection = parseAlarmExportLink(url);
+  if (alarmSelection) {
+    return <AlarmExportButton className="portal-report-download-link" selection={alarmSelection}>
+      <i className="fas fa-download" aria-hidden="true" /> <span>导出告警明细</span>
+    </AlarmExportButton>;
+  }
   if (REPORT_DOWNLOAD_HREF_RE.test(url)) {
     const resolved = url.startsWith("/portal-api/")
       ? url
@@ -1735,32 +1740,26 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   content: string;
   isStreaming?: boolean;
 }) {
+  if (isStreaming) {
+    // Incomplete Markdown can change the layout of text that's already visible.
+    // Render SSE snapshots as text and only format them once the stream ends.
+    return (
+      <span className="streaming-text">
+        {content}
+        <span className="streaming-cursor" aria-hidden="true" />
+      </span>
+    );
+  }
+
   const isDarkTheme =
     typeof document !== "undefined"
     && document.querySelector(".portal-digital-employee")?.classList.contains("theme-dark");
   const markdownThemeClass = isDarkTheme ? "x-markdown-dark" : "x-markdown-light";
   const normalizedContent = stripFrontmatter(
     unwrapPortalInspectionCardContent(
-      unwrapPortalAlarmAnalystCardContent(
-        normalizeMarkdownDisplayContent(content, {
-          isStreaming,
-        }),
-      ),
+      unwrapPortalAlarmAnalystCardContent(normalizeMarkdownDisplayContent(content)),
     ),
   );
-  const streamingContent = String(content || "");
-
-  if (isStreaming) {
-    return (
-      <PortalQwenPawMarkdown
-        className={`portal-x-markdown ${markdownThemeClass}`}
-        content={streamingContent}
-        isStreaming={isStreaming}
-        components={chatMarkdownComponents}
-      />
-    );
-  }
-
   const renderableSegments = extractRenderableContentSegments(content);
   const hasVisualSegments = renderableSegments.some((segment) => segment.type !== "markdown");
 

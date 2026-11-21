@@ -4,6 +4,8 @@ from __future__ import annotations
 import atexit
 import asyncio
 import logging
+import os
+import secrets
 import multiprocessing as mp
 import shutil
 import socket
@@ -18,6 +20,8 @@ from pydantic import BaseModel
 
 from qwenpaw.constant import DEFAULT_LOCAL_PROVIDER_DIR
 from qwenpaw.providers.provider import ModelInfo
+
+from .resource_policy import clear_runtime, protect_model_file, runtime_authenticated, set_runtime
 
 from .download_manager import (
     DownloadProgressUpdate,
@@ -239,6 +243,9 @@ class LlamaCppBackend:
         resolved_model_path, resolved_mmproj_path = self._resolve_model_file(
             model_path,
         )
+        protect_model_file(resolved_model_path)
+        if resolved_mmproj_path is not None:
+            protect_model_file(resolved_mmproj_path)
         model_info = self._build_model_info(
             model_name=model_name,
             resolved_mmproj_path=resolved_mmproj_path,
@@ -250,7 +257,7 @@ class LlamaCppBackend:
         ):
             if self._server_process.returncode is None and (
                 port is None or port == self._server_port
-            ):
+            ) and runtime_authenticated(self._server_port):
                 logger.info(
                     "Requested model %s is already served on port %s",
                     model_name,
@@ -271,18 +278,28 @@ class LlamaCppBackend:
             await self.shutdown_server()
 
         self._server_transitioning = True
-        port = self._resolve_server_port(port)
-        process_kwargs: dict[str, Any] = {}
-        if self.os_name != "windows":
-            process_kwargs["start_new_session"] = True
-        process = await self._create_server_process(
-            resolved_model_path=resolved_model_path,
-            resolved_mmproj_path=resolved_mmproj_path,
-            model_name=model_name,
-            port=port,
-            max_context_length=max_context_length,
-            process_kwargs=process_kwargs,
-        )
+        key = secrets.token_urlsafe(32)
+        try:
+            port = self._resolve_server_port(port)
+            # Do not inherit application API credentials or LLAMA_ARG_* overrides.
+            runtime_env = {name: value for name, value in os.environ.items()
+                           if name in {"PATH", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH",
+                                       "CUDA_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES",
+                                       "SystemRoot", "WINDIR"}}
+            process_kwargs: dict[str, Any] = {"env": {**runtime_env, "LLAMA_API_KEY": key}}
+            if self.os_name != "windows":
+                process_kwargs["start_new_session"] = True
+            process = await self._create_server_process(
+                resolved_model_path=resolved_model_path,
+                resolved_mmproj_path=resolved_mmproj_path,
+                model_name=model_name,
+                port=port,
+                max_context_length=max_context_length,
+                process_kwargs=process_kwargs,
+            )
+        except BaseException:
+            self._server_transitioning = False
+            raise
 
         self._server_process = process
         self._server_port = port
@@ -295,8 +312,10 @@ class LlamaCppBackend:
         try:
             logger.info("Waiting for llama.cpp server to become ready...")
             await self.server_ready()
+            await self._verify_private_api(port, key)
+            set_runtime(port, key)
             logger.info("llama.cpp server is ready")
-        except Exception:
+        except BaseException:
             await self.shutdown_server()
             raise
         finally:
@@ -370,7 +389,6 @@ class LlamaCppBackend:
         max_context_length: int | None,
         process_kwargs: dict[str, Any],
     ) -> ManagedProcess:
-        self.log_dir.mkdir(parents=True, exist_ok=True)
         command = [
             str(self.executable),
             "--host",
@@ -381,8 +399,7 @@ class LlamaCppBackend:
             str(resolved_model_path),
             "--alias",
             model_name,
-            "--log-file",
-            str(self.log_dir / "llama-server.log"),
+            "--log-disable",
             "--gpu-layers",
             "auto",
         ]
@@ -410,10 +427,11 @@ class LlamaCppBackend:
                 else ""
             ),
         )
+        # Do not persist inference inputs or credentials in server logs.
         return await start_command_async(
             command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
             **process_kwargs,
         )
 
@@ -720,7 +738,7 @@ class LlamaCppBackend:
                     )
                 try:
                     response = await client.get(health_url)
-                    if response.status_code < 500:
+                    if response.status_code == 200:
                         return True
 
                     logger.info(
@@ -738,6 +756,18 @@ class LlamaCppBackend:
 
                 await asyncio.sleep(1)
         raise RuntimeError("Timed out waiting for llama.cpp server to start")
+
+    @staticmethod
+    async def _verify_private_api(port: int, key: str) -> None:
+        url = f"http://127.0.0.1:{port}/v1/models"
+        try:
+            async with httpx.AsyncClient(trust_env=False, timeout=5) as client:
+                unauth = await client.get(url)
+                authorised = await client.get(url, headers={"Authorization": f"Bearer {key}"})
+        except httpx.HTTPError as exc:
+            raise RuntimeError("本地推理接口鉴权检查未完成") from exc
+        if unauth.status_code not in {401, 403} or authorised.status_code != 200:
+            raise RuntimeError("本地推理接口未通过鉴权检查，已拒绝启动")
 
     async def _drain_server_logs(self) -> None:
         if not self._server_process or not self._server_process.stdout:
@@ -774,6 +804,7 @@ class LlamaCppBackend:
             self._reset_server_state()
 
     def _reset_server_state(self) -> None:
+        clear_runtime(self._server_port)
         self._server_process = None
         self._server_log_task = None
         self._server_port = None

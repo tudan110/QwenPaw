@@ -56,9 +56,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def prepare(owner: str, subject: str, source_id: int, *, operation: str = "delete") -> dict:
+def check_source_operation_policy(operation: str) -> None:
+    """Evaluate the global deletion rule without accessing any document."""
     if operation == "delete" and _delete_ops_disabled():
         raise HTTPException(403, "系统已禁用彻底删除。可改用归档，归档后可恢复。")
+
+
+def prepare(owner: str, subject: str, source_id: int, *, operation: str = "delete") -> dict:
+    check_source_operation_policy(operation)
     token = secrets.token_urlsafe(32)
     expires = time.time() + _CONFIRM_SECONDS
     with _connection() as conn:
@@ -90,8 +95,8 @@ def decide(owner: str, source_id: int, token: str, *, confirm: bool, phrase: str
     expected = "确认归档" if operation == "archive" else "确认删除"
     if confirm and phrase != expected:
         raise HTTPException(400, f"请输入「{expected}」")
-    if confirm and operation == "delete" and _delete_ops_disabled():
-        raise HTTPException(403, "系统已禁用彻底删除")
+    if confirm:
+        check_source_operation_policy(operation)
     outcome = "cancelled"
     ids: list[int] = []
     paths: list[str] = []

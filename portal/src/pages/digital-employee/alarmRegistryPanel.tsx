@@ -1,9 +1,9 @@
+import { AlarmExportButton } from "./alarmExportControls";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   listAlarmRegistryRecords,
   updateAlarmRegistryStatus,
   getAlarmRegistryStats,
-  exportAlarmRegistryRecords,
   type AlarmRegistryRecord,
   type AlarmRegistryStatsResponse,
 } from "../../api/alarmRegistry";
@@ -184,23 +184,6 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
     }
   };
 
-  const handleExport = async () => {
-    try {
-      const data = await exportAlarmRegistryRecords({
-        status: FILTER_TO_STATUSES[statusFilter],
-      });
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `alarm_registry_export_${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err: any) {
-      setError(err?.message || "导出失败");
-    }
-  };
-
   const statsBar = useMemo(() => {
     if (!stats) return null;
     const activeCount =
@@ -272,9 +255,10 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
           <button className="portal-model-btn alarm-registry-btn" onClick={handleSearch} disabled={loading}>
             <i className={`fas ${loading ? "fa-spinner fa-spin" : "fa-search"}`} />
           </button>
-          {/* <button className="portal-model-btn alarm-registry-btn" onClick={handleExport} title="导出">
-            <i className="fas fa-download" />
-          </button> */}
+          <AlarmExportButton className="portal-model-btn alarm-registry-btn" disabled={loading}
+            selection={{ source: "registry", status: FILTER_TO_STATUSES[statusFilter], search }}>
+            <i className="fas fa-download" aria-hidden="true" /> 导出筛选结果
+          </AlarmExportButton>
           <button
             className="portal-model-btn alarm-registry-btn"
             onClick={() => { void fetchRecords(); void fetchStats(); }}

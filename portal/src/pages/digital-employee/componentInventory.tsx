@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Input, Select, Space, Table, Tag } from "antd";
+import { DownOutlined, FileSearchOutlined, LockOutlined, ReloadOutlined, SearchOutlined, SwapOutlined } from "@ant-design/icons";
+import { Alert, Button, Dropdown, Empty, Input, Select, Table, Tag, Tooltip, type MenuProps } from "antd";
 import portalManifest from "../../../package.json";
 import type { McpClientInfo } from "../../api/mcp";
 import { skillsApi, type WorkspaceSkillSummary } from "../../api/skills";
@@ -28,8 +29,16 @@ const frontendDeps = Object.entries(portalManifest.dependencies).map(([name, ver
   "按宿主功能，待核查", "构建声明", "Portal package.json", version,
 ));
 
+type Registration = "scope" | "supply" | "scan";
+const registrationItems: MenuProps["items"] = [
+  { key: "scope", label: "登记权限范围", icon: <LockOutlined /> },
+  { key: "supply", label: "查看供应链变更", icon: <SwapOutlined /> },
+  { key: "scan", label: "查看扫描与处置", icon: <FileSearchOutlined /> },
+];
+const riskColors: Record<string, string> = { "低": "green", "中": "gold", "高": "volcano", "严重": "red" };
+
 export function ComponentInventory({ onRegister, registeredScope }: {
-  onRegister: (row: ComponentRow, target: "supply" | "scan" | "scope") => void;
+  onRegister: (row: ComponentRow, target: Registration) => void;
   registeredScope: ReadonlyMap<string, { access?: string; risk?: string; data?: string }>;
 }) {
   const [skills, setSkills] = useState<WorkspaceSkillSummary[]>([]);
@@ -42,6 +51,7 @@ export function ComponentInventory({ onRegister, registeredScope }: {
   const [agent, setAgent] = useState("default");
   const [kind, setKind] = useState("全部");
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
   const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
@@ -117,22 +127,71 @@ export function ComponentInventory({ onRegister, registeredScope }: {
   const visible = rows.filter((row) => (kind === "全部" || row.kind === kind) &&
     `${row.name} ${row.usage} ${row.source}`.toLowerCase().includes(query.trim().toLowerCase()));
   const failures = [...globalFailures, ...agentFailures];
-  return <Space orientation="vertical" size="middle" className="gov-stack">
+  const loading = globalLoading || agentLoading;
+  return <div className="gov-flow">
     {failures.length > 0 && <Alert type="warning" showIcon title={`以下来源不可用：${failures.join("、")}`} description="未将无法读取的来源计为未接入。" />}
-    <Card size="small"><Space wrap>
-      <span>工作区</span><Select aria-label="工作区" value={agent} onChange={setAgent} options={workspaces.map(([value, label]) => ({ value, label }))} style={{ minWidth: 140 }} />
-      <span>组件类别</span><Select aria-label="组件类别" value={kind} onChange={setKind} options={["全部", "工具", "技能", "插件", "连接器", "协议服务（MCP）", dependencyKind, "模型"].map((value) => ({ value }))} style={{ minWidth: 145 }} />
-      <Input.Search placeholder="搜索名称、用途或来源" allowClear value={query} onChange={(e) => setQuery(e.target.value)} />
-      <Button onClick={() => setRefresh((value) => value + 1)} loading={globalLoading || agentLoading}>刷新目录</Button>
-    </Space></Card>
-    <Table<ComponentRow> bordered size="small" rowKey="key" dataSource={visible} pagination={{ pageSize: 8, showSizeChanger: false }} scroll={{ x: 1030 }}
-      locale={{ emptyText: globalLoading || agentLoading ? "正在读取来源…" : "当前筛选没有可展示的组件" }} columns={[
-        { title: "组件 / 来源", width: 188, render: (_, row) => <><strong>{row.name}</strong><br /><small>{row.source}</small></> },
-        { title: "类别 / 版本", width: 138, render: (_, row) => <><Tag>{row.kind}</Tag><br />{row.version}</> },
-        { title: "功能用途", dataIndex: "usage", width: 190, ellipsis: true },
-        { title: "调用权限 / 数据范围", width: 245, render: (_, row) => <>{row.access}<br /><small>{row.data}</small>{registeredScope.has(row.key) && <><br /><Tag color="blue">登记：{registeredScope.get(row.key)?.access}</Tag><small>{registeredScope.get(row.key)?.data}</small></>}</> },
-        { title: "状态 / 风险", width: 138, render: (_, row) => <>{row.state}<br /><Tag color="orange">{registeredScope.has(row.key) ? `登记风险：${registeredScope.get(row.key)?.risk}` : row.risk}</Tag></> },
-        { title: "登记台账", width: 200, render: (_, row) => <Space size={4} wrap><Button type="link" size="small" onClick={() => onRegister(row, "scope")}>权限范围</Button><Button type="link" size="small" onClick={() => onRegister(row, "supply")}>变更</Button><Button type="link" size="small" onClick={() => onRegister(row, "scan")}>扫描</Button></Space> },
-      ]} />
-  </Space>;
+    <section className="gov-surface" aria-label="组件目录">
+      <div className="gov-toolbar gov-inventory-toolbar">
+        <div className="gov-filter">
+          <label htmlFor="gov-workspace">工作区</label>
+          <Select id="gov-workspace" value={agent} onChange={(value) => { setAgent(value); setPage(1); }}
+            options={workspaces.map(([value, label]) => ({ value, label }))} />
+        </div>
+        <div className="gov-filter">
+          <label htmlFor="gov-component-kind">组件类别</label>
+          <Select id="gov-component-kind" value={kind} onChange={(value) => { setKind(value); setPage(1); }}
+            options={["全部", "工具", "技能", "插件", "连接器", "协议服务（MCP）", dependencyKind, "模型"].map((value) => ({ value }))} />
+        </div>
+        <div className="gov-filter gov-inventory-search">
+          <label htmlFor="gov-component-search">搜索组件</label>
+          <Input id="gov-component-search" placeholder="名称、用途或来源" prefix={<SearchOutlined aria-hidden="true" />}
+            allowClear value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} />
+        </div>
+        <Button className="gov-inventory-refresh" icon={<ReloadOutlined />} onClick={() => setRefresh((value) => value + 1)} loading={loading}>刷新目录</Button>
+      </div>
+      <p className="gov-scroll-hint">横向滚动查看更多列</p>
+      <Table<ComponentRow> className="gov-table gov-inventory-table" size="small" tableLayout="fixed" rowKey="key" dataSource={visible}
+        loading={loading} pagination={{
+          current: page, pageSize: 8, showSizeChanger: false, showLessItems: true, size: "small",
+          onChange: setPage, showTotal: (total) => `共 ${total} 项组件`,
+        }} scroll={{ x: 1064 }}
+        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={loading ? "正在读取组件来源…" : "没有匹配的组件，试试调整筛选条件。"} /> }}
+        columns={[
+          { title: "组件 / 来源", key: "component", width: 206, render: (_, row) => <div className="gov-cell">
+            <strong>{row.name}</strong><span className="gov-secondary">{row.source}</span>
+          </div> },
+          { title: "类别 / 版本", key: "category", width: 128, render: (_, row) => <div className="gov-cell">
+            <Tag variant="filled">{row.kind}</Tag><span className="gov-secondary gov-version">{row.version}</span>
+          </div> },
+          { title: "功能用途", key: "usage", dataIndex: "usage", width: 200, render: (usage: string) => <Tooltip title={usage}>
+            <span className="gov-usage">{usage}</span>
+          </Tooltip> },
+          { title: "调用权限 / 数据范围", key: "scope", width: 282, render: (_, row) => {
+            const registration = registeredScope.get(row.key);
+            return <div className="gov-cell">
+              <span>{row.access}</span><span className="gov-secondary">{row.data}</span>
+              {registration && <div className="gov-cell-registration">
+                <Tag variant="filled" color="blue">登记：{registration.access || "待核查"}</Tag>
+                {registration.data && registration.data !== row.data && <span className="gov-secondary">{registration.data}</span>}
+              </div>}
+            </div>;
+          } },
+          { title: "状态 / 风险", key: "state", width: 138, render: (_, row) => {
+            const registration = registeredScope.get(row.key);
+            const risk = registration?.risk || row.risk;
+            return <div className="gov-cell">
+              <span>{row.state}</span>
+              <Tag variant="filled" color={riskColors[risk]}>{registration ? `登记风险：${risk}` : risk}</Tag>
+            </div>;
+          } },
+          { title: "操作", key: "register", width: 110, align: "center", fixed: "right", render: (_, row) => <Dropdown
+            trigger={["click"]} placement="bottomRight"
+            menu={{ items: registrationItems, onClick: ({ key }) => onRegister(row, key as Registration) }}>
+            <Button size="small" aria-label={`组件操作：${row.name}`} aria-haspopup="menu" className="gov-register-button">
+              操作<DownOutlined aria-hidden="true" />
+            </Button>
+          </Dropdown> },
+        ]} />
+    </section>
+  </div>;
 }

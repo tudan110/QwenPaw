@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button, Popconfirm, Space, Tag } from "antd";
-import { getPortalChatControl, setPortalChatPaused, type PortalChatControl } from "../../api/copawChat";
+import { getPortalChatControl, rollbackPortalChatBatch, setPortalChatPaused, type PortalChatControl } from "../../api/copawChat";
 
 export function PortalChatControlPanel() {
   const [state, setState] = useState<PortalChatControl>();
@@ -24,11 +24,14 @@ export function PortalChatControlPanel() {
   if (state?.enabled === false) return null;
   const last = state?.last_stop;
   const pending = last?.counts.accepted || 0;
-  const update = async (paused: boolean) => {
+  const rollback = last?.rollback;
+  const canRollback = Boolean(state?.paused && last?.rollback_total && !pending
+    && (!rollback || rollback.counts.failed));
+  const update = async (action: () => Promise<PortalChatControl>) => {
     setError("");
     setBusy(true);
     try {
-      setState(await setPortalChatPaused(paused));
+      setState(await action());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "更新失败，请刷新关停状态");
     } finally {
@@ -52,13 +55,24 @@ export function PortalChatControlPanel() {
           okText="确认关停"
           cancelText="取消"
           disabled={busy || !state || !!state.paused}
-          onConfirm={() => update(true)}
+          onConfirm={() => update(() => setPortalChatPaused(true))}
         >
           <Button danger type="primary" disabled={busy || !state || !!state.paused}>一键关停对话</Button>
         </Popconfirm>
         {state?.paused ? (
-          <Button onClick={() => update(false)} disabled={busy || pending > 0}>解除关停</Button>
+          <Button onClick={() => update(() => setPortalChatPaused(false))} disabled={busy || pending > 0}>解除关停</Button>
         ) : null}
+        <Popconfirm
+          title="回滚最近一次关停批次？"
+          description="仅撤回该批次纳入的本轮提问和回复，保留更早的历史。不会解除关停，也不会撤销已执行的业务操作。"
+          okText="确认回滚"
+          cancelText="取消"
+          okButtonProps={{ danger: true }}
+          disabled={busy || !canRollback}
+          onConfirm={() => last && update(() => rollbackPortalChatBatch(last.id))}
+        >
+          <Button danger disabled={busy || !canRollback}>一键回滚</Button>
+        </Popconfirm>
         <Button onClick={refresh} loading={busy}>刷新状态</Button>
       </Space>
       {error ? <p role="alert">{error}</p> : null}
@@ -72,7 +86,12 @@ export function PortalChatControlPanel() {
               {last.elapsed_ms !== null ? ` · 首次统计用时 ${last.elapsed_ms} ms` : ""}
             </p>
           )}
-          {pending ? <p>仍有取消请求待确认。刷新状态后再解除关停。</p> : null}
+          {pending ? <p>仍有取消请求待确认。刷新状态后再回滚或解除关停。</p> : null}
+          {rollback ? (
+            <p>最近一次回滚：{new Date(rollback.at * 1000).toLocaleString()}
+              {` · 已撤回 ${rollback.counts.recalled || 0} · 已跳过 ${rollback.counts.skipped || 0} · 失败 ${rollback.counts.failed || 0}`}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {state?.timeout_seconds ? <p>单轮对话最多运行 {state.timeout_seconds} 秒，到时由服务端自动发出取消。</p> : null}

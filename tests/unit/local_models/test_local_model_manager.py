@@ -111,7 +111,7 @@ class _FakeModelManager:
         return ["downloaded-model"]
 
     def get_model_dir(self, model_name: str) -> Path:
-        return Path(f"/fake/path/{model_name}")
+        return local_model_manager_module.DEFAULT_LOCAL_PROVIDER_DIR / "models" / model_name
 
     def download_model(
         self,
@@ -129,6 +129,13 @@ class _FakeModelManager:
 
     def remove_downloaded_model(self, model_name: str) -> None:
         self.calls.append(("remove", model_name))
+
+
+@pytest.fixture(autouse=True)
+def _isolated_manager_storage(tmp_path, monkeypatch):
+    monkeypatch.setattr(local_model_manager_module, "DEFAULT_LOCAL_PROVIDER_DIR", tmp_path)
+    # Forwarding tests mock infrastructure; policy enforcement is tested separately.
+    monkeypatch.setattr(local_model_manager_module, "protect_storage", lambda: None)
 
 
 @pytest.mark.asyncio
@@ -219,7 +226,7 @@ async def test_local_model_manager_forwards_async_server_calls(
     )
     assert fake_llamacpp_backend.calls == [
         ("server_ready", 7.5),
-        ("setup", (Path("/fake/path/demo"), "demo", 131072, 43110)),
+        ("setup", ((tmp_path / "models" / "demo").resolve(), "demo", 131072, 43110)),
         ("shutdown", None),
     ]
 
@@ -244,6 +251,7 @@ async def test_set_max_context_length_persists_local_model_config(
     assert manager.get_config().max_context_length == 131072
     config_path = tmp_path / LocalModelManager.CONFIG_FILE_NAME
     assert json.loads(config_path.read_text(encoding="utf-8")) == {
+        "access_mode": "managed",
         "max_context_length": 131072,
         "port": None,
     }
@@ -269,6 +277,7 @@ async def test_set_port_persists_local_model_config(
     assert manager.get_config().port == 43110
     config_path = tmp_path / LocalModelManager.CONFIG_FILE_NAME
     assert json.loads(config_path.read_text(encoding="utf-8")) == {
+        "access_mode": "managed",
         "max_context_length": 65536,
         "port": 43110,
     }

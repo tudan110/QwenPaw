@@ -193,5 +193,68 @@ async def test_admin_endpoint_controls_normal_console_route(tmp_path, monkeypatc
         assert not (await client.post(ctl, json={"paused": False}, headers=admin)).json()["paused"]
     assert requires_admin("GET", "/api/console/chat/control")
     assert requires_admin("POST", "/api/agents/gateway/console/chat/control")
+    assert requires_admin("POST", "/api/console/chat/control/rollback")
+    assert not requires_admin("POST", "/api/console/chat/recall")
     persisted = json.loads((tmp_path / "control.json").read_text())
     assert persisted["last_stop"]["tasks"][0]["status"] == "cancelled"
+
+
+async def test_rollback_is_scoped_to_exact_shutdown_batch_and_survives_restart(tmp_path):
+    from qwenpaw.app.chats.session import SafeJSONSession
+    from qwenpaw.extensions.api.chat_isolation import PortalChatScope
+
+    path = tmp_path / "control.json"
+    control = PortalChatControl(path, 30)
+    scope = PortalChatScope("a" * 32)
+    session = SafeJSONSession(str(tmp_path / "sessions"))
+    tracker = TaskTracker()
+    workspace = SimpleNamespace(task_tracker=tracker, session=session)
+    chats = {key: ChatSpec(id=key, user_id=scope.owner, channel="console", session_id=scope.session_id(key))
+             for key in ("one", "two", "not-in-batch")}
+    for chat in chats.values():
+        await session.update_session_state(chat.session_id, "agent", {"before": chat.id}, chat.user_id, chat.channel)
+
+    running = asyncio.Event()
+    active = 0
+
+    async def run(_):
+        nonlocal active
+        active += 1
+        if active == 2:
+            running.set()
+        yield "data: ready\n\n"
+        await asyncio.Future()
+
+    for chat in chats.values():
+        await session.begin_portal_turn(chat, chat.id)
+        await session.update_session_state(chat.session_id, "agent", {"after": chat.id}, chat.user_id, chat.channel)
+        if chat.id != "not-in-batch":
+            await control.start(tracker, chat.id, None, run, portal_turn=("gateway", chat.id))
+    await asyncio.wait_for(running.wait(), 5)
+    stopped = await control.stop("admin")
+    last = stopped["last_stop"]
+    assert last["rollback_total"] == 2
+    # Simulate another process already replacing one recorded turn. Never
+    # restore the checkpoint of a different turn just because chat IDs match.
+    await session.begin_portal_turn(chats["two"], "newer-turn")
+
+    async def resolve(agent_id, chat_id):
+        assert agent_id == "gateway"
+        return workspace, chats[chat_id]
+
+    from qwenpaw.app.chats.portal_control import PortalRollbackUnavailable
+
+    restarted = PortalChatControl(path, 30)
+    with pytest.raises(PortalRollbackUnavailable):
+        await restarted.rollback("admin", "obsolete-batch", resolve)
+    result = await restarted.rollback("admin", last["id"], resolve)
+    assert result["paused"]
+    assert result["last_stop"]["rollback"]["counts"] == {"recalled": 1, "skipped": 1}
+    for key, chat in chats.items():
+        saved = await session.get_session_state_dict(chat.session_id, chat.user_id, chat.channel)
+        assert saved["agent"] == ({"before": key} if key == "one" else {"after": key})
+    again = await restarted.rollback("admin", last["id"], resolve)
+    assert again["last_stop"]["rollback"]["counts"] == result["last_stop"]["rollback"]["counts"]
+    await restarted.reopen()
+    with pytest.raises(PortalRollbackUnavailable):
+        await restarted.rollback("admin", last["id"], resolve)

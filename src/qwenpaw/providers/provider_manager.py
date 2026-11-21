@@ -7,10 +7,13 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Dict, List
 
 from agentscope.model import ChatModelBase
 from pydantic import BaseModel
+
+from ..governance import component_events
 
 from qwenpaw.exceptions import ModelNotFoundException
 
@@ -1351,6 +1354,12 @@ class ProviderManager:  # pylint: disable=too-many-public-methods
             logger.warning("Failed to migrate legacy providers: %s", e)
         self._init_from_storage()
         self._apply_default_annotations()
+        # A never-written built-in still has an existing catalogue. Do not
+        # report every built-in model as newly added on its first user edit.
+        self._builtin_audit_baselines = {
+            key: provider.model_dump() for key, provider in self.builtin_providers.items()
+            if not (self.builtin_path / f"{key}.json").is_file()
+        }
 
     def _prepare_disk_storage(self):
         """Prepare directory structure"""
@@ -1598,7 +1607,9 @@ class ProviderManager:  # pylint: disable=too-many-public-methods
             del self.custom_providers[provider_id]
             provider_path = self.custom_path / f"{provider_id}.json"
             if provider_path.exists():
+                before = self._provider_audit_snapshot(provider_path)
                 os.remove(provider_path)
+                component_events.record_provider(provider_id, before, None)
             return True
         return False
 
@@ -1861,16 +1872,7 @@ class ProviderManager:  # pylint: disable=too-many-public-methods
         provider_path = provider_dir / f"{provider.id}.json"
         if skip_if_exists and provider_path.exists():
             return
-        data = encrypt_dict_fields(
-            provider.model_dump(),
-            PROVIDER_SECRET_FIELDS,
-        )
-        with open(provider_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        try:
-            os.chmod(provider_path, 0o600)
-        except OSError:
-            pass
+        self._write_provider_config(provider_path, provider)
 
     def _save_plugin_provider(self, provider: Provider):
         """Save a plugin provider configuration to disk.
@@ -1878,8 +1880,20 @@ class ProviderManager:  # pylint: disable=too-many-public-methods
         Sensitive fields (``api_key``) are encrypted before writing.
         """
         provider_path = self.plugin_path / f"{provider.id}.json"
+        self._write_provider_config(provider_path, provider)
+
+    @staticmethod
+    def _provider_audit_snapshot(path: Path) -> dict | None:
+        raw = component_events.snapshot(path)
+        return decrypt_dict_fields(raw, PROVIDER_SECRET_FIELDS) if raw is not None else None
+
+    def _write_provider_config(self, provider_path: Path, provider: Provider) -> None:
+        before = self._provider_audit_snapshot(provider_path)
+        if component_events.actor.get() is not None and before is None and provider_path.parent == self.builtin_path:
+            before = getattr(self, "_builtin_audit_baselines", {}).get(provider.id)
+        plain = provider.model_dump()
         data = encrypt_dict_fields(
-            provider.model_dump(),
+            plain,
             PROVIDER_SECRET_FIELDS,
         )
         with open(provider_path, "w", encoding="utf-8") as f:
@@ -1888,6 +1902,7 @@ class ProviderManager:  # pylint: disable=too-many-public-methods
             os.chmod(provider_path, 0o600)
         except OSError:
             pass
+        component_events.record_provider(provider.id, before, plain)
 
     def save_provider_config(
         self,
@@ -2004,9 +2019,11 @@ class ProviderManager:  # pylint: disable=too-many-public-methods
     def save_active_model(self, active_model: ModelSlotConfig):
         """Save the active provider/model configuration to disk."""
         active_path = self.root_path / "active_model.json"
+        before = component_events.snapshot(active_path)
+        data = active_model.model_dump()
         with open(active_path, "w", encoding="utf-8") as f:
             json.dump(
-                active_model.model_dump(),
+                data,
                 f,
                 ensure_ascii=False,
                 indent=2,
@@ -2015,6 +2032,7 @@ class ProviderManager:  # pylint: disable=too-many-public-methods
             os.chmod(active_path, 0o600)
         except OSError:
             pass
+        component_events.record_default_model("全局", before, data)
 
     def clear_active_model(self, provider_id: str | None = None) -> bool:
         """Clear the active provider/model configuration.
@@ -2035,10 +2053,13 @@ class ProviderManager:  # pylint: disable=too-many-public-methods
 
         self.active_model = None
         active_path = self.root_path / "active_model.json"
+        before = component_events.snapshot(active_path)
         try:
             active_path.unlink()
-        except (FileNotFoundError, OSError):
+        except OSError:
             pass
+        else:
+            component_events.record_default_model("全局", before, None)
         return True
 
     def load_active_model(self) -> ModelSlotConfig | None:

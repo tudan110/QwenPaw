@@ -263,3 +263,102 @@ async def test_revoked_cmdb_skill_blocks_resume_before_any_upstream_request(port
             assert audit.await_args.args[-2:] == ("deny", "user_revoked")
     finally:
         CURRENT_IDENTITY.reset(identity)
+
+
+async def test_recall_stopped_turn_removes_history_and_checkpoint(portal):
+    client, workspace, chat, scope = portal
+    earlier = StateProxy()
+    earlier.data = {"state": AgentState(context=[
+        Msg(name="alice", role="user", content=[TextBlock(text="保留这个较早的问题")]),
+        Msg(name="assistant", role="assistant", content=[TextBlock(text="保留这条较早的回复")]),
+    ]).model_dump(mode="json")}
+    await workspace.session.save_session_state(chat.session_id, chat.user_id, chat.channel, agent=earlier)
+    async with client:
+        marker = await stop_query(client, workspace, "撤回这条问题", tool=False)
+        params = {"chat_id": chat.id, "turn_id": marker["id"]}
+        assert not (await client.get(f"/chats/{chat.id}")).json()["portal_turn"]["recalled"]
+        owner = scope["value"]
+        scope["value"] = PortalChatScope("b" * 32)
+        assert (await client.post("/console/chat/recall", json=params)).status_code == 404
+        scope["value"] = owner
+        assert (await client.post("/console/chat/recall", json={**params, "turn_id": "0" * 32})).status_code == 409
+        assert (await client.post("/console/chat/recall", json=params)).json() == {"recalled": True}
+        assert (await client.post("/console/chat/recall", json=params)).status_code == 200
+        history = (await client.get(f"/chats/{chat.id}")).json()
+        assert history_text(history) == [("user", "保留这个较早的问题"), ("assistant", "保留这条较早的回复")]
+        assert history["stopped_turn"] is None
+        assert history["portal_turn"]["recalled"]
+        latest = await client.get("/console/chat/recall", params={"chat_id": chat.id})
+        assert latest.json()["portal_turn"]["id"] == marker["id"]
+        rejected = await client.post("/console/chat/continue", json={
+            **params, "question": "撤回这条问题", "draft": DRAFT,
+        })
+        assert "已更新" in "".join(json.loads(line[6:]).get("error", "") for line in rejected.text.splitlines() if line.startswith("data: "))
+
+
+async def test_recall_during_generation_waits_for_stop_persistence(portal):
+    client, workspace, chat, _ = portal
+    async def patch_chat(_chat_id, patch):
+        chat.name = patch.name
+
+    workspace.chat_manager.patch_chat = AsyncMock(side_effect=patch_chat)
+    workspace.chat_manager.list_chats = AsyncMock(return_value=[chat])
+    running = asyncio.Event()
+
+    async def stream(_):
+        yield sse({"object": "message", "id": "reply", "role": "assistant", "type": "message"})
+        yield sse({"object": "content", "msg_id": "reply", "type": "text", "delta": True, "text": DRAFT})
+        running.set()
+        await asyncio.Future()
+
+    workspace.channel_manager = SimpleNamespace(get_channel=AsyncMock(return_value=SimpleNamespace(
+        stream_one=stream, resolve_session_id=lambda **kw: kw["channel_meta"]["session_id"],
+    )))
+    async with client:
+        response_task = asyncio.create_task(client.post("/console/chat", json={
+            "session_id": "session-a", "input": [{"role": "user", "type": "message", "content": [
+                {"type": "text", "text": "误发内容"},
+            ]}],
+        }))
+        try:
+            await asyncio.wait_for(running.wait(), 5)
+            turn = (await client.get(f"/chats/{chat.id}")).json()["portal_turn"]
+            stale = await client.post("/console/chat/recall", json={"chat_id": chat.id, "turn_id": "0" * 32})
+            assert stale.status_code == 409
+            assert not response_task.done()
+            recall = await client.post("/console/chat/recall", json={"chat_id": chat.id, "turn_id": turn["id"]})
+            assert recall.status_code == 200
+            events = (await asyncio.wait_for(response_task, 5)).text
+            assert '"object": "portal_chat_turn"' in events
+            history = (await client.get(f"/chats/{chat.id}")).json()
+            assert history["messages"] == [] and history["stopped_turn"] is None
+            assert history["portal_turn"]["recalled"]
+            workspace.chat_manager.patch_chat.assert_awaited_once()
+            assert (await client.get("/chats")).json() == []
+        finally:
+            if not response_task.done():
+                await workspace.task_tracker.stop_run(chat.id)
+                await response_task
+
+
+async def test_completed_turn_can_be_recalled_after_runtime_session_save(portal):
+    client, workspace, chat, _ = portal
+    earlier = StateProxy()
+    prior = Msg(name="assistant", role="assistant", content=[TextBlock(text="早先的回复")])
+    earlier.data = {"state": AgentState(context=[prior], summary="保留原有摘要").model_dump(mode="json")}
+    await workspace.session.save_session_state(chat.session_id, chat.user_id, chat.channel, agent=earlier)
+    turn_id = "a" * 32
+    await workspace.session.begin_portal_turn(chat, turn_id)
+    current = StateProxy()
+    current.data = {"state": AgentState(context=[
+        Msg(id=turn_id, name="user", role="user", content=[TextBlock(text="已完成但要撤回")]),
+        Msg(name="assistant", role="assistant", content=[TextBlock(text="不保留这条回复")]),
+    ], summary="不要保留被撤回内容的摘要").model_dump(mode="json")}
+    await workspace.session.save_session_state(chat.session_id, chat.user_id, chat.channel, agent=current)
+    async with client:
+        params = {"chat_id": chat.id, "turn_id": turn_id}
+        assert (await client.post("/console/chat/recall", json=params)).status_code == 200
+        saved = await workspace.session.get_session_state_dict(chat.session_id, chat.user_id, chat.channel)
+        assert saved["agent"] == earlier.data
+        await workspace.session.begin_portal_turn(chat, "b" * 32)
+        assert (await client.post("/console/chat/recall", json=params)).status_code == 409

@@ -329,6 +329,21 @@ class MCPConfigService:
         else:
             await self._driver_config.credential_store.delete(credential.ref)
         await self._driver_config.save_card(card)
+        from ...governance.component_events import record
+
+        record(
+            "mcp",
+            client_key,
+            self._workspace.workspace_dir.name,
+            {
+                "credentials": (
+                    existing_credential.secrets if existing_credential else {}
+                )
+            },
+            {"credentials": credential.secrets},
+            supply=True,
+            visible_fields={"credentials"},
+        )
         return await self.build_info_from_card(card)
 
     async def toggle_client(self, client_key: str) -> MCPClientInfo:

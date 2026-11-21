@@ -1,10 +1,15 @@
 import { useState } from "react";
-import { Button, Card, Col, Descriptions, Form, Input, Row, Select, Space, Tabs, Tag, Typography } from "antd";
+import {
+  ApartmentOutlined, AuditOutlined, BranchesOutlined, DatabaseOutlined, DeploymentUnitOutlined,
+  FileSearchOutlined, LockOutlined, SafetyCertificateOutlined, SettingOutlined, SwapOutlined,
+} from "@ant-design/icons";
+import { Button, Card, Collapse, ConfigProvider, Descriptions, Form, Input, Select, Space, Tabs, Tag, theme, type TabsProps } from "antd";
+import { SensitiveDataGovernancePanel } from "./sensitiveDataGovernancePanel";
 import { ComponentAdmissionPanel } from "./componentAdmissionPanel";
 import { ComponentInventory, type ComponentRow } from "./componentInventory";
-import { field, Ledger, optional, getLedgerRows, governanceAccount, type RecordRow, type Values } from "./governanceLedger";
-import { configFields, localAccessFields, scanFields, supplyFields, validateConfig, validateScan, validateSupply } from "./governanceForms";
-import { previewSensitiveData, reviewExpired, syntheticData } from "./governanceFacts";
+import { field, Ledger, optional, getLedgerRows, governanceAccount, type Values } from "./governanceLedger";
+import { ComponentChangePanel, ComponentDataFlows, ComponentScanPanel, LocalAccessPanel } from "./componentGovernancePanels";
+import { previewSensitiveData, syntheticData } from "./governanceFacts";
 import "./portalGovernance.css";
 
 const scopeFields = [field("component", "组件名称"), field("workspace", "覆盖范围 / 工作区"),
@@ -51,11 +56,15 @@ function SensitivePolicy({ scope }: { scope: string }) {
         <Button type="primary" htmlType="submit" disabled={!scope}>应用到示例</Button>{notice && <span className="gov-inline-status" role="status">{notice}</span>}
       </Form>
     </Card>
-    <Row gutter={[12, 12]}>
-      <Col xs={24} lg={12}><Card size="small" title="示例输入"><pre className="gov-preview">{JSON.stringify(syntheticData, null, 2)}</pre></Card></Col>
-      <Col xs={24} lg={12}><Card size="small" title="脱敏预览"><pre className="gov-preview">{JSON.stringify(example, null, 2)}</pre></Card></Col>
-    </Row>
-    <Descriptions size="small" bordered title="此次规则预览" column={{ xs: 1, sm: 2, md: 2 }} items={[
+    <div className="gov-preview-grid">
+      <Card size="small" title="示例输入" extra={<Tag>合成数据</Tag>}>
+        <pre className="gov-preview">{JSON.stringify(syntheticData, null, 2)}</pre>
+      </Card>
+      <Card size="small" title="脱敏预览">
+        <pre className="gov-preview">{JSON.stringify(example, null, 2)}</pre>
+      </Card>
+    </div>
+    <Descriptions className="gov-policy-result" size="small" bordered title="此次规则预览" column={1} items={[
       { key: "collect", label: "批量采集", children: `${profile.range} → ${sampleDecision}` },
       { key: "retention", label: "留存与处置", children: `${profile.retention} 天 · ${profile.deletion}` },
       { key: "logs", label: "日志 / 缓存 / 调试", children: <>{profile.logs}<br /><code>{'{ "event": "DEMO-POLICY-001", "payload": "不写入" }'}</code></> },
@@ -63,52 +72,86 @@ function SensitivePolicy({ scope }: { scope: string }) {
   </Space>;
 }
 
-function scanBadge(row: RecordRow) {
-  const { reviewBy, result, risk } = row.values;
-  return <Space wrap size={4}>
-    {reviewExpired(reviewBy) && <Tag color="red">复核已过期</Tag>}
-    {result === "待扫描" && <Tag>待扫描</Tag>}
-    {(risk === "高" || risk === "严重") && <Tag color="red">{risk}风险</Tag>}
-    {!reviewBy && <Tag>未定复核期</Tag>}
-  </Space>;
+function governanceTab(key: string, label: string, Icon: typeof ApartmentOutlined, description: string, content: React.ReactNode) {
+  return {
+    key, label, icon: <Icon aria-hidden="true" />,
+    children: <div className="gov-tab-content">
+      <header className="gov-section-intro">
+        <h3>{label}</h3>
+        <p>{description}</p>
+      </header>
+      {content}
+    </div>,
+  };
 }
 
-export function GovernanceSettings() {
+export function GovernanceSettings({ pageTheme = "light" }: { pageTheme?: "light" | "dark" }) {
   const scope = governanceAccount();
   const [tab, setTab] = useState("inventory");
   const [seed, setSeed] = useState<{ id: string; target: string; values: Values } | null>(null);
+  const selectTab = (key: string) => { setTab(key); setSeed(null); };
   const register = (row: ComponentRow, target: "supply" | "scan" | "scope") => {
-    const version = row.version === "—" ? "" : row.version;
-    const values: Values = target === "supply" ? { component: row.name, kind: row.kind, from: version,
-      status: "待核验", origin: "待核对", scan: "待扫描", compatibility: "待检查", review: "待审核" }
-      : target === "scan" ? { component: row.name, version: row.source === "Portal package.json" ? "" : version, result: "待扫描", disposition: "待评估", risk: "待分级" }
-      : { component: row.name, workspace: row.source, access: "待核查", risk: "待评估", data: row.data, componentId: row.key };
+    if (target !== "scope") {
+      selectTab(target);
+      return;
+    }
+    const values: Values = { component: row.name, workspace: row.source, access: "待核查", risk: "待评估", data: row.data, componentId: row.key };
     setSeed({ id: `${row.key}:${Date.now()}`, target, values });
     setTab(target);
   };
   const recordProps = (id: string) => ({ id, scope, initial: seed?.target === id ? seed.values : undefined,
     seedKey: seed?.target === id ? seed.id : undefined, onSaved: () => setSeed(null) });
   const registeredScope = new Map(getLedgerRows(scope, "scope").filter((row) => row.values.componentId).reverse().map((row) => [row.values.componentId, row.values]));
-  return <section className="gov-page">
-    <Typography.Title level={3}>组件治理与策略</Typography.Title>
-    <Tabs activeKey={tab} onChange={(key) => { setTab(key); setSeed(null); }} destroyOnHidden items={[
-      { key: "inventory", label: "组件清单", children: <ComponentInventory onRegister={register} registeredScope={registeredScope} /> },
-      { key: "admission", label: "调用准入", children: <ComponentAdmissionPanel /> },
-      { key: "scope", label: "权限范围台账", children: <Ledger {...recordProps("scope")} fields={scopeFields} /> },
-      { key: "supply", label: "供应链变更", children: <Ledger {...recordProps("supply")} fields={supplyFields} validate={validateSupply} /> },
-      { key: "scan", label: "扫描与处置", children: <Ledger {...recordProps("scan")} fields={scanFields} validate={validateScan} adorn={scanBadge} actionLabel="登记扫描记录" /> },
-      { key: "sensitive", label: "敏感数据", children: <SensitivePolicy scope={scope} /> },
-      { key: "local", label: "本地部署策略", children: <Space orientation="vertical" className="gov-stack">
-        <Card size="small" title="本地部署访问模板" extra={<Tag>81：端侧部署不涉及</Tag>}>
-          <Descriptions size="small" bordered column={1} items={[
-            { key: "model", label: "模型文件", children: "只向推理服务账号开放只读权限；模型更新由独立发布流程处理。" },
-            { key: "cache", label: "推理缓存", children: "限制为本服务读写，按部署策略清理，避免共享目录与原始敏感数据落盘。" },
-            { key: "api", label: "本地接口", children: "优先绑定回环或专用监听地址；需要跨服务访问时核验身份和调用范围。" },
-          ]} />
-        </Card>
-        <Ledger {...recordProps("local")} fields={localAccessFields} />
-      </Space> },
-      { key: "config", label: "配置变更记录", children: <Ledger {...recordProps("config")} fields={configFields} validate={validateConfig} /> },
-    ]} />
-  </section>;
+  const items: TabsProps["items"] = [
+    governanceTab("inventory", "组件清单", ApartmentOutlined, "按工作区查看组件来源、调用边界和风险登记。",
+      <ComponentInventory onRegister={register} registeredScope={registeredScope} />),
+    governanceTab("admission", "调用准入", SafetyCertificateOutlined, "查看运行策略和调用边界，按需校验 MCP 准入规则。",
+      <ComponentAdmissionPanel onViewScope={() => selectTab("scope")} />),
+    governanceTab("scope", "权限范围台账", LockOutlined, "登记组件的调用权限、可访问数据和风险依据。",
+      <Ledger {...recordProps("scope")} fields={scopeFields} />),
+    governanceTab("supply", "供应链变更", SwapOutlined, "401-3.3 · 查看模型、技能、MCP 和受管插件的实际变更。",
+      <ComponentChangePanel key="supply" view="supply" />),
+    governanceTab("flow", "数据流转", BranchesOutlined, "401-3.4 · 查看组件之间的数据类型、方向、处理方式及追溯入口。",
+      <ComponentDataFlows />),
+    governanceTab("scan", "扫描与处置", FileSearchOutlined, "401-3.5 · 执行当前部署检查，查看每项结果和建议处置。",
+      <ComponentScanPanel />),
+    governanceTab("sensitive", "敏感数据治理", DatabaseOutlined, "查看敏感数据分类、场景覆盖与授权边界，并运行可审计的合成样例自检。",
+      <>
+        <SensitiveDataGovernancePanel key={scope} />
+        <Collapse items={[{ key: "preview", label: "采集、留存与删除规则示例（不生效 · 402-2.6）",
+          children: <SensitivePolicy scope={scope} /> }]} />
+      </>),
+    governanceTab("local", "本地部署策略", DeploymentUnitOutlined, "402-3.3 · 配置受管本地推理的模型文件、缓存及接口访问。",
+      <LocalAccessPanel />),
+    governanceTab("config", "配置变更记录", SettingOutlined, "403.2 · 查看实际配置写入的主体、时间和变更摘要。",
+      <ComponentChangePanel key="config" view="config" />),
+  ];
+  const dark = pageTheme === "dark";
+  return <ConfigProvider theme={{
+    algorithm: dark ? theme.darkAlgorithm : theme.defaultAlgorithm,
+    token: {
+      colorPrimary: dark ? "#79aaff" : "#2563eb",
+      borderRadius: 8,
+      ...(dark ? { colorBgContainer: "#141b2d", colorBgElevated: "#192337", colorBorderSecondary: "#263550" } : {}),
+    },
+    components: { Table: { cellPaddingBlockSM: 12, cellPaddingInlineSM: 14 } },
+  }}>
+    <section className="gov-workbench" aria-label="组件治理与策略">
+      <header className="gov-masthead">
+        <span className="gov-masthead-icon"><AuditOutlined aria-hidden="true" /></span>
+        <div className="gov-masthead-copy">
+          <span className="gov-eyebrow">安全治理</span>
+          <h2>组件治理与策略</h2>
+          <p>从组件发现到风险复核，集中查看准入策略与治理记录。</p>
+        </div>
+      </header>
+      <div className="gov-compact-nav">
+        <label htmlFor="gov-section-select">治理模块</label>
+        <Select id="gov-section-select" value={tab} onChange={selectTab}
+          options={items.map(({ key, label }) => ({ value: key, label }))} />
+      </div>
+      <Tabs className="gov-tabs" activeKey={tab} tabBarGutter={6} more={{ trigger: "click" }} animated={false}
+        onChange={selectTab} destroyOnHidden items={items} />
+    </section>
+  </ConfigProvider>;
 }

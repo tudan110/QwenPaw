@@ -36,6 +36,8 @@ class _RunState:
     stop_requested: bool = False
     outcome: str = "completed"
     portal_chat: bool = False
+    hold_output: bool = False
+    portal_turn: tuple[str, str] | None = None
     stop_cause: str | None = None
     checkpoint: dict | None = None
 
@@ -48,7 +50,7 @@ class _RunState:
         if self.outcome not in {"cancelled", "timeout"} or not self.stop_cause:
             return None
         data = {"object": "portal_chat_stopped", "cause": self.stop_cause}
-        if self.checkpoint is not None:
+        if self.checkpoint is not None and not self.hold_output:
             data["checkpoint"] = self.checkpoint
         return f"data: {json.dumps(data)}\n\n"
 
@@ -213,7 +215,7 @@ class TaskTracker:
         """
         async with self._lock:
             state = self._runs.get(run_key)
-            if state is None or state.task.done():
+            if state is None or state.task.done() or state.hold_output:
                 return None
             q: asyncio.Queue = asyncio.Queue()
             for sse in state.buffer:
@@ -270,12 +272,28 @@ class TaskTracker:
         _, pending = await asyncio.wait({state.task}, timeout=timeout)
         return ("accepted", None) if pending else (state.stop_status(), state.checkpoint)
 
-    async def request_portal_stops(self) -> dict[str, _RunState]:
+    async def count_active_portal_runs(self) -> int:
+        async with self._lock:
+            return sum(run.portal_chat and not run.task.done() for run in self._runs.values())
+
+    async def request_portal_stops(self, *, hold_output: bool = False) -> dict[str, _RunState]:
         """Cancel only registered Portal streams and return their exact runs."""
         async with self._lock:
             runs = {}
             for key, run in self._runs.items():
-                if not run.portal_chat or run.task.done() or run.finish_time:
+                if not run.portal_chat or run.task.done():
+                    continue
+                if hold_output:
+                    run.hold_output = True
+                    # Discard not-yet-consumed SSE events, not the checkpoint
+                    # input buffer. Anything already sent is out of our control.
+                    for queue in run.queues:
+                        while not queue.empty():
+                            queue.get_nowait()
+                if run.finish_time:
+                    # The run is already unwinding. Observe checkpoint
+                    # persistence without interrupting it a second time.
+                    runs[key] = run
                     continue
                 run.stop_cause = "admin"
                 if not run.stop_requested:
@@ -293,6 +311,8 @@ class TaskTracker:
         join_existing: bool = True,
         portal_timeout: float | None = None,
         on_stop: Callable[[list[str]], Coroutine[Any, Any, dict | None]] | None = None,
+        portal_turn: tuple[str, str] | None = None,
+        before_start: Callable[[], Coroutine[Any, Any, str]] | None = None,
     ) -> tuple[asyncio.Queue | None, bool]:
         """Attach to an existing run or start a new one.
 
@@ -310,12 +330,16 @@ class TaskTracker:
                 state.queues.append(q)
                 return q, False
 
+            initial_event = await before_start() if before_start else None
             my_queue: asyncio.Queue = asyncio.Queue()
+            if initial_event is not None:
+                my_queue.put_nowait(initial_event)
             run = _RunState(
                 task=asyncio.Future(),  # placeholder, replaced below
                 queues=[my_queue],
-                buffer=[],
+                buffer=[initial_event] if initial_event is not None else [],
                 portal_chat=portal_timeout is not None,
+                portal_turn=portal_turn,
             )
             self._runs[run_key] = run
 
@@ -343,6 +367,11 @@ class TaskTracker:
                                 if tracker is None:
                                     return
                                 async with tracker.lock:
+                                    if run.hold_output:
+                                        # A dependency may swallow cancellation;
+                                        # close the stream without publishing more.
+                                        run.outcome = "cancelled"
+                                        break
                                     run.buffer.append(sse)
                                     for q in run.queues:
                                         q.put_nowait(sse)
@@ -365,8 +394,9 @@ class TaskTracker:
                     if tracker is not None:
                         async with tracker.lock:
                             run.buffer.append(err_sse)
-                            for q in run.queues:
-                                q.put_nowait(err_sse)
+                            if not run.hold_output:
+                                for q in run.queues:
+                                    q.put_nowait(err_sse)
                 finally:
                     run.finish_time = datetime.now(timezone.utc)
                     if on_stop is not None and run.outcome in {"cancelled", "timeout"}:

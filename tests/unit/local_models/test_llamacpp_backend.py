@@ -871,6 +871,11 @@ async def test_setup_server_falls_back_on_windows_not_implemented(
         fake_start_command_async,
     )
     monkeypatch.setattr(downloader, "server_ready", fake_server_ready)
+    monkeypatch.setattr(downloader_module, "protect_model_file", lambda *_: None)
+    monkeypatch.setattr(downloader, "_verify_private_api", fake_server_ready)
+    monkeypatch.setattr(downloader_module, "set_runtime", lambda *_: None)
+    monkeypatch.setattr(downloader_module.secrets, "token_urlsafe", lambda _: "test-runtime-key")
+    monkeypatch.setattr(downloader_module.os, "environ", {"TEST_SECRET": "must not be passed"})
 
     setup_result = await downloader.setup_server(model_path, "demo-model")
     await asyncio.sleep(0)
@@ -913,14 +918,14 @@ async def test_setup_server_falls_back_on_windows_not_implemented(
                 str(model_path.resolve()),
                 "--alias",
                 "demo-model",
-                "--log-file",
-                str(DEFAULT_LOCAL_PROVIDER_DIR / "logs" / "llama-server.log"),
+                "--log-disable",
                 "--gpu-layers",
                 "auto",
             ],
             {
-                "stdout": downloader_module.asyncio.subprocess.PIPE,
-                "stderr": downloader_module.asyncio.subprocess.STDOUT,
+                "stdout": downloader_module.asyncio.subprocess.DEVNULL,
+                "stderr": downloader_module.asyncio.subprocess.DEVNULL,
+                "env": {"LLAMA_API_KEY": "test-runtime-key"},
             },
         ),
     ]
@@ -1029,6 +1034,11 @@ async def test_setup_server_passes_mmproj_argument(
         fake_start_command_async,
     )
     monkeypatch.setattr(downloader, "server_ready", fake_server_ready)
+    monkeypatch.setattr(downloader_module, "protect_model_file", lambda *_: None)
+    monkeypatch.setattr(downloader, "_verify_private_api", fake_server_ready)
+    monkeypatch.setattr(downloader_module, "set_runtime", lambda *_: None)
+    monkeypatch.setattr(downloader_module.secrets, "token_urlsafe", lambda _: "test-runtime-key")
+    monkeypatch.setattr(downloader_module.os, "environ", {"TEST_SECRET": "must not be passed"})
 
     setup_result = await downloader.setup_server(model_dir, "vision-model")
     await asyncio.sleep(0)
@@ -1065,18 +1075,16 @@ async def test_setup_server_passes_mmproj_argument(
                 str(model_file.resolve()),
                 "--alias",
                 "vision-model",
-                "--log-file",
-                str(
-                    DEFAULT_LOCAL_PROVIDER_DIR / "logs" / "llama-server.log",
-                ),
+                "--log-disable",
                 "--gpu-layers",
                 "auto",
                 "--mmproj",
                 str(mmproj_file.resolve()),
             ],
             {
-                "stdout": downloader_module.asyncio.subprocess.PIPE,
-                "stderr": downloader_module.asyncio.subprocess.STDOUT,
+                "stdout": downloader_module.asyncio.subprocess.DEVNULL,
+                "stderr": downloader_module.asyncio.subprocess.DEVNULL,
+                "env": {"LLAMA_API_KEY": "test-runtime-key"},
                 "start_new_session": True,
             },
         ),
@@ -1136,6 +1144,11 @@ async def test_setup_server_uses_requested_port(
         fake_start_command_async,
     )
     monkeypatch.setattr(downloader, "server_ready", fake_server_ready)
+    monkeypatch.setattr(downloader_module, "protect_model_file", lambda *_: None)
+    monkeypatch.setattr(downloader, "_verify_private_api", fake_server_ready)
+    monkeypatch.setattr(downloader_module, "set_runtime", lambda *_: None)
+    monkeypatch.setattr(downloader_module.secrets, "token_urlsafe", lambda _: "test-runtime-key")
+    monkeypatch.setattr(downloader_module.os, "environ", {"TEST_SECRET": "must not be passed"})
 
     setup_result = await downloader.setup_server(
         model_path,
@@ -1157,14 +1170,14 @@ async def test_setup_server_uses_requested_port(
                 str(model_path.resolve()),
                 "--alias",
                 "demo-model",
-                "--log-file",
-                str(DEFAULT_LOCAL_PROVIDER_DIR / "logs" / "llama-server.log"),
+                "--log-disable",
                 "--gpu-layers",
                 "auto",
             ],
             {
-                "stdout": downloader_module.asyncio.subprocess.PIPE,
-                "stderr": downloader_module.asyncio.subprocess.STDOUT,
+                "stdout": downloader_module.asyncio.subprocess.DEVNULL,
+                "stderr": downloader_module.asyncio.subprocess.DEVNULL,
+                "env": {"LLAMA_API_KEY": "test-runtime-key"},
                 "start_new_session": True,
             },
         ),

@@ -42,6 +42,10 @@ def _check_path(path: Path) -> str | None:
     The sensitive-file guard is **always** enforced.
     """
     resolved = path.resolve()
+    from ...local_models.resource_policy import protected_evidence_or_model_path
+
+    if protected_evidence_or_model_path(resolved):
+        return "SENSITIVE_FILE_BLOCKED"
     from ...extensions.security.execution_policy import check_path, enabled
 
     if enabled():

@@ -12,17 +12,6 @@ export interface ProtectionEvidence {
   };
   mcp_boundary: { production_guards: boolean; declared_host_count: number };
 }
-export interface RedactionCheck {
-  checked_at: string;
-  active: boolean;
-  results: {
-    label: string;
-    input: string;
-    output: string;
-    hit_ids: string[];
-    changed: boolean;
-  }[];
-}
 export interface AuditRecord {
   rowid: number;
   ts: number;
@@ -45,10 +34,6 @@ export interface AuditPage {
 export const securityEvidenceApi = {
   protection: () =>
     request<ProtectionEvidence>("/security/evidence/protection"),
-  checkRedaction: () =>
-    request<RedactionCheck>("/security/evidence/redaction-check", {
-      method: "POST",
-    }),
   audit: (filters: Record<string, string | number>) =>
     request<AuditPage>(
       `/security/evidence/audit?${new URLSearchParams(

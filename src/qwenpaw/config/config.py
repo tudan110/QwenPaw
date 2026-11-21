@@ -2505,15 +2505,46 @@ def save_agent_config(
     workspace_dir = Path(agent_ref.workspace_dir).expanduser()
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
+    from ..governance.component_events import (
+        record,
+        record_default_model,
+        snapshot,
+    )
+
     agent_config_path = workspace_dir / "agent.json"
+    before = snapshot(agent_config_path)
+    data = agent_config.model_dump(exclude_none=True)
 
     with open(agent_config_path, "w", encoding="utf-8") as f:
         json.dump(
-            agent_config.model_dump(exclude_none=True),
+            data,
             f,
             ensure_ascii=False,
             indent=2,
         )
+
+    old_model = (before or {}).pop("active_model", None)
+    new_model = data.pop("active_model", None)
+    record_default_model(agent_id, old_model, new_model)
+    record(
+        "config",
+        "工作区配置",
+        agent_id,
+        before,
+        data,
+        visible_fields={
+            "security",
+            "llm_routing",
+            "running",
+            "tools",
+            "system_prompt_files",
+            "approval_level",
+            "channels",
+            "mcp",
+            "acp",
+            "coding_mode",
+        },
+    )
 
     # Invalidate cache after saving
     with _agent_config_lock:

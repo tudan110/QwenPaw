@@ -6,7 +6,7 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from qwenpaw.constant import WORKING_DIR
 from qwenpaw.extensions.runtime_data_paths import (
@@ -745,3 +745,19 @@ def reset_zombie_analyzing_records(
             return count
         finally:
             conn.close()
+
+
+def filter_alarm_records(
+    records: Iterable[dict], status: str = "", search: str = "",
+) -> list[dict]:
+    """Use the same selection for registry browsing and export."""
+    statuses = {value.strip() for value in status.split(",") if value.strip()}
+    term = search.strip().lower()
+    keys = ("title", "deviceName", "manageIp", "alarmId", "resId")
+    rows = [row for row in records
+            if (not statuses or row.get("status") in statuses)
+            and (not term or any(term in str(row.get(key, "")).lower() for key in keys))]
+    return sorted(rows, key=lambda row: (
+        row.get("eventLastTime") or "", row.get("eventTime") or "",
+        row.get("handledAt") or row.get("takenOverAt") or row.get("updatedAt") or "",
+    ), reverse=True)

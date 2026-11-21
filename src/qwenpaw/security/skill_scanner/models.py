@@ -175,6 +175,8 @@ class ScanResult:
     scan_duration_seconds: float = 0.0
     analyzers_used: list[str] = field(default_factory=list)
     analyzers_failed: list[dict[str, str]] = field(default_factory=list)
+    scannable_file_count: int = 0
+    coverage_limited: bool = False
     timestamp: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc),
     )

@@ -941,6 +941,11 @@ class PluginLoader:
                 f"directory ({install_dir}). Refusing to install.",
             )
 
+        from ..governance import component_events
+
+        old_manifest = component_events.snapshot(target_dir / "plugin.json")
+        old_version = old_manifest.get("version") if old_manifest else None
+
         # Copy files when source is not already the target
         if source_path != target_dir:
             if target_dir.exists():
@@ -962,7 +967,15 @@ class PluginLoader:
         # Re-read manifest from the installed location so that
         # source_path in the record points to the correct directory
         installed_manifest = self._load_manifest(target_dir / "plugin.json")
-        return await self.load_plugin(installed_manifest, target_dir, config)
+        loaded = await self.load_plugin(installed_manifest, target_dir, config)
+        version = component_events.label(installed_manifest.version)
+        before = {"version": component_events.label(old_version)} if old_manifest else None
+        after = {"version": version}
+        component_events.record(
+            "plugin", plugin_id, "全局", before, {**after, "installed": True},
+            supply=True, summaries=(before, after), visible_fields={"version", "installed"},
+        )
+        return loaded
 
     async def unload_plugin(
         self,
@@ -1084,6 +1097,16 @@ class PluginLoader:
                 logger.info(
                     f"Deleted plugin files at {source_path}",
                 )
+
+        from ..governance import component_events
+
+        version = component_events.label(record.manifest.version)
+        before = {"version": version, "enabled": True}
+        after = None if delete_files else {"version": version, "enabled": False}
+        component_events.record(
+            "plugin", plugin_id, "全局", before, after, supply=True,
+            summaries=(before, after), visible_fields={"version", "enabled"},
+        )
 
         logger.info(f"Unloaded plugin '{plugin_id}'")
 

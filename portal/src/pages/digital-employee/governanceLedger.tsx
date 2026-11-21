@@ -1,6 +1,7 @@
+import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { useMemo, useState } from "react";
 import { getSession } from "../../auth/ssoSession";
-import { Alert, Button, Descriptions, Empty, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
+import { Alert, Button, Descriptions, Empty, Form, Input, Modal, Select, Space, Table, Typography } from "antd";
 
 export type Values = Record<string, string>;
 export interface Field {
@@ -95,25 +96,41 @@ export function Ledger({ id, scope, fields, initial, seedKey, adorn, validate, o
   // A handoff from a selected component or alert is user-initiated. Ignore
   // previous seeds when this tab next mounts; offer the prefilled form explicitly.
   const prefilled = Boolean(seedKey && seedKey !== lastSeed);
-  return <Space orientation="vertical" size="middle" className="gov-stack">
+  const selectedName = initial?.component || initial?.name;
+  return <div className="gov-flow">
     {(store.error || !scope) && <Alert type="warning" title={store.error || "无法识别当前账号，台账编辑不可用。"} showIcon />}
-    <Space wrap>
-      <Button type="primary" disabled={Boolean(store.error) || !scope} onClick={() => {
-        if (seedKey) setLastSeed(seedKey);
-        open((!seedKey || prefilled ? initial : undefined) ?? {});
-      }}>{prefilled ? "按所选条目登记" : actionLabel}</Button>
-      <Input.Search allowClear placeholder="搜索记录" onChange={(e) => setQuery(e.target.value)} value={query} />
-      <Tag color="blue" title="当前账号在本浏览器中的记录">{visible.length} 条记录</Tag>
-    </Space>
-    <Table<RecordRow> size="small" rowKey="id" dataSource={visible} pagination={{ pageSize: 7, hideOnSinglePage: true }}
-      scroll={{ x: 820 }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query ? "没有匹配的记录" : "还没有登记记录"} /> }}
-      columns={[
-        ...fields.slice(0, 4).map((f) => ({ title: f.label, ellipsis: true, render: (_: unknown, row: RecordRow) => row.values[f.key] || "—" })),
-        ...(adorn ? [{ title: "核查标注", render: (_: unknown, row: RecordRow) => adorn(row) }] : []),
-        { title: "最近登记", render: (_, row) => fmtDateTime(row.time) },
-        { title: "操作", render: (_, row) => <Space><Button size="small" onClick={() => setHistory(row)}>详情</Button><Button size="small" disabled={!scope || Boolean(store.error)} onClick={() => open(row.values, row)}>更新</Button></Space> },
-      ]} />
-    <Modal title={editor?.row ? "更新登记记录" : "新增登记记录"} open={!!editor} onCancel={() => setEditor(null)}
+    <div className="gov-surface">
+      <div className="gov-toolbar gov-ledger-toolbar">
+        <div className="gov-ledger-status">
+          <strong>{prefilled && selectedName ? `所选条目：${selectedName}` : `${visible.length} 条记录`}</strong>
+          <span className="gov-secondary">{prefilled ? "可将所选条目信息带入登记表单" : "记录保存在当前账号的此浏览器中"}</span>
+        </div>
+        <div className="gov-toolbar-actions">
+          <Input aria-label="搜索记录" placeholder="搜索记录" prefix={<SearchOutlined aria-hidden="true" />}
+            allowClear onChange={(event) => setQuery(event.target.value)} value={query} />
+          <Button type="primary" icon={<PlusOutlined />} disabled={Boolean(store.error) || !scope} onClick={() => {
+            if (seedKey) setLastSeed(seedKey);
+            open((!seedKey || prefilled ? initial : undefined) ?? {});
+          }}>{prefilled ? "按所选条目登记" : actionLabel}</Button>
+        </div>
+      </div>
+      <Table<RecordRow> className="gov-table" size="small" tableLayout="fixed" rowKey="id" dataSource={visible}
+        pagination={{ pageSize: 7, hideOnSinglePage: true, size: "small" }}
+        scroll={visible.length ? { x: adorn ? 1032 : 896 } : undefined}
+        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query ? "没有匹配的记录" : "还没有登记记录"} /> }}
+        columns={[
+          ...fields.slice(0, 4).map((f, index) => ({ title: f.label, key: f.key, width: index === 0 ? 174 : 134,
+            render: (_: unknown, row: RecordRow) => row.values[f.key] || "—" })),
+          ...(adorn ? [{ title: "核查标注", key: "review", width: 136, render: (_: unknown, row: RecordRow) => adorn(row) }] : []),
+          { title: "最近登记", key: "time", width: 180, render: (_, row) => fmtDateTime(row.time) },
+          { title: "操作", key: "actions", width: 140, align: "center", fixed: visible.length ? "right" : undefined,
+            render: (_, row) => <Space size={6}>
+              <Button size="small" onClick={() => setHistory(row)}>详情</Button>
+              <Button size="small" disabled={!scope || Boolean(store.error)} onClick={() => open(row.values, row)}>更新</Button>
+            </Space> },
+        ]} />
+    </div>
+    <Modal className="gov-modal" title={editor?.row ? "更新登记记录" : "新增登记记录"} open={!!editor} onCancel={() => setEditor(null)}
       forceRender width={760} okText="保存登记" cancelText="取消" onOk={() => form.submit()}>
       <Form<Values> form={form} layout="vertical" onFinish={save}>
         <div className="gov-form-grid">
@@ -128,11 +145,11 @@ export function Ledger({ id, scope, fields, initial, seedKey, adorn, validate, o
       </Form>
       {error && <Alert type="error" showIcon title={error} />}
     </Modal>
-    <Modal title="登记详情及历次修订" open={!!history} onCancel={() => setHistory(null)} footer={null} width={850}>
+    <Modal className="gov-modal" title="登记详情及历次修订" open={!!history} onCancel={() => setHistory(null)} footer={null} width={850}>
       {history && [history, ...history.history].map((item, index) => <div key={`${item.time}:${index}`} className="gov-revision">
         <Typography.Text strong>{index === 0 ? "当前记录" : `历史修订 ${index}`} · {fmtDateTime(item.time)}</Typography.Text>
         <Descriptions bordered size="small" column={{ xs: 1, sm: 2, md: 2 }} items={fields.filter((f) => !f.hidden).map((f) => ({ key: f.key, label: f.label, children: item.values[f.key] || "—" }))} />
       </div>)}
     </Modal>
-  </Space>;
+  </div>;
 }

@@ -47,8 +47,11 @@ from ..extensions.api.self_monitor_api import (
     router as self_monitor_router,
 )
 from ..extensions.api.traces_backend import router as traces_router
+from ..extensions.api.component_audit_middleware import ComponentAuditMiddleware
 from ..extensions.api.delete_block_middleware import DeleteBlockMiddleware
 from ..extensions.api.sso_token_middleware import SsoTokenMiddleware
+from ..governance.activity_middleware import CriticalActivityAuditMiddleware
+from ..governance.audit import AuditLog
 from ..envs import load_envs_into_environ
 from ..providers.provider_manager import ProviderManager
 from ..local_models.manager import LocalModelManager
@@ -186,6 +189,13 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
         )
         logger.error(message, exc_info=True)
         raise RuntimeError(f"{message} Original error: {exc}") from exc
+
+    # Seal the existing audit history before accepting writes. A damaged audit
+    # store blocks audited actions but does not take down the evidence page.
+    try:
+        await asyncio.to_thread(AuditLog.get_instance)
+    except Exception:
+        logger.exception("Audit storage is not available; audited actions will fail closed")
 
     auto_register_from_env()
 
@@ -848,8 +858,10 @@ app = FastAPI(
 )
 
 # Add agent context middleware for agent-scoped routes
+app.add_middleware(ComponentAuditMiddleware)
 app.add_middleware(AgentContextMiddleware)
 
+app.add_middleware(CriticalActivityAuditMiddleware)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(SsoTokenMiddleware)
 

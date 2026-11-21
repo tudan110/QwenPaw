@@ -373,6 +373,10 @@ class FilePathToolGuardian(BaseToolGuardian):
         """
         if not abs_path:
             return False
+        from ....local_models.resource_policy import protected_evidence_or_model_path
+
+        if protected_evidence_or_model_path(Path(abs_path)):
+            return True
         if abs_path in self._sensitive_files:
             return True
         for dir_path in self._sensitive_dirs:

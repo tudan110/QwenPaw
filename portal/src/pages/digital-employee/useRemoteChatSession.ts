@@ -10,6 +10,9 @@ import {
   createChat,
   getChatTraceRecovery,
   getChatHistory,
+  getPortalChatTurn,
+  recallPortalChatTurn,
+  type PortalChatTurn,
   listChats,
   reconnectChat,
   stopChat,
@@ -158,6 +161,15 @@ export function useRemoteChatSession({
   const approvalMode = useMainChatApprovalMode(remoteAgentId, currentSessionId);
   const approvalLevelRef = useRef(approvalMode.level);
   approvalLevelRef.current = canManageAi ? approvalMode.level : null;
+  const [portalTurn, setPortalTurn] = useState<PortalChatTurn | null>(null);
+  const portalTurnRef = useRef<PortalChatTurn | null>(null);
+  const rememberPortalTurn = useCallback((turn: PortalChatTurn | null) => {
+    portalTurnRef.current = turn;
+    setPortalTurn(turn);
+  }, []);
+  const [recalling, setRecalling] = useState(false);
+  const recallPending = useRef(false);
+  const [recallError, setRecallError] = useState("");
   const [historyVisible, setHistoryVisible] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
@@ -929,12 +941,14 @@ export function useRemoteChatSession({
     const chatId = currentChatIdRef.current;
     if (!action || !stopFeedback || !agentId || stopFeedback.chatId !== chatId || stopFeedback.agentId !== agentId
       || action.username !== currentUsername() || streamAbortRef.current || isStreamingRef.current
-      || isCreatingChatRef.current) return;
+      || isCreatingChatRef.current || recallPending.current) return;
 
     const controller = new AbortController();
     streamAbortRef.current = controller;
     activeContinuationRef.current = reply || null;
     activeCmdbRetryRef.current = retry || null;
+    // Reuse the existing reply and its live rendering path for every SSE snapshot.
+    activeAssistantMessageIdRef.current = reply?.messageId ?? null;
     isStreamingRef.current = true;
     currentChatStatusRef.current = "running";
     clearStopFeedback();
@@ -999,6 +1013,7 @@ export function useRemoteChatSession({
         streamAbortRef.current = null;
         activeContinuationRef.current = null;
         activeCmdbRetryRef.current = null;
+        activeAssistantMessageIdRef.current = null;
         streamResponseTextRef.current = new Map();
         isStreamingRef.current = false;
         currentChatStatusRef.current = "idle";
@@ -1344,7 +1359,7 @@ export function useRemoteChatSession({
     }
   }, [finalizePendingResponse, publishManagedStop, refreshRemoteSessions]);
 
-  const handleSelectRemoteHistory = useCallback(async (session: any) => {
+  const handleSelectRemoteHistory = useCallback(async (session: any, afterRecall = false) => {
     const nextEmployee = currentEmployeeRef.current;
     const nextRemoteAgentId = remoteAgentIdRef.current;
     if (!nextEmployee || !nextRemoteAgentId) {
@@ -1352,6 +1367,8 @@ export function useRemoteChatSession({
     }
 
     stopActiveStream(false, { silent: true });
+    rememberPortalTurn(null);
+    setRecallError("");
     const revision = stopRevision.current;
     const selection = ++historySelectionRef.current;
     const username = currentUsername();
@@ -1367,15 +1384,20 @@ export function useRemoteChatSession({
       let history = null;
       let nextMessages = null;
       let recoveredTraceReply = false;
+      let trackedTurn: PortalChatTurn | null = null;
       let enhancementSessionId = String(session?.sessionId || "").trim();
 
-      if (isPortalFaultWorkbench) {
+      if (isPortalFaultWorkbench && !afterRecall) {
         try {
-          const portalHistory = await getFaultDisposalHistory(
+          // A tracked Portal turn's canonical history takes precedence over
+          // the older fault-workbench projection after a rollback.
+          const tracked = await getPortalChatTurn(nextRemoteAgentId, session.id).catch(() => null);
+          trackedTurn = tracked?.portal_turn ?? null;
+          const portalHistory = trackedTurn?.recalled || trackedTurn?.after_recall ? null : await getFaultDisposalHistory(
             session.sessionId || "",
           ) as FaultDisposalHistory;
-          const portalMessages = portalHistory.messages || [];
-          if (portalMessages.length) {
+          const portalMessages = portalHistory?.messages || [];
+          if (portalHistory && portalMessages.length) {
             history = portalHistory;
             nextMessages = portalMessages.map((message) =>
               message?.type === "agent"
@@ -1420,7 +1442,7 @@ export function useRemoteChatSession({
             || lastAgentContent.includes("# PORTAL ALARM ANALYST CARD MODE")
             || lastAgentContent.includes("# PORTAL FAULT WORKORDER MODE")
             || lastAgentContent.length > 500);
-        if (!isRunningRemoteStatus(history.status) && !history.stopped_turn && !hasResumedReply && !hasFinalAgentReply) {
+        if (!isRunningRemoteStatus(history.status) && !history.stopped_turn && !history.portal_turn?.recalled && !hasResumedReply && !hasFinalAgentReply) {
           try {
             const recovery = await getChatTraceRecovery(nextRemoteAgentId, session.id);
             if (recovery.available && recovery.is_error && recovery.message) {
@@ -1524,6 +1546,7 @@ export function useRemoteChatSession({
       setCurrentChatStatus(selectedStatus);
       currentChatMetaRef.current = session?.meta || history?.meta || null;
       setMessages(nextMessages);
+      rememberPortalTurn(history.portal_turn || trackedTurn);
       setHistoryVisible(false);
       const checkpoint: StoppedTurn | undefined = history.stopped_turn || undefined;
       const agentReply = nextMessages?.[nextMessages.length - 1];
@@ -1560,9 +1583,74 @@ export function useRemoteChatSession({
     } finally {
       if (historySelectionRef.current === selection) setHistoryLoading(false);
     }
-  }, [hydrateAlarmAnalystCardsForHistory, reconnectRunningChat, stopActiveStream]);
+  }, [hydrateAlarmAnalystCardsForHistory, reconnectRunningChat, rememberPortalTurn, stopActiveStream]);
+
+  const reloadAfterRecall = useCallback(() => handleSelectRemoteHistory({
+    id: currentChatIdRef.current,
+    sessionId: currentSessionIdRef.current,
+    userId: currentChatUserIdRef.current,
+    channel: currentChatChannelRef.current,
+    meta: currentChatMetaRef.current,
+    status: "idle",
+  }, true), [handleSelectRemoteHistory]);
+
+  const recallLatestTurn = async () => {
+    const turn = portalTurnRef.current;
+    const agentId = remoteAgentIdRef.current;
+    const chatId = currentChatIdRef.current;
+    const username = currentUsername();
+    if (!agentId || !chatId || !turn || turn.recalled || recallPending.current) return;
+    const stillCurrent = () => remoteAgentIdRef.current === agentId && currentChatIdRef.current === chatId
+      && portalTurnRef.current?.id === turn.id && currentUsername() === username;
+    recallPending.current = true;
+    setRecalling(true);
+    setRecallError("");
+    try {
+      await recallPortalChatTurn(agentId, chatId, turn.id);
+      if (stillCurrent()) {
+        await reloadAfterRecall();
+        void refreshRemoteSessions(false);
+      }
+    } catch (error) {
+      if (stillCurrent()) setRecallError(error instanceof Error ? error.message : "撤回失败，请重试。");
+    } finally {
+      recallPending.current = false;
+      setRecalling(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!remoteAgentId || !currentChatId || !portalTurn || portalTurn.recalled || isStreaming) return;
+    const username = currentUsername();
+    let disposed = false;
+    let checking = false;
+    // The administrator may roll back after the original SSE connection has closed.
+    const check = async () => {
+      if (document.hidden || checking || recallPending.current || isStreamingRef.current) return;
+      checking = true;
+      try {
+        const { portal_turn: latest } = await getPortalChatTurn(remoteAgentId, currentChatId);
+        if (!disposed && !recallPending.current && !isStreamingRef.current && currentUsername() === username
+          && remoteAgentIdRef.current === remoteAgentId && currentChatIdRef.current === currentChatId
+          && portalTurnRef.current?.id === portalTurn.id && latest?.id === portalTurn.id && latest.recalled) {
+          await reloadAfterRecall();
+          void refreshRemoteSessions(false);
+        }
+      } catch {
+        // A subsequent poll or reopening history will fetch the saved state.
+      } finally {
+        checking = false;
+      }
+    };
+    const timer = window.setInterval(check, 5000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [remoteAgentId, currentChatId, portalTurn, isStreaming, reloadAfterRecall, refreshRemoteSessions]);
 
   const handleRemoteStreamEvent = (event: any, employee: any) => {
+    if (event.object === "portal_chat_turn") {
+      rememberPortalTurn({ id: event.id, at: event.at, recalled: false, after_recall: event.after_recall });
+      return;
+    }
     if (event?.type === "turn_usage") {
       // Trailing per-turn usage event (sent after the response completes).
       // Attach it to the closing assistant message so ChatMessageItem can
@@ -1740,12 +1828,14 @@ export function useRemoteChatSession({
       !nextEmployee ||
       !nextRemoteAgentId ||
       isStreamingRef.current ||
-      isCreatingChatRef.current
+      isCreatingChatRef.current || recallPending.current
     ) {
       return false;
     }
 
     clearStopFeedback();
+    rememberPortalTurn(null);
+    setRecallError("");
     activeTextQuestionRef.current = null;
     const normalizedVisibleContent = (visibleContent || content).trim();
     const userMessage = createUserMessage(normalizedVisibleContent);
@@ -1912,7 +2002,7 @@ export function useRemoteChatSession({
     }
 
     return streamSucceeded;
-  }, [clearStopFeedback, publishManagedStop, refreshRemoteSessions, approvalMode.rememberForSession]);
+  }, [clearStopFeedback, publishManagedStop, refreshRemoteSessions, rememberPortalTurn, approvalMode.rememberForSession]);
 
   const resetRemoteState = useCallback(({
     initialMessages = [],
@@ -1922,6 +2012,8 @@ export function useRemoteChatSession({
     clearHistoryError?: boolean;
   } = {}) => {
     stopActiveStream(false, { silent: true });
+    rememberPortalTurn(null);
+    setRecallError("");
     setCurrentChatStatus("idle");
     setHistoryVisible(false);
     ++historySelectionRef.current;
@@ -1951,7 +2043,7 @@ export function useRemoteChatSession({
     streamProcessBlocksRef.current = new Map();
     hasStreamOutputRef.current = false;
     setMessages(initialMessages);
-  }, [setMessages, stopActiveStream]);
+  }, [setMessages, stopActiveStream, rememberPortalTurn]);
 
   return {
     approvalMode,
@@ -1981,6 +2073,9 @@ export function useRemoteChatSession({
       && stopFeedback.chatId === currentChatId && (stopFeedback.retry || stopFeedback.reply)?.username === currentUsername()
       ? resumeStoppedReply : undefined,
     clearStopFeedback,
+    recallLatestTurn: portalTurn && !portalTurn.recalled ? recallLatestTurn : undefined,
+    recalling,
+    recallError,
     refreshRemoteSessions,
     handleOpenHistory,
     handleSelectRemoteHistory,

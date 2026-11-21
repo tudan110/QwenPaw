@@ -32,7 +32,7 @@ test("reopening failed, stopped, and resumed chats restores their latest saved m
     const { useRemoteChatSession } = await server.ssrLoadModule(
       "/src/pages/digital-employee/useRemoteChatSession.ts",
     );
-    for (const mode of ["persisted", "trace-only", "user-already-saved", "previous-answer", "stopped", "resumed"]) {
+    for (const mode of ["persisted", "trace-only", "user-already-saved", "previous-answer", "stopped", "resumed", "recalled"]) {
       let messages: any[] = [];
       let recoveryRequests = 0;
       const previousAnswer = {
@@ -41,6 +41,7 @@ test("reopening failed, stopped, and resumed chats restores their latest saved m
       };
       const stopped = mode === "stopped";
       const resumed = mode === "resumed";
+      const recalled = mode === "recalled";
       const draft = {
         id: "draft", role: "assistant", type: "message",
         content: [{ type: "text", text: resumed ? "查询到资产。" : "我来为您查询。" }],
@@ -58,6 +59,7 @@ test("reopening failed, stopped, and resumed chats restores their latest saved m
         assert.match(url, /\/chats\/failed-chat$/);
         return Response.json({
           stopped_turn: stopped ? { id: "turn", at: 1, mode: "cmdb" } : null,
+          portal_turn: recalled ? { id: "turn", at: 2, recalled: true } : null,
           messages: stopped || resumed ? [user, draft] : mode === "persisted" ? [user, failure]
             : mode === "user-already-saved" ? [user]
               : mode === "previous-answer" ? [user, previousAnswer] : [],
@@ -82,6 +84,11 @@ test("reopening failed, stopped, and resumed chats restores their latest saved m
         id: "failed-chat", sessionId: "failed-session",
         userId: "alice", channel: "console", status: stopped ? "running" : "idle",
       });
+      if (recalled) {
+        assert.equal(messages.length, 0, mode);
+        assert.equal(recoveryRequests, 0, mode);
+        continue;
+      }
       if (stopped || resumed) {
         assert.equal(messages.length, 2, mode);
         assert.equal(messages[0].content, "你好", mode);

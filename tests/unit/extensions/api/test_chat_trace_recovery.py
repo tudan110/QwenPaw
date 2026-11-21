@@ -123,3 +123,25 @@ async def test_successful_trace_recovery_keeps_existing_shape(
     assert result["available"] is True
     assert result["message"]["content"][0]["text"] == "正常回答"
     assert "is_error" not in result
+
+
+async def test_recall_keeps_audit_trace_but_blocks_display_recovery(recovery_context, monkeypatch):
+    from qwenpaw.extensions.api import chat_isolation
+
+    recovery_context([
+        {"type": "user_message", "text": "已撤回问题", "ts": 1},
+        {"type": "error", "ts": 2, "message": "failed"},
+    ])
+    workspace = await portal_backend.get_agent_for_request(None)
+    scope = SimpleNamespace(owns=lambda chat: True)
+    monkeypatch.setattr(chat_isolation, "chat_scope", lambda: scope)
+    workspace.session = SimpleNamespace(get_session_state_dict=AsyncMock(return_value={
+        "_portal_turn": {"id": "last", "at": 3, "recalled": True},
+    }))
+    result = await portal_backend.recover_chat_trace_reply(None, "chat")
+    assert result == {"available": False, "reason": "turn_recalled"}
+    workspace.session.get_session_state_dict.return_value = {
+        "_portal_turn": {"id": "new", "at": 4, "recalled": False},
+    }
+    result = await portal_backend.recover_chat_trace_reply(None, "chat")
+    assert result == {"available": False, "reason": "reply_not_found"}

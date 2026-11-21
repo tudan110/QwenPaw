@@ -670,14 +670,34 @@ def save_config(config: Config, config_path: Optional[Path] = None) -> None:
 
     if config_path is None:
         config_path = get_config_path()
+    from ..governance.component_events import record, snapshot
+
+    before = snapshot(config_path)
+    data = config.model_dump(mode="json", by_alias=True)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     with open(config_path, "w", encoding="utf-8") as file:
         json.dump(
-            config.model_dump(mode="json", by_alias=True),
+            data,
             file,
             indent=2,
             ensure_ascii=False,
         )
+
+    record(
+        "config",
+        "系统配置",
+        "全局",
+        before,
+        data,
+        visible_fields={
+            "security",
+            "agents",
+            "tools",
+            "channels",
+            "mcp",
+            "llm_routing",
+        },
+    )
 
     # Invalidate cache after saving
     with _config_lock:
