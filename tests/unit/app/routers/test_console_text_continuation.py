@@ -4,20 +4,25 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import aclosing
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from agentscope.message import TextBlock, ThinkingBlock
+from agentscope.model import ChatResponse
 from fastapi import FastAPI
 
 from qwenpaw.agents import model_factory
+from qwenpaw.app.chats import text_continuation
 from qwenpaw.app.chats.models import ChatSpec
 from qwenpaw.app.chats.portal_control import PortalChatControl
 from qwenpaw.app.routers import console
 from qwenpaw.app.task_tracker import TaskTracker
 from qwenpaw.extensions.api.access_policy import requires_admin
 from qwenpaw.extensions.api.chat_isolation import PortalChatScope
+from qwenpaw.extensions.security.output_guard.redactor import OutputGuardSettings
 
 
 def _events(response):
@@ -91,6 +96,66 @@ async def test_stop_then_continue_text_without_replaying_agent(portal, monkeypat
         {"object": "text_continuation", "status": "completed"},
     ]
     assert calls == ["agent", "model"]
+
+
+async def test_incremental_model_chunks_grow_before_final_snapshot(monkeypatch):
+    draft = "秋天来了。"
+    first = "\n\n树叶渐黄"
+    second = "，落叶铺满了整条小路。"
+    third = "\n\n傍晚，风渐渐凉了。"
+    finish = asyncio.Event()
+
+    async def model(_messages):
+        async def chunks():
+            yield ChatResponse(content=[TextBlock(text="秋天")], is_last=False)
+            yield ChatResponse(content=[TextBlock(text="来了。" + first)], is_last=False)
+            yield ChatResponse(
+                content=[ThinkingBlock(thinking="不应展示的内部思考")],
+                is_last=False,
+            )
+            yield ChatResponse(content=[TextBlock(text=second)], is_last=False)
+            yield ChatResponse(content=[TextBlock(text=third)], is_last=False)
+            await finish.wait()
+            yield ChatResponse(
+                content=[TextBlock(text=draft + first + second), TextBlock(text=third)],
+                is_last=True,
+            )
+        return chunks()
+
+    monkeypatch.setattr(model_factory, "create_model_and_formatter", lambda **_: (model, None))
+    async def next_event(stream):
+        frame = await asyncio.wait_for(anext(stream), timeout=2)
+        return json.loads(frame.removeprefix("data: "))
+
+    async with aclosing(text_continuation.stream_text_continuation("gateway", "写一篇短文", draft)) as stream:
+        # The provider is deliberately unable to send its final response yet.
+        for expected in (first, first + second, first + second + third):
+            event = await next_event(stream)
+            assert event == {"object": "text_continuation", "text": expected}
+        finish.set()
+        event = await next_event(stream)
+        assert event == {"object": "text_continuation", "status": "completed"}
+        assert [event async for event in stream] == []
+
+
+async def test_continuation_redacts_accumulated_text_across_chunks(monkeypatch):
+    async def model(_messages):
+        async def chunks():
+            for text in ("合成测试。电话：19900", "000000，勿拨打。"):
+                yield ChatResponse(content=[TextBlock(text=text)], is_last=False)
+            # A provider may send usage only when closing the stream.
+            yield ChatResponse(content=[], is_last=True)
+        return chunks()
+
+    monkeypatch.setattr(model_factory, "create_model_and_formatter", lambda **_: (model, None))
+    monkeypatch.setattr(text_continuation, "load_config", OutputGuardSettings)
+    stream = text_continuation.stream_text_continuation("gateway", "继续正文", "联系方式如下。")
+    events = [json.loads(frame.removeprefix("data: ")) async for frame in stream]
+    assert events[-2:] == [
+        {"object": "text_continuation", "text": "合成测试。电话：199****0000，勿拨打。"},
+        {"object": "text_continuation", "status": "completed"},
+    ]
+    assert all("19900000000" not in event.get("text", "") for event in events)
 
 
 async def test_continuation_needs_owned_chat_and_obeys_input_policy(portal, monkeypatch):

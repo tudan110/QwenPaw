@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from agentscope.message import Msg, TextBlock
+from agentscope.model import ChatResponse
 from agentscope.permission import PermissionBehavior, PermissionDecision
 from agentscope.state import AgentState
 from fastapi import FastAPI
@@ -208,6 +209,47 @@ async def test_text_continuation_updates_history_using_server_draft(portal, monk
             ("user", "续写测试"), ("assistant", DRAFT + "继续的正文。"),
         ]
         assert history["stopped_turn"] is None
+
+
+async def test_stopping_continuation_keeps_all_streamed_text_before_last_chunk(portal, monkeypatch):
+    client, workspace, chat, _ = portal
+    first = "\n\n这次只补充正文"
+    second = "，不会发起业务查询。"
+    waiting = asyncio.Event()
+
+    async def model(_messages):
+        async def chunks():
+            yield ChatResponse(content=[TextBlock(text=first)], is_last=False)
+            yield ChatResponse(content=[TextBlock(text=second)], is_last=False)
+            waiting.set()
+            await asyncio.Future()  # No final provider snapshot at the second stop.
+        return chunks()
+
+    monkeypatch.setattr(model_factory, "create_model_and_formatter", lambda **_: (model, None))
+    async with client:
+        marker = await stop_query(client, workspace, "续写到一半再停止", tool=False)
+        request = asyncio.create_task(client.post("/console/chat/continue", json={
+            "chat_id": chat.id, "turn_id": marker["id"], "question": "续写到一半再停止", "draft": DRAFT,
+        }))
+        try:
+            await asyncio.wait_for(waiting.wait(), timeout=5)
+            response = await client.post("/console/chat/stop", params={"chat_id": chat.id})
+            assert response.status_code == 200 and response.json()["checkpoint"]["mode"] == "text"
+            result = await asyncio.wait_for(request, timeout=5)
+        finally:
+            if not request.done():
+                request.cancel()
+                await asyncio.gather(request, return_exceptions=True)
+        events = [json.loads(line[6:]) for line in result.text.splitlines() if line.startswith("data: ")]
+        snapshots = [event for event in events if event.get("object") == "text_continuation"]
+        assert snapshots == [
+            {"object": "text_continuation", "draft": DRAFT, "text": first},
+            {"object": "text_continuation", "text": first + second},
+        ]
+        history = (await client.get(f"/chats/{chat.id}")).json()
+        assert history_text(history) == [
+            ("user", "续写到一半再停止"), ("assistant", DRAFT + first + second),
+        ]
 
 
 async def test_model_only_query_does_not_dispatch_agent_or_business_tools(portal, monkeypatch):
