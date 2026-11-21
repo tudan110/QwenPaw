@@ -10,6 +10,11 @@ export interface AgentCapability {
   mode: "inherited" | "ask" | "revoked" | "temporary";
   expires_at: number | null;
 }
+export interface AgentAccessBoundary {
+  production_guards: boolean;
+  mcp_policy: "off" | "invalid" | "host" | "exact";
+  mcp_endpoint_count?: number;
+}
 export interface AgentConsent {
   id: string;
   service: string;
@@ -20,7 +25,7 @@ export interface AgentConsent {
 const endpoint = "/agent-permissions";
 
 export function listAgentPermissions(agentId: string, signal?: AbortSignal) {
-  return requestPortalApi<{ agent_id: string; items: AgentCapability[] }>(endpoint, {
+  return requestPortalApi<{ agent_id: string; items: AgentCapability[]; access_boundary?: AgentAccessBoundary }>(endpoint, {
     signal, headers: { "X-Agent-Id": agentId },
   });
 }

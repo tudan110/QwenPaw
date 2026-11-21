@@ -249,7 +249,9 @@ export default function DigitalEmployeePage({
     : PORTAL_HOME_AGENT_ID;
   const isRemoteEmployee = Boolean(remoteAgentId);
   const [businessToolsDisabled, setBusinessToolsDisabled] = useState(false);
-  const [permissionAgent, setPermissionAgent] = useState<string | null>(null);
+  const [permissionDialog, setPermissionDialog] = useState<{
+    agentId: string; showAccessScope: boolean;
+  } | null>(null);
   const modelOnly = businessToolsDisabled && isRemoteEmployee;
   const currentEntry = routeSearchParams.get("entry");
   const currentView = parsePortalView(routeSection ?? routeSearchParams.get("view"));
@@ -1508,32 +1510,51 @@ export default function DigitalEmployeePage({
       error={approvalMode.storageError}
     />
   ) : null;
+  const toggleBusinessTools = () => setBusinessToolsDisabled((disabled) => !disabled);
+  const openPermissionDialog = (showAccessScope: boolean) => {
+    if (remoteAgentId) setPermissionDialog({ agentId: remoteAgentId, showAccessScope });
+  };
   const businessToolsControl = isRemoteEmployee ? (
-    <Tooltip title="关闭后，新消息只调用配置的模型；不运行搜索、MCP、知识库或业务工具。" placement="top">
-      <button
-        type="button"
-        className="model-selector-trigger composer-tool-button"
-        aria-label="业务联网"
-        aria-pressed={!modelOnly}
-        disabled={isInteractionLocked || isConversationRunning || isCreatingChat}
-        onClick={() => setBusinessToolsDisabled((disabled) => !disabled)}
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8">
-          <circle cx="12" cy="12" r="9" />
-          <ellipse cx="12" cy="12" rx="4" ry="9" />
-          <path d="M3 12h18" />
-        </svg>
-        <span>业务联网</span>
-        <span className="composer-tool-state">{modelOnly ? "关" : "开"}</span>
-      </button>
-    </Tooltip>
+    <div className="composer-network-control">
+      <Tooltip title="关闭后，新消息只调用配置的模型；不运行搜索、MCP、知识库或业务工具。" placement="top">
+        <button
+          type="button"
+          className="model-selector-trigger composer-tool-button"
+          aria-label="业务联网"
+          aria-pressed={!modelOnly}
+          disabled={isInteractionLocked}
+          onClick={toggleBusinessTools}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <circle cx="12" cy="12" r="9" />
+            <ellipse cx="12" cy="12" rx="4" ry="9" />
+            <path d="M3 12h18" />
+          </svg>
+          <span>业务联网</span>
+          <span className="composer-tool-state">{modelOnly ? "关" : "开"}</span>
+        </button>
+      </Tooltip>
+      <Tooltip title="访问范围" placement="top">
+        <button
+          type="button"
+          className="model-selector-trigger composer-tool-button composer-network-scope"
+          aria-label="访问范围"
+          aria-haspopup="dialog"
+          onClick={() => openPermissionDialog(true)}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m4 6 4 4 4-4" />
+          </svg>
+        </button>
+      </Tooltip>
+    </div>
   ) : null;
   const permissionControl = remoteAgentId ? (
     <button
       type="button"
       className="model-selector-trigger composer-tool-button"
       aria-haspopup="dialog"
-      onClick={() => setPermissionAgent(remoteAgentId)}
+      onClick={() => openPermissionDialog(false)}
     >
       <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 3 5 6v5c0 4.5 2.9 7.7 7 10 4.1-2.3 7-5.5 7-10V6l-7-3Z" />
@@ -1544,9 +1565,12 @@ export default function DigitalEmployeePage({
   ) : null;
   const agentPermissionDialogs = remoteAgentId ? (
     <>
-      {permissionAgent === remoteAgentId ? (
+      {permissionDialog?.agentId === remoteAgentId ? (
         <AgentPermissionDialog key={remoteAgentId} agentId={remoteAgentId}
-          agentName={currentEmployee?.name || "当前智能体"} onClose={() => setPermissionAgent(null)} />
+          agentName={currentEmployee?.name || "当前智能体"} onClose={() => setPermissionDialog(null)}
+          accessScope={permissionDialog.showAccessScope ? {
+            businessToolsEnabled: !modelOnly, disabled: isInteractionLocked, onToggle: toggleBusinessTools,
+          } : undefined} />
       ) : null}
       <AgentConsentDialog key={`${remoteAgentId}:${currentSessionId}`} agentId={remoteAgentId}
         agentName={currentEmployee?.name || "当前智能体"} sessionId={currentSessionId} running={isRemoteConversationRunning} />

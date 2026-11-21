@@ -13,6 +13,8 @@ from ...constant import WORKING_DIR
 from ...extensions.api.access_session import CURRENT_IDENTITY
 from ...extensions.api.chat_isolation import chat_scope
 from ...extensions.security import portal_capabilities as permissions
+from ...extensions.security.execution_policy import enabled as production_guards_enabled
+from ...extensions.security.mcp_boundary import declared_endpoints
 
 router = APIRouter(prefix="/portal/agent-permissions", tags=["agent-permissions"])
 
@@ -64,6 +66,23 @@ async def _configured(workspace) -> list[dict]:
     return items
 
 
+def _access_boundary() -> dict:
+    """Report application controls; network reachability is managed by deployment."""
+    if not production_guards_enabled():
+        return {"production_guards": False, "mcp_policy": "off"}
+    try:
+        endpoints = declared_endpoints()
+    except PermissionError:
+        return {"production_guards": True, "mcp_policy": "invalid"}
+    if endpoints is None:
+        return {"production_guards": True, "mcp_policy": "host"}
+    return {
+        "production_guards": True,
+        "mcp_policy": "exact",
+        "mcp_endpoint_count": len(endpoints),
+    }
+
+
 @router.get("")
 async def inventory(request: Request) -> dict:
     scope = _scope()
@@ -73,7 +92,11 @@ async def inventory(request: Request) -> dict:
     for item in configured:
         key = item["kind"], item["name"]
         item["mode"], item["expires_at"] = settings.get(key, ("ask" if key[0] == "mcp" else "inherited", None))
-    return {"agent_id": workspace.agent_id, "items": configured}
+    return {
+        "agent_id": workspace.agent_id,
+        "items": configured,
+        "access_boundary": _access_boundary(),
+    }
 
 
 @router.post("")

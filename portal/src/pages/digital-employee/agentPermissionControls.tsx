@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Modal, Space, Switch, Table, Tag } from "antd";
+import { Alert, Button, Card, Modal, Space, Switch, Table, Tag, Typography } from "antd";
 import {
   listAgentConsent,
   listAgentPermissions,
   resolveAgentConsent,
   setAgentPermission,
+  type AgentAccessBoundary,
   type AgentCapability,
   type AgentConsent,
   type CapabilityChange,
@@ -27,10 +28,59 @@ function errorText(error: unknown) {
   return error instanceof Error ? error.message : "请求失败";
 }
 
-export function AgentPermissionDialog({ agentId, agentName, onClose }: {
-  agentId: string; agentName: string; onClose: () => void;
+interface ChatAccessScope {
+  businessToolsEnabled: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}
+
+function AccessScopeOverview({ scope, boundary, loading, revoked }: {
+  scope: ChatAccessScope; boundary?: AgentAccessBoundary; loading: boolean; revoked: number;
+}) {
+  const mcpPolicy = boundary?.mcp_policy;
+  const mcpLabel = mcpPolicy === "exact" ? `MCP 精确白名单 · ${boundary?.mcp_endpoint_count ?? 0} 个端点`
+    : mcpPolicy === "host" ? "MCP 主机规则"
+    : mcpPolicy === "invalid" ? "MCP 白名单配置异常"
+    : mcpPolicy === "off" ? "MCP 生产准入未启用" : null;
+  const guards = boundary?.production_guards;
+  return (
+    <Card size="small" style={{ marginBottom: 16 }}>
+      <Space orientation="vertical" size={12}>
+        <div>
+          <Space wrap>
+            <Typography.Text strong>业务网络访问</Typography.Text>
+            <Switch aria-label="业务联网" checked={scope.businessToolsEnabled} disabled={scope.disabled}
+              checkedChildren="开" unCheckedChildren="关" onChange={scope.onToggle} />
+            {mcpLabel && <Tag color={mcpPolicy === "invalid" || mcpPolicy === "off" ? "orange" : "blue"}>{mcpLabel}</Tag>}
+          </Space><br />
+          <Typography.Text type="secondary">关闭后，本页新消息仅调用已配置的模型；不会调用搜索、MCP、知识库或业务工具。</Typography.Text>
+        </div>
+        <div>
+          <Space wrap>
+            <Typography.Text strong>远程管理通道</Typography.Text>
+            <Tag color={guards === true ? "green" : guards === false ? "orange" : undefined}>
+              {guards === true ? "生产守卫已启用" : guards === false ? "生产守卫未启用" : loading ? "读取中" : "状态未核实"}
+            </Tag>
+          </Space><br />
+          <Typography.Text type="secondary">生产守卫启用时，通用 Shell 不能直接执行 SSH、远程桌面客户端或集群管理命令。远程管理端口的可达性由部署侧策略控制。</Typography.Text>
+        </div>
+        <div>
+          <Space wrap>
+            <Typography.Text strong>内部资源</Typography.Text>
+            {revoked > 0 && <Tag color="red">已撤销 {revoked} 项入口</Tag>}
+          </Space><br />
+          <Typography.Text type="secondary">可在下方撤销个人的 MCP 或 Skill 调用权限。智观数据查询仍沿用当前账号的数据权限。</Typography.Text>
+        </div>
+      </Space>
+    </Card>
+  );
+}
+
+export function AgentPermissionDialog({ agentId, agentName, onClose, accessScope }: {
+  agentId: string; agentName: string; onClose: () => void; accessScope?: ChatAccessScope;
 }) {
   const [items, setItems] = useState<AgentCapability[]>([]);
+  const [boundary, setBoundary] = useState<AgentAccessBoundary>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -38,7 +88,10 @@ export function AgentPermissionDialog({ agentId, agentName, onClose }: {
   useEffect(() => {
     const controller = new AbortController();
     listAgentPermissions(agentId, controller.signal).then((value) => {
-      if (!controller.signal.aborted) setItems(value.items);
+      if (!controller.signal.aborted) {
+        setItems(value.items);
+        setBoundary(value.access_boundary);
+      }
     }).catch((err) => {
       if (!controller.signal.aborted) setError(errorText(err));
     }).finally(() => {
@@ -52,7 +105,9 @@ export function AgentPermissionDialog({ agentId, agentName, onClose }: {
     setError("");
     try {
       await setAgentPermission(agentId, item, mode);
-      setItems((await listAgentPermissions(agentId)).items);
+      const value = await listAgentPermissions(agentId);
+      setItems(value.items);
+      setBoundary(value.access_boundary);
       setTemporary(null);
     } catch (err) {
       setError(errorText(err));
@@ -62,7 +117,9 @@ export function AgentPermissionDialog({ agentId, agentName, onClose }: {
   }
 
   return (
-    <Modal open title={`${agentName} · 智能体权限`} onCancel={onClose} footer={null} width={800}>
+    <Modal open title={`${agentName} · ${accessScope ? "访问范围" : "智能体权限"}`} onCancel={onClose} footer={null} width={800}>
+      {accessScope && <AccessScopeOverview scope={accessScope} boundary={boundary} loading={loading}
+        revoked={items.filter((item) => item.configured && item.mode === "revoked").length} />}
       <p>此处设置个人授权。若 MCP 在工作区关闭或未就绪，需由管理员在 MCP 管理中处理；个人授权不能开启服务。启用后仍受工具审批和智观数据权限限制。</p>
       {error ? <Alert message={error} type="error" showIcon /> : null}
       {temporary ? (
