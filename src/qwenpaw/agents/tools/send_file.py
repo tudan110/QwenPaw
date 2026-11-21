@@ -29,6 +29,13 @@ async def send_file_to_user(
             The tool response containing the file or an error message.
     """
 
+    from ...extensions.security.agent_export import require_controlled_export
+
+    try:
+        require_controlled_export("send_file_to_user")
+    except PermissionError as exc:
+        return ToolChunk(is_last=True, state=ToolResultState.ERROR, content=[TextBlock(text=str(exc))])
+
     # Decode percent-encoded chars (model may pass URL-encoded paths from context)
     # then normalize Unicode (macOS NFD vs NFC).
     file_path = unquote(file_path)

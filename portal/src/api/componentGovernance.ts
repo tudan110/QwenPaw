@@ -17,17 +17,20 @@ async function request<T>(path: string, signal: AbortSignal, init: RequestInit =
 
 export type ChangeView = "supply" | "config";
 export type Change = {
-  id: number; timestamp: string; subject: string; scope: string; kind: string;
+  id: number; timestamp: string; subject: string; scope: string; scope_name?: string; kind: string;
   target: string; action: string; fields: string[];
   before: Record<string, string | boolean> | null; after: Record<string, string | boolean> | null;
 };
 export type Changes = { records: Change[]; total: number; write_warning: boolean };
 export type ScanStatus = "clear" | "findings" | "incomplete" | "not_covered" | "not_applicable";
-export type ScanRow = { kind: string; name: string; scope: string; status: ScanStatus; detail: string; findings: string[] };
+export type ScanRow = {
+  kind: string; name: string; scope: string; scope_name?: string; status: ScanStatus; detail: string; findings: string[];
+  action?: { index: number; kind: "disable_skill" | "isolate_mcp"; done: boolean };
+};
 export type ScanReport = { checked_at: string; rows: ScanRow[] };
 export type LocalMode = "managed" | "deny";
 export type LocalPolicy = {
-  mode: LocalMode; running: boolean; authenticated: boolean;
+  mode: LocalMode; allow_downloads: boolean; running: boolean; authenticated: boolean;
   filesystem_supported: boolean; external_local_detected: boolean;
 };
 
@@ -36,8 +39,13 @@ export const componentGovernanceApi = {
     request<Changes>(`changes?view=${view}&limit=20&offset=${offset}`, signal),
   scanReport: (signal: AbortSignal) => request<{ report: ScanReport | null }>("scan", signal),
   scan: (signal: AbortSignal) => request<{ report: ScanReport }>("scan", signal, { method: "POST" }),
+  disposition: (checked_at: string, index: number, signal: AbortSignal) =>
+    request<{ report: ScanReport; message: string }>("scan/disposition", signal, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ checked_at, index }),
+    }),
+  stopLocal: (signal: AbortSignal) => request<LocalPolicy>("local-access/stop", signal, { method: "POST" }),
   localPolicy: (signal: AbortSignal) => request<LocalPolicy>("local-access", signal),
-  saveLocalPolicy: (mode: LocalMode, signal: AbortSignal) => request<LocalPolicy>("local-access", signal, {
-    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }),
+  saveLocalPolicy: (mode: LocalMode, allow_downloads: boolean, signal: AbortSignal) => request<LocalPolicy>("local-access", signal, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode, allow_downloads }),
   }),
 };

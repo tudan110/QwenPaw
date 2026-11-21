@@ -209,7 +209,7 @@ def test_sensitive_governance_checks_are_guarded_isolated_and_audited(client, mo
     assert client.post(BASE + path + "/check", headers={**ADMIN, "Origin": "https://foreign.invalid"}).status_code == 403
     catalog = get(client, path, ADMIN)
     assert {item["id"]: item["status"] for item in catalog["coverage"]} == {
-        "documents": "enforced", "knowledge": "partial", "chat": "outside", "exports": "outside", "logs": "outside",
+        "documents": "enforced", "knowledge": "partial", "exports": "partial", "logs": "outside",
     }
     document_id = create(client, owner=ADMIN)
     post(client, "/admin/emergency", ADMIN, active=True)
@@ -311,3 +311,25 @@ def test_text_only_portal_sample_rejects_attachment_upload(client, monkeypatch):
     response = client.post("/api/console/upload", headers=A, files={"file": ("sample.txt", b"sample")})
     assert response.status_code == 415
     assert "unsupported-media" in response.json()["detail"]
+
+
+def test_dialog_privacy_policy_is_admin_only_and_independent_of_documents(client, monkeypatch, tmp_path):
+    from qwenpaw.governance import component_events
+
+    monkeypatch.setattr(component_events, "WORKING_DIR", tmp_path / "audit")
+    monkeypatch.setenv("QWENPAW_CONTROLLED_DOCUMENTS", "false")
+    path = "/admin/sensitive-data/policy"
+    get(client, path, {}, 401)
+    get(client, path, A, 403)
+    assert get(client, path, ADMIN)["policy"]["model_context"] == "off"
+    values = dict(revision=0, builtin=[], custom_fields=["客户编号"], chat_input="observe", model_context="block")
+    post(client, path, A, 403, **values)
+    assert client.post(BASE + path, headers={**ADMIN, "Origin": "https://foreign.invalid"}, json=values).status_code == 403
+    post(client, path, ADMIN, 422, **{**values, "custom_fields": [".*"]})
+    post(client, path, ADMIN, 422, **{**values, "custom_fields": []})
+    post(client, path, ADMIN, 422, **{**values, "builtin": ["不存在的规则"]})
+    response = post(client, path, ADMIN, **values)
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.json()["policy"] == {**values, "revision": 1}
+    post(client, path, ADMIN, 409, **values)
+    assert get(client, path, ADMIN)["policy"]["custom_fields"] == ["客户编号"]

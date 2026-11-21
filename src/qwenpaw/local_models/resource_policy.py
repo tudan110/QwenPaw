@@ -67,7 +67,7 @@ def protected_evidence_or_model_path(path: Path) -> bool:
         .removesuffix("-shm")
         .removesuffix("-journal")
     )
-    return name == "component-governance.db" or path.is_relative_to(
+    return name in {"component-governance.db", "call-admission.db"} or path.is_relative_to(
         DEFAULT_LOCAL_PROVIDER_DIR.resolve()
     )
 

@@ -4,7 +4,7 @@
  * IDs out of the primary UI while preserving unknown/custom IDs for operators.
  */
 const WORKSPACE_DISPLAY_NAMES: Record<string, string> = {
-  gateway: "智观 AI",
+  gateway: "智观AI",
   query: "数据分析专家",
   fault: "故障分析专家",
   resource: "资产管理专员",
@@ -16,7 +16,7 @@ const WORKSPACE_DISPLAY_NAMES: Record<string, string> = {
   default: "默认助手",
 };
 
-export function workspaceDisplayName(workspace: string): string {
+export function workspaceDisplayName(workspace: string, fallback?: string): string {
   const id = String(workspace || "").trim();
-  return WORKSPACE_DISPLAY_NAMES[id] || id || "未标注工作空间";
+  return WORKSPACE_DISPLAY_NAMES[id] || fallback || id || "未标注工作空间";
 }

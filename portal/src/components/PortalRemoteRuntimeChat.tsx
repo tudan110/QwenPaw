@@ -297,7 +297,7 @@ export function PortalRemoteRuntimeChat({
         },
         welcome: {
           greeting: `你好，我是 ${agentName}`,
-          description: "智观 Paw 流式聊天服务。",
+          description: "智观AI对话服务。",
           prompts: [],
         },
         session: {

@@ -31,6 +31,6 @@ void test("tool classification comes from evidence and is separate from risk lev
   });
   assert.deepEqual([...new Set(rows.map((row) => row.channel))], ["工具 / Skill", "业务 API", "MCP"]);
   assert.equal(rows[0].mode, "策略分类 · 1 项");
-  assert.equal(rows[0].risk, "未逐项分级");
-  assert.equal(rows.find((row) => row.key === "cmdb").risk, "待评估");
+  assert.ok(rows.every((row) => !("risk" in row)));
+  assert.match(rows.find((row) => row.key === "other-apis").mode, /覆盖未确认/);
 });

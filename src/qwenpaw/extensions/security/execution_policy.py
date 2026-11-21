@@ -24,6 +24,7 @@ from qwenpaw.extensions.api.chat_isolation import chat_isolation_enabled
 from qwenpaw.extensions.api.sso_backend import _validate_inoe_token
 from qwenpaw.extensions.api.sso_auth import extract_user
 from .business_reads import MCP_READ_TOOLS
+from .call_admission import Target, require_not_blocked
 from .managed_integrity import inspect_skill
 from .skill_cli import check_cli_arguments
 from .skill_scripts import (
@@ -43,7 +44,7 @@ _READ_TOOLS = {
     "check_agent_task",
     "get_current_time",
     "get_token_usage",
-    "send_file_to_user",
+    "process_office_document",  # inspect only; enforced before admissions
     "view_image",
     "spawn_subagent",
 }
@@ -74,12 +75,10 @@ _READ_SCRIPT_NAMES = {
     "order_workflow.py",
 }
 
-# Bounded artifact creation: text input only, fixed renderer and report root.
-# This does not grant general filesystem writes or shell execution.
+# Scoped artifacts only; generic report or Office generation requires a
+# data-source-specific export path, not this admission list.
 _ARTIFACT_TOOLS = {
-    "export_report",
     "prepare_alarm_export",
-    "process_office_document",
     "write_skill_context",
 }
 
@@ -423,7 +422,7 @@ def check_shell(command: str, cwd: Any = None) -> bool:
     if len(args) < 2 or Path(args[0]).name not in _PYTHON_NAMES:
         raise PermissionError(
             "生产环境仅允许经哈希校验的固定 Python 脚本。"
-            "文件处理请优先使用 process_office_document，报告使用 export_report；"
+            "可用 Office 工具查看文件；业务数据导出必须使用带确认的受控入口；"
             "不要改用临时脚本或通用 shell。"
         )
     if args[0] != Path(args[0]).name and (
@@ -437,6 +436,7 @@ def check_shell(command: str, cwd: Any = None) -> bool:
     path = (directory / args[1]).resolve()
     if not _approved_script(path):
         raise PermissionError("脚本未在生产白名单中或完整性校验失败")
+    require_not_blocked(Target("script", path.name))
     if path.name in SCRIPT_SKILLS:
         workspace = Path(get_current_workspace_dir() or WORKING_DIR).resolve()
         # Structured contracts reject abbreviations/unknown flags rather
@@ -549,6 +549,9 @@ def managed_script_entries() -> list[str]:
 
 async def check_tool(name: str, params: dict[str, Any]) -> bool:
     """Return whether this call needs mandatory administrator approval."""
+    from .agent_export import require_controlled_export
+
+    require_controlled_export(name, params.get("operation"))
     if not enabled():
         return False
     if name in {"grep_search", "glob_search"}:

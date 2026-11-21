@@ -77,6 +77,9 @@ async def lookup_portal_cmdb_asset(name: str) -> ToolChunk:
     Args:
         name: 完整设备名或资产名，不传通配符、筛选表达式或连接信息。
     """
+    from ...security.call_admission import CMDB_LOOKUP, Target, require_not_blocked
+
+    require_not_blocked(Target("api", CMDB_LOOKUP))
     identity = _human_identity()
     if not chat_isolation_enabled() or not identity or not identity.inoe_token:
         return _response("authentication_required", "需要当前用户的智观业务凭据，请重新登录。")

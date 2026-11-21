@@ -12,3 +12,9 @@ test("uses the configured Chinese digital-employee name for known workspaces", (
 test("keeps an unknown workspace identifier visible", () => {
   assert.equal(workspaceDisplayName("custom-ops"), "custom-ops");
 });
+
+
+test("uses the product name and an optional public fallback", () => {
+  assert.equal(workspaceDisplayName("gateway", "数字员工"), "智观AI");
+  assert.equal(workspaceDisplayName("custom-ops", "数字员工"), "数字员工");
+});

@@ -311,6 +311,15 @@ class AgentBuilder:
 
         # System prompt.
         sys_prompt = self.build_prompt(ctx, agent_config)
+        from ..extensions.security.execution_policy import enabled as production_guards
+
+        if production_guards():
+            sys_prompt += (
+                "\n\n【业务数据导出】告警明细只能用受控告警导出，先核对真实条数，"
+                "随后由用户确认。工单明细等没有受控入口的数据不能导出；直接告知用户，"
+                "不要为了导出而分页收集明细，也不要换用报告、Office、写文件或文件发送。"
+                "仍可按用户授权执行普通查询和展示摘要。"
+            )
 
         middlewares = self._build_middlewares(ctx, agent_config)
         if scroll is not None:

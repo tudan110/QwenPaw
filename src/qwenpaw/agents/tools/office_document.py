@@ -43,8 +43,10 @@ async def process_office_document(
     from ...config.context import get_current_workspace_dir
     from ...constant import WORKING_DIR
     from ...extensions.office_documents import process_document
+    from ...extensions.security.agent_export import require_controlled_export
 
     try:
+        require_controlled_export("process_office_document", operation)
         result = await asyncio.to_thread(
             process_document,
             get_current_workspace_dir() or WORKING_DIR,

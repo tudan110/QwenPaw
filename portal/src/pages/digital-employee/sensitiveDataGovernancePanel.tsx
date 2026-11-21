@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Collapse, Skeleton, Tag } from "antd";
-import { CheckCircleOutlined, ExperimentOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, ExperimentOutlined } from "@ant-design/icons";
 import { readControlled, writeControlled } from "../../api/controlledDocuments";
+import { TextPrivacyPolicyPanel } from "./textPrivacyPolicyPanel";
 import "./sensitiveDataGovernance.css";
 
 const endpoint = "/admin/sensitive-data";
 const coverageLabels = {
   enforced: ["已接入", "green"],
   partial: ["部分接入", "gold"],
-  outside: ["不在本页校验范围", undefined],
+  outside: ["未接入本策略", undefined],
 } as const;
 
 type GovernanceStatus = {
@@ -28,6 +29,13 @@ type CheckRun = {
 const errorText = (error: unknown) => error instanceof Error ? error.message : "请求失败，请重试。";
 
 export function SensitiveDataGovernancePanel() {
+  return <div className="gov-flow sd-governance">
+    <TextPrivacyPolicyPanel />
+    <ControlledDataOverview />
+  </div>;
+}
+
+function ControlledDataOverview() {
   const [status, setStatus] = useState<GovernanceStatus | null>(null);
   const [statusError, setStatusError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -57,20 +65,18 @@ export function SensitiveDataGovernancePanel() {
     }
   }
 
-  if (statusError) return <Alert showIcon type="warning" title="暂时无法读取治理状态" description={statusError}
+  if (statusError) return <Alert showIcon type="warning" title="受控资料状态不可用" description={statusError}
     action={<Button size="small" onClick={() => { setStatusError(""); setAttempt((value) => value + 1); }}>重新加载</Button>} />;
   if (!status) return <section className="gov-surface sd-section" aria-label="正在加载敏感数据治理"><Skeleton active paragraph={{ rows: 3 }} /></section>;
 
   const passed = run?.checks.filter((check) => check.passed).length ?? 0;
-  return <div className="gov-flow sd-governance">
+  return <>
     <section className="gov-surface sd-overview" aria-labelledby="sd-categories">
-      <div className="sd-banner">
-        <span className="sd-banner-icon"><SafetyCertificateOutlined aria-hidden="true" /></span>
-        <div><h4 id="sd-categories">敏感分类与最小权限</h4>
+      <header className="sd-heading sd-overview-heading">
+        <div><h4 id="sd-categories">受控资料分类与最小权限</h4>
           <p>按场景查看已接入的管控。受控资料默认只提供脱敏读取，原文导出另行授权。</p>
         </div>
-        <Tag>402-2.5</Tag>
-      </div>
+      </header>
       <div className="sd-categories">
         {status.categories.map((category) => <article key={category.id} className="sd-class">
           <span className="gov-eyebrow">{category.group}</span>
@@ -82,8 +88,8 @@ export function SensitiveDataGovernancePanel() {
     </section>
 
     <section className="gov-surface sd-section" aria-labelledby="sd-coverage">
-      <header className="sd-heading"><div><h4 id="sd-coverage">场景覆盖与访问边界</h4>
-        <p>受控资料的申请有效期最长 {Math.round(status.approval_seconds / 60)} 分钟。未接入的场景不能以本页作为管控证明。</p></div>
+      <header className="sd-heading"><div><h4 id="sd-coverage">其他场景与访问边界</h4>
+        <p>受控资料的申请有效期最长 {Math.round(status.approval_seconds / 60)} 分钟。各场景仅按实际接入的链路执行管控。</p></div>
         {status.emergency && <Tag color="red">受控资料已紧急关停</Tag>}
         {status.security_hold && <Tag color="orange">当前账号操作已冻结</Tag>}
       </header>
@@ -129,5 +135,5 @@ export function SensitiveDataGovernancePanel() {
         </ul> }]} />
       </div>}
     </section>
-  </div>;
+  </>;
 }

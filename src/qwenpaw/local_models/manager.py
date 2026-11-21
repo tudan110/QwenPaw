@@ -26,6 +26,7 @@ class LocalModelConfig(BaseModel):
     """Persistent local runtime settings for embedded llama.cpp."""
 
     access_mode: Literal["managed", "deny"] = "managed"
+    allow_downloads: bool = True
 
     max_context_length: int = Field(
         default=65536,
@@ -117,6 +118,7 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
             if settings is None:
                 return None
             return {
+                "allow_downloads": settings.get("allow_downloads", True),
                 "access_mode": (
                     "禁止受管本地运行"
                     if settings.get("access_mode") == "deny"
@@ -130,7 +132,7 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
             "全局",
             before,
             payload,
-            visible_fields={"access_mode", "max_context_length", "port"},
+            visible_fields={"access_mode", "allow_downloads", "max_context_length", "port"},
             summaries=(summary(before), summary(payload)),
         )
         try:
@@ -151,10 +153,18 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
         return self._config.model_copy(deep=True)
 
     async def set_access_mode(self, mode: Literal["managed", "deny"]) -> None:
+        await self.set_access_policy(mode)
+
+    async def set_access_policy(
+        self, mode: Literal["managed", "deny"], *, allow_downloads: bool | None = None,
+    ) -> None:
         async with self._server_lifecycle_lock:
-            if mode == self._config.access_mode:
+            if allow_downloads is None:
+                allow_downloads = self._config.allow_downloads
+            mode_changed = mode != self._config.access_mode
+            if not mode_changed and allow_downloads == self._config.allow_downloads:
                 return
-            if self.get_llamacpp_server_status().get("running"):
+            if mode_changed and self.get_llamacpp_server_status().get("running"):
                 raise RuntimeError("请先停止受管本地推理服务，再变更访问策略")
             active_downloads = {"pending", "downloading", "canceling"}
             if (
@@ -164,7 +174,9 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
                 in active_downloads
             ):
                 raise RuntimeError("请先停止本地模型下载，再变更访问策略")
-            updated = self._config.model_copy(update={"access_mode": mode})
+            updated = self._config.model_copy(
+                update={"access_mode": mode, "allow_downloads": allow_downloads},
+            )
             self._access_update_in_progress = True
             try:
                 await asyncio.to_thread(
@@ -176,11 +188,13 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
             finally:
                 self._access_update_in_progress = False
 
-    def _require_local_storage(self) -> None:
+    def _require_local_storage(self, *, download: bool = False) -> None:
         if self._access_update_in_progress:
             raise RuntimeError("本地资源访问策略正在更新，请稍后重试")
         if self._config.access_mode == "deny":
             raise RuntimeError("本地资源策略禁止受管本地模型运行或下载")
+        if download and not self._config.allow_downloads:
+            raise RuntimeError("本地资源策略禁止下载；仅可运行已下载的受管模型")
         try:
             protect_storage()
         except OSError as exc:
@@ -212,7 +226,7 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
         Returns whether a running llama.cpp server was stopped first.
         """
         async with self._server_lifecycle_lock:
-            self._require_local_storage()
+            self._require_local_storage(download=True)
             server_was_running = bool(
                 self._llamacpp_backend.get_server_status().get("running"),
             )
@@ -274,7 +288,7 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
         source: DownloadSource | None = None,
     ) -> None:
         """Start downloading the requested model."""
-        self._require_local_storage()
+        self._require_local_storage(download=True)
         self._model_manager.download_model(model_id, source=source)
 
     def get_model_download_progress(self) -> dict[str, Any]:

@@ -324,7 +324,7 @@ function WechatFields({ config, onChange }: { config: Record<string, unknown>; o
   return (
     <>
       <TextField label="Bot Token" value={String(config.bot_token || "")} onChange={(v) => onChange("bot_token", v)} type="password" />
-      <TextField label="Token 文件路径" value={String(config.bot_token_file || "")} onChange={(v) => onChange("bot_token_file", v)} placeholder="~/.qwenpaw/wechat_bot_token" />
+      <TextField label="Token 文件路径" value={String(config.bot_token_file || "")} onChange={(v) => onChange("bot_token_file", v)} placeholder="请输入 Token 文件路径" />
       <TextField label="媒体文件目录" value={String(config.media_dir || "")} onChange={(v) => onChange("media_dir", v)} placeholder="{workspace_dir}/media" />
       <SwitchField label="消息合并" checked={Boolean(config.message_merge_enabled)} onChange={(v) => onChange("message_merge_enabled", v)} hint="开启后将短时间内的连续消息合并处理" />
       {Boolean(config.message_merge_enabled) && (
@@ -429,7 +429,7 @@ function MatrixFields({ config, onChange }: { config: Record<string, unknown>; o
           <SwitchField label="端到端加密 (E2EE)" checked={Boolean(config.encryption)} onChange={(v) => onChange("encryption", v)} hint="启用后需要在 Matrix 客户端中验证设备。需安装 matrix-nio[e2e]" />
         </>
       )}
-      <TextField label="设备名称" value={String(config.device_name || "")} onChange={(v) => onChange("device_name", v)} placeholder="qwenpaw-worker" />
+      <TextField label="设备名称" value={String(config.device_name || "")} onChange={(v) => onChange("device_name", v)} placeholder="例如：智观AI" />
       <SwitchField label="禁用私聊" checked={Boolean(config.dm_disabled)} onChange={(v) => onChange("dm_disabled", v)} />
       <SwitchField label="禁用群聊" checked={Boolean(config.group_disabled)} onChange={(v) => onChange("group_disabled", v)} />
     </>

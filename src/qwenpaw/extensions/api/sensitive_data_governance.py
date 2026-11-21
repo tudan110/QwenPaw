@@ -26,8 +26,7 @@ CATEGORIES = (
 COVERAGE = (
     {"id": "documents", "name": "受控资料", "status": "enforced", "detail": "保存时分类；本人或限时授权方可读脱敏预览。原文导出限本人、单份、限时一次，敏感类需复核，技术秘密禁止。"},
     {"id": "knowledge", "name": "知识库", "status": "partial", "detail": "从受控资料发布的副本按同一规则脱敏；知识库直接上传不经过此授权链。"},
-    {"id": "chat", "name": "对话与模型上下文", "status": "outside", "detail": "本页不校验对话输入、回复及上下文访问，不代表其他对话防护的验证结果。"},
-    {"id": "exports", "name": "业务查询与导出", "status": "outside", "detail": "本页不校验业务数据查询、附件或报表下载，不代表各业务已有策略的验证结果。"},
+    {"id": "exports", "name": "业务查询与导出", "status": "partial", "detail": "智能体调用时禁止使用不具备确认机制的文件导出工具。告警明细在智能体执行时核验批量上限，下载前仍需确认；未接入受控导出的业务不能通过通用工具生成明细文件。"},
     {"id": "logs", "name": "日志、缓存与调试", "status": "outside", "detail": "本页只记录受控资料的审计元数据，不扫描日志、缓存或调试输出。"},
 )
 

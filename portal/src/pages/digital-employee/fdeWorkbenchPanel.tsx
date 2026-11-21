@@ -838,7 +838,7 @@ export function FdeWorkbenchPanel() {
               ? "正在连接 skill 构建助手…"
               : `skill 构建助手暂不可用：${
                   info?.reason ||
-                  "请先 sync-qwenpaw-working.sh 同步工作区并重启服务"
+                  "请联系管理员检查技能构建服务"
                 }`}
           </p>
         </div>

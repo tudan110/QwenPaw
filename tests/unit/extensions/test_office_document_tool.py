@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 from test_report_export_flow import flow  # noqa: F401
 
 ROOT = Path(__file__).resolve().parents[3] / "src/qwenpaw"
+requires_posix_files = pytest.mark.skipif(os.name != "posix", reason="Office safe file handling requires POSIX directory descriptors")
 
 
 @pytest.fixture
@@ -33,12 +35,14 @@ def office_tool(flow, monkeypatch):  # noqa: F811
     return modules["qwenpaw.agents.tools.office_document"]
 
 
-async def test_registered_tool_is_available_to_ordinary_production_users(
-    office_tool, flow, tmp_path  # noqa: F811
+@requires_posix_files
+async def test_registered_tool_creates_files_outside_production_controls(
+    office_tool, flow, tmp_path, monkeypatch  # noqa: F811
 ):
     from qwenpaw.runtime.tool_registry import get_builtin_tool_funcs
 
     assert office_tool.process_office_document in get_builtin_tool_funcs()
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "false")
     params = {
         "operation": "create_xlsx",
         "rows": [["资源", "数量"], ["MySQL", 2]],
@@ -57,6 +61,14 @@ async def test_registered_tool_is_available_to_ordinary_production_users(
         "MySQL",
         2,
     ]
+
+
+async def test_production_allows_inspection_but_blocks_office_artifacts(office_tool, flow, tmp_path):
+    params = {"operation": "create_xlsx", "rows": [["资源", "数量"], ["MySQL", 2]]}
+    assert await flow.policy.check_tool("process_office_document", {"operation": "inspect"}) is False
+    denied = await office_tool.process_office_document(**params)
+    assert denied.state == "error" and "导出策略已拦截" in denied.content[0]["text"]
+    assert not (tmp_path / "artifacts").exists()
     with pytest.raises(PermissionError):
         await flow.policy.check_tool("write_file", {"file_path": "script.py"})
     with pytest.raises(PermissionError):
@@ -79,9 +91,11 @@ async def test_malformed_input_and_outside_workspace_return_errors(
     assert not (tmp_path / "artifacts").exists()
 
 
-async def test_creation_uses_existing_report_renderer(office_tool, tmp_path):
+@requires_posix_files
+async def test_creation_uses_existing_report_renderer(office_tool, tmp_path, monkeypatch):
     from docx import Document
 
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "false")
     result = await office_tool.process_office_document(
         "create_docx", content="# 报告\n中文验证"
     )
@@ -92,9 +106,15 @@ async def test_creation_uses_existing_report_renderer(office_tool, tmp_path):
     )
 
 
-async def test_office_pdf_text_export_uses_real_renderer(office_tool):
+@requires_posix_files
+async def test_office_pdf_text_export_uses_real_renderer(office_tool, flow, monkeypatch):
     from pypdf import PdfReader
 
+    try:
+        flow.renderer._libreoffice()
+    except RuntimeError:
+        pytest.skip("LibreOffice is not installed")
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "false")
     created = await office_tool.process_office_document(
         "create_docx", content="# 导出验收\n中文资源清单"
     )

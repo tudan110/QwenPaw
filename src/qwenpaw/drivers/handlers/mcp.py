@@ -9,6 +9,11 @@ import re
 import time
 from typing import Any
 
+from ...extensions.security.call_admission import (
+    Target,
+    blocked_by,
+    require_not_blocked,
+)
 from ..capabilities import (
     CapabilityExposure,
     DriverCapability,
@@ -59,6 +64,7 @@ class MCPDriverHandler(DriverHandler):
 
     async def _setup(self) -> None:
         """Create and connect StdIOStatefulClient or HttpStatefulClient."""
+        require_not_blocked(Target("mcp_service", self.name))
         endpoint = self._card.endpoint
         from ...extensions.security.mcp_boundary import validate_endpoint
         validate_endpoint(endpoint)
@@ -119,7 +125,9 @@ class MCPDriverHandler(DriverHandler):
 
         scope = kwargs.pop("_portal_invocation", None)
         tool_name = str(kwargs["tool_name"])
+        target = Target("mcp_tool", tool_name, self.name)
         try:
+            require_not_blocked(target)
             needs_approval = await check_tool(
                 f"{self.name}__{tool_name}", dict(kwargs.get("arguments") or {}),
             )
@@ -136,6 +144,7 @@ class MCPDriverHandler(DriverHandler):
         del context
         if self._client is None:
             raise RuntimeError(f"MCP driver '{self.name}' is not connected")
+        require_not_blocked(target)
         return await self._client.call_tool(
             str(kwargs["tool_name"]),
             dict(kwargs.get("arguments") or {}),
@@ -143,6 +152,7 @@ class MCPDriverHandler(DriverHandler):
 
     async def list_tools(self) -> Any:
         """Delegate to underlying MCP client list_tools."""
+        require_not_blocked(Target("mcp_service", self.name))
         if self._client is None:
             raise RuntimeError(f"MCP driver '{self.name}' is not connected")
         return await self._client.list_tools()
@@ -153,6 +163,8 @@ class MCPDriverHandler(DriverHandler):
     ) -> list[DriverCapability]:
         """Expose MCP tools as protocol-neutral Driver capabilities."""
         del request_context
+        if blocked_by(Target("mcp_service", self.name)):
+            return []
         now = time.monotonic()
         if self._capability_cache is not None:
             cached_at, cached = self._capability_cache

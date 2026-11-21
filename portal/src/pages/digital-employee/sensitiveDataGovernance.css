@@ -1,29 +1,14 @@
 .sd-governance { line-height: 1.55; }
 .sd-overview { overflow: hidden; }
-.sd-banner {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
+.sd-overview-heading {
   padding: 16px 18px;
-  background: var(--gov-accent-soft);
-}
-.sd-banner > div { flex: 1 1 240px; min-width: 0; }
-.sd-banner-icon {
-  display: grid;
-  flex: 0 0 38px;
-  height: 38px;
-  place-items: center;
-  border-radius: 10px;
-  background: var(--bg-white);
-  color: var(--gov-accent);
-  font-size: 19px;
+  border-bottom: 1px solid var(--border);
 }
 .sd-governance h4, .sd-governance h5 { margin: 0; line-height: 1.4; }
 .sd-governance h4 { font-size: 16px; font-weight: 650; }
 .sd-governance h5 { font-size: 14px; font-weight: 650; }
 .sd-governance p { margin: 0; color: var(--text-secondary); font-size: 13px; }
-.sd-banner p, .sd-heading p { margin-top: 4px; }
+.sd-heading p { margin-top: 4px; }
 .sd-governance .ant-tag { margin-inline-end: 0; }
 .sd-categories { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .sd-class { display: grid; align-content: start; gap: 6px; min-width: 0; padding: 14px 18px; }
@@ -32,6 +17,9 @@
 .sd-section { display: grid; gap: 12px; padding: 15px 18px; }
 .sd-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
 .sd-heading > div { flex: 1 1 300px; min-width: 0; }
+.sd-privacy-definitions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.sd-privacy-rule { display: grid; align-content: start; gap: 6px; min-width: 0; }
+.sd-privacy-mode { width: 100%; }
 .sd-coverage, .sd-checks, .sd-event-list { list-style: none; margin: 0; padding: 0; }
 .sd-coverage li {
   display: grid;
@@ -67,12 +55,12 @@
 .sd-event-list li { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-block: 4px; }
 
 @container governance (max-width: 680px) {
-  .sd-categories, .sd-samples, .sd-checks, .sd-event-list { grid-template-columns: minmax(0, 1fr); }
+  .sd-privacy-definitions, .sd-categories, .sd-samples, .sd-checks, .sd-event-list { grid-template-columns: minmax(0, 1fr); }
   .sd-class + .sd-class { border-inline-start: 0; border-top: 1px solid var(--border); }
   .sd-coverage li { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
   .sd-coverage li > p { grid-column: 1 / -1; }
 }
 @container governance (max-width: 330px) {
   .sd-coverage li { grid-template-columns: minmax(0, 1fr); }
-  .sd-banner, .sd-section, .sd-class { padding-inline: 12px; }
+  .sd-overview-heading, .sd-section, .sd-class { padding-inline: 12px; }
 }

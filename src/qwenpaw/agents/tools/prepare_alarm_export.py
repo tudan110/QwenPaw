@@ -1,5 +1,9 @@
 """Prepare a Portal confirmation link for a structured alarm query."""
+import asyncio
+import sqlite3
 from urllib.parse import urlencode
+
+from fastapi import HTTPException
 
 from agentscope.message import TextBlock, ToolResultState
 from agentscope.tool import ToolChunk
@@ -35,7 +39,7 @@ async def prepare_alarm_export(
         manage_ip: Exact neIp if used.
         resource_type: Exact alarmClassType if used.
     """
-    from ...extensions.api.alarm_export import LiveSelection
+    from ...extensions.api.alarm_export import LiveSelection, check_agent_export
 
     try:
         selection = LiveSelection(
@@ -45,6 +49,16 @@ async def prepare_alarm_export(
     except ValidationError:
         return ToolChunk(is_last=True, state=ToolResultState.ERROR, content=[
             TextBlock(text="未生成导出入口：需要已核实的时间范围和筛选条件。"),
+        ])
+    try:
+        await asyncio.to_thread(check_agent_export, selection)
+    except HTTPException as exc:
+        return ToolChunk(is_last=True, state=ToolResultState.ERROR, content=[
+            TextBlock(text=f"未生成导出入口：{exc.detail} 不要使用其他工具或格式绕过导出限制。"),
+        ])
+    except (OSError, ValueError, RuntimeError, sqlite3.Error):
+        return ToolChunk(is_last=True, state=ToolResultState.ERROR, content=[
+            TextBlock(text="未生成导出入口：无法核实本次导出，请稍后重试。"),
         ])
     href = "/api/portal/alarm-export/preview?" + urlencode(selection.model_dump())
     return ToolChunk(is_last=True, state=ToolResultState.SUCCESS, content=[

@@ -109,21 +109,21 @@ export function GovernanceSettings({ pageTheme = "light" }: { pageTheme?: "light
       <ComponentAdmissionPanel onViewScope={() => selectTab("scope")} />),
     governanceTab("scope", "权限范围台账", LockOutlined, "登记组件的调用权限、可访问数据和风险依据。",
       <Ledger {...recordProps("scope")} fields={scopeFields} />),
-    governanceTab("supply", "供应链变更", SwapOutlined, "401-3.3 · 查看模型、技能、MCP 和受管插件的实际变更。",
+    governanceTab("supply", "供应链变更", SwapOutlined, "自动记录模型、技能、MCP 和受管插件的已保存变更，不代表审批或兼容性验证已通过。",
       <ComponentChangePanel key="supply" view="supply" />),
-    governanceTab("flow", "数据流转", BranchesOutlined, "401-3.4 · 查看组件之间的数据类型、方向、处理方式及追溯入口。",
+    governanceTab("flow", "数据流转", BranchesOutlined, "展示智观AI的数据流向、数据类型、处理方式及追溯入口。此表为部署链路说明，不是实时抓包。",
       <ComponentDataFlows />),
-    governanceTab("scan", "扫描与处置", FileSearchOutlined, "401-3.5 · 执行当前部署检查，查看每项结果和建议处置。",
+    governanceTab("scan", "扫描与处置", FileSearchOutlined, "检查技能、模型及 MCP 配置；启用 OSV 时检查已安装的 Python 依赖。未覆盖和未完成的项目会单独标明。",
       <ComponentScanPanel />),
-    governanceTab("sensitive", "敏感数据治理", DatabaseOutlined, "查看敏感数据分类、场景覆盖与授权边界，并运行可审计的合成样例自检。",
+    governanceTab("sensitive", "敏感数据治理", DatabaseOutlined, "管理敏感数据识别规则、适用场景与处理方式。",
       <>
         <SensitiveDataGovernancePanel key={scope} />
-        <Collapse items={[{ key: "preview", label: "采集、留存与删除规则示例（不生效 · 402-2.6）",
+        <Collapse items={[{ key: "preview", label: "采集、留存与删除规则示例（仅预览）",
           children: <SensitivePolicy scope={scope} /> }]} />
       </>),
-    governanceTab("local", "本地部署策略", DeploymentUnitOutlined, "402-3.3 · 配置受管本地推理的模型文件、缓存及接口访问。",
+    governanceTab("local", "本地部署策略", DeploymentUnitOutlined, "配置受管本地推理的模型文件、缓存及接口访问。",
       <LocalAccessPanel />),
-    governanceTab("config", "配置变更记录", SettingOutlined, "403.2 · 查看实际配置写入的主体、时间和变更摘要。",
+    governanceTab("config", "配置变更记录", SettingOutlined, "自动记录已保存配置的变更主体、时间和摘要，不含敏感原文，也不代表配置已在运行时生效。",
       <ComponentChangePanel key="config" view="config" />),
   ];
   const dark = pageTheme === "dark";

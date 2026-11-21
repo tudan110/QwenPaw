@@ -156,7 +156,7 @@ export function FdeCreateAgentModal({
         </div>
         <div className="fde-modal-body">
           <p className="fde-modal-hint">
-            和智观 Paw 控制台的「创建智能体」一致 —— 建好后这次生成的技能会装进它。新智能体不会出现在左侧精选清单里，但可正常对话、技能也跑在它里面。
+            创建后，本次生成的技能将安装到该智能体。新智能体不会出现在左侧精选清单里，但可正常对话、技能也跑在它里面。
           </p>
           <label className="fde-modal-field">
             <span>
@@ -234,7 +234,7 @@ export function FdeCreateAgentModal({
             </span>
             <input
               className="fde-field"
-              placeholder="~/.qwenpaw/workspaces/<id>"
+              placeholder="留空使用系统默认目录"
               value={workspaceDir}
               onChange={(e) => setWorkspaceDir(e.target.value)}
             />

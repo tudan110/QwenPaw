@@ -66,13 +66,13 @@ class ExportPolicy(BaseModel):
     max_rows: int = Field(strict=True, ge=1, le=MAX_REAL_ALARM_LIMIT)
 
 
-def _actor(request: Request, *, admin: bool = False) -> str:
+def _actor(request: Request | None = None, *, admin: bool = False) -> str:
     identity = CURRENT_IDENTITY.get()
     if identity is None or not identity.user_id or identity.source not in {"inoe", "qwenpaw", "mixed"}:
         raise HTTPException(401, "请先登录智观")
     if admin and not identity.is_admin:
         raise HTTPException(403, "需要智观 AI 管理员权限")
-    if request.method != "GET":
+    if request is not None and request.method != "GET":
         require_browser_origin(request)
     return identity.user_id
 
@@ -155,6 +155,24 @@ def _preview(count: int, limit: int) -> dict:
     else:
         message = f"将导出 {count} 条告警明细，单次最多 {limit} 条。"
     return {"count": count, "max_rows": limit, "message": message}
+
+
+def check_agent_export(selection: Selection) -> None:
+    """Check real scoped row count before a tool offers any export action."""
+    actor = _actor()
+    with _db() as db:
+        limit = _limit(db)
+    count, rows = _records(selection, limit)
+    with _db() as db:
+        current_limit = _limit(db)
+        if count > current_limit:
+            _audit(db, actor, selection.source, "agent_blocked_limit", count, current_limit)
+    if count > current_limit:
+        raise HTTPException(422, _preview(count, current_limit)["message"])
+    if count == 0:
+        raise HTTPException(422, _preview(count, current_limit)["message"])
+    if len(rows) != count:
+        raise HTTPException(409, "无法核实本次导出的完整范围，请重试。")
 
 
 @router.get("/alarm-export-settings")

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Card, Descriptions, Space, Table, Tag, Typography } from "antd";
 import { Link } from "react-router-dom";
+import { CallAdmissionControls } from "./callAdmissionControls";
 import { callAdmissionRows, type CallAdmissionRow } from "./callAdmissionFacts";
 import { securityEvidenceApi, type AdmissionEvidence, type MCPAdmissionCheck } from "../../api/securityEvidence";
 
@@ -69,10 +70,11 @@ export function ComponentAdmissionPanel({ onViewScope }: { onViewScope: () => vo
     {loadError && <Alert type="error" showIcon title={loadError} />}
     {mcp && !mcp.production_guards && <Alert type="warning" showIcon
       title="生产守卫已关闭：下表中的生产守卫规则仅供参考，其他授权仍需单独核查。" />}
-    <Card size="small" title="准入与权限边界" extra={<Button type="link" size="small" onClick={onViewScope}>查看权限范围台账</Button>}>
+    <CallAdmissionControls revision={revision} />
+    <Card size="small" title="既有准入规则与覆盖范围" extra={<Button type="link" size="small" onClick={onViewScope}>查看权限范围台账</Button>}>
       <Typography.Paragraph type="secondary">
         生产守卫状态与 MCP 端点模式取自当前后端，其余内容说明规则及覆盖范围，不代表现场联通或业务授权已验证。
-        “只读”与“需审批”是操作约束，不是风险等级；逐项定级以组件清单关联的台账记录为准。
+        此处说明既有规则；可配置对象的风险等级和限制见上方「逐项准入控制」。
       </Typography.Paragraph>
       <Table<CallAdmissionRow> className="gov-table gov-inner-table" size="small" rowKey="key" pagination={false} scroll={{ x: 880 }} dataSource={rows} columns={[
         { title: "调用对象", key: "target", width: 188,
@@ -87,8 +89,6 @@ export function ComponentAdmissionPanel({ onViewScope }: { onViewScope: () => vo
           {row.link === "mcp" && <><br /><Link to="/mcp">查看 MCP 管理</Link></>}
         </> },
         { title: "权限与数据边界", dataIndex: "boundary" },
-        { title: "风险等级", dataIndex: "risk", width: 122,
-          render: (risk: CallAdmissionRow["risk"]) => <Tag color={risk === "待评估" ? "gold" : "default"}>{risk}</Tag> },
       ]} />
     </Card>
     {evidence && <div ref={detailsRef}><Card size="small" title="工具和脚本策略明细" extra={<Button size="small" onClick={() => setShowDetails((v) => !v)}>{showDetails ? "收起" : "展开明细"}</Button>}>

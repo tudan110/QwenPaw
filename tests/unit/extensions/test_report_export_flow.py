@@ -105,6 +105,7 @@ def flow(monkeypatch, tmp_path):
         "qwenpaw.extensions.security.execution_policy",
         "extensions/security/execution_policy.py",
     )
+    load("qwenpaw.extensions.security.agent_export", "extensions/security/agent_export.py")
     router = load(
         "qwenpaw.extensions.api.agent_reports",
         "extensions/api/agent_reports.py",
@@ -116,7 +117,8 @@ def flow(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("format", ["docx", "md", "pdf"])
-async def test_production_export_and_download(flow, format):
+async def test_non_production_export_and_download(flow, format, monkeypatch):
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "false")
     if format == "pdf":
         try:
             flow.renderer._libreoffice()
@@ -156,6 +158,22 @@ async def test_production_export_and_download(flow, format):
         )
 
 
+async def test_production_blocks_unstructured_export_before_artifact_creation(flow):
+    for tool, options in (
+        ("export_report", {}), ("process_office_document", {"operation": "create_xlsx"}),
+        ("send_file_to_user", {}), ("append_file", {}), ("edit_file", {}),
+    ):
+        with pytest.raises(PermissionError, match="导出策略已拦截"):
+            await flow.policy.check_tool(tool, options)
+    assert await flow.policy.check_tool("process_office_document", {"operation": "inspect"}) is False
+    for format in ("pdf", "docx", "md"):
+        result = await flow.tool.export_report("工单明细", format=format)
+        assert result.state == "error"
+        assert "导出策略已拦截" in result.content[0]["text"]
+        assert "](" not in result.content[0]["text"]
+    assert not flow.paths.REPORTS_DATA_DIR.exists()
+
+
 async def test_general_writes_and_shell_stay_denied(flow):
     with pytest.raises(PermissionError):
         await flow.policy.check_tool("write_file", {"file_path": "script.py"})
@@ -174,6 +192,7 @@ async def test_default_pdf_and_default_tool_registration(flow, monkeypatch):
     from qwenpaw.runtime.tool_registry import get_builtin_tool_funcs
 
     assert flow.tool.export_report in get_builtin_tool_funcs()
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "false")
 
     def render(content, title, format, agent_id, reports_root):
         assert format == "pdf"
@@ -185,3 +204,19 @@ async def test_default_pdf_and_default_tool_registration(flow, monkeypatch):
     result = await flow.tool.export_report("中文正文")
     assert result.state == "ok"
     assert "report.pdf" in result.content[0]["text"]
+
+
+@pytest.mark.parametrize("tool_name", ["write_file", "export_report"])
+async def test_fallback_runtime_guard_blocks_export(flow, tool_name):
+    from agentscope.permission import PermissionBehavior
+    from qwenpaw.runtime.tool_guard import (
+        _guarded_tool_call,
+        _guarded_tool_check_permissions,
+    )
+
+    tool = SimpleNamespace(name=tool_name)
+    decision = await _guarded_tool_check_permissions(tool, {}, None)
+    assert decision.behavior == PermissionBehavior.DENY
+    assert "导出策略已拦截" in decision.message
+    with pytest.raises(PermissionError, match="导出策略已拦截"):
+        await _guarded_tool_call(tool)

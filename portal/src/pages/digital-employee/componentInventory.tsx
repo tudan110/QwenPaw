@@ -68,7 +68,7 @@ export function ComponentInventory({ onRegister, registeredScope }: {
       "插件列表", item.version || "—")));
     const backendDeps = getConfiguration<DependencyReport>("/tools/component-dependencies", signal).then((report) => {
       if (!report.available) throw new Error("backend distribution metadata unavailable");
-      return report.items.map((item) => create(`backend:${item.name}`, item.name, dependencyKind, "QwenPaw 后端直接依赖",
+      return report.items.map((item) => create(`backend:${item.name}`, item.name, dependencyKind, "智观AI服务依赖",
         "随服务引入，无独立调用授权", "按宿主功能，待核查", item.installed ? "检测到安装元数据" : "未检测到安装版本",
         `后端发行包声明 ${item.declared || "未限制版本"}`, item.installed || "—"));
     });

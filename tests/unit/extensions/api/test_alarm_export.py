@@ -146,10 +146,34 @@ async def test_chat_export_uses_real_total_and_callers_scope(api, monkeypatch):
         assert output.json()["items"][0]["alarmId"] == "A"
 
 
-async def test_tool_only_prepares_exact_scope_link():
-    content = (await prepare_alarm_export(
-        LIVE["begin_time"], LIVE["end_time"], "0", "1,2", "设备（甲）/1",
-    )).content[0].text
+async def test_tool_checks_real_scope_and_enforces_limit_before_link(api, monkeypatch):
+    client, _, path = api
+    calls = []
+    count = 1
+
+    def read_rows(limit, start, end, filters):
+        calls.append((limit, start, end, filters))
+        return count, [{"alarmId": "demo"}] if count <= limit else []
+
+    monkeypatch.setattr(alarm_export, "read_alarm_export_rows", read_rows)
+    token = CURRENT_IDENTITY.set(AccessIdentity({"userId": "alice"}, "fixture-token"))
+    try:
+        content = (await prepare_alarm_export(
+            LIVE["begin_time"], LIVE["end_time"], "0", "1,2", "设备（甲）/1",
+        )).content[0].text
+        count = 41
+        denied = (await prepare_alarm_export(
+            LIVE["begin_time"], LIVE["end_time"], "0", "1,2", "设备（甲）/1",
+        )).content[0].text
+    finally:
+        CURRENT_IDENTITY.reset(token)
+        await client.aclose()
+    assert calls == [(10, LIVE["begin_time"], LIVE["end_time"],
+                      {"isClear": "0", "alarmSeverity": "1,2", "queryKey": "设备（甲）/1"})] * 2
+    assert "导出 41 条，单次最多 10 条" in denied and "](" not in denied
+    with sqlite3.connect(path / "alarm_export.db") as db:
+        assert db.execute("SELECT decision, records FROM events").fetchall() == [("agent_blocked_limit", 41)]
+        assert db.execute("SELECT count(*) FROM tickets").fetchone()[0] == 0
     path = content.split("](", 1)[1].removesuffix(")")
     query = parse_qs(urlsplit(path).query)
     assert urlsplit(path).path == BASE + "/alarm-export/preview"

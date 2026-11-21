@@ -403,7 +403,7 @@ def run_scan(
         [
             row(
                 "dependency",
-                "Portal / Console 前端与操作系统依赖",
+                "智观AI前端与操作系统依赖",
                 "全局",
                 "not_covered",
                 "当前入口不含前端及镜像 SBOM，需在构建/镜像阶段核验。",

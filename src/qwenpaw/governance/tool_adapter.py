@@ -197,6 +197,7 @@ async def _policy_tool_check_permissions(
     """
     from agentscope.permission import PermissionBehavior, PermissionDecision
     from fastapi import HTTPException
+    from ..extensions.security.call_admission import require_agent_tool
     from ..extensions.security.execution_policy import (
         check_tool,
         normalize_managed_shell,
@@ -215,6 +216,7 @@ async def _policy_tool_check_permissions(
     request_ctx = getattr(self, "_qp_request_context", None)
     skill_check = False
     try:
+        require_agent_tool(tool_name)
         input_data = normalize_managed_shell(tool_name, input_data or {})
         skill_check = True
         await check_tool_skills(request_ctx, tool_name, input_data)
@@ -383,12 +385,15 @@ async def _policy_tool_call(
     If the user approves, retry without sandbox.
     """
     sandbox_mode = getattr(self, "_qp_sandbox_mode", False)
+    from ..extensions.security.call_admission import require_agent_tool
     from ..extensions.security.execution_policy import (
+        check_shell,
         check_tool,
         enabled,
         normalize_managed_shell,
     )
 
+    require_agent_tool(self.name)
     kwargs = normalize_managed_shell(getattr(self, "name", ""), kwargs)
     mandatory_approval = await check_tool(
         getattr(self, "name", ""),
@@ -429,6 +434,12 @@ async def _policy_tool_call(
     from agentscope.tool import FunctionTool
     from agentscope.message import ToolResultState
 
+    require_agent_tool(self.name)
+    if self.name == "execute_shell_command" and enabled():
+        # Skill authorization above may await storage after check_tool.
+        # Recheck the script deny and integrity without making another auth call.
+        if check_shell(str(kwargs.get("command", "")), kwargs.get("cwd")) and not mandatory_approval:
+            raise PermissionError("脚本启用条件已改变，未执行本次调用")
     result = await _execute_audited(self, FunctionTool.__call__, *args, **kwargs)
     if cmdb_call is not None:
         result = await permissions.track_cmdb_outcome(ctx, result, cmdb_call)
@@ -532,6 +543,7 @@ async def _policy_tool_call(
         )
         kwargs.pop("sandbox_config", None)
         self._qp_sandbox_mode = False
+        require_agent_tool(self.name)
         return await _execute_audited(self, FunctionTool.__call__, *args, **kwargs)
     else:
         # User denied: return the violation as DENIED

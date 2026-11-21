@@ -36,6 +36,7 @@ from .security_evidence import router as security_evidence_router
 from .component_governance import router as component_governance_router
 from .critical_audit import router as critical_audit_router
 from .security_boundaries import router as security_boundaries_router
+from .call_admission import router as call_admission_router
 from .agent_permissions import router as agent_permissions_router
 
 router = APIRouter()
@@ -72,6 +73,7 @@ router.include_router(security_evidence_router)
 router.include_router(component_governance_router)
 router.include_router(critical_audit_router)
 router.include_router(security_boundaries_router)
+router.include_router(call_admission_router)
 router.include_router(agent_permissions_router)
 router.include_router(controlled_documents_router)
 

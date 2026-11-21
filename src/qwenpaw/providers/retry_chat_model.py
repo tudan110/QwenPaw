@@ -570,11 +570,19 @@ class RetryChatModel(ChatModelBase):
                     ctx=trace_ctx,
                 )
 
+    @staticmethod
+    async def _check_model_privacy(args: tuple, kwargs: dict) -> None:
+        from ..extensions.api import text_privacy
+
+        messages = kwargs.get("messages", args[0] if args else None)
+        await text_privacy.check("model_context", messages)
+
     async def generate_structured_output(
         self,
         *args: Any,
         **kwargs: Any,
     ) -> Any:
+        await self._check_model_privacy(args, kwargs)
         return await self._inner.generate_structured_output(*args, **kwargs)
 
     async def __call__(
@@ -582,6 +590,7 @@ class RetryChatModel(ChatModelBase):
         *args: Any,
         **kwargs: Any,
     ) -> ChatResponse | AsyncGenerator[ChatResponse, None]:
+        await self._check_model_privacy(args, kwargs)
         cache = get_capability_cache()
         key = self.model_key
 

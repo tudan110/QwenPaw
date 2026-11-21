@@ -40,7 +40,7 @@ from ...extensions.api.chat_isolation import (
     reject_reserved_legacy_namespace,
     require_owned_chat,
 )
-from ...extensions.api import trusted_chat_text
+from ...extensions.api import text_privacy, trusted_chat_text
 from ...utils.logging import LOG_FILE_PATH
 from ..agent_context import get_agent_for_request
 from ..approvals.display import approval_display_fields
@@ -86,10 +86,19 @@ def _chat_control(request: Request) -> PortalChatControl:
 
 
 async def _start_chat_stream(request, scope, tracker, chat_id, payload, stream_fn, **kwargs):
+    async def stream_with_privacy_feedback(body):
+        try:
+            async with aclosing(stream_fn(body)) as stream:
+                async for event in stream:
+                    yield event
+        except (text_privacy.PrivacyBlocked, text_privacy.PrivacyUnavailable) as exc:
+            # Only policy exceptions with fixed, non-sensitive messages.
+            yield _sse({"error": str(exc)})
+
     if scope is None:
-        return await tracker.attach_or_start(chat_id, payload, stream_fn, **kwargs)
+        return await tracker.attach_or_start(chat_id, payload, stream_with_privacy_feedback, **kwargs)
     try:
-        return await _chat_control(request).start(tracker, chat_id, payload, stream_fn, **kwargs)
+        return await _chat_control(request).start(tracker, chat_id, payload, stream_with_privacy_feedback, **kwargs)
     except PortalChatsPaused as exc:
         raise HTTPException(503, "Portal 对话已被管理员关停，请等待管理员解除关停。") from exc
 
@@ -294,6 +303,16 @@ def _extract_placeholder_name(content_parts: list) -> tuple[str, str]:
     return first_text[:10], first_text
 
 
+async def _check_chat_privacy(parts: list) -> None:
+    texts = [text for part in parts if (text := trusted_chat_text.get_text_block(part)) is not None]
+    try:
+        await text_privacy.check("chat_input", texts)
+    except text_privacy.PrivacyBlocked as exc:
+        raise HTTPException(403, str(exc)) from None
+    except text_privacy.PrivacyUnavailable as exc:
+        raise HTTPException(503, str(exc)) from None
+
+
 def _extract_session_and_payload(request_data: Union[AgentRequest, dict]):
     """Extract run_key (ChatSpec.id), session_id, and native payload.
 
@@ -404,6 +423,9 @@ async def post_console_chat(
         raise HTTPException(503, "当前部署未启用隔离会话，无法关闭业务联网。")
     authorize_chat_payload(native_payload, scope)
     await trusted_chat_text.check_portal_input(native_payload["content_parts"], isolated=scope is not None)
+    is_reconnect = isinstance(request_data, dict) and request_data.get("reconnect") is True
+    if not is_reconnect:
+        await _check_chat_privacy(native_payload["content_parts"])
     session_id = console_channel.resolve_session_id(
         sender_id=native_payload["sender_id"],
         channel_meta=native_payload["meta"],
@@ -419,7 +441,6 @@ async def post_console_chat(
     )
     tracker = workspace.task_tracker
 
-    is_reconnect = isinstance(request_data, dict) and request_data.get("reconnect") is True
     if is_reconnect:
         if model_only:
             raise HTTPException(status_code=400, detail="Use the normal chat endpoint to reconnect.")
@@ -606,6 +627,8 @@ async def post_console_chat_continue(
     chat = await require_owned_chat(workspace.chat_manager, payload.chat_id, scope)
     await trusted_chat_text.check_portal_input([payload.question], isolated=True)
     await trusted_chat_text.check_portal_input([payload.draft], isolated=True)
+    if not payload.turn_id:
+        await _check_chat_privacy([payload.question, payload.draft])
     if not payload.question.strip() or not payload.draft.strip():
         raise HTTPException(422, "缺少可继续生成的正文。")
 
@@ -618,6 +641,11 @@ async def post_console_chat_continue(
                 yield _sse({"error": "中止的回复已更新，请重新打开会话。"})
                 return
             question, draft = stored[2:4]
+            try:
+                await _check_chat_privacy([question, draft])
+            except HTTPException as exc:
+                yield _sse({"error": exc.detail})
+                return
         tail = ""
         sent_base = False
         async with aclosing(stream_text_continuation(workspace.agent_id, question, draft)) as stream:
@@ -926,6 +954,7 @@ async def post_console_chat_task(
     scope = chat_scope()
     authorize_chat_payload(native_payload, scope)
     await trusted_chat_text.check_portal_input(native_payload["content_parts"], isolated=scope is not None)
+    await _check_chat_privacy(native_payload["content_parts"])
     session_id = console_channel.resolve_session_id(
         sender_id=native_payload["sender_id"],
         channel_meta=native_payload["meta"],

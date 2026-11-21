@@ -15,6 +15,7 @@ import {
 import { fdeApi, type FdeInstalledSkill } from "../../api/fde";
 import { portalGatewayAgentId } from "../../config/portalBranding";
 import { buildPortalSectionPath } from "./helpers";
+import { workspaceDisplayName } from "./workspaceDisplay";
 import "../skill-pool.css";
 
 const ERKAI_TAG = "二开";
@@ -283,6 +284,14 @@ export function SkillPoolPanel() {
     (s as WorkspaceSkillInfo & { _foreignAgentId?: string })._foreignAgentId;
   const getForeignName = (s: WorkspaceSkillInfo): string | undefined =>
     (s as WorkspaceSkillInfo & { _foreignAgentName?: string })._foreignAgentName;
+  const describeAgent = (skill: WorkspaceSkillInfo) => {
+    const id = getForeignId(skill);
+    if (!id || id === agentId) return "智观AI";
+    const name = getForeignName(skill)?.trim();
+    return name && name.toLowerCase() !== id.toLowerCase() && !/^(gateway|qwenpaw|portal)$/i.test(name)
+      ? name
+      : workspaceDisplayName(id, "数字员工");
+  };
   const resolveSkillAgentId = (s: WorkspaceSkillInfo) =>
     getForeignId(s) || agentId;
 
@@ -449,7 +458,7 @@ export function SkillPoolPanel() {
       if (!realContent || !realContent.trim()) {
         setNotice({
           type: "error",
-          message: `无法读取「${skill.name}」的 SKILL.md 内容，先到「FDE skill 构建助手」检查它在 ${getForeignName(skill) || targetAgent} 工作区的实际文件。`,
+          message: `无法读取「${skill.name}」的 SKILL.md 内容，先到「FDE skill 构建助手」检查它在「${describeAgent(skill)}」的安装状态。`,
         });
         return;
       }
@@ -820,9 +829,6 @@ export function SkillPoolPanel() {
   // ---- Enable / disable -------------------------------------------------
   // foreign 二开技能装在别的业务工作区里，启停 / 删除都得走它真正的
   // X-Agent-Id，不然只是在 gateway 这边 noop。
-  const describeAgent = (skill: WorkspaceSkillInfo) =>
-    getForeignName(skill) || getForeignId(skill) || "智观 AI";
-
   const handleEnable = async (skill: WorkspaceSkillInfo) => {
     const target = resolveSkillAgentId(skill);
     const where = describeAgent(skill);
@@ -1065,12 +1071,7 @@ export function SkillPoolPanel() {
             <div className="skill-pool-grid">
               {filteredSkills.map((skill) => {
                 const isSelected = selectedSkillName === skill.name;
-                const foreignId = (skill as WorkspaceSkillInfo & {
-                  _foreignAgentId?: string;
-                })._foreignAgentId;
-                const foreignName = (skill as WorkspaceSkillInfo & {
-                  _foreignAgentName?: string;
-                })._foreignAgentName;
+                const foreignId = getForeignId(skill);
                 return (
                   <article
                     key={skill.name}
@@ -1097,9 +1098,9 @@ export function SkillPoolPanel() {
                               {foreignId ? (
                                 <span
                                   className="skill-pool-badge foreign"
-                                  title={`这条技能装在业务智能体 ${foreignId} 的工作区，本面板只能查看；管理请去 FDE skill 构建助手`}
+                                  title={`这条技能由「${describeAgent(skill)}」使用`}
                                 >
-                                  所属 {foreignName || foreignId}
+                                  所属 {describeAgent(skill)}
                                 </span>
                               ) : null}
                             </div>
@@ -1157,7 +1158,7 @@ export function SkillPoolPanel() {
                           isStockLocked(skill)
                             ? STOCK_LOCK_HINT
                             : foreignId
-                              ? `保存会写到「${foreignName || foreignId}」工作区，不是 gateway`
+                              ? `保存后对「${describeAgent(skill)}」生效`
                               : undefined
                         }
                         onClick={(event) => {
@@ -1254,7 +1255,7 @@ export function SkillPoolPanel() {
                       isStockLocked(selectedSkill)
                         ? STOCK_LOCK_HINT
                         : getForeignId(selectedSkill)
-                          ? `保存会写到「${describeAgent(selectedSkill)}」工作区，不是 gateway`
+                          ? `保存后对「${describeAgent(selectedSkill)}」生效`
                           : undefined
                     }
                     onClick={() => void openEditModal(selectedSkill)}
@@ -1387,8 +1388,8 @@ export function SkillPoolPanel() {
                 <h3>{modalMode === "create" ? "新增技能" : "编辑技能"}</h3>
                 <p>
                   {modalMode === "edit" && editingSkill && getForeignId(editingSkill)
-                    ? `保存会写入「${describeAgent(editingSkill)}」工作区（${editTargetAgent}），不是 gateway。生效约 1–2 秒。`
-                    : "作用于「智观 AI」（对外入口）的技能；保存后约 1–2 秒生效。新建的技能会自动标记为二开。"}
+                    ? `保存后仅对「${describeAgent(editingSkill)}」生效，约需 1–2 秒。`
+                    : "保存后约 1–2 秒在「智观AI」生效。新建的技能会自动标记为二开。"}
                 </p>
               </div>
               <button type="button" className="skill-pool-modal-close" onClick={closeModal}>

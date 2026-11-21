@@ -23,12 +23,9 @@ async def export_report(
 
     Use when the user explicitly requests a file/download/export. Pass the
     full report text directly; no temporary script or shell command is
-    needed, including in production mode. PDF is the default. For Word use
-    docx; use md only when Markdown is requested. Return the download link
-    verbatim. Do not silently substitute a different format on failure.
-    Do not use for bulk alarm detail export, even if the user requests a
-    particular format. Use prepare_alarm_export and return its confirmation
-    link; do not work around an export limit by embedding rows in a report.
+    needed. PDF is the default. Not available under production export
+    controls; use the approved structured export flow for the data source.
+    Do not substitute a different tool or format after a policy denial.
 
     Args:
         content: Full report text, with basic Markdown headings/tables.
@@ -41,8 +38,10 @@ async def export_report(
     from ...app.agent_context import get_current_agent_id
     from ...extensions import runtime_data_paths
     from ...extensions.report_export import export_report as render_report
+    from ...extensions.security.agent_export import require_controlled_export
 
     try:
+        require_controlled_export("export_report")
         agent_id = get_current_agent_id()
         path = await asyncio.to_thread(
             render_report,

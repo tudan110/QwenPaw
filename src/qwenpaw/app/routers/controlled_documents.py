@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from ...constant import EnvVarLoader
 from ...extensions.api import controlled_documents as store
 from ...extensions.api import sensitive_data_governance as sensitive
+from ...extensions.api import text_privacy
 from ...extensions.api.access_policy import require_browser_origin
 from ...extensions.api.access_session import CURRENT_IDENTITY
 from ...extensions.api.sso_settings_store import get_userinfo_url
@@ -29,13 +30,17 @@ async def current_actor(request: Request, response: Response) -> AsyncIterator[s
         raise HTTPException(404, "受控资料未启用")
     if not production_guards():
         raise HTTPException(503, "受控资料要求启用生产保护")
+    yield _verified_actor(request, response)
+
+
+def _verified_actor(request: Request, response: Response) -> store.Actor:
     identity = CURRENT_IDENTITY.get()
     if identity is None or not identity.user_id or identity.source not in {"inoe", "qwenpaw", "mixed"}:
         raise HTTPException(401, "请先通过智观认证")
     if request.method != "GET":
         require_browser_origin(request)
     response.headers["Cache-Control"] = "no-store"
-    yield store.Actor(get_userinfo_url(), identity.user_id, identity.is_admin)
+    return store.Actor(get_userinfo_url(), identity.user_id, identity.is_admin)
 
 
 Actor = Annotated[store.Actor, Depends(current_actor)]
@@ -48,6 +53,13 @@ async def admin_actor(actor: Actor) -> store.Actor:
 
 
 Admin = Annotated[store.Actor, Depends(admin_actor)]
+
+
+async def privacy_admin_actor(request: Request, response: Response) -> store.Actor:
+    return await admin_actor(_verified_actor(request, response))
+
+
+PrivacyAdmin = Annotated[store.Actor, Depends(privacy_admin_actor)]
 router = APIRouter(prefix="/portal/controlled-documents", tags=["controlled-documents"])
 
 
@@ -329,6 +341,18 @@ def revoke_grant(identifier: str, actor: Actor) -> dict:
             raise store.Rejected(404, "授权不存在或不可撤销", security=True)
         store.event(db, actor, "grant.revoke", identifier, "success")
         return {"revoked": now}
+
+
+@router.get("/admin/sensitive-data/policy")
+def read_privacy_policy(actor: PrivacyAdmin) -> dict:
+    return text_privacy.status()
+
+
+@router.post("/admin/sensitive-data/policy")
+@with_errors
+def update_privacy_policy(body: text_privacy.PrivacyPolicy, actor: PrivacyAdmin) -> dict:
+    text_privacy.save(body, f"inoe:{actor.subject}")
+    return text_privacy.status()
 
 
 @router.get("/admin/sensitive-data")

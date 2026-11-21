@@ -190,6 +190,7 @@ def test_scan_report_persists_and_protects_last_success(
             ),
         ],
     }
+    expected = {**report, "rows": [{**report["rows"][0], "scope_name": "全局"}]}
     monkeypatch.setattr(component_scan, "run_scan", lambda *args: report)
     with TestClient(app, headers={"x-test-verified": "admin"}) as client:
         assert client.get(prefix).json() == {"report": None}
@@ -199,15 +200,15 @@ def test_scan_report_persists_and_protects_last_success(
             ).status_code
             == 403
         )
-        assert client.post(prefix).json() == {"report": report}
-        assert client.get(prefix).json() == {"report": report}
+        assert client.post(prefix).json() == {"report": expected}
+        assert client.get(prefix).json() == {"report": expected}
         monkeypatch.setattr(
             component_scan,
             "run_scan",
             lambda *args: (_ for _ in ()).throw(RuntimeError("failed")),
         )
         assert client.post(prefix).status_code == 503
-        assert client.get(prefix).json() == {"report": report}
+        assert client.get(prefix).json() == {"report": expected}
 
 
 def test_osv_uses_installed_versions_and_never_marks_partial_clear(
@@ -375,3 +376,89 @@ def test_prompt_and_security_writes_log_only_change_summaries(app_and_db):
         )
     raw = (workspace / "governance" / "component-governance.db").read_bytes()
     assert b"internal-only-prompt-text" not in raw
+
+
+def test_governance_disposition_requires_latest_finding_and_applies_real_controls(app_and_db, monkeypatch):
+    from qwenpaw.agents.skill_system.store import get_workspace_skill_manifest_path
+    from qwenpaw.extensions.security import call_admission
+
+    app, root = app_and_db
+    workspace = root / "query"
+    monkeypatch.setattr(call_admission, "WORKING_DIR", root)
+    monkeypatch.setattr(component_governance, "_workspaces", lambda: {"query": workspace})
+    monkeypatch.setattr(component_governance, "schedule_agent_reload", lambda *_: None)
+    prefix = "/api/security/governance"
+    body = {
+        "name": "review-skill", "enable": False,
+        "content": "---\nname: review-skill\ndescription: Unit test skill.\n---\n\nExample.\n",
+    }
+    connection = {
+        "client_key": "review-mcp", "client": {"name": "Test Connection", "transport": "streamable_http", "url": "https://example.invalid/mcp", "enabled": False},
+    }
+    checked_at = component_events.now()
+    with TestClient(app, headers={"x-test-verified": "admin"}) as client:
+        assert client.post("/api/skills", json=body).status_code == 200
+        manifest = get_workspace_skill_manifest_path(workspace)
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        payload["skills"][body["name"]]["enabled"] = True
+        manifest.write_text(json.dumps(payload), encoding="utf-8")
+        assert client.post("/api/mcp", json=connection).status_code in {200, 201}
+        component_events.save_scan({"checked_at": checked_at, "rows": [
+            component_scan.row("skill", "review-skill", "query", "findings", "synthetic condition"),
+            component_scan.row("mcp", "review-mcp", "query", "findings", "synthetic condition"),
+            component_scan.row("dependency", "some-package", "全局", "findings", "manual only"),
+            component_scan.row("skill", "review-skill", "query", "clear", "no finding"),
+        ]})
+        endpoint = f"{prefix}/scan/disposition"
+        assert client.post(endpoint, headers={"x-test-verified": "other"}, json={"checked_at": checked_at, "index": 0}).status_code == 403
+        assert client.post(endpoint, headers={"Origin": "https://foreign.invalid"}, json={"checked_at": checked_at, "index": 0}).status_code == 403
+        assert client.post(endpoint, json={"checked_at": "old-report", "index": 0}).status_code == 409
+        for index in [2, 3, 40]:
+            assert client.post(endpoint, json={"checked_at": checked_at, "index": index}).status_code == 409
+        for index in [0, 1]:
+            response = client.post(endpoint, json={"checked_at": checked_at, "index": index})
+            assert response.status_code == 200, response.text
+            assert response.json()["report"]["rows"][index]["action"]["done"]
+        assert not json.loads(manifest.read_text(encoding="utf-8"))["skills"][body["name"]]["enabled"]
+        assert (workspace / "skills" / body["name"] / "SKILL.md").exists()
+        assert call_admission.blocked_by(call_admission.Target("mcp_tool", "test", "review-mcp"))
+        records = client.get(f"{prefix}/changes").json()["records"]
+        assert any(record["target"] == "review-skill" and record["scope_name"] == "数据分析专家" for record in records)
+        assert any(record["target"] == "review-mcp" and record["after"] == {"isolated": True} for record in records)
+
+
+def test_local_download_controls_persist_and_leave_cached_mode_available(app_and_db, monkeypatch):
+    app, _ = app_and_db
+    monkeypatch.setattr(manager, "protect_storage", lambda: None)
+    runtime = app.state.local_model_manager
+    path = "/api/security/governance/local-access"
+    with TestClient(app, headers={"x-test-verified": "admin"}) as client:
+        resp = client.put(path, json={"mode": "managed", "allow_downloads": False})
+        assert resp.status_code == 200 and resp.json()["allow_downloads"] is False
+        assert client.get(path).json()["allow_downloads"] is False
+        runtime._require_local_storage()
+        with pytest.raises(RuntimeError, match="禁止下载"):
+            runtime.start_model_download("demo/model")
+        assert client.put(path, json={"mode": "deny"}).status_code == 200
+        with pytest.raises(RuntimeError, match="禁止受管本地模型"):
+            runtime._require_local_storage()
+    assert manager.LocalModelManager().get_config().allow_downloads is False
+
+
+def test_workspace_display_names_are_read_only(tmp_path):
+    workspaces = {key: tmp_path / key for key in ("gateway", "custom", "retired")}
+    for key, name in (("gateway", "gateway"), ("custom", "值班助手")):
+        workspace = workspaces[key]
+        workspace.mkdir()
+        (workspace / "agent.json").write_text(
+            json.dumps({"name": name}), encoding="utf-8",
+        )
+    report = {"rows": [
+        component_scan.row("skill", "sample", key, "clear", "none")
+        for key in ("gateway", "custom", "retired", "技能池 1", "fault", "order")
+    ]}
+    result = component_governance._scan_view(report, workspaces)["report"]
+    assert [row["scope_name"] for row in result["rows"]] == [
+        "智观AI", "值班助手", "数字员工", "技能池 1", "故障分析专家", "工单处置专员",
+    ]
+    assert not workspaces["retired"].exists()
