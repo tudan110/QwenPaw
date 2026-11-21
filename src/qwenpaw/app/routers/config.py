@@ -709,7 +709,6 @@ async def put_tool_guard(
     from ...security.tool_guard.engine import get_guard_engine
 
     engine = get_guard_engine()
-    engine.enabled = body.enabled
     engine.reload_rules()
 
     return body

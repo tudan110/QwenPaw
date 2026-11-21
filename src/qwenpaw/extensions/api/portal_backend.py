@@ -71,6 +71,7 @@ from qwenpaw.extensions.api.agent_reports import (
 )
 from . import text_privacy
 from .alarm_export import router as alarm_export_router
+from .work_order_export import router as work_order_export_router
 from qwenpaw.extensions.api.qiming_openai_adapter import (
     router as qiming_openai_adapter_router,
 )
@@ -191,6 +192,7 @@ router.include_router(app_artifacts_router)
 router.include_router(light_apps_router)
 router.include_router(agent_reports_router)
 router.include_router(alarm_export_router)
+router.include_router(work_order_export_router)
 router.include_router(qiming_openai_adapter_router)
 router.include_router(xingchen_openai_adapter_router)
 router.include_router(kunlun_openai_adapter_router)

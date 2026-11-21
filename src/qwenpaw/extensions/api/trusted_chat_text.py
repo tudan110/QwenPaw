@@ -10,7 +10,6 @@ import unicodedata
 
 from fastapi import HTTPException
 
-from ...constant import EnvVarLoader
 from ..security.execution_policy import enabled as production_guards
 from .access_session import CURRENT_IDENTITY
 from .collaboration_access import SOURCE as SCHEDULED_SOURCE
@@ -29,7 +28,9 @@ MAX_INPUT = 32_000
 
 
 def enabled() -> bool:
-    return EnvVarLoader.get_str("QWENPAW_TRUSTED_CHAT_TEXT_GUARD", "false").strip().lower() in {"true", "1", "on", "yes"}
+    from ...config.runtime_boundary_policy import flag_enabled
+
+    return flag_enabled("text_guard")
 
 
 def get_text_block(part) -> str | None:

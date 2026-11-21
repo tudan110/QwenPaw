@@ -5,11 +5,15 @@ export type AlarmExportSelection =
   | { source: "live"; begin_time: string; end_time: string; is_clear: "0" | "1";
       severity?: string; keyword?: string; manage_ip?: string; resource_type?: string };
 
+export type WorkOrderExportSelection = { source: "work_order"; intent: string };
+export type BusinessExportSelection = AlarmExportSelection | WorkOrderExportSelection;
+
 export interface AlarmExportPreview {
   count: number;
   max_rows: number;
   message: string;
   ticket?: string;
+  scope?: { classify: 1 | 5; startTime?: string; endTime?: string };
 }
 
 type ExportPolicy = { max_rows: number };
@@ -42,4 +46,15 @@ export function parseAlarmExportLink(href: string): AlarmExportSelection | null 
   return { source: "live", begin_time, end_time, is_clear, severity: params.get("severity") ?? undefined,
     keyword: params.get("keyword") ?? undefined, manage_ip: params.get("manage_ip") ?? undefined,
     resource_type: params.get("resource_type") ?? undefined };
+}
+
+export const workOrderExportApi = {
+  preview: (intent: string) => send<AlarmExportPreview>("/work-order-export/preview", "POST", { intent }),
+  download: (intent: string, ticket: string) =>
+    send<{ total: number; items: unknown[] }>("/work-order-export/download", "POST", { intent, ticket }),
+};
+
+export function parseWorkOrderExportLink(href: string): WorkOrderExportSelection | null {
+  const match = /^\/(?:api\/portal|portal-api)\/work-order-export\/preview\?intent=([A-Za-z0-9_-]{43})$/.exec(href);
+  return match ? { source: "work_order", intent: match[1] } : null;
 }

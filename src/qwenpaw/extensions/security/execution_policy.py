@@ -150,9 +150,12 @@ def check_path(path_value: str) -> None:
         "envs.json",
     }:
         raise PermissionError("秘密配置只能通过授权管理接口访问")
-    if (
-        path.name == "agent.json"
-        or path == Path(WORKING_DIR).resolve() / "config.json"
+    if path.name == "agent.json" or (
+        path.parent == Path(WORKING_DIR).resolve()
+        and (
+            path.name.casefold() in {"config.json", "boundary-policy.json"}
+            or path.name.casefold().startswith(".security-policy-")
+        )
     ):
         raise PermissionError("完整运行配置只能通过授权管理接口访问")
     if path.name == ".env" or path.suffix in {".pem", ".key", ".env"}:

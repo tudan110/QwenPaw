@@ -176,7 +176,7 @@ _TOOL_BASELINES: dict[str, Baseline] = {
     "view_video": Baseline("medium", "读取视频，可能包含内部信息。"),
     "export_report": Baseline("medium", "启用生产保护时不能用通用报告导出数据，必须使用受控导出入口。"),
     "prepare_alarm_export": Baseline("medium", "核验告警明细导出范围；适用的导出管控仍有效。"),
-    "check_work_order_export": Baseline("medium", "核验工单导出范围和单次上限，不提供明细或文件。"),
+    "check_work_order_export": Baseline("medium", "核验工单导出范围和单次上限，符合条件时返回本人确认下载入口。"),
     "process_office_document": Baseline("medium", "按文档工具约束处理文档及输出产物。"),
     "write_skill_context": Baseline("medium", "更新受限的技能上下文，不授予通用文件写入。"),
     "send_file_to_user": Baseline("high", "将文件发送给用户；适用的数据与导出限制仍有效。"),

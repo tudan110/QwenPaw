@@ -1,4 +1,3 @@
-import { AlarmExportSettings } from "./alarmExportControls";
 import { useEffect, useState, type ReactNode } from "react";
 import { Alert, ConfigProvider, DatePicker, Input, Select, Table, Tabs, theme } from "antd";
 import { Link } from "react-router-dom";
@@ -317,9 +316,8 @@ function PolicyAudit({ execution = false }: { execution?: boolean }) {
   );
 }
 
-export function PortalSecurityEvidence({ pageTheme, canManageAi = false, openAdmission }: {
+export function PortalSecurityEvidence({ pageTheme, openAdmission }: {
   pageTheme: "light" | "dark";
-  canManageAi?: boolean;
   openAdmission?: () => void;
 }) {
   const [tab, setTab] = useState("boundaries");
@@ -335,7 +333,6 @@ export function PortalSecurityEvidence({ pageTheme, canManageAi = false, openAdm
       <Tabs activeKey={tab} onChange={setTab} destroyOnHidden items={[
         { key: "boundaries", label: "安全边界总览", children: <SecurityBoundaryOverview openProtection={() => setTab("protection")} openAdmission={openAdmission} /> },
         { key: "protection", label: "防护概览", children: <ProtectionOverview /> },
-        ...(canManageAi ? [{ key: "alarm-export", label: "导出管控", children: <AlarmExportSettings /> }] : []),
         { key: "incidents", label: "异常中止", children: <PortalIncidentPanel /> },
         { key: "critical-audit", label: "关键活动审计", children: <CriticalAuditPanel /> },
         { key: "audit", label: "策略审计", children: <PolicyAudit /> },

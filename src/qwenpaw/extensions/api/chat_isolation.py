@@ -8,7 +8,6 @@ import re
 from fastapi import HTTPException
 
 from .access_session import CURRENT_IDENTITY
-from ...constant import EnvVarLoader
 
 _SESSION = re.compile(r"^qpsession1([0-9a-f]{32})([0-9a-f]{32})$")
 
@@ -42,9 +41,9 @@ class PortalChatScope:
 
 def chat_isolation_enabled() -> bool:
     """Read the protected sample setting for both API and storage gates."""
-    return EnvVarLoader.get_str(
-        "QWENPAW_TRUSTED_CHAT_ISOLATION", "false"
-    ).strip().lower() in {"true", "1", "on", "yes"}
+    from ...config.runtime_boundary_policy import flag_enabled
+
+    return flag_enabled("chat_isolation")
 
 
 def chat_scope() -> PortalChatScope | None:

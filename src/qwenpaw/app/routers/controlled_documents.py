@@ -15,7 +15,6 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from ...constant import EnvVarLoader
 from ...extensions.api import controlled_documents as store
 from ...extensions.api import sensitive_data_governance as sensitive
 from ...extensions.api import text_privacy
@@ -26,7 +25,9 @@ from ...extensions.security.execution_policy import enabled as production_guards
 
 
 async def current_actor(request: Request, response: Response) -> AsyncIterator[store.Actor]:
-    if not EnvVarLoader.get_str("QWENPAW_CONTROLLED_DOCUMENTS", "false").strip().lower() in {"true", "1", "yes", "on"}:
+    from ...config.runtime_boundary_policy import flag_enabled
+
+    if not flag_enabled("controlled_documents"):
         raise HTTPException(404, "受控资料未启用")
     if not production_guards():
         raise HTTPException(503, "受控资料要求启用生产保护")

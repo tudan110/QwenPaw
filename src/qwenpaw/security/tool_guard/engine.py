@@ -69,7 +69,7 @@ class ToolGuardEngine:
         *,
         enabled: bool | None = None,
     ) -> None:
-        self._enabled = enabled if enabled is not None else _guard_enabled()
+        self._enabled = enabled
 
         if guardians is not None:
             self._guardians = list(guardians)
@@ -130,7 +130,7 @@ class ToolGuardEngine:
 
     @property
     def enabled(self) -> bool:
-        return self._enabled
+        return _guard_enabled() if self._enabled is None else self._enabled
 
     @enabled.setter
     def enabled(self, value: bool) -> None:
@@ -222,7 +222,7 @@ class ToolGuardEngine:
         ToolGuardResult or None
             ``None`` when guarding is disabled.
         """
-        if not self._enabled:
+        if not self.enabled:
             return None
 
         t0 = time.monotonic()

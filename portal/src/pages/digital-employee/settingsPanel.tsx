@@ -1696,7 +1696,7 @@ export function SettingsPanel({ canManageAi = false, pageTheme = "light" }: {
               ) : null}
               {activeTab === "security-evidence" ? (
                 <Suspense fallback={<p role="status">正在加载安全与审计…</p>}>
-                  <PortalSecurityEvidence pageTheme={pageTheme} canManageAi={canManageAi} openAdmission={canManageAi ? openAdmission : undefined} />
+                  <PortalSecurityEvidence pageTheme={pageTheme} openAdmission={canManageAi ? openAdmission : undefined} />
                 </Suspense>
               ) : null}
               {activeTab === "conversation" ? (

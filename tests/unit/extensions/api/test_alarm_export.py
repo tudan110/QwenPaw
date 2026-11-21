@@ -27,17 +27,23 @@ def records(count):
 
 @pytest.fixture
 def api(tmp_path, monkeypatch):
-    from qwenpaw.extensions.api import controlled_documents
+    from cryptography.fernet import Fernet
+    from qwenpaw.extensions.api import controlled_documents, work_order_export
+    from qwenpaw.security import secret_store
     from qwenpaw.governance import component_events
 
     monkeypatch.setattr(alarm_export.runtime_data_paths, "SETTINGS_DATA_DIR", tmp_path)
     monkeypatch.setattr(controlled_documents, "STORE_DIR", tmp_path / "private")
     monkeypatch.setattr(component_events, "WORKING_DIR", tmp_path / "audit")
     monkeypatch.setenv("QWENPAW_ADMIN_INOE_USER_IDS", "admin")
+    monkeypatch.setenv("QWENPAW_TRUSTED_CHAT_ISOLATION", "false")
+    fernet = Fernet(Fernet.generate_key())
+    monkeypatch.setattr(secret_store, "_get_fernet", lambda: fernet)
     data = records(100)
     monkeypatch.setattr(alarm_export, "load_alarm_records", lambda: data)
     app = FastAPI()
     app.include_router(alarm_export.router, prefix=BASE)
+    app.include_router(work_order_export.router, prefix=BASE)
 
     @app.middleware("http")
     async def identity_for_test(request, call_next):
@@ -207,7 +213,8 @@ async def test_unverified_scopes_are_not_exported(api):
             assert (await preview(client, {**LIVE, **invalid})).status_code == 422
 
 
-async def test_work_order_preflight_uses_shared_policy_and_dispatches_only_a_count_query(api, monkeypatch):
+@pytest.mark.parametrize("allowed_limit", [41, 100])
+async def test_work_order_export_respects_shared_policy_and_releases_only_after_confirmation(api, monkeypatch, allowed_limit):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
@@ -231,7 +238,7 @@ async def test_work_order_preflight_uses_shared_policy_and_dispatches_only_a_cou
     upstream = SimpleNamespace(
         isError=False,
         structuredContent={"code": 200, "data": {
-            "total_count": 41, "data": [{"title": "not exposed"}],
+            "total_count": 41, "data": [{"id": i + 1, "title": f"not exposed {i + 1}"} for i in range(10)],
         }},
     )
     manager = SimpleNamespace(
@@ -258,13 +265,43 @@ async def test_work_order_preflight_uses_shared_policy_and_dispatches_only_a_cou
             invocation = manager.invoke_capability.call_args.args[0]
             assert invocation.capability_id == capability.capability_id
             assert invocation.request_context == {"user_id": "alice"}
-            assert invocation.payload == {**filters, "page": 1, "per_page": 1}
+            assert invocation.payload == {**filters, "page": 1, "per_page": 10}
 
             settings = BASE + "/alarm-export-settings"
-            assert (await client.put(settings, json={"max_rows": 41}, headers=ADMIN)).status_code == 200
+            assert (await client.put(settings, json={"max_rows": allowed_limit}, headers=ADMIN)).status_code == 200
+            rows = [{"id": i + 1, "title": f"not exposed {i + 1}"} for i in range(41)]
+            upstream.structuredContent["data"]["data"] = rows
             within = await tool(**filters)
-            assert "本次未超限" in within.content[0].text and "未生成文件" in within.content[0].text
-            assert "单次最多导出 41 条" in within.content[0].text
+            assert within.state == ToolResultState.SUCCESS
+            assert f"41 条已办工单，单次最多导出 {allowed_limit} 条" in within.content[0].text
+            assert "not exposed" not in within.content[0].text
+            intent = within.content[0].text.split("?intent=", 1)[1].split(")", 1)[0]
+            intent_body = {"intent": intent}
+            root = BASE + "/work-order-export"
+            assert not requires_admin("POST", root + "/download")
+            with sqlite3.connect(path / "alarm_export.db") as db:
+                saved = db.execute("SELECT hash, snapshot FROM work_order_exports").fetchone()
+                assert saved[0] != intent and saved[1].startswith("ENC:") and "not exposed" not in saved[1]
+            assert (await client.get(root + "/preview", params=intent_body)).status_code == 405
+            assert (await client.post(root + "/preview", json=intent_body, headers={"x-test-actor": "bob"})).status_code == 409
+            assert (await client.post(root + "/preview", json=intent_body, headers={"x-test-actor": "anonymous"})).status_code == 401
+            assert (await client.post(root + "/preview", json={**intent_body, "classify": 1})).status_code == 422
+            assert (await client.post(root + "/download", json={**intent_body, "ticket": intent})).status_code == 409
+            response = await client.post(root + "/preview", json=intent_body)
+            assert response.status_code == 200 and response.headers["Cache-Control"] == "no-store"
+            preview_data = response.json()
+            assert preview_data["count"] == 41 and preview_data["max_rows"] == allowed_limit and preview_data["scope"] == filters
+            assert "not exposed" not in response.text
+            body = {**intent_body, "ticket": preview_data["ticket"]}
+            assert (await client.post(root + "/download", json=body, headers={"x-test-actor": "bob"})).status_code == 409
+            assert (await client.post(root + "/download", json=body, headers={"Origin": "https://foreign.invalid"})).status_code == 403
+            downloaded = await client.post(root + "/download", json=body)
+            assert downloaded.status_code == 200, downloaded.text
+            assert "work-orders.json" in downloaded.headers["Content-Disposition"]
+            assert downloaded.json() == {"total": 41, "items": rows}
+            assert (await client.post(root + "/download", json=body)).status_code == 409
+            assert manager.invoke_capability.await_count == 2  # confirmation releases exactly the prepared rows
+
             upstream.structuredContent["data"].pop("total_count")
             unknown = await tool(**filters)
             assert "无法核实" in unknown.content[0].text and "已触发" not in unknown.content[0].text
@@ -288,7 +325,9 @@ async def test_work_order_preflight_uses_shared_policy_and_dispatches_only_a_cou
     finally:
         CURRENT_IDENTITY.reset(token)
     with sqlite3.connect(path / "alarm_export.db") as db:
-        assert db.execute("SELECT actor, records, max_rows FROM events WHERE source='work_order'").fetchall() == [("alice", 41, 10)]
+        assert db.execute("SELECT actor, decision, records, max_rows FROM events WHERE source='work_order'").fetchall() == [
+            ("alice", "agent_blocked_limit", 41, 10), ("alice", "released", 41, allowed_limit),
+        ]
         assert db.execute("SELECT count(*) FROM tickets").fetchone()[0] == 0
 
 
@@ -324,3 +363,100 @@ async def test_sensitive_alarm_export_rechecks_policy_at_download(api):
         assert (await preview(client, REGISTRY)).status_code == 422
     with sqlite3.connect(path / "alarm_export.db") as db:
         assert db.execute("SELECT decision FROM events").fetchall() == [("blocked_privacy",)]
+
+
+@pytest.mark.parametrize("change, status, decision", [
+    ("limit", 422, "blocked_limit"),
+    ("privacy", 422, "blocked_privacy"),
+    ("expired", 409, None),
+    ("revoked", 403, "blocked_access"),
+])
+async def test_work_order_rechecks_boundaries_after_browser_confirmation(api, monkeypatch, change, status, decision):
+    from qwenpaw.extensions.api import text_privacy, work_order_export
+
+    client, _, path = api
+    selection = {"classify": 5}
+    rows = [{"id": i + 1, "title": "客户编号：DEMO-WO"} for i in range(4)]
+    token = CURRENT_IDENTITY.set(AccessIdentity({"userId": "alice"}, "fixture-token"))
+    try:
+        intent, _ = work_order_export.prepare(selection, rows, "")
+    finally:
+        CURRENT_IDENTITY.reset(token)
+    async with client:
+        root = BASE + "/work-order-export"
+        response = await client.post(root + "/preview", json={"intent": intent})
+        body = {"intent": intent, "ticket": response.json()["ticket"]}
+        if change == "limit":
+            await client.put(BASE + "/alarm-export-settings", json={"max_rows": 3}, headers=ADMIN)
+        elif change == "privacy":
+            text_privacy.save(text_privacy.PrivacyPolicy(builtin=[], custom_fields=["客户编号"], exports="block"), "admin")
+        elif change == "expired":
+            with sqlite3.connect(path / "alarm_export.db") as db:
+                db.execute("UPDATE work_order_exports SET expires=0")
+        else:
+            def denied(_):
+                raise PermissionError
+            monkeypatch.setattr(work_order_export, "require_not_blocked", denied)
+        blocked = await client.post(root + "/download", json=body)
+        assert blocked.status_code == status, blocked.text
+        assert "DEMO-WO" not in blocked.text and "Content-Disposition" not in blocked.headers
+        if change == "limit":
+            assert "4 条已办工单，单次最多导出 3 条" in blocked.json()["detail"]
+        assert (await client.post(root + "/download", json=body)).status_code == 409
+    with sqlite3.connect(path / "alarm_export.db") as db:
+        assert db.execute("SELECT decision FROM events WHERE source='work_order'").fetchall() == ([(decision,)] if decision else [])
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+async def test_work_order_bounded_pagination_keeps_scope_and_rejects_duplicate_rows(api, duplicate):
+    from unittest.mock import AsyncMock
+    from agentscope.message import ToolResultState
+    from qwenpaw.drivers.adapters.work_order_export import preflight
+    from qwenpaw.drivers.capabilities import DriverInvocationResult
+
+    _, _, path = api
+    pages = [
+        {"total_count": 3, "page": 1, "per_page": 2, "data": [{"id": 1}, {"id": 2}]},
+        {"total_count": 3, "page": 2, "per_page": 2, "data": [{"id": 1 if duplicate else 3}]},
+    ]
+    dispatch = AsyncMock(side_effect=[DriverInvocationResult(ok=True, value={"data": page}) for page in pages])
+    filters = {"classify": 5, "endTime": "2026-11-20 23:59:59"}
+    identity = CURRENT_IDENTITY.set(AccessIdentity({"userId": "alice"}, "fixture-token"))
+    try:
+        state, result = await preflight(dispatch, "fixture", {}, filters, page_size_cap=2)
+        assert [call.args[0].payload for call in dispatch.await_args_list] == [
+            {**filters, "page": 1, "per_page": 2}, {**filters, "page": 2, "per_page": 2},
+        ]
+    finally:
+        CURRENT_IDENTITY.reset(identity)
+    assert state == (ToolResultState.ERROR if duplicate else ToolResultState.SUCCESS), result.text
+    assert ("?intent=" in result.text) == (not duplicate)
+    with sqlite3.connect(path / "alarm_export.db") as db:
+        assert db.execute("SELECT count(*) FROM work_order_exports").fetchone()[0] == int(not duplicate)
+
+
+def test_work_order_intent_creation_requires_the_original_scoped_actor(api, monkeypatch):
+    from fastapi import HTTPException
+    from qwenpaw.extensions.api import work_order_export
+    from qwenpaw.extensions.api.chat_isolation import chat_scope
+    from qwenpaw.extensions.security import portal_capabilities as permissions
+
+    monkeypatch.setenv("QWENPAW_TRUSTED_CHAT_ISOLATION", "true")
+    alice = CURRENT_IDENTITY.set(AccessIdentity({"userId": "alice"}, "fixture-token"))
+    try:
+        chat = chat_scope()
+        scoped = permissions.invocation_for(chat.owner, "order", chat.session_id("fixture"), "console")
+        context = {permissions.CONTEXT_KEY: scoped}
+        assert work_order_export.verify_actor_scope(context) == "order"
+        with pytest.raises(HTTPException) as absent:
+            work_order_export.verify_actor_scope({})
+        assert absent.value.status_code == 403
+        bob = CURRENT_IDENTITY.set(AccessIdentity({"userId": "bob"}, "fixture-token"))
+        try:
+            with pytest.raises(HTTPException) as foreign:
+                work_order_export.verify_actor_scope(context)
+            assert foreign.value.status_code == 403
+        finally:
+            CURRENT_IDENTITY.reset(bob)
+    finally:
+        CURRENT_IDENTITY.reset(alice)

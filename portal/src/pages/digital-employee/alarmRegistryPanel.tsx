@@ -1,4 +1,4 @@
-import { AlarmExportButton } from "./alarmExportControls";
+import { BusinessExportButton } from "./alarmExportControls";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   listAlarmRegistryRecords,
@@ -255,10 +255,10 @@ export function AlarmRegistryPanel({ pageTheme, onOpenChat }: AlarmRegistryPanel
           <button className="portal-model-btn alarm-registry-btn" onClick={handleSearch} disabled={loading}>
             <i className={`fas ${loading ? "fa-spinner fa-spin" : "fa-search"}`} />
           </button>
-          <AlarmExportButton className="portal-model-btn alarm-registry-btn" disabled={loading}
+          <BusinessExportButton className="portal-model-btn alarm-registry-btn" disabled={loading}
             selection={{ source: "registry", status: FILTER_TO_STATUSES[statusFilter], search }}>
             <i className="fas fa-download" aria-hidden="true" /> 导出筛选结果
-          </AlarmExportButton>
+          </BusinessExportButton>
           <button
             className="portal-model-btn alarm-registry-btn"
             onClick={() => { void fetchRecords(); void fetchStats(); }}

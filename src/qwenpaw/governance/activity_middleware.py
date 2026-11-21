@@ -38,6 +38,7 @@ _FIXED = {
     ("POST", "/api/portal/agent-permissions"): "agent.permission.request",
     ("PUT", "/api/portal/alarm-export-settings"): "alarm.export.policy",
     ("POST", "/api/portal/alarm-export/download"): "alarm.export.download",
+    ("POST", "/api/portal/work-order-export/download"): "work_order.export.download",
     ("POST", "/api/security/evidence/critical-audit/export"): "audit.export",
     **{
         ("POST", f"/api/access-control/{route}"): "access." + route.replace("/", ".")

@@ -9,6 +9,8 @@ import shlex
 from typing import Any
 from urllib.parse import urlsplit
 
+from qwenpaw.config.policy_file import PolicyConflict
+from qwenpaw.config.runtime_boundary_policy import load_runtime_policy
 from qwenpaw.constant import EnvVarLoader
 from .execution_policy import enabled
 
@@ -44,7 +46,15 @@ def declared_endpoints() -> set[tuple] | None:
     """An explicit empty list denies all remote endpoints when guards are on."""
     raw = EnvVarLoader.get_str("QWENPAW_MCP_ALLOWED_ENDPOINTS", "").strip()
     if not raw:
-        return None
+        try:
+            entries = load_runtime_policy().mcp_remote
+            if entries is None:
+                return None
+            keys = {_endpoint_key(entry.transport, entry.url) for entry in entries}
+            # The online list intersects with, and cannot broaden, deployment trust.
+            return {key for key in keys if _host_allowed(key[2])}
+        except (OSError, ValueError, PermissionError, PolicyConflict) as error:
+            raise PermissionError("在线 MCP 精确白名单配置无效") from error
     try:
         entries = json.loads(raw)
         if not isinstance(entries, list) or any(
@@ -92,6 +102,16 @@ def validate_endpoint(endpoint: dict[str, Any]) -> None:
             raise PermissionError("生产环境拒绝访问未登记的 MCP 端点")
         return
     target = urlsplit(url)
+    if (
+        target.scheme not in {"http", "https"}
+        or target.username is not None
+        or target.password is not None
+        or not _host_allowed(target.hostname)
+    ):
+        raise PermissionError("生产环境拒绝未批准的 MCP 服务端点")
+
+
+def _host_allowed(host: str | None) -> bool:
     allowed = {
         "localhost",
         "127.0.0.1",
@@ -104,15 +124,13 @@ def validate_endpoint(endpoint: dict[str, Any]) -> None:
             if value.strip()
         ),
     }
-    if (
-        target.scheme not in {"http", "https"}
-        or target.username is not None
-        or target.password is not None
-        or not target.hostname
-        or not (
-            target.hostname in allowed
-            or target.hostname.endswith(".svc.cluster.local")
-            or target.hostname.endswith(".svc")
-        )
-    ):
-        raise PermissionError("生产环境拒绝未批准的 MCP 服务端点")
+    return bool(host and (
+        host in allowed or host.endswith(".svc.cluster.local") or host.endswith(".svc")
+    ))
+
+
+def validate_online_endpoint(transport: str, url: str) -> tuple:
+    key = _endpoint_key(transport, url)
+    if not _host_allowed(key[2]):
+        raise PermissionError("在线名单仅允许部署已信任的 MCP 主机。")
+    return key

@@ -1,4 +1,4 @@
-"""Controlled bulk export of structured alarm records (not query access)."""
+"""Controlled alarm exports and the shared export policy/ledger."""
 from __future__ import annotations
 
 import hashlib
@@ -92,6 +92,13 @@ def _db():
                 hash TEXT PRIMARY KEY, actor TEXT NOT NULL,
                 fingerprint TEXT NOT NULL, expires REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS work_order_exports (
+                hash TEXT PRIMARY KEY, binding TEXT NOT NULL,
+                scope_agent TEXT NOT NULL, selection TEXT NOT NULL,
+                records INTEGER NOT NULL, expires REAL NOT NULL,
+                snapshot TEXT NOT NULL, confirm_hash TEXT
+            );
+            CREATE INDEX IF NOT EXISTS work_order_expiry ON work_order_exports(expires);
             CREATE TABLE IF NOT EXISTS events (
                 at REAL NOT NULL, actor TEXT NOT NULL, source TEXT NOT NULL,
                 decision TEXT NOT NULL, records INTEGER NOT NULL,

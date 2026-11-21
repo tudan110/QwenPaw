@@ -3,8 +3,8 @@ import { employeeStepDescriptions } from "../../data/portalData";
 import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
 import { PortalVisualizationBlock } from "../../components/PortalVisualizationBlock";
 import { PortalQwenPawMarkdown } from "../../components/PortalQwenPawMarkdown";
-import { parseAlarmExportLink } from "../../api/alarmExport";
-import { AlarmExportButton } from "./alarmExportControls";
+import { parseAlarmExportLink, parseWorkOrderExportLink } from "../../api/alarmExport";
+import { BusinessExportButton } from "./alarmExportControls";
 import TurnUsageRing from "../../components/TurnUsageRing";
 import {
   getPortalOrderDetailMarkdownContent,
@@ -1691,11 +1691,12 @@ function MarkdownChatAnchor({
 }) {
   delete (rest as Record<string, unknown>).node;
   const url = String(href || "");
-  const alarmSelection = parseAlarmExportLink(url);
-  if (alarmSelection) {
-    return <AlarmExportButton className="portal-report-download-link" selection={alarmSelection}>
-      <i className="fas fa-download" aria-hidden="true" /> <span>导出告警明细</span>
-    </AlarmExportButton>;
+  const exportSelection = parseWorkOrderExportLink(url) ?? parseAlarmExportLink(url);
+  if (exportSelection) {
+    return <BusinessExportButton className="portal-report-download-link" selection={exportSelection}>
+      <i className="fas fa-download" aria-hidden="true" />
+      <span>{exportSelection.source === "work_order" ? "导出工单明细" : "导出告警明细"}</span>
+    </BusinessExportButton>;
   }
   if (REPORT_DOWNLOAD_HREF_RE.test(url)) {
     const resolved = url.startsWith("/portal-api/")

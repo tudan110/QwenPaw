@@ -181,7 +181,7 @@ class DriverCapabilityTool(ToolBase):
 
 
 class WorkOrderExportCheckTool(DriverCapabilityTool):
-    """A count-only projection of the authorized work-order list tool."""
+    """Prepare a controlled export with the authorized work-order list tool."""
 
     is_read_only = True
 
@@ -194,9 +194,9 @@ class WorkOrderExportCheckTool(DriverCapabilityTool):
 
         self.name = WORK_ORDER_EXPORT_TOOL
         self.description = (
-            "核验待办或已办工单明细导出是否触发当前条数上限。"
-            "仅用于导出请求，必须保留用户的时间范围；不生成文件，不返回工单明细。"
-            "将核验结果和具体上限直接告知用户。"
+            "准备待办或已办工单明细导出，按当前单次上限核验。"
+            "仅用于导出请求，必须保留用户的筛选范围。通过后返回用户确认下载的链接，而非工单明细。"
+            "请原样返回链接、条数、上限或拒绝原因，未确认前不要说已经下载。"
         )
         self.input_schema = {
             "type": "object",
@@ -219,8 +219,11 @@ class WorkOrderExportCheckTool(DriverCapabilityTool):
                 state=ToolResultState.ERROR,
                 is_last=True,
             )
+        page_schema = supported.get("per_page")
+        page_cap = page_schema.get("maximum") if isinstance(page_schema, dict) else None
         state, message = await preflight(
             self._invoker, self._capability.capability_id, self._request_context, kwargs,
+            page_size_cap=page_cap if type(page_cap) is int and page_cap > 0 else None,
         )
         return ToolChunk(content=[message], state=state, is_last=True)
 

@@ -72,6 +72,8 @@ _USER_POST_PATHS = {
     "/api/portal/sso/clear-login-cookie",
     "/api/portal/alarm-export/preview",
     "/api/portal/alarm-export/download",
+    "/api/portal/work-order-export/preview",
+    "/api/portal/work-order-export/download",
     "/api/portal/knowledge-base/query",
     "/api/portal/knowledge-base/rag-synthesize",
     "/api/portal/alarm-analyst/diagnose",
