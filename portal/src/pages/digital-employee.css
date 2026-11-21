@@ -4857,6 +4857,19 @@
   flex-shrink: 0;
 }
 
+.portal-digital-employee .portal-home-composer-footer:has(.composer-tool-button) {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.portal-digital-employee .portal-home-composer-actions:has(.composer-tool-button) {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+  margin-left: auto;
+  gap: 8px;
+}
+
 .portal-digital-employee .portal-home-quick-action {
   padding: 7px 12px;
   border-radius: 999px;
@@ -5046,6 +5059,45 @@
 .portal-digital-employee .model-selector-trigger:disabled {
   cursor: not-allowed;
   opacity: 0.72;
+}
+
+.portal-digital-employee .composer-tool-button {
+  flex: 0 0 auto;
+  min-width: 0;
+  justify-content: center;
+  gap: 6px;
+  font-family: inherit;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.portal-digital-employee .composer-tool-button > svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
+
+.portal-digital-employee .composer-tool-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.portal-digital-employee .composer-tool-state {
+  min-width: 20px;
+  padding: 2px 0;
+  border-radius: 5px;
+  background: var(--bg-light);
+  font-size: 11px;
+  text-align: center;
+}
+
+.portal-digital-employee .composer-tool-button[aria-pressed="true"] .composer-tool-state {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--primary);
 }
 
 .portal-digital-employee .model-selector-trigger-copy {

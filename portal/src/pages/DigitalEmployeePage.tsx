@@ -1512,18 +1512,34 @@ export default function DigitalEmployeePage({
     <Tooltip title="关闭后，新消息只调用配置的模型；不运行搜索、MCP、知识库或业务工具。" placement="top">
       <button
         type="button"
-        className="model-selector-trigger"
+        className="model-selector-trigger composer-tool-button"
+        aria-label="业务联网"
         aria-pressed={!modelOnly}
         disabled={isInteractionLocked || isConversationRunning || isCreatingChat}
         onClick={() => setBusinessToolsDisabled((disabled) => !disabled)}
       >
-        业务联网：{modelOnly ? "关" : "开"}
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <circle cx="12" cy="12" r="9" />
+          <ellipse cx="12" cy="12" rx="4" ry="9" />
+          <path d="M3 12h18" />
+        </svg>
+        <span>业务联网</span>
+        <span className="composer-tool-state">{modelOnly ? "关" : "开"}</span>
       </button>
     </Tooltip>
   ) : null;
   const permissionControl = remoteAgentId ? (
-    <button type="button" className="model-selector-trigger" onClick={() => setPermissionAgent(remoteAgentId)}>
-      智能体权限
+    <button
+      type="button"
+      className="model-selector-trigger composer-tool-button"
+      aria-haspopup="dialog"
+      onClick={() => setPermissionAgent(remoteAgentId)}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3 5 6v5c0 4.5 2.9 7.7 7 10 4.1-2.3 7-5.5 7-10V6l-7-3Z" />
+        <path d="m9 12 2 2 4-4" />
+      </svg>
+      <span>智能体权限</span>
     </button>
   ) : null;
   const agentPermissionDialogs = remoteAgentId ? (
