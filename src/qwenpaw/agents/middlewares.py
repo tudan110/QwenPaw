@@ -618,8 +618,10 @@ class ToolResultPruningMiddleware(MiddlewareBase):
         if content_bytes <= max_bytes + 100:
             return content
 
+        from ..extensions.api.text_privacy import allow_persistence
+
         saved_path: str | None = None
-        if self._tool_results_dir:
+        if self._tool_results_dir and allow_persistence("cache", content):
             try:
                 tool_result_dir = Path(self._tool_results_dir)
                 tool_result_dir.mkdir(parents=True, exist_ok=True)

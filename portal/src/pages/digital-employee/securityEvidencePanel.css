@@ -260,3 +260,179 @@
 .security-evidence-filters > .ant-input { width: min(100%, 145px); }
 .security-evidence-filters > .ant-select { min-width: 120px; }
 .security-evidence-filters > .ant-picker { max-width: 100%; }
+
+/* 安全边界总览：复用安全与审计的卡片、表格和状态标签，仅补齐操作布局。 */
+.security-boundaries-overview {
+  container: boundary-overview / inline-size;
+}
+.security-boundaries-overview .boundary-heading {
+  align-items: center;
+  gap: 12px;
+}
+
+.security-boundaries-overview .boundary-toolbar {
+  margin-inline-start: auto;
+}
+
+.security-boundaries-overview .boundary-toolbar .ant-btn {
+  height: 34px;
+}
+
+.security-boundaries-overview .boundary-table-meta {
+  min-height: 48px;
+  padding-inline: 16px;
+}
+
+.security-boundaries-overview .boundary-table-meta h5 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.security-boundaries-overview .boundary-table-meta h5 > span {
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--bg-gray);
+  font-weight: 500;
+}
+
+.security-boundaries-overview .boundary-table-meta time {
+  font-variant-numeric: tabular-nums;
+}
+
+.security-boundaries-overview .boundary-table {
+  table-layout: fixed;
+  min-width: 800px;
+}
+
+.security-boundaries-overview .boundary-name-col { width: 16%; }
+.security-boundaries-overview .boundary-status-col { width: 176px; }
+.security-boundaries-overview .boundary-actions-col { width: 224px; }
+
+.security-boundaries-overview .boundary-table :is(th, td) {
+  padding: 11px 16px;
+  line-height: 1.55;
+  vertical-align: middle;
+}
+
+.security-boundaries-overview .boundary-table tbody th {
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
+.security-boundaries-overview .boundary-detail {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.security-boundaries-overview .boundary-management {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+}
+
+.security-boundaries-overview .boundary-row-actions {
+  display: grid;
+  grid-template-columns: 122px 32px;
+  align-items: center;
+  gap: 6px;
+}
+
+.security-boundaries-overview .boundary-row-actions .ant-btn {
+  height: 32px;
+  padding-inline: 8px;
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.security-boundaries-overview .boundary-table .security-evidence-badge {
+  white-space: normal;
+}
+
+.security-boundaries-overview .boundary-table .security-evidence-badge::before {
+  flex-shrink: 0;
+}
+
+.security-boundaries-overview .boundary-row-actions .ant-btn-icon-only {
+  width: 32px;
+  padding-inline: 0;
+}
+
+.security-boundaries-overview .boundary-source {
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+@container boundary-overview (width < 800px) {
+  .security-boundaries-overview .boundary-table-meta { padding-inline: 12px; }
+
+  .security-boundaries-overview .boundary-table,
+  .security-boundaries-overview .boundary-table tbody {
+    display: block;
+    min-width: 0;
+  }
+
+  .security-boundaries-overview .boundary-table colgroup { display: none; }
+
+  /* Keep column names available to assistive tech in the stacked layout. */
+  .security-boundaries-overview .boundary-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .security-boundaries-overview .boundary-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+    align-items: center;
+    gap: 7px 10px;
+    padding: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .security-boundaries-overview .boundary-table tbody :is(th, td) {
+    padding: 0;
+    border: 0;
+  }
+
+  .security-boundaries-overview .boundary-table :is(.boundary-detail, .boundary-management-cell, .security-evidence-empty) {
+    grid-column: 1 / -1;
+  }
+
+  .security-boundaries-overview .boundary-management {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+    align-items: center;
+    gap: 6px 8px;
+  }
+}
+
+@container boundary-overview (width < 520px) {
+  .security-boundaries-overview .security-evidence-heading-copy { flex-basis: calc(100% - 52px); }
+  .security-boundaries-overview .boundary-toolbar { margin-inline-start: 0; }
+  .security-boundaries-overview .boundary-management { grid-template-columns: minmax(0, 1fr); }
+}
+
+.portal-digital-employee .security-boundaries-overview .ant-btn-default {
+  border: 1px solid var(--border);
+  background: var(--bg-white);
+  color: var(--text-primary);
+}
+
+.portal-digital-employee .security-boundaries-overview .ant-btn-default:not(:disabled):hover {
+  border-color: var(--primary);
+  background: var(--bg-light);
+}
+
+.portal-digital-employee .security-boundaries-overview .ant-btn-default:disabled {
+  background: var(--bg-gray);
+  color: var(--text-muted);
+}
+
+.portal-digital-employee .security-boundaries-overview .ant-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

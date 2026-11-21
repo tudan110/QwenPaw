@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { Alert, Button, InputNumber, Modal, Space } from "antd";
 import { alarmExportApi, type AlarmExportPreview, type AlarmExportSelection } from "../../api/alarmExport";
 
@@ -67,7 +67,8 @@ export function AlarmExportButton({ selection, children, className, disabled }: 
   </>;
 }
 
-export function AlarmExportSettings() {
+export function AlarmExportSettings({ className = "settings-section" }: { className?: string }) {
+  const limitId = useId();
   const [limit, setLimit] = useState<number | null>(null);
   const [saved, setSaved] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -100,12 +101,12 @@ export function AlarmExportSettings() {
       setBusy(false);
     }
   };
-  return <section className="settings-section">
-    <h4>告警明细导出管控</h4>
-    <p>适用于告警台账和智能体聊天中的结构化告警明细导出，不限制查询和统计。超限直接拦截，不截断或自动拆单。</p>
+  return <section className={className}>
+    <h4>业务明细导出管控</h4>
+    <p>同一上限用于告警明细导出，以及智能体中已接入的待办、已办工单导出核验。超限直接拦截，不截断或自动拆单；普通查询和统计不受影响。工单目前只核验，不提供文件下载。</p>
     <Space wrap>
-      <label htmlFor="alarm-export-limit">单次最多导出（条）</label>
-      <InputNumber id="alarm-export-limit" min={1} max={200} step={1} value={limit} onChange={setLimit}
+      <label htmlFor={limitId}>单次最多导出（条）</label>
+      <InputNumber<number> id={limitId} min={1} max={200} step={1} value={limit} onChange={setLimit}
         disabled={saved === null || busy} />
       <Button type="primary" loading={busy} disabled={!valid || limit === saved || saved === null} onClick={save}>保存上限</Button>
     </Space>

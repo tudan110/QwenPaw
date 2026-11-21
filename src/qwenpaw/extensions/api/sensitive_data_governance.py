@@ -23,18 +23,9 @@ CATEGORIES = (
      "scope": "识别令牌、凭据、密钥字段、PEM 私钥和指定配置字段。配置块可能遮蔽后续文本；命中即禁止原文导出。"},
 )
 
-COVERAGE = (
-    {"id": "documents", "name": "受控资料", "status": "enforced", "detail": "保存时分类；本人或限时授权方可读脱敏预览。原文导出限本人、单份、限时一次，敏感类需复核，技术秘密禁止。"},
-    {"id": "knowledge", "name": "知识库", "status": "partial", "detail": "从受控资料发布的副本按同一规则脱敏；知识库直接上传不经过此授权链。"},
-    {"id": "exports", "name": "业务查询与导出", "status": "partial", "detail": "智能体调用时禁止使用不具备确认机制的文件导出工具。告警明细在智能体执行时核验批量上限，下载前仍需确认；未接入受控导出的业务不能通过通用工具生成明细文件。"},
-    {"id": "logs", "name": "日志、缓存与调试", "status": "outside", "detail": "本页只记录受控资料的审计元数据，不扫描日志、缓存或调试输出。"},
-)
-
-
 def status(db, actor: store.Actor) -> dict:
     return {
         "categories": CATEGORIES,
-        "coverage": COVERAGE,
         "approval_seconds": store.APPROVAL_SECONDS,
         "emergency": bool(store.current_policy(db)["emergency"]),
         "security_hold": store.on_hold(db, actor),

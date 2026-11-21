@@ -317,9 +317,10 @@ function PolicyAudit({ execution = false }: { execution?: boolean }) {
   );
 }
 
-export function PortalSecurityEvidence({ pageTheme, canManageAi = false }: {
+export function PortalSecurityEvidence({ pageTheme, canManageAi = false, openAdmission }: {
   pageTheme: "light" | "dark";
   canManageAi?: boolean;
+  openAdmission?: () => void;
 }) {
   const [tab, setTab] = useState("boundaries");
   return <ConfigProvider theme={{
@@ -332,7 +333,7 @@ export function PortalSecurityEvidence({ pageTheme, canManageAi = false }: {
         <p>查看安全边界、异常中止处置和工具调用审计。</p>
       </header>
       <Tabs activeKey={tab} onChange={setTab} destroyOnHidden items={[
-        { key: "boundaries", label: "安全边界总览", children: <SecurityBoundaryOverview openProtection={() => setTab("protection")} /> },
+        { key: "boundaries", label: "安全边界总览", children: <SecurityBoundaryOverview openProtection={() => setTab("protection")} openAdmission={openAdmission} /> },
         { key: "protection", label: "防护概览", children: <ProtectionOverview /> },
         ...(canManageAi ? [{ key: "alarm-export", label: "导出管控", children: <AlarmExportSettings /> }] : []),
         { key: "incidents", label: "异常中止", children: <PortalIncidentPanel /> },

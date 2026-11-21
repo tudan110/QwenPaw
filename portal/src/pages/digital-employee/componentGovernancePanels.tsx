@@ -14,6 +14,8 @@ const kindLabels: Record<string, string> = {
 const actionLabels: Record<string, string> = { add: "新增", remove: "移除", update: "修改", enable: "启用", disable: "停用" };
 const fieldLabels: Record<string, string> = {
   builtin: "内置识别规则", custom_fields: "自定义敏感字段", chat_input: "对话输入", model_context: "模型上下文",
+  documents: "受控资料", knowledge: "知识库入库", query_results: "业务查询与工具结果",
+  exports: "业务与资料导出", logs: "应用日志", cache: "运行缓存", debug: "调试与调用追踪",
   provider: "提供商", provider_id: "提供商", model: "模型", api_key: "API 密钥", custom_headers: "请求头",
   base_url: "服务地址", name: "名称", content: "文件内容", enabled: "启用状态", version: "版本",
   security: "安全规则", running: "运行配置", approval_level: "审批等级", llm_routing: "模型路由",

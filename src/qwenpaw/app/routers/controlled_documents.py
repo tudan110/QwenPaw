@@ -96,6 +96,9 @@ def with_errors(func):
             return func(*args, **kwargs)
         except store.Rejected as exc:
             return JSONResponse({"detail": str(exc)}, status_code=exc.status, headers={"Cache-Control": "no-store"})
+        except (text_privacy.PrivacyBlocked, text_privacy.PrivacyUnavailable) as exc:
+            status = 422 if isinstance(exc, text_privacy.PrivacyBlocked) else 503
+            return JSONResponse({"detail": str(exc)}, status_code=status, headers={"Cache-Control": "no-store"})
 
     return translate
 
@@ -132,6 +135,7 @@ def create_document(body: DocumentInput, actor: Actor) -> dict:
     with store.transaction(actor, "document.create", identifier) as db:
         if not title or not body.content.strip() or "\0" in body.content or store.classify(title):
             raise store.Rejected(422, "请输入有效的 UTF-8 纯文本；标题不得包含敏感信息")
+        text_privacy.check_sync("documents", {"title": title, "content": body.content})
         count = store.one(db, "SELECT count(*) AS n FROM documents WHERE owner=?", (actor.key,))["n"]
         if count >= 250:
             raise store.Rejected(409, "受控资料存储已满，请联系管理员按留存策略处理")
@@ -289,6 +293,7 @@ def execute_operation(identifier: str, actor: Actor, background_tasks: Backgroun
 def download_document(identifier: str, actor: Actor) -> Response:
     with store.transaction(actor, "export.download", identifier) as db:
         doc = store.consume_export(db, actor, identifier)
+        text_privacy.check_sync("exports", {"title": doc["title"], "content": doc["content"]})
         store.event(db, actor, "export.download", doc["id"], "success", identifier)
         return Response(doc["content"], media_type="text/plain", headers={
             "Content-Disposition": f'attachment; filename="document-{doc["id"]}.txt"',

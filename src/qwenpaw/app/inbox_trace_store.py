@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ..constant import WORKING_DIR
+from ..extensions.api.text_privacy import allow_persistence
 
 _TRACE_DIR = WORKING_DIR / "inbox_traces"
 _LOCK = asyncio.Lock()
@@ -75,7 +76,8 @@ async def create_trace(
             "meta": _to_jsonable(meta or {}),
             "events": [],
         }
-        _write_trace(run_id, payload)
+        if await asyncio.to_thread(allow_persistence, "debug", payload):
+            _write_trace(run_id, payload)
 
 
 async def append_trace_events(
@@ -97,7 +99,9 @@ async def append_trace_events(
                 "event": _to_jsonable(item.get("event")),
             },
         )
-    if not normalized_events:
+    if not normalized_events or not await asyncio.to_thread(
+        allow_persistence, "debug", normalized_events,
+    ):
         return
 
     async with _LOCK:
@@ -202,7 +206,7 @@ async def finalize_trace(
         payload = _read_trace(run_id)
         payload["status"] = status
         payload["completed_at"] = time.time()
-        if error is not None:
+        if error is not None and await asyncio.to_thread(allow_persistence, "debug", error):
             payload["error"] = error
         _write_trace(run_id, payload)
 

@@ -3,74 +3,18 @@ import {
   ApartmentOutlined, AuditOutlined, BranchesOutlined, DatabaseOutlined, DeploymentUnitOutlined,
   FileSearchOutlined, LockOutlined, SafetyCertificateOutlined, SettingOutlined, SwapOutlined,
 } from "@ant-design/icons";
-import { Button, Card, Collapse, ConfigProvider, Descriptions, Form, Input, Select, Space, Tabs, Tag, theme, type TabsProps } from "antd";
+import { ConfigProvider, Select, Tabs, theme, type TabsProps } from "antd";
 import { SensitiveDataGovernancePanel } from "./sensitiveDataGovernancePanel";
 import { ComponentAdmissionPanel } from "./componentAdmissionPanel";
 import { ComponentInventory, type ComponentRow } from "./componentInventory";
 import { field, Ledger, optional, getLedgerRows, governanceAccount, type Values } from "./governanceLedger";
 import { ComponentChangePanel, ComponentDataFlows, ComponentScanPanel, LocalAccessPanel } from "./componentGovernancePanels";
-import { previewSensitiveData, syntheticData } from "./governanceFacts";
 import "./portalGovernance.css";
 
 const scopeFields = [field("component", "组件名称"), field("workspace", "覆盖范围 / 工作区"),
   field("access", "登记调用权限", ["只读", "允许", "需人工确认", "拒绝", "按上游授权", "待核查"]),
   field("risk", "登记风险", ["待评估", "低", "中", "高", "严重"]), optional("data", "登记的数据访问范围", "textarea"),
   optional("reason", "评估依据及变更原因", "textarea"), { ...optional("componentId", "组件目录关联编号"), hidden: true }];
-
-const previewFields = {
-  range: "批量敏感采集须审批",
-  retention: "7",
-  mask: "mask",
-  deletion: "到期删除（登记规则）",
-  logs: "禁止原文进入日志、缓存或调试信息",
-};
-
-function SensitivePolicy({ scope }: { scope: string }) {
-  const [profile, setProfile] = useState(() => {
-    if (!scope) return previewFields;
-    try {
-      return { ...previewFields, ...JSON.parse(localStorage.getItem(`portal.governance.v1.${encodeURIComponent(scope)}.sensitive-preview`) || "{}") };
-    } catch { return previewFields; }
-  });
-  const [notice, setNotice] = useState("");
-  const apply = (values: typeof previewFields) => {
-    if (!scope) return;
-    setProfile(values);
-    try {
-      localStorage.setItem(`portal.governance.v1.${encodeURIComponent(scope)}.sensitive-preview`, JSON.stringify(values));
-      setNotice("已更新规则预览");
-    } catch { setNotice("已更新本页预览，但浏览器存储不可用，无法保留设置。"); }
-  };
-  const example = previewSensitiveData(profile.mask);
-  const sampleDecision = profile.range === "禁止批量敏感采集" ? "拒绝示例采集" : "示例采集等待人工审批";
-  return <Space orientation="vertical" size="middle" className="gov-stack">
-    <Card size="small" title="敏感数据规则预览">
-      <Form layout="vertical" initialValues={profile} onFinish={apply}>
-        <div className="gov-form-grid">
-          <Form.Item label="批量敏感数据采集" name="range"><Select options={["批量敏感采集须审批", "禁止批量敏感采集"].map((value) => ({ value }))} /></Form.Item>
-          <Form.Item label="最长留存（天）" name="retention" rules={[{ required: true, pattern: /^(?:[1-9]\d?|[12]\d\d|3[0-5]\d|36[0-5])$/, message: "填写 1 至 365 的整数" }]}><Input type="number" min={1} max={365} /></Form.Item>
-          <Form.Item label="脱敏方式" name="mask"><Select options={[{ label: "保留部分字符", value: "mask" }, { label: "移除敏感字段", value: "omit" }]} /></Form.Item>
-          <Form.Item label="删除规则" name="deletion"><Select options={["到期删除（登记规则）", "到期提交人工复核（登记规则）"].map((value) => ({ value }))} /></Form.Item>
-          <Form.Item className="gov-full" label="日志、缓存和调试信息" name="logs"><Select options={["禁止原文进入日志、缓存或调试信息", "结构化日志只保留事件编号，不登记业务原文"].map((value) => ({ value }))} /></Form.Item>
-        </div>
-        <Button type="primary" htmlType="submit" disabled={!scope}>应用到示例</Button>{notice && <span className="gov-inline-status" role="status">{notice}</span>}
-      </Form>
-    </Card>
-    <div className="gov-preview-grid">
-      <Card size="small" title="示例输入" extra={<Tag>合成数据</Tag>}>
-        <pre className="gov-preview">{JSON.stringify(syntheticData, null, 2)}</pre>
-      </Card>
-      <Card size="small" title="脱敏预览">
-        <pre className="gov-preview">{JSON.stringify(example, null, 2)}</pre>
-      </Card>
-    </div>
-    <Descriptions className="gov-policy-result" size="small" bordered title="此次规则预览" column={1} items={[
-      { key: "collect", label: "批量采集", children: `${profile.range} → ${sampleDecision}` },
-      { key: "retention", label: "留存与处置", children: `${profile.retention} 天 · ${profile.deletion}` },
-      { key: "logs", label: "日志 / 缓存 / 调试", children: <>{profile.logs}<br /><code>{'{ "event": "DEMO-POLICY-001", "payload": "不写入" }'}</code></> },
-    ]} />
-  </Space>;
-}
 
 function governanceTab(key: string, label: string, Icon: typeof ApartmentOutlined, description: string, content: React.ReactNode) {
   return {
@@ -85,9 +29,12 @@ function governanceTab(key: string, label: string, Icon: typeof ApartmentOutline
   };
 }
 
-export function GovernanceSettings({ pageTheme = "light" }: { pageTheme?: "light" | "dark" }) {
+export function GovernanceSettings({ pageTheme = "light", initialTab = "inventory" }: {
+  pageTheme?: "light" | "dark";
+  initialTab?: "inventory" | "admission";
+}) {
   const scope = governanceAccount();
-  const [tab, setTab] = useState("inventory");
+  const [tab, setTab] = useState<string>(initialTab);
   const [seed, setSeed] = useState<{ id: string; target: string; values: Values } | null>(null);
   const selectTab = (key: string) => { setTab(key); setSeed(null); };
   const register = (row: ComponentRow, target: "supply" | "scan" | "scope") => {
@@ -116,11 +63,7 @@ export function GovernanceSettings({ pageTheme = "light" }: { pageTheme?: "light
     governanceTab("scan", "扫描与处置", FileSearchOutlined, "检查技能、模型及 MCP 配置；启用 OSV 时检查已安装的 Python 依赖。未覆盖和未完成的项目会单独标明。",
       <ComponentScanPanel />),
     governanceTab("sensitive", "敏感数据治理", DatabaseOutlined, "管理敏感数据识别规则、适用场景与处理方式。",
-      <>
-        <SensitiveDataGovernancePanel key={scope} />
-        <Collapse items={[{ key: "preview", label: "采集、留存与删除规则示例（仅预览）",
-          children: <SensitivePolicy scope={scope} /> }]} />
-      </>),
+      <SensitiveDataGovernancePanel key={scope} />),
     governanceTab("local", "本地部署策略", DeploymentUnitOutlined, "配置受管本地推理的模型文件、缓存及接口访问。",
       <LocalAccessPanel />),
     governanceTab("config", "配置变更记录", SettingOutlined, "自动记录已保存配置的变更主体、时间和摘要，不含敏感原文，也不代表配置已在运行时生效。",

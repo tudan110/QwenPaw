@@ -221,7 +221,10 @@ async def record_event(
     if index_extra:
         extra.update(index_extra)
 
+    from ..api import text_privacy
+
     try:
+        await text_privacy.check("debug", [event, extra])
         async with _LOCK:
             _ensure_dir()
             line = _serialize_event(event)
@@ -239,6 +242,8 @@ async def record_event(
                 extra=extra,
             )
             _write_index(index)
+    except (text_privacy.PrivacyBlocked, text_privacy.PrivacyUnavailable):
+        return  # Diagnostic collection must not interrupt the operation.
     except Exception as exc:  # pylint: disable=broad-except
         logger.warning(
             "trace_store: failed to record event type=%s session=%s: %s",

@@ -492,8 +492,10 @@ def manual_entry(
     if src_query:
         meta["source_query"] = src_query
 
+    from ..api import text_privacy
     from core import ingestion as _ingestion
 
+    text_privacy.check_sync("knowledge", {"title": title, "content": content, "metadata": meta})
     try:
         result = _ingestion.ingest_manual(
             title=title,
@@ -535,8 +537,10 @@ def update_source(payload: dict[str, Any] | None) -> dict[str, Any]:
         body.get("source_scope") or body.get("sourceScope") or ""
     ).strip()
 
+    from ..api import text_privacy
     from core import db as _db
 
+    text_privacy.check_sync("knowledge", {"title": display_title, "tags": tags, "note": note, "scope": scope})
     with _db.connect() as conn:
         row = conn.execute(
             "SELECT meta_json, source_scope FROM document WHERE id = ?",
@@ -794,19 +798,48 @@ def reindex_embeddings(*, force: bool = False) -> dict[str, Any]:
 # ---------- /ingest + /ingestion-jobs ----------
 
 
+def check_upload_privacy(filename: str, raw: bytes) -> None:
+    """Inspect supported text before the original file is saved to disk."""
+    from ..api import text_privacy
+
+    policy = text_privacy.load_policy()
+    if policy.knowledge == "off":
+        return
+    suffix = Path(filename).suffix.lower()
+    content = None
+    if suffix in {".txt", ".md", ".markdown", ".csv", ".tsv"} and not raw.startswith(
+        (b"PK\x03\x04", b"%PDF", b"\xd0\xcf\x11\xe0"),
+    ):
+        for encoding in ("utf-8-sig", "gb18030"):
+            try:
+                decoded = raw.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+            if not any(ord(char) < 32 and char not in "\r\n\t" for char in decoded):
+                content = decoded
+                break
+    text_privacy.check_sync("knowledge", {"filename": filename, "content": content}, policy=policy)
+    if content is None and policy.knowledge == "block":
+        raise text_privacy.PrivacyBlocked(
+            "当前知识库策略拒绝无法检查正文的文件。请转为可读取的 TXT、Markdown、CSV 或 TSV 后上传。",
+        )
+
+
 def create_ingest_job(
     filename: str, raw: bytes, mime_type: str | None = None
 ) -> dict[str, Any]:
-    _ensure_engine()
     if not filename:
         raise ValueError("missing filename")
     if not raw:
         raise ValueError("empty file")
 
+    safe_filename = Path(filename).name
+    check_upload_privacy(safe_filename, raw)
+    _ensure_engine()
+
     from core import db as _db
     from core import ingestion as _ingestion
 
-    safe_filename = Path(filename).name
     source_type = _detect_source_type(safe_filename, mime_type)
     job_id = f"job_{uuid.uuid4().hex[:10]}"
     created_at = _now_iso()

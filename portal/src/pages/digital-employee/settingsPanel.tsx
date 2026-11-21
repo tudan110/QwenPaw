@@ -864,6 +864,11 @@ export function SettingsPanel({ canManageAi = false, pageTheme = "light" }: {
   pageTheme?: "light" | "dark";
 } = {}) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>("conversation");
+  const [governanceEntry, setGovernanceEntry] = useState<"inventory" | "admission">("inventory");
+  const openAdmission = () => {
+    setGovernanceEntry("admission");
+    setActiveTab("governance");
+  };
   const [processRecordDisplayMode, setProcessRecordDisplayMode] =
     useState<ConversationProcessRecordDisplayMode>(() =>
       readConversationProcessRecordDisplayMode(),
@@ -1658,7 +1663,10 @@ export function SettingsPanel({ canManageAi = false, pageTheme = "light" }: {
                       className={
                         active ? "settings-tab active" : "settings-tab"
                       }
-                      onClick={() => setActiveTab(tab.id)}
+                      onClick={() => {
+                        setGovernanceEntry("inventory");
+                        setActiveTab(tab.id);
+                      }}
                     >
                       <span className="settings-tab-icon">
                         <i className={`fas ${tab.iconClass}`} />
@@ -1678,7 +1686,7 @@ export function SettingsPanel({ canManageAi = false, pageTheme = "light" }: {
               : "portal-advanced-config-panel settings-content-panel"}>
               {showGovernance ? (
                 <Suspense fallback={<p className="gov-loading" role="status">正在加载组件治理与策略…</p>}>
-                  <GovernanceSettings pageTheme={pageTheme} />
+                  <GovernanceSettings pageTheme={pageTheme} initialTab={governanceEntry} />
                 </Suspense>
               ) : null}
               {activeTab === "controlled-documents" ? (
@@ -1688,7 +1696,7 @@ export function SettingsPanel({ canManageAi = false, pageTheme = "light" }: {
               ) : null}
               {activeTab === "security-evidence" ? (
                 <Suspense fallback={<p role="status">正在加载安全与审计…</p>}>
-                  <PortalSecurityEvidence pageTheme={pageTheme} canManageAi={canManageAi} />
+                  <PortalSecurityEvidence pageTheme={pageTheme} canManageAi={canManageAi} openAdmission={canManageAi ? openAdmission : undefined} />
                 </Suspense>
               ) : null}
               {activeTab === "conversation" ? (

@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 from qwenpaw.app.routers import controlled_documents as api
 from qwenpaw.app.routers.console import router as console_router
 from qwenpaw.extensions.api import controlled_documents as store
-from qwenpaw.extensions.api import sso_settings_store
+from qwenpaw.extensions.api import sso_settings_store, text_privacy
+from qwenpaw.governance import component_events
 from qwenpaw.extensions.api.sso_token_middleware import SsoTokenMiddleware
 
 BASE = "/api/portal/controlled-documents"
@@ -25,6 +26,7 @@ PRIVACY = "联系手机号：19900000000\n商业秘密：DEMO-PRICE"
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "STORE_DIR", tmp_path / "secret")
+    monkeypatch.setattr(component_events, "WORKING_DIR", tmp_path / "audit")
     monkeypatch.setenv("QWENPAW_CONTROLLED_DOCUMENTS", "true")
     monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
     monkeypatch.setenv("QWENPAW_SSO_TOKEN_REQUIRED", "true")
@@ -208,8 +210,11 @@ def test_sensitive_governance_checks_are_guarded_isolated_and_audited(client, mo
     post(client, path + "/check", B, 403)
     assert client.post(BASE + path + "/check", headers={**ADMIN, "Origin": "https://foreign.invalid"}).status_code == 403
     catalog = get(client, path, ADMIN)
-    assert {item["id"]: item["status"] for item in catalog["coverage"]} == {
-        "documents": "enforced", "knowledge": "partial", "exports": "partial", "logs": "outside",
+    assert catalog["categories"] and catalog["approval_seconds"] > 0
+    policy = get(client, path + "/policy", ADMIN)
+    assert {item["id"] for item in policy["scenes"]} == {
+        "chat_input", "model_context", "documents", "knowledge", "query_results",
+        "exports", "logs", "cache", "debug",
     }
     document_id = create(client, owner=ADMIN)
     post(client, "/admin/emergency", ADMIN, active=True)
@@ -313,10 +318,7 @@ def test_text_only_portal_sample_rejects_attachment_upload(client, monkeypatch):
     assert "unsupported-media" in response.json()["detail"]
 
 
-def test_dialog_privacy_policy_is_admin_only_and_independent_of_documents(client, monkeypatch, tmp_path):
-    from qwenpaw.governance import component_events
-
-    monkeypatch.setattr(component_events, "WORKING_DIR", tmp_path / "audit")
+def test_sensitive_data_policy_is_admin_only_and_independent_of_documents(client, monkeypatch):
     monkeypatch.setenv("QWENPAW_CONTROLLED_DOCUMENTS", "false")
     path = "/admin/sensitive-data/policy"
     get(client, path, {}, 401)
@@ -330,6 +332,32 @@ def test_dialog_privacy_policy_is_admin_only_and_independent_of_documents(client
     post(client, path, ADMIN, 422, **{**values, "builtin": ["不存在的规则"]})
     response = post(client, path, ADMIN, **values)
     assert response.headers["Cache-Control"] == "no-store"
-    assert response.json()["policy"] == {**values, "revision": 1}
+    saved = response.json()["policy"]
+    assert {key: saved[key] for key in values} == {**values, "revision": 1}
+    new_scenes = {"documents", "knowledge", "query_results", "exports", "logs", "cache", "debug"}
+    assert all(saved[scene] == "off" for scene in new_scenes)
     post(client, path, ADMIN, 409, **values)
     assert get(client, path, ADMIN)["policy"]["custom_fields"] == ["客户编号"]
+
+
+
+def test_document_policy_blocks_save_and_independently_rechecks_approved_download(client):
+    policy = "/admin/sensitive-data/policy"
+    sample = "客户编号：DEMO-PRIVATE"
+    body = dict(builtin=[], custom_fields=["客户编号"])
+    identifier = create(client, sample)
+    op = operation(client, "export", [identifier])
+    assert post(client, f"/operations/{op}/confirm").json()["status"] == "ready"
+    post(client, f"/operations/{op}/execute")
+
+    post(client, policy, ADMIN, **body, documents="block")
+    response = post(client, "/documents", A, 422, title="另外一份资料", content=sample)
+    assert "阻止保存" in response.json()["detail"] and "DEMO-PRIVATE" not in response.text
+    assert len(get(client, "/state")["documents"]) == 1
+
+    post(client, policy, ADMIN, **body, revision=1, documents="off", exports="block")
+    response = post(client, f"/operations/{op}/download", A, 422)
+    assert "阻止导出" in response.json()["detail"] and "Content-Disposition" not in response.headers
+    post(client, policy, ADMIN, **body, revision=2, exports="off")
+    assert post(client, f"/operations/{op}/download").text == sample
+    assert {hit["scene"] for hit in text_privacy.status()["hits"]} == {"documents", "exports"}

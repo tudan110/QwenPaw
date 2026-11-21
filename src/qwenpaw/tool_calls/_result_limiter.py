@@ -243,14 +243,19 @@ class ToolResultLimiter:
         content: list[Any],
         context: ToolCallContext,
     ) -> str | None:
+        from ..extensions.api.text_privacy import allow_persistence
+
         if self._cache_dir is None:
+            return None
+        text = _join_text_blocks(content)
+        if not allow_persistence("cache", text):
             return None
 
         try:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
             safe_id = _safe_filename_part(context.tool_call_id)
             path = self._cache_dir / f"{safe_id}-{uuid.uuid4().hex}.txt"
-            path.write_text(_join_text_blocks(content), encoding="utf-8")
+            path.write_text(text, encoding="utf-8")
             return str(path)
         except OSError as exc:
             logger.warning(

@@ -8,6 +8,7 @@ text files.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -19,6 +20,7 @@ from typing import TYPE_CHECKING
 
 import aiofiles
 import aiofiles.os
+from agentscope.message import TextBlock
 
 if TYPE_CHECKING:
     from agentscope.message import Msg, ToolResultBlock
@@ -56,7 +58,12 @@ class QwenPawOffloader:
         (``{dialog_path}/{YYYY-MM-DD}.jsonl``), matching the
         original ``LightContextManager`` timeline design.
         """
+        from ..extensions.api.text_privacy import allow_persistence
+
         if not msgs:
+            return ""
+        payloads = {id(msg): msg.to_dict() for msg in msgs}
+        if not await asyncio.to_thread(allow_persistence, "cache", list(payloads.values())):
             return ""
 
         await aiofiles.os.makedirs(self._dialog_path, exist_ok=True)
@@ -91,7 +98,7 @@ class QwenPawOffloader:
             ) as f:
                 for msg in sorted_msgs:
                     await f.write(
-                        json.dumps(msg.to_dict(), ensure_ascii=False) + "\n",
+                        json.dumps(payloads[id(msg)], ensure_ascii=False) + "\n",
                     )
             last_path = filepath
             logger.info(
@@ -112,12 +119,7 @@ class QwenPawOffloader:
         ``session_id`` unused — same rationale as
         :meth:`offload_context`.
         """
-        await aiofiles.os.makedirs(self._tool_results_dir, exist_ok=True)
-
-        filepath = os.path.join(
-            self._tool_results_dir,
-            f"{uuid.uuid4().hex}.txt",
-        )
+        from ..extensions.api.text_privacy import allow_persistence
 
         output = getattr(tool_result, "output", None) or ""
         if isinstance(output, list):
@@ -125,10 +127,15 @@ class QwenPawOffloader:
             for block in output:
                 if isinstance(block, dict) and block.get("type") == "text":
                     parts.append(block.get("text", ""))
+                elif isinstance(block, TextBlock):
+                    parts.append(block.text)
             content = "\n".join(parts)
         else:
             content = str(output)
-
+        if not await asyncio.to_thread(allow_persistence, "cache", content):
+            return ""
+        await aiofiles.os.makedirs(self._tool_results_dir, exist_ok=True)
+        filepath = os.path.join(self._tool_results_dir, f"{uuid.uuid4().hex}.txt")
         async with aiofiles.open(filepath, mode="w", encoding="utf-8") as f:
             await f.write(content)
 

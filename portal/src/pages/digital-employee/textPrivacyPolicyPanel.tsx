@@ -3,20 +3,20 @@ import { Alert, Button, Checkbox, Collapse, Input, Select, Skeleton, Space, Tag 
 import { readControlled, writeControlled } from "../../api/controlledDocuments";
 
 const endpoint = "/admin/sensitive-data/policy";
-const modes = { off: "关闭", observe: "仅记录命中", block: "阻止发送" } as const;
-type Mode = keyof typeof modes;
-const scenes = {
-  chat_input: { label: "对话输入", detail: "检查聊天入口收到的文本，拦截发生在新消息进入会话处理前。" },
-  model_context: { label: "模型上下文", detail: "检查受管模型调用发送的文本，包括历史对话、系统提示和进入上下文的工具结果。此项也会影响后台任务。" },
-} as const;
-type Scene = keyof typeof scenes;
-const sceneKeys = Object.keys(scenes) as Scene[];
-type Policy = Record<Scene, Mode> & { revision: number; builtin: string[]; custom_fields: string[] };
+type Mode = "off" | "observe" | "block";
+type Scene = { id: string; label: string; detail: string; action: string };
+type Policy = { revision: number; builtin: string[]; custom_fields: string[] } & Record<string, Mode | number | string[]>;
 type Status = {
   policy: Policy;
+  scenes: Scene[];
   available_builtin: string[];
-  hits: { id: number; at: number; scene: Scene; decision: "observed" | "blocked"; revision: number; rule_count: number }[];
+  hits: { id: number; at: number; scene: string; decision: "observed" | "blocked"; revision: number; rule_count: number }[];
 };
+const sceneOptions = (scene: Scene): { value: Mode; label: string }[] => [
+  { value: "off", label: "关闭" },
+  { value: "observe", label: "仅记录命中" },
+  { value: "block", label: scene.action },
+];
 const errorText = (error: unknown) => error instanceof Error ? error.message : "请求失败，请重试。";
 
 export function TextPrivacyPolicyPanel() {
@@ -48,7 +48,7 @@ export function TextPrivacyPolicyPanel() {
   }, [attempt]);
 
   async function save() {
-    if (!draft) return;
+    if (!draft || !status) return;
     setError("");
     setNotice("");
     const custom = fields.split(/\r?\n/).map((field) => field.trim()).filter(Boolean);
@@ -60,7 +60,7 @@ export function TextPrivacyPolicyPanel() {
       setError("自定义字段名不能重复。");
       return;
     }
-    if (!draft.builtin.length && !custom.length && sceneKeys.some((scene) => draft[scene] !== "off")) {
+    if (!draft.builtin.length && !custom.length && status.scenes.some(({ id }) => draft[id] !== "off")) {
       setError("启用检查前至少选择一条识别规则。");
       return;
     }
@@ -79,8 +79,8 @@ export function TextPrivacyPolicyPanel() {
   const busy = loading || saving;
   return <section className="gov-surface sd-section" aria-labelledby="sd-privacy-policy">
     <header className="sd-heading">
-      <div><h4 id="sd-privacy-policy">对话与模型上下文</h4>
-        <p>全局策略，对所有使用下列入口的用户生效。默认关闭，不改变既有的受控资料分类和授权。</p></div>
+      <div><h4 id="sd-privacy-policy">敏感数据识别与场景策略</h4>
+        <p>各场景独立设置处理方式，统一使用下方识别规则。保存后对所有使用对应入口的用户生效。</p></div>
       <Space wrap>
         <Button loading={loading} disabled={saving || dirty} onClick={() => setAttempt((value) => value + 1)}>重新读取</Button>
         {draft && <Button disabled={busy || !dirty} onClick={() => { if (status) apply(status); setError(""); setNotice(""); }}>取消编辑</Button>}
@@ -106,19 +106,23 @@ export function TextPrivacyPolicyPanel() {
         </div>
       </div>
       <ul className="sd-coverage">
-        {sceneKeys.map((scene) => <li key={scene}>
-          <div><strong>{scenes[scene].label}</strong><p>已生效：{modes[status.policy[scene]]}</p></div>
-          <Select className="sd-privacy-mode" aria-label={`${scenes[scene].label}处理方式`} value={draft[scene]} disabled={busy}
-            options={Object.entries(modes).map(([value, label]) => ({ value, label }))}
-            onChange={(mode: Mode) => setDraft({ ...draft, [scene]: mode })} />
-          <p>{scenes[scene].detail}</p>
-        </li>)}
+        {status.scenes.map((scene) => {
+          const options = sceneOptions(scene);
+          const activeLabel = options.find(({ value }) => value === status.policy[scene.id])?.label;
+          return <li key={scene.id}>
+            <div><strong>{scene.label}</strong><p>已生效：{activeLabel ?? "未知"}</p></div>
+            <Select<Mode> className="sd-privacy-mode" aria-label={`${scene.label}处理方式`}
+              value={draft[scene.id] as Mode} disabled={busy} options={options}
+              onChange={(mode) => setDraft({ ...draft, [scene.id]: mode })} />
+            <p>{scene.detail}</p>
+          </li>;
+        })}
       </ul>
-      <p>仅记录不会修改或阻止请求；阻止发送也不会自动脱敏。这里只检查接入链路中的文本，不解析附件、多媒体，不检查回复返回链路，也不追溯处理历史存储、业务导出或日志。</p>
+      <p>仅记录命中不会阻止操作。阻止模式不会自动脱敏；日志和缓存命中时跳过写入。策略不追溯清理历史数据，也不识别图片、音频或视频中的内容。</p>
       <Collapse size="small" items={[{ key: "hits", label: "近期命中记录", children: status.hits.length ? <ul className="sd-event-list">
         {status.hits.map((hit) => <li key={hit.id}>
           <span>{new Date(hit.at * 1000).toLocaleString("zh-CN")}</span>
-          <strong>{scenes[hit.scene].label}</strong>
+          <strong>{status.scenes.find(({ id }) => id === hit.scene)?.label ?? "其他场景"}</strong>
           <Tag color={hit.decision === "blocked" ? "red" : undefined}>{hit.decision === "blocked" ? "已阻止" : "仅记录"}</Tag>
           <span>{hit.rule_count} 条规则 · 策略版本 {hit.revision}</span>
         </li>)}

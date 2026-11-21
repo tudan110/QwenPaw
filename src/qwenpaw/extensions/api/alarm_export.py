@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .. import runtime_data_paths
 from ..integrations.portal_real_alarms import MAX_REAL_ALARM_LIMIT, read_alarm_export_rows
 from ..portal_real_alarm_registry import filter_alarm_records, load_alarm_records
+from . import text_privacy
 from .access_policy import require_browser_origin
 from .access_session import CURRENT_IDENTITY
 from .inoe_settings_store import get_effective_token
@@ -173,6 +174,24 @@ def check_agent_export(selection: Selection) -> None:
         raise HTTPException(422, _preview(count, current_limit)["message"])
     if len(rows) != count:
         raise HTTPException(409, "无法核实本次导出的完整范围，请重试。")
+    text_privacy.check_http("exports", rows)
+
+
+def check_work_order_limit(count: int) -> tuple[int, bool]:
+    """Use the same stored batch limit as alarm exports; never issue a ticket."""
+    actor = _actor()
+    with _db() as db:
+        limit = _limit(db)
+        if count > limit:
+            _audit(db, actor, "work_order", "agent_blocked_limit", count, limit)
+    return limit, count > limit
+
+
+def work_order_limit() -> int:
+    """Read the current limit for authenticated, non-release decisions."""
+    _actor()
+    with _db() as db:
+        return _limit(db)
 
 
 @router.get("/alarm-export-settings")
@@ -218,6 +237,7 @@ def preview_export(selection: Selection, request: Request):
         if count > limit:
             _audit(db, actor, selection.source, "blocked_limit", count, limit)
         elif count > 0 and len(rows) == count:
+            text_privacy.check_http("exports", rows)
             ticket = secrets.token_urlsafe(32)
             db.execute("DELETE FROM tickets WHERE expires <= ?", (time.time(),))
             db.execute("INSERT INTO tickets VALUES (?, ?, ?, ?)",
@@ -256,7 +276,14 @@ def download_export(payload: ConfirmExport, request: Request):
             _audit(db, actor, selection.source, "changed_selection", count, current_limit)
             error = (409, "告警范围或明细已变化，请重新预览并确认。")
         else:
-            _audit(db, actor, selection.source, "released", count, current_limit)
+            # Check again after confirmation; policy may have changed since preview.
+            try:
+                text_privacy.check_http("exports", rows)
+            except HTTPException as exc:
+                _audit(db, actor, selection.source, "blocked_privacy", count, current_limit)
+                error = (exc.status_code, exc.detail)
+            else:
+                _audit(db, actor, selection.source, "released", count, current_limit)
     if error:
         raise HTTPException(*error)
     return JSONResponse({"total": count, "items": rows}, headers={

@@ -6,6 +6,7 @@ import logging.handlers
 import os
 import platform
 import sys
+import threading
 from pathlib import Path
 
 from ..constant import PROJECT_NAME, WORKING_DIR
@@ -50,6 +51,40 @@ def _enable_windows_ansi() -> None:
 
 # Call once at import time
 _enable_windows_ansi()
+
+
+class _SensitiveLogFilter(logging.Filter):
+    """Inspect rendered messages once even when stdout/file share the record."""
+
+    _formatter = logging.Formatter()
+    _state = threading.local()
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if getattr(self._state, "checking", False):
+            return False
+        if "_sensitive_log_allowed" not in record.__dict__:
+            self._state.checking = True
+            try:
+                # Logging is initialized before the policy module itself.
+                from ..extensions.api import text_privacy
+
+                policy = text_privacy.load_policy()
+                if policy.logs != "off":
+                    text_privacy.check_sync(
+                        "logs", self._formatter.format(record), policy=policy, log_errors=False,
+                    )
+                record._sensitive_log_allowed = True
+            except Exception:
+                # Never log a policy/formatting failure through this filter.
+                record._sensitive_log_allowed = False
+            finally:
+                self._state.checking = False
+        return record._sensitive_log_allowed
+
+
+def _filter_sensitive_logs(handler: logging.Handler) -> None:
+    if not any(isinstance(item, _SensitiveLogFilter) for item in handler.filters):
+        handler.addFilter(_SensitiveLogFilter())
 
 
 class ColorFormatter(logging.Formatter):
@@ -184,6 +219,8 @@ def setup_logger(level: int | str = logging.INFO):
         handler = logging.StreamHandler(sys.stderr)
         handler.setFormatter(formatter)
         logger.addHandler(handler)
+    for handler in logger.handlers:
+        _filter_sensitive_logs(handler)
 
     return logger
 
@@ -233,6 +270,7 @@ def add_project_file_handler(log_path: Path) -> None:
     for handler in logger.handlers:
         base = getattr(handler, "baseFilename", None)
         if base is not None and Path(base).resolve() == log_path:
+            _filter_sensitive_logs(handler)
             _attach_logger_file_handler(
                 "apscheduler",
                 handler,
@@ -252,6 +290,7 @@ def add_project_file_handler(log_path: Path) -> None:
     file_handler.setFormatter(
         PlainFormatter("%(asctime)s | %(message)s", "%Y-%m-%d %H:%M:%S"),
     )
+    _filter_sensitive_logs(file_handler)
     logger.addHandler(file_handler)
     _attach_logger_file_handler(
         "apscheduler",

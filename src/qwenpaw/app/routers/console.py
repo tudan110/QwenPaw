@@ -774,13 +774,15 @@ async def get_backend_debug_logs(
     log_path = LOG_FILE_PATH.resolve()
     try:
         st = log_path.stat()
+        content = _tail_text_file(log_path, lines=lines)
+        await asyncio.to_thread(text_privacy.check_http, "debug", content)
         return {
             "path": str(log_path),
             "exists": True,
             "lines": lines,
             "updated_at": st.st_mtime,
             "size": st.st_size,
-            "content": _tail_text_file(log_path, lines=lines),
+            "content": content,
         }
     except FileNotFoundError:
         return {
@@ -910,6 +912,7 @@ async def get_inbox_trace(run_id: str):
             status_code=404,
             detail="trace not found",
         )
+    await asyncio.to_thread(text_privacy.check_http, "debug", trace)
     return trace
 
 

@@ -2,19 +2,13 @@ import { useEffect, useState } from "react";
 import { Alert, Button, Collapse, Skeleton, Tag } from "antd";
 import { CheckCircleOutlined, ExperimentOutlined } from "@ant-design/icons";
 import { readControlled, writeControlled } from "../../api/controlledDocuments";
+import { AlarmExportSettings } from "./alarmExportControls";
 import { TextPrivacyPolicyPanel } from "./textPrivacyPolicyPanel";
 import "./sensitiveDataGovernance.css";
 
 const endpoint = "/admin/sensitive-data";
-const coverageLabels = {
-  enforced: ["已接入", "green"],
-  partial: ["部分接入", "gold"],
-  outside: ["未接入本策略", undefined],
-} as const;
-
 type GovernanceStatus = {
   categories: { id: string; name: string; group: string; labels: string[]; scope: string }[];
-  coverage: { id: string; name: string; status: keyof typeof coverageLabels; detail: string }[];
   approval_seconds: number;
   emergency: boolean;
   security_hold: boolean;
@@ -31,6 +25,7 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : "
 export function SensitiveDataGovernancePanel() {
   return <div className="gov-flow sd-governance">
     <TextPrivacyPolicyPanel />
+    <AlarmExportSettings className="gov-surface sd-section" />
     <ControlledDataOverview />
   </div>;
 }
@@ -74,8 +69,10 @@ function ControlledDataOverview() {
     <section className="gov-surface sd-overview" aria-labelledby="sd-categories">
       <header className="sd-heading sd-overview-heading">
         <div><h4 id="sd-categories">受控资料分类与最小权限</h4>
-          <p>按场景查看已接入的管控。受控资料默认只提供脱敏读取，原文导出另行授权。</p>
+          <p>受控资料默认只提供脱敏读取，原文导出另行授权；申请有效期最长 {Math.round(status.approval_seconds / 60)} 分钟。</p>
         </div>
+        {status.emergency && <Tag color="red">受控资料已紧急关停</Tag>}
+        {status.security_hold && <Tag color="orange">当前账号操作已冻结</Tag>}
       </header>
       <div className="sd-categories">
         {status.categories.map((category) => <article key={category.id} className="sd-class">
@@ -85,20 +82,6 @@ function ControlledDataOverview() {
           <p>{category.scope}</p>
         </article>)}
       </div>
-    </section>
-
-    <section className="gov-surface sd-section" aria-labelledby="sd-coverage">
-      <header className="sd-heading"><div><h4 id="sd-coverage">其他场景与访问边界</h4>
-        <p>受控资料的申请有效期最长 {Math.round(status.approval_seconds / 60)} 分钟。各场景仅按实际接入的链路执行管控。</p></div>
-        {status.emergency && <Tag color="red">受控资料已紧急关停</Tag>}
-        {status.security_hold && <Tag color="orange">当前账号操作已冻结</Tag>}
-      </header>
-      <ul className="sd-coverage">
-        {status.coverage.map((item) => <li key={item.id}>
-          <strong>{item.name}</strong><span><Tag color={coverageLabels[item.status][1]}>{coverageLabels[item.status][0]}</Tag></span>
-          <p>{item.detail}</p>
-        </li>)}
-      </ul>
     </section>
 
     <section className="gov-surface sd-section" aria-labelledby="sd-check">

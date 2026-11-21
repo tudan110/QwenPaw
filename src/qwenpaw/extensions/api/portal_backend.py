@@ -69,6 +69,7 @@ from qwenpaw.extensions.api.app_artifacts_api import (
 from qwenpaw.extensions.api.agent_reports import (
     router as agent_reports_router,
 )
+from . import text_privacy
 from .alarm_export import router as alarm_export_router
 from qwenpaw.extensions.api.qiming_openai_adapter import (
     router as qiming_openai_adapter_router,
@@ -4191,12 +4192,14 @@ async def import_resource_import_flow(
 @router.get("/alarm-workorders")
 async def get_alarm_workorders(limit: int = 5):
     try:
-        return await asyncio.to_thread(query_alarm_workorders, max(1, limit))
+        result = await asyncio.to_thread(query_alarm_workorders, max(1, limit))
+    except HTTPException:
+        raise
     except Exception as exc:
-        error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] get_alarm_workorders failed: {error_detail}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=error_detail) from exc
+        logger.exception("Failed to query alarm work orders")
+        raise HTTPException(500, "暂时无法读取关联工单。") from exc
+    await asyncio.to_thread(text_privacy.check_http, "query_results", result)
+    return result
 
 
 @router.get("/monitoring-overview/alarm-top5")
@@ -4256,17 +4259,17 @@ async def get_real_alarms(
     # Without an explicit ?limit= the configurable list size applies
     # (settings page > env > default 20).
     try:
-        return await _get_visible_portal_real_alarms(
+        result = await _get_visible_portal_real_alarms(
             limit or _portal_real_alarm_list_limit(),
             timeout_seconds=PORTAL_REAL_ALARM_ROUTE_TIMEOUT_SECONDS,
         )
     except HTTPException:
         raise
     except Exception as exc:
-        error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] get_real_alarms failed: {error_detail}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=error_detail) from exc
+        logger.exception("Failed to query active alarms")
+        raise HTTPException(500, "暂时无法读取实时告警。") from exc
+    await asyncio.to_thread(text_privacy.check_http, "query_results", result)
+    return result
 
 
 @router.post("/real-alarms/trigger-sessions")
@@ -5395,21 +5398,24 @@ def get_knowledge_base_source_detail(
         raise HTTPException(status_code=500, detail=error_detail) from exc
 
 
+def _knowledge_privacy_http(exc: text_privacy.PrivacyBlocked | text_privacy.PrivacyUnavailable) -> HTTPException:
+    status = 422 if isinstance(exc, text_privacy.PrivacyBlocked) else 503
+    return HTTPException(status, str(exc))
+
+
 @router.post("/knowledge-base/manual-entry")
 def create_knowledge_base_manual_entry(
     payload: dict[str, Any] | None = Body(default=None),
 ):
     try:
         return knowledge_base.manual_entry(payload)
+    except (text_privacy.PrivacyBlocked, text_privacy.PrivacyUnavailable) as exc:
+        raise _knowledge_privacy_http(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(
-            f"[ERROR] create_knowledge_base_manual_entry failed: {error_detail}",
-        )
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=error_detail) from exc
+        logger.exception("Knowledge operation create_knowledge_base_manual_entry failed")
+        raise HTTPException(500, "暂时无法录入知识库资料。") from exc
 
 
 @router.post("/knowledge-base/sources/update")
@@ -5418,13 +5424,13 @@ def update_knowledge_base_source(
 ):
     try:
         return knowledge_base.update_source(payload)
+    except (text_privacy.PrivacyBlocked, text_privacy.PrivacyUnavailable) as exc:
+        raise _knowledge_privacy_http(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] update_knowledge_base_source failed: {error_detail}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=error_detail) from exc
+        logger.exception("Knowledge operation update_knowledge_base_source failed")
+        raise HTTPException(500, "暂时无法更新知识库资料。") from exc
 
 
 @router.post("/knowledge-base/sources/unarchive")
@@ -5535,18 +5541,16 @@ def reindex_knowledge_base_embeddings(force: bool = Query(False)):
 async def ingest_knowledge_base_file(file: UploadFile = File(...)):
     try:
         raw = await file.read()
-        return knowledge_base.create_ingest_job(
-            file.filename or "",
-            raw,
-            file.content_type,
+        return await asyncio.to_thread(
+            knowledge_base.create_ingest_job, file.filename or "", raw, file.content_type,
         )
+    except (text_privacy.PrivacyBlocked, text_privacy.PrivacyUnavailable) as exc:
+        raise _knowledge_privacy_http(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        error_detail = f"{type(exc).__name__}: {str(exc)}"
-        print(f"[ERROR] ingest_knowledge_base_file failed: {error_detail}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=error_detail) from exc
+        logger.exception("Knowledge operation ingest_knowledge_base_file failed")
+        raise HTTPException(500, "暂时无法接收知识库文件。") from exc
 
 
 @router.get("/knowledge-base/ingestion-jobs")
@@ -6067,18 +6071,17 @@ async def list_alarm_registry_records(
         start = (page - 1) * page_size
         end = start + page_size
         page_items = items[start:end]
-
-        return {
-            "total": total,
-            "page": page,
-            "pageSize": page_size,
-            "totalPages": (
-                (total + page_size - 1) // page_size if total > 0 else 0
-            ),
-            "items": page_items,
-        }
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.exception("Failed to query the alarm registry")
+        raise HTTPException(500, "暂时无法读取告警台账。") from exc
+    await asyncio.to_thread(text_privacy.check_http, "query_results", page_items)
+    return {
+        "total": total,
+        "page": page,
+        "pageSize": page_size,
+        "totalPages": (total + page_size - 1) // page_size,
+        "items": page_items,
+    }
 
 
 @router.patch("/alarm-registry/records/{alarm_id}/status")

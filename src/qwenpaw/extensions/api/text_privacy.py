@@ -1,8 +1,4 @@
-"""Deployment-wide text privacy policy at chat ingress and managed model egress.
-
-Findings are metadata only. This is not a scanner for arbitrary attachments,
-provider responses, logs or previously stored data.
-"""
+"""Shared, revisioned sensitive-text policy for managed runtime boundaries."""
 from __future__ import annotations
 
 import asyncio
@@ -20,9 +16,30 @@ from ...governance import component_events
 from . import controlled_documents as store
 
 logger = logging.getLogger(__name__)
-Scene = Literal["chat_input", "model_context"]
+Scene = Literal[
+    "chat_input", "model_context", "documents", "knowledge", "query_results",
+    "exports", "logs", "cache", "debug",
+]
 Mode = Literal["off", "observe", "block"]
 FieldName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=48)]
+
+# This is the UI's scenario catalog as well as the source of enforcement messages.
+SCENES: dict[Scene, dict[str, str]] = {
+    "chat_input": {"label": "对话输入", "action": "阻止提交", "detail": "文本进入受管聊天处理前检查。"},
+    "model_context": {"label": "模型上下文", "action": "阻止发送", "detail": "在受管模型调用前检查发送的文本，包括提示词、历史对话和进入上下文的工具结果。"},
+    "documents": {"label": "受控资料", "action": "阻止保存", "detail": "保存前检查标题和正文，不替代受控资料原有分类、脱敏、授权和审批。"},
+    "knowledge": {"label": "知识库入库", "action": "阻止入库", "detail": "检查直接录入、受控资料发布、资料元数据编辑及可解码文本上传。阻止模式也拒绝无法检查的文件；仅记录模式不会阻止此类文件。"},
+    "query_results": {"label": "业务查询与工具结果", "action": "阻止返回", "detail": "检查智能体受管工具的文本结果，以及实时告警、告警台账和关联工单列表。阻止模式命中时不返回该结果，不影响在其他系统独立查询。"},
+    "exports": {"label": "业务与资料导出", "action": "阻止导出", "detail": "检查受控告警明细和受控资料原文下载，不替代条数上限、确认或审批。工单目前只做条数核验，不产生文件。"},
+    "logs": {"label": "应用日志", "action": "不写入命中日志", "detail": "检查应用日志处理器将写入文件或标准错误的消息与异常文本；不管控宿主机或第三方服务日志。"},
+    "cache": {"label": "运行缓存", "action": "不写入命中缓存", "detail": "检查受管工具原文缓存和对话压缩归档的新增内容；不清理旧缓存，不改变会话历史或模型文件的留存。"},
+    "debug": {"label": "调试与调用追踪", "action": "阻止保存或返回", "detail": "检查新增的会话和任务追踪，以及调试页读取的应用日志和追踪明细，不删除既有记录。"},
+}
+_BOUNDARY_ACTION: dict[Scene, str] = {
+    "chat_input": "阻止发送", "model_context": "阻止发送", "documents": "阻止保存",
+    "knowledge": "阻止入库", "query_results": "阻止返回", "exports": "阻止导出",
+    "logs": "跳过写入", "cache": "跳过写入", "debug": "阻止保存或返回",
+}
 
 
 class PrivacyPolicy(BaseModel):
@@ -33,6 +50,13 @@ class PrivacyPolicy(BaseModel):
     custom_fields: list[FieldName] = Field(default_factory=list, max_length=32)
     chat_input: Mode = "off"
     model_context: Mode = "off"
+    documents: Mode = "off"
+    knowledge: Mode = "off"
+    query_results: Mode = "off"
+    exports: Mode = "off"
+    logs: Mode = "off"
+    cache: Mode = "off"
+    debug: Mode = "off"
 
     @field_validator("builtin")
     @classmethod
@@ -52,7 +76,9 @@ class PrivacyPolicy(BaseModel):
 
     @model_validator(mode="after")
     def validate_active_rules(self):
-        if (self.chat_input != "off" or self.model_context != "off") and not (self.builtin or self.custom_fields):
+        if not (self.builtin or self.custom_fields) and any(
+            getattr(self, key) != "off" for key in SCENES
+        ):
             raise ValueError("启用检查前至少选择一条识别规则")
         return self
 
@@ -103,7 +129,11 @@ def status() -> dict:
     with _connection() as db:
         policy = _policy(db)
         hits = [dict(row) for row in db.execute("SELECT * FROM privacy_hits ORDER BY id DESC LIMIT 20")] if _has_table(db, "privacy_hits") else []
-    return {"policy": policy.model_dump(), "available_builtin": list(store.PATTERNS), "hits": hits}
+    return {
+        "policy": policy.model_dump(), "available_builtin": list(store.PATTERNS),
+        "scenes": [{"id": scene, **details} for scene, details in SCENES.items()],
+        "hits": hits,
+    }
 
 
 def save(requested: PrivacyPolicy, subject: str) -> None:
@@ -121,7 +151,7 @@ def save(requested: PrivacyPolicy, subject: str) -> None:
         component_events.record(
             "privacy_policy", "敏感数据规则", "全局部署",
             previous.model_dump(exclude={"revision"}), updated.model_dump(exclude={"revision"}),
-            visible_fields={"builtin", "custom_fields", "chat_input", "model_context"},
+            visible_fields={"builtin", "custom_fields", *SCENES},
         )
     finally:
         component_events.actor.reset(token)
@@ -206,13 +236,20 @@ def _record_hit(scene: Scene, mode: Mode, revision: int, count: int) -> None:
         db.execute("DELETE FROM privacy_hits WHERE id <= (SELECT max(id) - 200 FROM privacy_hits)")
 
 
-def _apply(scene: Scene, payload) -> None:
+def load_policy() -> PrivacyPolicy:
     try:
         with _connection() as db:
-            policy = _policy(db)
+            return _policy(db)
     except (OSError, sqlite3.Error, ValueError):
-        logger.warning("Unable to load text privacy policy")
         raise PrivacyUnavailable("暂时无法读取敏感数据策略，请稍后重试或联系管理员。") from None
+
+
+def check_sync(
+    scene: Scene, payload, *, policy: PrivacyPolicy | None = None,
+    log_errors: bool = True,
+) -> None:
+    if policy is None:
+        policy = load_policy()
     mode = getattr(policy, scene)
     if mode == "off":
         return
@@ -227,11 +264,33 @@ def _apply(scene: Scene, payload) -> None:
     try:
         _record_hit(scene, mode, policy.revision, count)
     except (OSError, sqlite3.Error):
-        logger.warning("Unable to record a text privacy hit")
+        if log_errors:
+            logger.warning("Unable to record a text privacy hit")
     if mode == "block":
-        boundary = "对话输入" if scene == "chat_input" else "模型上下文"
-        raise PrivacyBlocked(f"{boundary}命中敏感数据规则，已阻止发送。请移除或脱敏后重试。")
+        raise PrivacyBlocked(
+            f"{SCENES[scene]['label']}命中敏感数据规则，已{_BOUNDARY_ACTION[scene]}。请移除或脱敏后重试。",
+        )
 
 
-async def check(scene: Scene, payload) -> None:
-    await asyncio.to_thread(_apply, scene, payload)
+async def check(scene: Scene, payload, *, policy: PrivacyPolicy | None = None) -> None:
+    await asyncio.to_thread(check_sync, scene, payload, policy=policy)
+
+
+def allow_persistence(scene: Scene, payload) -> bool:
+    """Optional diagnostic/cache writes must not break the primary operation."""
+    try:
+        check_sync(scene, payload)
+        return True
+    except (PrivacyBlocked, PrivacyUnavailable):
+        return False
+
+
+def check_http(scene: Scene, payload) -> None:
+    from fastapi import HTTPException
+
+    try:
+        check_sync(scene, payload)
+    except PrivacyBlocked as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except PrivacyUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc

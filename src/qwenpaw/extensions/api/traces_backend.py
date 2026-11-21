@@ -24,6 +24,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from qwenpaw.extensions.traceability import trace_store
 
+from . import text_privacy
 from .access_session import CURRENT_IDENTITY
 from .chat_isolation import chat_scope
 
@@ -63,7 +64,7 @@ def list_sessions(
     limit: int = Query(default=50, ge=1, le=500),
 ) -> dict:
     """Paginated index of sessions, freshest first."""
-    return trace_store.list_sessions(
+    result = trace_store.list_sessions(
         agent_id=agent_id,
         session_prefix=_session_prefix(),
         keyword=keyword,
@@ -73,6 +74,8 @@ def list_sessions(
         offset=offset,
         limit=limit,
     )
+    text_privacy.check_http("debug", result)
+    return result
 
 
 @router.get("/sessions/{session_id}")
@@ -98,6 +101,7 @@ def get_session(
             status_code=404,
             detail=f"trace for session '{session_id}' not found",
         )
+    text_privacy.check_http("debug", result)
     return result
 
 

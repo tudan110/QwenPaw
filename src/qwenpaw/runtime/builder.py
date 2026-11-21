@@ -316,14 +316,22 @@ class AgentBuilder:
         if production_guards():
             sys_prompt += (
                 "\n\n【业务数据导出】告警明细只能用受控告警导出，先核对真实条数，"
-                "随后由用户确认。工单明细等没有受控入口的数据不能导出；直接告知用户，"
-                "不要为了导出而分页收集明细，也不要换用报告、Office、写文件或文件发送。"
-                "仍可按用户授权执行普通查询和展示摘要。"
+                "随后由用户确认。待办或已办工单的导出请求先按用户筛选范围使用 "
+                "check_work_order_export 核验，直接转述系统返回的条数、上限和拒绝原因。"
+                "只核验完整筛选范围，不把当前页或点选条目当作全量。"
+                "工具不可用或不能准确表达用户筛选范围时，应说明无法核验，不得猜测上限或宣称超限。"
+                "此核验不提供文件下载。"
+                "不要为了导出分页采集或附上未被要求的明细，也不要改用报告、Office、"
+                "写文件或发附件。普通业务查询保持原有行为。"
             )
 
         middlewares = self._build_middlewares(ctx, agent_config)
         if scroll is not None:
             middlewares.append(scroll.cap_middleware)
+        # Innermost so the other middleware only receive checked outputs.
+        from ..agents.result_privacy import ToolResultPrivacyMiddleware
+
+        middlewares.append(ToolResultPrivacyMiddleware())
 
         running_config = agent_config.running
 

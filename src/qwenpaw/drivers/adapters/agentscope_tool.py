@@ -180,6 +180,51 @@ class DriverCapabilityTool(ToolBase):
         return _tool_chunk_from_driver_result(result)
 
 
+class WorkOrderExportCheckTool(DriverCapabilityTool):
+    """A count-only projection of the authorized work-order list tool."""
+
+    is_read_only = True
+
+    def __init__(
+        self, capability: DriverCapability, invoker: DriverInvoker,
+        request_context: dict[str, str],
+    ) -> None:
+        super().__init__(capability, invoker, request_context)
+        from .work_order_export import WORK_ORDER_EXPORT_TOOL
+
+        self.name = WORK_ORDER_EXPORT_TOOL
+        self.description = (
+            "核验待办或已办工单明细导出是否触发当前条数上限。"
+            "仅用于导出请求，必须保留用户的时间范围；不生成文件，不返回工单明细。"
+            "将核验结果和具体上限直接告知用户。"
+        )
+        self.input_schema = {
+            "type": "object",
+            "properties": {
+                "classify": {"type": "integer", "enum": [1, 5], "description": "1=待办，5=已办"},
+                "startTime": {"type": "string", "description": "可选，YYYY-MM-DD HH:mm:ss"},
+                "endTime": {"type": "string", "description": "可选，YYYY-MM-DD HH:mm:ss"},
+            },
+            "required": ["classify"],
+            "additionalProperties": False,
+        }
+
+    async def __call__(self, **kwargs: Any) -> Any:
+        from .work_order_export import preflight
+
+        supported = self._capability.input_schema.get("properties") or {}
+        if any(key in kwargs and key not in supported for key in ("startTime", "endTime")):
+            return ToolChunk(
+                content=[_text_block("当前工单接口不支持指定的时间筛选，无法核验导出范围，未导出文件。")],
+                state=ToolResultState.ERROR,
+                is_last=True,
+            )
+        state, message = await preflight(
+            self._invoker, self._capability.capability_id, self._request_context, kwargs,
+        )
+        return ToolChunk(content=[message], state=state, is_last=True)
+
+
 async def build_driver_agent_tools(
     driver_manager: Any | None,
     request_context: dict[str, str],
@@ -209,6 +254,7 @@ async def build_driver_agent_tools(
     scope = permissions.invocation_from_context(request_context)
     overrides = await permissions.read_settings(scope) if scope is not None else {}
     tools: list[ToolBase] = []
+    order_lists: list[DriverCapability] = []
     for driver in drivers:
         if not driver.enabled or driver.status != "active":
             continue
@@ -221,15 +267,17 @@ async def build_driver_agent_tools(
                 kind="tool",
                 request_context=request_context,
             )
+            exposed = [cap for cap in capabilities if cap.exposure.as_tool]
             driver_tools = [
-                DriverCapabilityTool(
-                    capability,
-                    driver_manager.invoke_capability,
-                    request_context,
-                )
-                for capability in capabilities
-                if getattr(capability.exposure, "as_tool", False)
+                DriverCapabilityTool(cap, driver_manager.invoke_capability, request_context)
+                for cap in exposed
             ]
+            order_lists.extend(
+                cap for cap in exposed
+                if cap.protocol == "mcp"
+                and cap.driver_name == "order"
+                and cap.name == "listWorkOrders"
+            )
         except (ConnectionError, TimeoutError):
             states[driver.name] = "mcp_transport_unavailable"
             logger.warning(
@@ -249,5 +297,10 @@ async def build_driver_agent_tools(
         return [], []
 
     from ...agents.prompt import build_driver_policy_recheck_hint
+    from ...extensions.security.execution_policy import enabled as production_guards
 
+    if len(order_lists) == 1 and production_guards():
+        tools.append(WorkOrderExportCheckTool(
+            order_lists[0], driver_manager.invoke_capability, request_context,
+        ))
     return tools, [build_driver_policy_recheck_hint()]
