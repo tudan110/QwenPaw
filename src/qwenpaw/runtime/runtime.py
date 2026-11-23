@@ -19,6 +19,7 @@ import logging
 import uuid
 from typing import Any, AsyncGenerator
 
+from ..config.context import current_workspace_dir
 from .builder import AgentBuilder
 from .envelope import Envelope
 from .executor import AgentExecutor
@@ -46,13 +47,35 @@ class Runtime:
         self.workspace = workspace
         self.app_services = app_services
 
-    async def run(  # pylint: disable=too-many-branches,too-many-statements
+    async def run(self, request: Any) -> AsyncGenerator[Any, None]:
+        """Run each stream step with the current agent workspace bound."""
+        ctx = self._build_context(self._normalize(request))
+        stream = self._run(ctx)
+        # Hooks set context in child tasks, which cannot update their parent.
+        # Bind here and restore before yielding to the consumer so cancellation
+        # or stream closure from another task never resets a foreign token.
+        try:
+            while True:
+                token = current_workspace_dir.set(ctx.workspace_dir)
+                try:
+                    event = await anext(stream)
+                except StopAsyncIteration:
+                    return
+                finally:
+                    current_workspace_dir.reset(token)
+                yield event
+        finally:
+            token = current_workspace_dir.set(ctx.workspace_dir)
+            try:
+                await stream.aclose()
+            finally:
+                current_workspace_dir.reset(token)
+
+    async def _run(  # pylint: disable=too-many-branches,too-many-statements
         self,
-        request: Any,
+        ctx: HookContext,
     ) -> AsyncGenerator[Any, None]:
         """8-phase lifecycle orchestration."""
-        request = self._normalize(request)
-        ctx = self._build_context(request)
         hooks = self.workspace.plugins.hook_registry
 
         # Set the agent-context contextvars HERE, in the run task itself.

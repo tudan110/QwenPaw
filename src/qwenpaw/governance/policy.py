@@ -1296,17 +1296,16 @@ def _resolve_placeholders(
     deployment) rather than a caller-supplied argument, since it is a
     process-wide constant rather than a per-agent value.
     """
-    working_dir = str(WORKING_DIR)
     for rule in rules:
-        if workspace_dir and "WORKSPACE_DIR" in rule.match:
-            rule.match = rule.match.replace("WORKSPACE_DIR", workspace_dir)
-        if coding_project_dir and "CODING_PROJECT_DIR" in rule.match:
-            rule.match = rule.match.replace(
-                "CODING_PROJECT_DIR",
-                coding_project_dir,
-            )
-        if "WORKING_DIR" in rule.match:
-            rule.match = rule.match.replace("WORKING_DIR", working_dir)
+        for actual, placeholder in (
+            (workspace_dir, "WORKSPACE_DIR"),
+            (coding_project_dir, "CODING_PROJECT_DIR"),
+            (str(WORKING_DIR), "WORKING_DIR"),
+        ):
+            if actual and placeholder in rule.match:
+                # Backslashes escape characters in glob patterns. Windows
+                # targets still match patterns using forward slashes.
+                rule.match = rule.match.replace(placeholder, Path(actual).as_posix())
 
 
 def _unresolve_placeholders(
@@ -1331,6 +1330,12 @@ def _unresolve_placeholders(
     if workspace_dir:
         pairs.append((workspace_dir, "WORKSPACE_DIR"))
     pairs.append((str(WORKING_DIR), "WORKING_DIR"))
+    # Handle normalized patterns and older policies using native paths.
+    pairs.extend(
+        (normalized, placeholder)
+        for actual, placeholder in tuple(pairs)
+        if (normalized := Path(actual).as_posix()) != actual
+    )
     pairs.sort(key=lambda pair: len(pair[0]), reverse=True)
 
     for rule in rules:

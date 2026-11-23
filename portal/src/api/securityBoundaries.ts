@@ -1,7 +1,7 @@
 const API_BASE_URL = (import.meta.env.VITE_COPAW_API_BASE_URL || "/copaw-api/api").replace(/\/$/, "");
 
 export type ScanMode = "block" | "warn" | "off";
-export type BoundaryKey = "tool_guard" | "skill_scan" | "domain_guard" | "output_masking" | "chat_isolation" | "text_guard" | "controlled_documents" | "mcp_remote";
+export type BoundaryKey = "tool_guard" | "skill_scan" | "domain_guard" | "output_masking" | "chat_isolation" | "text_guard" | "controlled_documents" | "controlled_workspace_files" | "mcp_remote";
 export interface McpRemoteEndpoint { transport: "sse" | "streamable_http"; url: string }
 export type BoundaryValue = boolean | ScanMode | McpRemoteEndpoint[];
 export interface BoundaryControl { value: BoundaryValue | null; locked_reason: string | null }
@@ -17,7 +17,7 @@ export interface BoundarySnapshot {
   queried_at: string;
   scope: "current_backend_configuration";
   delete_protection: DeleteProtection;
-  controls?: Record<BoundaryKey, BoundaryControl>;
+  controls?: Partial<Record<BoundaryKey, BoundaryControl>>;
   mcp: {
     production_guards: boolean;
     endpoint_policy?: "exact" | "invalid";

@@ -222,7 +222,7 @@ async def _policy_tool_check_permissions(
         await check_tool_skills(request_ctx, tool_name, input_data)
         skill_check = False
         mandatory_approval = await check_tool(tool_name, input_data)
-    except (PermissionError, ValueError, HTTPException) as exc:
+    except (OSError, ValueError, HTTPException) as exc:
         # User revocations have their own audit entry. For a production
         # shell denial, keep a safe reason but no command or file data.
         if tool_name == "execute_shell_command" and not skill_check:
@@ -307,7 +307,7 @@ async def _policy_tool_check_permissions(
             )
         reason = "生产受控操作必须管理员审批"
         if workspace_target := approved_binding.get("workspace_target"):
-            reason += f"\n仅新建空文件，不覆盖：{workspace_target}"
+            reason = f"工作区受控模式要求管理员审批。仅新建空文件，不覆盖：{workspace_target}"
         files = approved_binding.get("files", {})
         if files:
             preview = "\n".join(
@@ -635,6 +635,10 @@ async def _ask_user_approval(
     from .generalize import generalize_target_for_approval
 
     production_one_shot = source == "production_boundary"
+    workspace_file_approval = (
+        production_one_shot
+        and tool_name == DEFAULT_REGISTRY.python_to_policy_name("write_file")
+    )
     generalized_target = target if production_one_shot else await generalize_target_for_approval(
         tool_name,
         target,
@@ -739,38 +743,47 @@ async def _ask_user_approval(
             guardians_used=["governance_policy"],
         )
 
-    svc = get_approval_service()
-    tool_call_id = str(ctx.get("tool_call_id") or "")
-    if session_id and tool_call_id:
-        await svc.cancel_stale_pending_for_tool_call(session_id, tool_call_id)
+    try:
+        svc = get_approval_service()
+        tool_call_id = str(ctx.get("tool_call_id") or "")
+        if session_id and tool_call_id:
+            await svc.cancel_stale_pending_for_tool_call(session_id, tool_call_id)
 
-    pending = await svc.create_pending(
-        session_id=session_id,
-        root_session_id=root_session_id,
-        owner_agent_id=root_agent_id,
-        user_id=user_id,
-        channel=channel,
-        agent_id=agent_id or "unknown",
-        tool_name=tool_name,
-        result=guard_result,
-        timeout_seconds=TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS,
-        extra={
-            "tool_call": {
-                "id": tool_call_id,
-                "name": tool_name,
-                "input": dict(params or {}),
+        pending = await svc.create_pending(
+            session_id=session_id,
+            root_session_id=root_session_id,
+            owner_agent_id=root_agent_id,
+            user_id=user_id,
+            channel=channel,
+            agent_id=agent_id or "unknown",
+            tool_name=tool_name,
+            result=guard_result,
+            timeout_seconds=TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS,
+            extra={
+                "tool_call": {
+                    "id": tool_call_id,
+                    "name": tool_name,
+                    "input": dict(params or {}),
+                },
+                "display": {
+                    "tool_name": tool_name,
+                    "tool_source": source,
+                    "exact_target": target,
+                    "similar_target": display_target,
+                    "is_generalized": display_target != target,
+                },
+                "channel_meta": ctx.get("channel_meta"),
+                "_channel_instance": ctx.get("_channel_instance"),
             },
-            "display": {
-                "tool_name": tool_name,
-                "tool_source": source,
-                "exact_target": target,
-                "similar_target": display_target,
-                "is_generalized": display_target != target,
-            },
-            "channel_meta": ctx.get("channel_meta"),
-            "_channel_instance": ctx.get("_channel_instance"),
-        },
-    )
+        )
+    except Exception:
+        if not workspace_file_approval:
+            raise
+        logger.exception("Could not submit workspace file approval")
+        return PermissionDecision(
+            behavior=PermissionBehavior.DENY,
+            message="工作区受控模式要求管理员审批；未能提交审批请求，未创建文件。" + _NO_RETRY_INSTRUCTION,
+        )
 
     logger.info(
         "PolicyGuardedTool: awaiting approval for tool=%s session=%s "
@@ -781,6 +794,7 @@ async def _ask_user_approval(
         target,
     )
 
+    wait_failed = False
     try:
         decision = await svc.wait_for_approval(
             pending.request_id,
@@ -792,6 +806,7 @@ async def _ask_user_approval(
             exc,
             exc_info=True,
         )
+        wait_failed = True
         decision = ApprovalDecision.DENIED
 
     # Record user approve/deny result to audit log
@@ -800,9 +815,17 @@ async def _ask_user_approval(
     # object). None = no choice offered → EXACT.
     scope = None if production_one_shot else getattr(pending, "scope", None)
     scope_label = scope.value if scope else "exact"
+    if approved:
+        audit_reason = f"User Approve ({scope_label})"
+    elif wait_failed:
+        audit_reason = "Approval service error"
+    elif decision == ApprovalDecision.DENIED:
+        audit_reason = "User Deny"
+    else:
+        audit_reason = "Approval timeout"
     approval_decision = GovernanceDecision(
         action=GovernanceAction.ALLOW if approved else GovernanceAction.DENY,
-        reason=(f"User Approve ({scope_label})" if approved else "User Deny"),
+        reason=audit_reason,
     )
     governor.audit(tc_spec, approval_decision)
 
@@ -822,6 +845,18 @@ async def _ask_user_approval(
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
             message=f"Approved by user ({scope_label}).\n{summary}",
+        )
+
+    if workspace_file_approval:
+        if wait_failed:
+            detail = "审批服务未能返回结果"
+        elif decision == ApprovalDecision.DENIED:
+            detail = "管理员已拒绝本次审批"
+        else:
+            detail = f"本次审批等待超时（{int(TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS)} 秒）"
+        return PermissionDecision(
+            behavior=PermissionBehavior.DENY,
+            message=f"工作区受控模式要求管理员审批；{detail}，未创建文件。" + _NO_RETRY_INSTRUCTION,
         )
 
     denial_msg = (

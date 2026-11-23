@@ -103,15 +103,26 @@ def enabled() -> bool:
     }
 
 
+def workspace_file_approval_enabled() -> bool:
+    from ...config.runtime_boundary_policy import flag_enabled
+
+    return enabled() and flag_enabled("controlled_workspace_files")
+
+
 def empty_workspace_text_target(params: dict[str, Any]) -> Path:
-    """Only create a new, zero-byte .txt in the active agent workspace."""
+    """Only create a new, zero-byte .txt or .md in the active agent workspace."""
     name = params.get("file_path")
     if not isinstance(name, str) or params.get("content") != "":
         raise PermissionError("仅支持新建空的工作区文本文件")
     name = name[2:] if name.startswith(("./", ".\\")) else name
-    match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9_-]{0,95})\.txt", name, re.ASCII | re.IGNORECASE)
+    match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9_-]{0,95})\.(?:txt|md)", name, re.ASCII | re.IGNORECASE)
     if not match or re.fullmatch(r"aux|con|nul|prn|com[0-9]|lpt[0-9]", match[1].lower()):
-        raise PermissionError("请提供当前工作区中的普通 .txt 文件名，不支持目录或设备名")
+        raise PermissionError("仅支持当前工作区根目录中新建空 .txt 或 .md 文件，不支持目录或设备名")
+    if name.casefold() in {
+        "agents.md", "soul.md", "profile.md", "memory.md", "heartbeat.md",
+        "boot.md", "bootstrap.md", "tools.md", "identity.md", "user.md", "skill.md",
+    }:
+        raise PermissionError("不能使用此工具创建智能体、技能或会话配置文件")
     workspace = get_current_workspace_dir()
     if workspace is None or not workspace.is_dir():
         raise PermissionError("没有可用的当前工作区，未创建文件")
@@ -587,6 +598,8 @@ async def check_tool(name: str, params: dict[str, Any]) -> bool:
     empty_create = name == "write_file" and params.get("content") == ""
     if empty_create:
         empty_workspace_text_target(params)
+        if not workspace_file_approval_enabled():
+            return False
     else:
         require_controlled_export(name, params.get("operation"))
     if name in {"grep_search", "glob_search"}:
@@ -610,6 +623,8 @@ async def check_tool(name: str, params: dict[str, Any]) -> bool:
         return False
     identity = CURRENT_IDENTITY.get()
     if identity is None or not identity.is_admin:
+        if empty_create:
+            raise PermissionError("工作区受控模式要求可信 AI 管理员提交审批，当前会话未通过管理员身份验证，未创建文件")
         raise PermissionError("高危或未分类工具仅允许可信 AI 管理员调用")
     if identity.access_token:
         get_access_store().resolve(identity.access_token)

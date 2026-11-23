@@ -152,6 +152,22 @@ def _sm_count_decision(decision: str, tool_name: str = "") -> None:
 
 
 # pylint: disable=too-many-return-statements
+def _check_fallback_file(tool_name: str, params: dict[str, Any]) -> None:
+    from ..extensions.security.agent_export import require_controlled_export
+    from ..extensions.security.execution_policy import (
+        enabled,
+        empty_workspace_text_target,
+        workspace_file_approval_enabled,
+    )
+
+    if enabled() and tool_name == "write_file" and params.get("content") == "":
+        empty_workspace_text_target(params)
+        if workspace_file_approval_enabled():
+            raise PermissionError("工作区受控模式要求管理员审批，当前审批流程不可用，未创建文件")
+        return
+    require_controlled_export(tool_name, params.get("operation"))
+
+
 async def _guarded_tool_check_permissions(
     self: Any,
     input_data: dict[str, Any] | None = None,
@@ -186,11 +202,10 @@ async def _guarded_tool_check_permissions(
 
     from ..extensions.security.portal_capabilities import check_tool_skills
 
-    from ..extensions.security.agent_export import require_controlled_export
     from ..extensions.security.call_admission import require_agent_tool
 
     try:
-        require_controlled_export(self.name, (input_data or {}).get("operation"))
+        _check_fallback_file(self.name, input_data or {})
         require_agent_tool(self.name)
         input_data = _check_fallback_shell(self.name, input_data or {})
         await check_tool_skills(self._qp_request_context, self.name, input_data)
@@ -364,10 +379,9 @@ def _format_guard_message(tool_name: str, guard_result: Any) -> str:
 async def _guarded_tool_call(self: Any, *args: Any, **kwargs: Any) -> Any:
     # This fallback wrapper also serves the CMDB retry path when the
     # governor is unavailable. A personal revocation still applies.
-    from ..extensions.security.agent_export import require_controlled_export
     from ..extensions.security.call_admission import require_agent_tool
 
-    require_controlled_export(self.name, kwargs.get("operation"))
+    _check_fallback_file(self.name, kwargs)
     kwargs = _check_fallback_shell(self.name, kwargs)
 
     from agentscope.tool import FunctionTool

@@ -14,6 +14,7 @@ const CONFIG_ENTRY = "安全边界总览";
 const ROW_POLICIES: Record<string, BoundaryKey> = {
   tools: "tool_guard", mcp: "mcp_remote", skill: "skill_scan", domain: "domain_guard",
   output: "output_masking", isolation: "chat_isolation", text: "text_guard", documents: "controlled_documents",
+  workspaceFiles: "controlled_workspace_files",
 };
 const POLICY_IMPACT: Record<BoundaryKey, string> = {
   tool_guard: "关闭后，工具风险守卫将不再判断调用；生产执行守卫和单独的调用准入规则不受此设置影响。",
@@ -23,6 +24,7 @@ const POLICY_IMPACT: Record<BoundaryKey, string> = {
   chat_isolation: "会话将按已验证身份隔离，旧共享会话不会自动迁移或重新分配。开启后不能在线关闭。",
   text_guard: "开启要求生产执行守卫和会话主体隔离均开启；受约束的入口将拒绝非文本内容及命中规则的输入。",
   controlled_documents: "开启要求生产执行守卫已开启；资料的授权、复核和审批仍按「受控资料」中的规则执行。",
+  controlled_workspace_files: "开启后，在当前工作区根目录新建空 .txt 或 .md 须由可信管理员在发起会话中逐次审批。关闭后不额外要求该项审批，工具准入、风险守卫、脚本和其他生产限制仍然有效。",
   mcp_remote: "只允许部署已信任主机上的精确远程端点。空列表拒绝全部远程端点；本配置不放行本地子进程，也不授予工具权限。",
 };
 type PolicyDraft = { key: BoundaryKey; label: string; previous: BoundaryValue | null; value: BoundaryValue | null; lines: string; confirmation: string };
@@ -45,12 +47,19 @@ function boundaryRows(data: BoundarySnapshot): BoundaryRow[] {
   const mcpMode = data.mcp.endpoint_policy;
   const endpoints = data.mcp.declared_endpoint_count;
   const deletion = data.delete_protection;
+  const workspaceFileMode = data.controls?.controlled_workspace_files?.value;
   return [
     { id: "delete", label: "全局删除保护", status: deletion.blocked ? "禁止彻底删除" : "未全局禁止删除",
       tone: deletion.blocked ? "success" : "warning", detail: "覆盖删除类管理请求及知识库彻底删除，不阻断知识库归档。未全局禁止不等于跳过权限或确认。",
       management: SOURCE[deletion.source] },
     { id: "execution", label: "生产执行守卫", status: guards ? "开启" : "关闭", tone: guards ? "success" : "danger",
       detail: "限制受管脚本、命令参数及敏感路径；受控操作执行前校验身份与审批。", management: "部署安全基线" },
+    { id: "workspaceFiles", label: "工作区受控模式",
+      status: !guards ? "未启用生产执行守卫" : workspaceFileMode === true ? "开启 · 需管理员审批"
+        : workspaceFileMode === false ? "关闭 · 沿用常规流程" : "当前后端不支持",
+      tone: guards && workspaceFileMode === true ? "success" : "neutral",
+      detail: "仅控制在当前工作区根目录新建空 .txt 或 .md 时是否额外要求管理员审批。开启后请在发起会话的输入框上方处理审批。",
+      management: CONFIG_ENTRY },
     { id: "tools", label: "工具风险守卫", status: data.tool_guard.enabled ? "开启" : "关闭", tone: data.tool_guard.enabled ? "success" : "warning",
       detail: `已加载 ${data.tool_guard.auto_deny_rule_count} 条自动拒绝规则。适用范围依工具及工作区配置，不代表所有工具均被覆盖。`, management: CONFIG_ENTRY },
     { id: "mcp", label: "MCP 服务与工具", status: !guards ? "端点守卫关闭" : mcpMode === "invalid" ? "配置无效 · 拒绝远程端点"
@@ -127,8 +136,9 @@ export function SecurityBoundaryOverview({ openProtection, openAdmission }: {
     && (draft.blocked || draft.confirmation.trim() === deleteProtectionConfirmation(false));
 
   const policyValue = policy?.key === "mcp_remote" ? parseMcpLines(policy.lines) : policy?.value;
-  const riskConfirmation = policy?.key === "chat_isolation" || policy?.key === "mcp_remote" || policy?.key === "controlled_documents"
-    || policyValue === false || policyValue === "warn" || policyValue === "off";
+  const isWorkspaceFileMode = policy?.key === "controlled_workspace_files";
+  const riskConfirmation = !isWorkspaceFileMode && (policy?.key === "chat_isolation" || policy?.key === "mcp_remote"
+    || policy?.key === "controlled_documents" || policyValue === false || policyValue === "warn" || policyValue === "off");
   const canSavePolicy = policy && policyValue != null && !equalValue(policy.previous, policyValue)
     && (!riskConfirmation || policy.confirmation.trim() === boundaryConfirmation);
 
@@ -193,7 +203,14 @@ export function SecurityBoundaryOverview({ openProtection, openAdmission }: {
         { key: "mcp", label: "打开 MCP 管理", onClick: goToMcp },
         ...(admission ? [{ key: "admission", ...admission }] : []),
       ] : row.id === "output" ? [{ key: "protection", label: "查看防护概览", onClick: openProtection }] : undefined;
-      if (control && !control.locked_reason) return {
+      if (key === "controlled_workspace_files" && control && !control.locked_reason && typeof control.value === "boolean") {
+        const previous = control.value;
+        return { main: {
+          label: previous ? "关闭工作区受控模式" : "开启工作区受控模式",
+          onClick: () => setPolicy({ key, label: row.label, previous, value: !previous, lines: "", confirmation: "" }),
+        }, note: "保存后对后续调用生效" };
+      }
+      if (key !== "controlled_workspace_files" && control && !control.locked_reason) return {
         main: { label: key === "mcp_remote" ? "配置远程端点" : "配置策略", onClick: () => setPolicy({
           key, label: row.label, previous: control.value, value: key === "chat_isolation" ? true : control.value,
           lines: Array.isArray(control.value) ? control.value.map((entry) => `${entry.transport} ${entry.url}`).join("\n") : "",
@@ -332,6 +349,7 @@ export function SecurityBoundaryOverview({ openProtection, openAdmission }: {
             onChange={(event) => setPolicy({ ...policy, lines: event.target.value })} />
           {!Array.isArray(policyValue) && <span role="alert">请按「sse 或 streamable_http + 空格 + URL」逐行填写。</span>}
         </Flex> : policy.key === "chat_isolation" ? <div>保存后的状态：<strong>按已验证身份隔离</strong></div>
+          : isWorkspaceFileMode ? <div>保存后的状态：<strong>{policyValue ? "开启 · 需管理员审批" : "关闭 · 沿用常规流程"}</strong></div>
           : <Radio.Group aria-label="保存后的策略状态" disabled={busy}
             value={typeof policy.value === "boolean" ? String(policy.value) : policy.value}
             onChange={(event) => {

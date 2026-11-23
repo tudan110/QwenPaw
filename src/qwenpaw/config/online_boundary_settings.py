@@ -15,7 +15,7 @@ from .runtime_boundary_policy import (
 
 Key = Literal[
     "tool_guard", "skill_scan", "domain_guard", "output_masking",
-    "chat_isolation", "text_guard", "controlled_documents", "mcp_remote",
+    "chat_isolation", "text_guard", "controlled_documents", "controlled_workspace_files", "mcp_remote",
 ]
 CONFIG_FIELDS = {
     "tool_guard": ("tool_guard", "enabled"),
@@ -99,6 +99,8 @@ def _runtime_lock(key: Key, current) -> str | None:
 
     if key == "chat_isolation" and current is True:
         return "已启用主体隔离；关闭可能暴露历史会话，因此不允许在线关闭。"
+    if key == "controlled_workspace_files" and not enabled():
+        return "生产执行守卫未启用，当前实例沿用原生文件工具策略。"
     if key == "mcp_remote" and not enabled():
         return "生产执行守卫未启用，不能在线配置端点策略。"
     return None
@@ -159,6 +161,8 @@ def _validate_change(key: Key, value) -> None:
         raise PolicyConflict("开启文本检查前，须先开启会话主体隔离及生产执行守卫。")
     if key == "controlled_documents" and value is True and not enabled():
         raise PolicyConflict("开启受控资料前，须先开启生产执行守卫。")
+    if key == "controlled_workspace_files" and value is True and not enabled():
+        raise PolicyConflict("开启工作区受控模式前，须先开启生产执行守卫。")
 
 
 def configure(key: Key, value, expected) -> bool:

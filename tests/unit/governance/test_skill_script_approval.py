@@ -26,6 +26,11 @@ from qwenpaw.governance import tool_adapter
 @pytest.fixture
 def approval(monkeypatch, tmp_path):
     monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
+    from qwenpaw.config import runtime_boundary_policy
+
+    monkeypatch.setattr(runtime_boundary_policy, "policy_path", lambda: tmp_path / "boundary-policy.json")
+    monkeypatch.delenv("QWENPAW_CONTROLLED_WORKSPACE_FILES", raising=False)
+    monkeypatch.delenv("COPAW_CONTROLLED_WORKSPACE_FILES", raising=False)
     monkeypatch.setenv("QWENPAW_ADMIN_INOE_USER_IDS", "1")
     monkeypatch.delenv("QWENPAW_READONLY_TOOL_NAMES", raising=False)
     monkeypatch.setattr(execution_policy, "WORKING_DIR", tmp_path)
@@ -107,8 +112,10 @@ def approval(monkeypatch, tmp_path):
             behavior=PermissionBehavior.ALLOW, message="fixture approved"
         )
 
+    real_ask = tool_adapter._ask_user_approval
     monkeypatch.setattr(tool_adapter, "_ask_user_approval", ask)
     yield SimpleNamespace(
+        real_ask=real_ask,
         tool=tool,
         params=params,
         context=context,
@@ -399,13 +406,35 @@ async def test_web_mcp_list_without_id_remains_readable(ordinary_web):
     ordinary_web.validate.assert_not_awaited()
 
 
-async def test_create_empty_file_uses_existing_approval(approval, tmp_path):
+@pytest.mark.parametrize("filename", ["tmp.txt", "tmp.md"])
+async def test_create_empty_file_defaults_to_normal_flow(approval, tmp_path, filename):
+    from qwenpaw.governance.policy import load_governance_policy
+
+    approval.governor.policy = load_governance_policy(str(tmp_path), str(tmp_path))
+    approval.governor.assert_policy = approval.governor.policy.evaluate
+    tool = tool_adapter.PolicyGuardedTool(
+        write_file, governor=approval.governor,
+        request_context={"approval_level": "auto"},
+    )
+    params = {"file_path": filename, "content": ""}
+    assert not execution_policy.workspace_file_approval_enabled()
+    approval.respond.set()  # Fail the no-approval assertion rather than hang on regression.
+    assert (await tool.check_permissions(params)).behavior == PermissionBehavior.ALLOW
+    assert (await tool(**params)).state == ToolResultState.SUCCESS
+    assert (tmp_path / filename).read_bytes() == b""
+    assert not approval.requests
+    approval.validate.assert_not_awaited()
+
+
+@pytest.mark.parametrize("filename", ["tmp.txt", "tmp.md"])
+async def test_create_empty_file_uses_existing_approval(approval, tmp_path, monkeypatch, filename):
+    monkeypatch.setenv("QWENPAW_CONTROLLED_WORKSPACE_FILES", "true")
     approval.tool = tool_adapter.PolicyGuardedTool(
         write_file, governor=approval.governor,
         request_context={"approval_level": "off", "agent_id": "gateway", "session_id": "empty-file"},
     )
-    approval.params = {"file_path": "tmp.txt", "content": ""}
-    target = tmp_path / "tmp.txt"
+    approval.params = {"file_path": filename, "content": ""}
+    target = tmp_path / filename
     assert (await write_file(**approval.params)).state == ToolResultState.ERROR
     with pytest.raises(PermissionError, match="已审批"):
         await approval.tool(**approval.params)
@@ -423,7 +452,8 @@ async def test_create_empty_file_uses_existing_approval(approval, tmp_path):
     assert target.read_text() == "existing content"
 
 
-async def test_file_created_while_approval_pending_cannot_be_overwritten(approval, tmp_path):
+async def test_file_created_while_approval_pending_cannot_be_overwritten(approval, tmp_path, monkeypatch):
+    monkeypatch.setenv("QWENPAW_CONTROLLED_WORKSPACE_FILES", "true")
     from qwenpaw.agents.tools.file_io import _create_empty_file
 
     approval.tool = tool_adapter.PolicyGuardedTool(
@@ -445,7 +475,7 @@ async def test_file_created_while_approval_pending_cannot_be_overwritten(approva
 @pytest.mark.parametrize("path, content", [
     ("../tmp.txt", ""), ("subdir/tmp.txt", ""), ("config.py", ""),
     (".env", ""), ("nul.txt", ""), (".hidden.txt", ""),
-    ("tmp.txt", "not an empty file"),
+    ("tmp.txt", "not an empty file"), ("AGENTS.md", ""), ("profile.MD", ""),
 ])
 async def test_file_workflow_does_not_admit_other_writes(approval, path, content):
     with pytest.raises(PermissionError):
@@ -479,7 +509,9 @@ async def test_registered_custom_script_requires_bound_approval(approval, tmp_pa
     assert len(approval.executing) == 1
 
 
-async def test_explicit_tool_denial_still_overrides_file_approval(approval, tmp_path, monkeypatch):
+@pytest.mark.parametrize("mode", ["false", "true"])
+async def test_explicit_tool_denial_still_overrides_file_approval(approval, tmp_path, monkeypatch, mode):
+    monkeypatch.setenv("QWENPAW_CONTROLLED_WORKSPACE_FILES", mode)
     from qwenpaw.extensions.security import call_admission
 
     monkeypatch.setattr(call_admission, "WORKING_DIR", tmp_path)
@@ -513,3 +545,97 @@ async def test_fallback_cannot_run_custom_script_without_approval(approval, tmp_
     assert "审批服务当前不可用" in result.message
     with pytest.raises(PermissionError, match="审批服务当前不可用"):
         await tool(**params)
+
+
+async def test_fallback_preserves_file_controls(approval, tmp_path, monkeypatch):
+    from qwenpaw.runtime.tool_guard import GuardedFunctionTool
+
+    tool = GuardedFunctionTool(write_file)
+    monkeypatch.setattr(type(tool), "_resolve_execution_level", lambda self: "bypass")
+    params = {"file_path": "normal.md", "content": ""}
+    assert (await tool.check_permissions(params)).behavior == PermissionBehavior.ALLOW
+    assert (await tool(**params)).state == ToolResultState.SUCCESS
+    assert (tmp_path / "normal.md").read_bytes() == b""
+    assert (await tool.check_permissions({**params, "file_path": "../skip.txt"})).behavior == PermissionBehavior.DENY
+    assert (await tool.check_permissions({**params, "content": "nonempty"})).behavior == PermissionBehavior.DENY
+
+    monkeypatch.setenv("QWENPAW_CONTROLLED_WORKSPACE_FILES", "true")
+    params["file_path"] = "controlled.txt"
+    decision = await tool.check_permissions(params)
+    assert decision.behavior == PermissionBehavior.DENY
+    assert "当前审批流程不可用" in decision.message
+    with pytest.raises(PermissionError, match="当前审批流程不可用"):
+        await tool(**params)
+    assert not (tmp_path / "controlled.txt").exists()
+
+
+@pytest.mark.parametrize("action", ["approve", "deny"])
+async def test_controlled_file_approval_visible_to_requesting_admin(approval, tmp_path, monkeypatch, action):
+    import httpx
+    from fastapi import FastAPI, Request
+    from qwenpaw.app import approvals
+    from qwenpaw.app.routers import approval as approval_api
+
+    monkeypatch.setenv("QWENPAW_CONTROLLED_WORKSPACE_FILES", "true")
+    monkeypatch.setattr(tool_adapter, "_ask_user_approval", approval.real_ask)
+    service = approvals.ApprovalService()
+    monkeypatch.setattr(approvals, "get_approval_service", lambda: service)
+    monkeypatch.setattr(approval_api, "get_approval_service", lambda: service)
+    app = FastAPI()
+    app.include_router(approval_api.router)
+    identity = CURRENT_IDENTITY.get()
+
+    @app.middleware("http")
+    async def bind_test_identity(request: Request, call_next):
+        request.state.access_identity = SimpleNamespace(
+            is_admin=True,
+            user_id=identity.user_id if not request.headers.get("X-Other-Admin") else "other",
+        )
+        return await call_next(request)
+
+    ready = asyncio.Event()
+    real_create = service.create_pending
+
+    async def create_pending(**kwargs):
+        pending = await real_create(**kwargs)
+        ready.set()
+        return pending
+
+    monkeypatch.setattr(service, "create_pending", create_pending)
+    tool = tool_adapter.PolicyGuardedTool(
+        write_file, governor=approval.governor,
+        request_context={"agent_id": "gateway", "session_id": "active-chat", "channel": "console"},
+    )
+    params = {"file_path": "example.md", "content": ""}
+    target = tmp_path / "example.md"
+    task = asyncio.create_task(tool.check_permissions(params))
+    try:
+        await asyncio.wait_for(ready.wait(), timeout=2)
+        assert not target.exists()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            for session, headers in [("another-chat", {}), ("active-chat", {"X-Other-Admin": "yes"})]:
+                response = await client.get("/approval/list", params={"session_id": session}, headers=headers)
+                assert response.status_code == 200 and response.json()["pending_approvals"] == []
+            response = await client.get("/approval/list", params={"session_id": "active-chat"})
+            assert response.status_code == 200
+            [pending] = response.json()["pending_approvals"]
+            assert pending["tool_name"] == "Write"
+            assert pending["owner_agent_id"] == "gateway"
+            assert pending["tool_source"] == "production_boundary"
+            decision = await client.post(f"/approval/{action}", json={
+                "request_id": pending["request_id"], "session_id": "active-chat",
+            })
+            assert decision.status_code == 200
+        result = await asyncio.wait_for(task, timeout=2)
+        if action == "approve":
+            assert result.behavior == PermissionBehavior.ALLOW
+            assert (await tool(**params)).state == ToolResultState.SUCCESS
+            assert target.read_bytes() == b""
+        else:
+            assert result.behavior == PermissionBehavior.DENY
+            assert "管理员已拒绝本次审批" in result.message
+            assert not target.exists()
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)

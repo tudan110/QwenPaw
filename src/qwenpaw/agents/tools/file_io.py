@@ -272,8 +272,9 @@ async def write_file(
 ) -> ToolChunk:
     """Create or overwrite a file. Relative paths resolve from the workspace.
 
-    With production guards only a new empty .txt in the current workspace is
-    supported, and requires administrator approval. Use content="" for this.
+    With production guards, use content="" and a relative filename to create
+    a new empty .txt or .md in the active workspace. Approval depends on the
+    workspace file control mode. Existing files are never overwritten.
 
     Args:
         file_path (`str`):
@@ -294,7 +295,11 @@ async def write_file(
             ],
         )
 
-    from ...extensions.security.execution_policy import enabled, empty_workspace_text_target
+    from ...extensions.security.execution_policy import (
+        enabled,
+        empty_workspace_text_target,
+        workspace_file_approval_enabled,
+    )
 
     if enabled():
         from ...extensions.security.agent_export import require_controlled_export
@@ -303,7 +308,7 @@ async def write_file(
             if content != "":
                 require_controlled_export("write_file")
             target = empty_workspace_text_target({"file_path": file_path, "content": content})
-            if _APPROVED_EMPTY_FILE.get() != target:
+            if workspace_file_approval_enabled() and _APPROVED_EMPTY_FILE.get() != target:
                 raise PermissionError("新建空文件需要管理员审批")
             _create_empty_file(target)
         except (OSError, ValueError) as exc:

@@ -12,11 +12,12 @@ from ..constant import EnvVarLoader
 from . import utils
 from .policy_file import PolicyConflict, read_object
 
-Flag = Literal["chat_isolation", "text_guard", "controlled_documents"]
+Flag = Literal["chat_isolation", "text_guard", "controlled_documents", "controlled_workspace_files"]
 FLAG_ENV: dict[Flag, str] = {
     "chat_isolation": "QWENPAW_TRUSTED_CHAT_ISOLATION",
     "text_guard": "QWENPAW_TRUSTED_CHAT_TEXT_GUARD",
     "controlled_documents": "QWENPAW_CONTROLLED_DOCUMENTS",
+    "controlled_workspace_files": "QWENPAW_CONTROLLED_WORKSPACE_FILES",
 }
 TRUE = {"true", "1", "yes", "on"}
 
@@ -32,6 +33,7 @@ class RuntimeBoundaryPolicy(BaseModel):
     chat_isolation: StrictBool = False
     text_guard: StrictBool = False
     controlled_documents: StrictBool = False
+    controlled_workspace_files: StrictBool = False
     mcp_remote: list[RemoteEndpoint] | None = Field(default=None, max_length=64)
 
 

@@ -386,3 +386,36 @@ def test_malformed_online_policy_fails_closed_and_is_not_overwritten(sample):
         validate_endpoint({"transport": "sse", "url": "http://localhost/sse"})
     assert configure_boundary(client, "mcp_remote", None, []).status_code == 409
     assert policy_path().read_bytes() == original
+
+
+def test_workspace_file_mode_defaults_off_and_is_independently_configurable(sample, monkeypatch):
+    from qwenpaw.config.runtime_boundary_policy import invalidate_runtime_policy, policy_path
+    from qwenpaw.extensions.security.execution_policy import enabled, workspace_file_approval_enabled
+
+    client, path = sample
+    original = path.read_bytes()
+    key = "controlled_workspace_files"
+    policy_path().write_text('{"controlled_documents":true}', encoding="utf-8")
+    assert control(client, key) == {"value": False, "locked_reason": None}
+    assert enabled() and not workspace_file_approval_enabled()
+    assert configure_boundary(client, key, False, True, {"X-Test-Role": "user"}).status_code == 403
+    assert configure_boundary(client, key, False, True).status_code == 200
+    invalidate_runtime_policy()
+    assert workspace_file_approval_enabled()
+    assert control(client, key)["value"] is True
+    assert configure_boundary(client, key, False, True).status_code == 409
+    assert configure_boundary(client, key, True, False).status_code == 200
+    assert enabled() and not workspace_file_approval_enabled()
+    assert json.loads(policy_path().read_bytes()) == {
+        "controlled_documents": True, key: False,
+    }
+    assert path.read_bytes() == original
+
+    monkeypatch.setenv("QWENPAW_CONTROLLED_WORKSPACE_FILES", "true")
+    assert workspace_file_approval_enabled()
+    assert control(client, key)["locked_reason"]
+    assert configure_boundary(client, key, True, False).status_code == 409
+    monkeypatch.delenv("QWENPAW_CONTROLLED_WORKSPACE_FILES")
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "false")
+    assert control(client, key)["locked_reason"]
+    assert configure_boundary(client, key, False, True).status_code == 409
