@@ -85,7 +85,7 @@ def _tc(target: str = "git status") -> ToolCallSpec:
     )
 
 
-async def _run_approval(scope: ApprovalScope | None, monkeypatch):
+async def _run_approval(scope: ApprovalScope | None, monkeypatch, *, source="No rule hit"):
     """Drive ``_ask_user_approval`` with fakes; return (governor, pending)."""
     from qwenpaw.governance import tool_adapter
 
@@ -140,7 +140,7 @@ async def _run_approval(scope: ApprovalScope | None, monkeypatch):
             "root_agent_id": "agent-1",
             "tool_call_id": "tc-1",
         },
-        source="No rule hit",
+        source=source,
     )
     return governor, fake_svc._pending
 
@@ -187,3 +187,11 @@ class TestApprovalScopeConsumer:
         assert display["is_generalized"] is True
         assert display["exact_target"] == "git status"
         assert display["similar_target"] == "git *"
+
+    async def test_production_approval_is_exact_and_never_saved_as_an_allow_rule(self, monkeypatch):
+        governor, pending = await _run_approval(
+            ApprovalScope.SIMILAR, monkeypatch, source="production_boundary",
+        )
+        assert not governor.added
+        assert "exact" in governor.audits[-1][1].reason
+        assert pending.extra["display"]["is_generalized"] is False

@@ -50,5 +50,11 @@ async function request<T>(path: string, method: string, body?: object, signal?: 
 export const callAdmissionApi = {
   list: (signal: AbortSignal) => request<AdmissionPolicies>("", "GET", undefined, signal),
   save: (change: AdmissionChange) => request<AdmissionPolicyRow>("", "PUT", change),
+  setEnabled: ({ kind, name, service, revision }: AdmissionPolicyRow, enabled: boolean) =>
+    request<AdmissionPolicyRow>("", "PUT", {
+      kind, name, service, revision, risk: null,
+      decision: enabled ? "inherit" : "deny",
+      reason: enabled ? "快捷开关：恢复沿用既有策略" : "快捷开关：禁止后续调用",
+    }),
   check: ({ kind, name, service }: AdmissionTarget) => request<AdmissionPolicyCheck>("/check", "POST", { kind, name, service }),
 };

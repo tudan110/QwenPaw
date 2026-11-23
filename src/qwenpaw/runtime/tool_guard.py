@@ -192,8 +192,9 @@ async def _guarded_tool_check_permissions(
     try:
         require_controlled_export(self.name, (input_data or {}).get("operation"))
         require_agent_tool(self.name)
-        await check_tool_skills(self._qp_request_context, self.name, input_data or {})
-    except PermissionError as exc:
+        input_data = _check_fallback_shell(self.name, input_data or {})
+        await check_tool_skills(self._qp_request_context, self.name, input_data)
+    except (OSError, ValueError) as exc:
         return PermissionDecision(behavior=PermissionBehavior.DENY, message=str(exc))
 
     level = self._resolve_execution_level()  # pylint: disable=protected-access
@@ -337,6 +338,17 @@ def _strict_info_guard_result(
     )
 
 
+def _check_fallback_shell(tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
+    from ..extensions.security.execution_policy import check_shell, enabled, normalize_managed_shell
+
+    if tool_name != "execute_shell_command" or not enabled():
+        return params
+    params = normalize_managed_shell(tool_name, params)
+    if check_shell(str(params.get("command", "")), params.get("cwd")):
+        raise PermissionError("此脚本需要管理员审批，审批服务当前不可用")
+    return params
+
+
 def _format_guard_message(tool_name: str, guard_result: Any) -> str:
     """Human-readable message attached to a ``PermissionDecision``."""
     from ..security.tool_guard.approval import format_findings_summary
@@ -356,6 +368,7 @@ async def _guarded_tool_call(self: Any, *args: Any, **kwargs: Any) -> Any:
     from ..extensions.security.call_admission import require_agent_tool
 
     require_controlled_export(self.name, kwargs.get("operation"))
+    kwargs = _check_fallback_shell(self.name, kwargs)
 
     from agentscope.tool import FunctionTool
     from ..extensions.security import portal_capabilities as permissions
@@ -364,6 +377,7 @@ async def _guarded_tool_call(self: Any, *args: Any, **kwargs: Any) -> Any:
     cmdb_call = uuid.uuid4().hex if self.name == "lookup_portal_cmdb_asset" else None
     await permissions.check_tool_skills(ctx, self.name, kwargs, dispatch=True, call_id=cmdb_call)
     require_agent_tool(self.name)
+    kwargs = _check_fallback_shell(self.name, kwargs)
     result = await FunctionTool.__call__(self, *args, **kwargs)
     if cmdb_call is not None:
         result = await permissions.track_cmdb_outcome(ctx, result, cmdb_call)

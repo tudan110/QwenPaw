@@ -14,6 +14,7 @@ from agentscope.tool import ToolChunk
 from fastapi import HTTPException
 import pytest
 
+from qwenpaw.agents.tools.file_io import write_file
 from qwenpaw.extensions.api.access_session import (
     AccessIdentity,
     CURRENT_IDENTITY,
@@ -396,3 +397,119 @@ async def test_web_mcp_list_without_id_remains_readable(ordinary_web):
         is False
     )
     ordinary_web.validate.assert_not_awaited()
+
+
+async def test_create_empty_file_uses_existing_approval(approval, tmp_path):
+    approval.tool = tool_adapter.PolicyGuardedTool(
+        write_file, governor=approval.governor,
+        request_context={"approval_level": "off", "agent_id": "gateway", "session_id": "empty-file"},
+    )
+    approval.params = {"file_path": "tmp.txt", "content": ""}
+    target = tmp_path / "tmp.txt"
+    assert (await write_file(**approval.params)).state == ToolResultState.ERROR
+    with pytest.raises(PermissionError, match="已审批"):
+        await approval.tool(**approval.params)
+    task = await _start_approval(approval)
+    assert not target.exists()
+    assert approval.requests[0]["source"] == "production_boundary"
+    assert "不覆盖" in approval.requests[0]["governance_reason"]
+    approval.respond.set()
+    assert (await task).behavior == PermissionBehavior.ALLOW
+    assert (await approval.tool(**approval.params)).state == ToolResultState.SUCCESS
+    assert target.read_bytes() == b""
+    target.write_text("existing content")
+    with pytest.raises(PermissionError, match="不允许覆盖"):
+        await approval.tool(**approval.params)
+    assert target.read_text() == "existing content"
+
+
+async def test_file_created_while_approval_pending_cannot_be_overwritten(approval, tmp_path):
+    from qwenpaw.agents.tools.file_io import _create_empty_file
+
+    approval.tool = tool_adapter.PolicyGuardedTool(
+        write_file, governor=approval.governor, request_context={},
+    )
+    approval.params = {"file_path": "tmp.txt", "content": ""}
+    task = await _start_approval(approval)
+    target = tmp_path / "tmp.txt"
+    target.write_text("existing content")
+    approval.respond.set()
+    assert (await task).behavior == PermissionBehavior.ALLOW
+    with pytest.raises(PermissionError, match="不允许覆盖"):
+        await approval.tool(**approval.params)
+    with pytest.raises(FileExistsError):
+        _create_empty_file(target)
+    assert target.read_text() == "existing content"
+
+
+@pytest.mark.parametrize("path, content", [
+    ("../tmp.txt", ""), ("subdir/tmp.txt", ""), ("config.py", ""),
+    (".env", ""), ("nul.txt", ""), (".hidden.txt", ""),
+    ("tmp.txt", "not an empty file"),
+])
+async def test_file_workflow_does_not_admit_other_writes(approval, path, content):
+    with pytest.raises(PermissionError):
+        await execution_policy.check_tool("write_file", {"file_path": path, "content": content})
+    assert not approval.requests
+
+
+async def test_registered_custom_script_requires_bound_approval(approval, tmp_path, monkeypatch):
+    script = tmp_path / "custom_action.py"
+    script.write_bytes(b"# original fixture\n")
+
+    def pin_hash():
+        monkeypatch.setenv("QWENPAW_ALLOWED_SCRIPT_HASHES", json.dumps({
+            str(script.resolve()): hashlib.sha256(script.read_bytes()).hexdigest(),
+        }))
+
+    approval.params = {"command": "python custom_action.py", "cwd": str(tmp_path)}
+    with pytest.raises(PermissionError):
+        execution_policy.check_shell(**approval.params)
+    pin_hash()
+    await _approve(approval)
+    assert str(script) in approval.requests[0]["governance_reason"]
+    assert (await approval.tool(**approval.params)).state == ToolResultState.SUCCESS
+    assert len(approval.executing) == 1
+
+    await _approve(approval)
+    script.write_bytes(b"# modified fixture\n")
+    pin_hash()
+    with pytest.raises(PermissionError, match="输入文件内容"):
+        await approval.tool(**approval.params)
+    assert len(approval.executing) == 1
+
+
+async def test_explicit_tool_denial_still_overrides_file_approval(approval, tmp_path, monkeypatch):
+    from qwenpaw.extensions.security import call_admission
+
+    monkeypatch.setattr(call_admission, "WORKING_DIR", tmp_path)
+    call_admission.save_rule(
+        call_admission.Target("tool", "write_file"), revision=0, decision="deny",
+        risk="high", reason="fixture deny", actor="fixture-admin",
+    )
+    tool = tool_adapter.PolicyGuardedTool(write_file, governor=approval.governor, request_context={})
+    result = await tool.check_permissions({"file_path": "tmp.txt", "content": ""})
+    assert result.behavior == PermissionBehavior.DENY
+    assert not approval.requests
+    assert not (tmp_path / "tmp.txt").exists()
+
+
+async def test_fallback_cannot_run_custom_script_without_approval(approval, tmp_path, monkeypatch):
+    from qwenpaw.runtime.tool_guard import GuardedFunctionTool
+
+    script = tmp_path / "custom_action.py"
+    script.write_bytes(b"# approval fixture\n")
+    monkeypatch.setenv("QWENPAW_ALLOWED_SCRIPT_HASHES", json.dumps({
+        str(script): hashlib.sha256(script.read_bytes()).hexdigest(),
+    }))
+
+    async def execute_shell_command(command: str, cwd: str) -> ToolChunk:
+        pytest.fail("Approval-required scripts must not run in the fallback wrapper")
+
+    tool = GuardedFunctionTool(execute_shell_command)
+    params = {"command": "python custom_action.py", "cwd": str(tmp_path)}
+    result = await tool.check_permissions(params)
+    assert result.behavior == PermissionBehavior.DENY
+    assert "审批服务当前不可用" in result.message
+    with pytest.raises(PermissionError, match="审批服务当前不可用"):
+        await tool(**params)

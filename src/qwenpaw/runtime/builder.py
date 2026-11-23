@@ -323,6 +323,9 @@ class AgentBuilder:
                 "工具不可用或不能准确表达用户筛选范围时，应说明无法核验，不得猜测上限或宣称超限。"
                 "不要为了导出分页采集或附上未被要求的明细，也不要改用报告、Office、"
                 "写文件或发附件。普通业务查询保持原有行为。"
+                "若用户明确要求在当前工作区新建空的 .txt 文件，用 write_file，"
+                "file_path 仅填文件名、content 填空字符串；等待管理员审批后核对工具结果，"
+                "不要改用 Shell，也不要将待审批或失败说成已创建。"
             )
 
         middlewares = self._build_middlewares(ctx, agent_config)

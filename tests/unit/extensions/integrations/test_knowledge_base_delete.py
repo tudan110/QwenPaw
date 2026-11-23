@@ -207,15 +207,21 @@ def test_guarded_archive_rejects_expired_or_changed_source(kb_env, monkeypatch):
 
 
 def test_controlled_document_publishes_masked_searchable_copy_once(kb_env, monkeypatch):
-    from qwenpaw.app.routers import controlled_documents as routes
-    from qwenpaw.extensions.api import controlled_documents as store
+    from core import retrieval
     from fastapi.responses import JSONResponse
+    from qwenpaw.app.routers import controlled_documents as routes
+    from qwenpaw.extensions.api import controlled_documents as store, text_privacy
 
     monkeypatch.setattr(store, "STORE_DIR", knowledge_base.data_dir() / "controlled-test")
+    monkeypatch.setattr(text_privacy, "load_policy", lambda: text_privacy.PrivacyPolicy(knowledge="block"))
+    monkeypatch.setattr(retrieval, "HYDE_ENABLED", False)
+    monkeypatch.setenv("KNOWLEDGE_BASE_RERANKER", "heuristic")
     owner = store.Actor("test", "admin", True)
     other = store.Actor("test", "other-admin", True)
     body = routes.DocumentInput(title="取证答复操作手册", content="星云巡检基准为双机切换。联系号码 13800138000。")
     item = routes.create_document(body, owner)
+    preview = routes.read_document(item["id"], owner)
+    assert preview["masked"] and "13800138000" not in preview["content"]
     approval = routes.PublishInput(reviewed_for_sharing=True)
     refused = routes.publish_to_knowledge_base(item["id"], approval, other)
     assert isinstance(refused, JSONResponse) and refused.status_code == 404
@@ -225,5 +231,12 @@ def test_controlled_document_publishes_masked_searchable_copy_once(kb_env, monke
     assert published["source_id"] == duplicate["source_id"]
     units = str(knowledge_base.source_detail(published["source_id"])["units"])
     assert "星云巡检" in units and "13800138000" not in units and "手机" in units
+    search = knowledge_base.query_knowledge({"query": "星云巡检"})
+    excerpts = [
+        hit["chunk_text"] for hit in search["relevant_evidence"]
+        if hit["citation"]["source_label"] == body.title
+    ]
+    assert any("双机切换" in excerpt and "手机" in excerpt for excerpt in excerpts)
+    assert "13800138000" not in str(search)
     with store.connection(owner) as conn:
         assert "13800138000" in store.owned_document(conn, owner, item["id"])["content"]

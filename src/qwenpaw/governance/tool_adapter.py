@@ -299,11 +299,15 @@ async def _policy_tool_check_permissions(
 
         # Capture files before presenting approval; changes while the user
         # is reviewing the request invalidate it, just like changed params.
-        approved_binding = approval_binding(
-            getattr(self, "name", ""),
-            input_data or {},
-        )
+        try:
+            approved_binding = approval_binding(tool_name, input_data or {})
+        except (OSError, ValueError) as exc:
+            return PermissionDecision(
+                behavior=PermissionBehavior.DENY, message=str(exc),
+            )
         reason = "生产受控操作必须管理员审批"
+        if workspace_target := approved_binding.get("workspace_target"):
+            reason += f"\n仅新建空文件，不覆盖：{workspace_target}"
         files = approved_binding.get("files", {})
         if files:
             preview = "\n".join(
@@ -393,32 +397,19 @@ async def _policy_tool_call(
         normalize_managed_shell,
     )
 
+    approved_binding = getattr(self, "_qp_p0_approved_params", None)
+    self._qp_p0_approved_params = None
     require_agent_tool(self.name)
     kwargs = normalize_managed_shell(getattr(self, "name", ""), kwargs)
-    mandatory_approval = await check_tool(
-        getattr(self, "name", ""),
-        {
-            key: value
-            for key, value in kwargs.items()
-            if key != "sandbox_config"
-        },
-    )
+    params = {key: value for key, value in kwargs.items() if key != "sandbox_config"}
+    mandatory_approval = await check_tool(self.name, params)
+    actual_binding = None
     if mandatory_approval:
         from ..extensions.security.execution_policy import approval_binding
 
-        actual_binding = approval_binding(
-            getattr(self, "name", ""),
-            {
-                key: value
-                for key, value in kwargs.items()
-                if key != "sandbox_config"
-            },
-        )
-        if getattr(self, "_qp_p0_approved_params", None) != actual_binding:
-            self._qp_p0_approved_params = None
+        actual_binding = approval_binding(self.name, params)
+        if approved_binding != actual_binding:
             raise PermissionError("执行参数或输入文件内容与已审批内容不一致")
-    if mandatory_approval:
-        self._qp_p0_approved_params = None
     if sandbox_mode:
         sandbox_config = getattr(self, "_qp_sandbox_config", None)
         if sandbox_config is not None:
@@ -440,7 +431,18 @@ async def _policy_tool_call(
         # Recheck the script deny and integrity without making another auth call.
         if check_shell(str(kwargs.get("command", "")), kwargs.get("cwd")) and not mandatory_approval:
             raise PermissionError("脚本启用条件已改变，未执行本次调用")
-    result = await _execute_audited(self, FunctionTool.__call__, *args, **kwargs)
+        if mandatory_approval and approval_binding(self.name, params) != actual_binding:
+            raise PermissionError("脚本或输入文件在审批后发生变化，未执行本次调用")
+    if self.name == "write_file" and actual_binding is not None:
+        from ..agents.tools.file_io import _APPROVED_EMPTY_FILE
+
+        token = _APPROVED_EMPTY_FILE.set(actual_binding["workspace_target"])
+        try:
+            result = await _execute_audited(self, FunctionTool.__call__, *args, **kwargs)
+        finally:
+            _APPROVED_EMPTY_FILE.reset(token)
+    else:
+        result = await _execute_audited(self, FunctionTool.__call__, *args, **kwargs)
     if cmdb_call is not None:
         result = await permissions.track_cmdb_outcome(ctx, result, cmdb_call)
 
@@ -632,7 +634,8 @@ async def _ask_user_approval(
 
     from .generalize import generalize_target_for_approval
 
-    generalized_target = await generalize_target_for_approval(
+    production_one_shot = source == "production_boundary"
+    generalized_target = target if production_one_shot else await generalize_target_for_approval(
         tool_name,
         target,
         source,
@@ -795,7 +798,7 @@ async def _ask_user_approval(
     approved = decision == ApprovalDecision.APPROVED
     # The scope the user chose (set by resolve_request on the same pending
     # object). None = no choice offered → EXACT.
-    scope = getattr(pending, "scope", None)
+    scope = None if production_one_shot else getattr(pending, "scope", None)
     scope_label = scope.value if scope else "exact"
     approval_decision = GovernanceDecision(
         action=GovernanceAction.ALLOW if approved else GovernanceAction.DENY,
@@ -811,10 +814,11 @@ async def _ask_user_approval(
         rule_target = (
             generalized_target if scope == ApprovalScope.SIMILAR else target
         )
-        await governor.add_approved_rule(
-            tc_spec,
-            generalized_target=rule_target,
-        )
+        if not production_one_shot:
+            await governor.add_approved_rule(
+                tc_spec,
+                generalized_target=rule_target,
+            )
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
             message=f"Approved by user ({scope_label}).\n{summary}",

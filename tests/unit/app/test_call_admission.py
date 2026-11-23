@@ -93,6 +93,52 @@ def test_write_read_check_and_optimistic_concurrency(client):
         ]
 
 
+def test_quick_toggle_persists_and_preserves_risk_assessment(client):
+    body = change("tool", "get_current_time")
+    toggle = {**body, "risk": None}
+    assert client.put(BASE, headers={"x-test-role": "user"}, json=toggle).status_code == 403
+    disabled = client.put(BASE, headers=ADMIN, json=toggle).json()
+    assert (disabled["decision"], disabled["risk"], disabled["risk_source"]) == ("deny", "low", "baseline")
+    assert disabled in client.get(BASE, headers=ADMIN).json()["items"]
+    assert policy.blocked_by(policy.Target("tool", "get_current_time"))
+    assert client.put(BASE, headers=ADMIN, json=toggle).status_code == 409
+
+    enabled = client.put(BASE, headers=ADMIN, json={**toggle, "decision": "inherit", "revision": 1}).json()
+    assert (enabled["decision"], enabled["risk_source"], enabled["revision"]) == ("inherit", "baseline", 2)
+    assert enabled in client.get(BASE, headers=ADMIN).json()["items"]
+    assert policy.blocked_by(policy.Target("tool", "get_current_time")) is None
+
+    assessed = client.put(BASE, headers=ADMIN, json={**body, "risk": "medium", "revision": 2}).json()
+    assert assessed["risk_source"] == "manual"
+    restored = client.put(BASE, headers=ADMIN, json={**toggle, "decision": "inherit", "revision": 3}).json()
+    assert (restored["risk"], restored["risk_source"]) == ("medium", "manual")
+    assert restored in client.get(BASE, headers=ADMIN).json()["items"]
+
+
+def test_quick_toggle_works_with_legacy_manual_record(client):
+    body = change("tool", "get_current_time")
+    assert client.put(BASE, headers=ADMIN, json=body).status_code == 200
+    restored = client.put(BASE, headers=ADMIN, json={
+        **body, "decision": "inherit", "revision": 1, "risk": None,
+    }).json()
+    assert (restored["risk"], restored["risk_source"]) == ("high", "manual")
+    assert restored in client.get(BASE, headers=ADMIN).json()["items"]
+
+
+@pytest.mark.parametrize("name, params", [
+    ("write_file", {"file_path": "tmp.txt", "content": "业务明细"}),
+    ("execute_shell_command", {"command": "touch tmp.txt"}),
+])
+@pytest.mark.asyncio
+async def test_quick_toggle_does_not_override_production_guards(client, monkeypatch, name, params):
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
+    body = {**change("tool", name, decision="inherit"), "risk": None}
+    assert client.put(BASE, headers=ADMIN, json=body).status_code == 200
+    assert client.post(BASE + "/check", headers=ADMIN, json=target("tool", name)).json()["decision"] == "inherit"
+    with pytest.raises(PermissionError):
+        await execution_policy.check_tool(name, params)
+
+
 @pytest.mark.parametrize("patch", [
     {"decision": "allow"}, {"risk": "unknown"}, {"reason": "  "},
     {"kind": "api", "name": "unknown"}, {"kind": "mcp_tool"},

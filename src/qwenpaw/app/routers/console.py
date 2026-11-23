@@ -524,7 +524,9 @@ def _chat_stream(tracker, queue, chat_id: str) -> StreamingResponse:
         event_generator(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            # Keep intermediate SSE frames visible through reverse proxies.
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
         },
     )

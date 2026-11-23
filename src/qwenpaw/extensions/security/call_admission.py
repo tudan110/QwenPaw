@@ -48,6 +48,16 @@ _SCHEMA = """CREATE TABLE IF NOT EXISTS revisions (
 )"""
 
 
+# Separate metadata keeps the existing revisions table writable by older workers.
+_BASELINE_SCHEMA = """CREATE TABLE IF NOT EXISTS baseline_risk_revisions (
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL,
+    service TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    PRIMARY KEY(kind, name, service, revision)
+)"""
+
+
 def _path() -> Path:
     return WORKING_DIR / "governance" / DB_NAME
 
@@ -77,10 +87,22 @@ def read_rules() -> dict[Target, dict]:
         if conn is None:
             return {}
         with closing(conn):
+            conn.execute("BEGIN")
+            has_metadata = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='baseline_risk_revisions'",
+            ).fetchone()
+            risk_source = (
+                ", CASE WHEN b.revision IS NULL THEN 'manual' ELSE 'baseline' END AS risk_source"
+                if has_metadata else ""
+            )
+            baseline_join = (
+                " LEFT JOIN baseline_risk_revisions b USING (kind, name, service, revision)"
+                if has_metadata else ""
+            )
             rows = conn.execute(
-                "SELECT r.* FROM revisions r JOIN (SELECT kind, name, service, "
+                f"SELECT r.*{risk_source} FROM revisions r JOIN (SELECT kind, name, service, "
                 "MAX(revision) AS revision FROM revisions GROUP BY kind, name, service) "
-                "USING (kind, name, service, revision)",
+                f"USING (kind, name, service, revision){baseline_join}",
             )
             return {Target(r["kind"], r["name"], r["service"]): dict(r) for r in rows}
     except (OSError, sqlite3.Error) as exc:
@@ -88,7 +110,8 @@ def read_rules() -> dict[Target, dict]:
 
 
 def save_rule(
-    target: Target, *, revision: int, decision: str, risk: Risk, reason: str, actor: str,
+    target: Target, *, revision: int, decision: str, risk: Risk | None,
+    reason: str, actor: str, baseline_risk: Risk = "high",
 ) -> dict:
     path = _path()
     try:
@@ -100,12 +123,27 @@ def save_rule(
             prior = _latest(conn, target)
             if revision != (prior["revision"] if prior else 0):
                 raise PolicyConflict
+            baseline = False
+            if risk is None:
+                # An admission-only edit preserves an existing manual assessment.
+                conn.execute(_BASELINE_SCHEMA)
+                baseline = prior is None or conn.execute(
+                    "SELECT 1 FROM baseline_risk_revisions WHERE kind=? AND name=? "
+                    "AND service=? AND revision=?", (*target, revision),
+                ).fetchone() is not None
+                risk = baseline_risk if baseline else prior["risk"]
+                if baseline:
+                    conn.execute(
+                        "INSERT INTO baseline_risk_revisions VALUES (?, ?, ?, ?)",
+                        (*target, revision + 1),
+                    )
             conn.execute(
                 "INSERT INTO revisions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (*target, revision + 1, decision, risk, reason, actor,
                  datetime.now(timezone.utc).isoformat()),
             )
             row = dict(_latest(conn, target))
+            row["risk_source"] = "baseline" if baseline else "manual"
         logger.info(
             "[SECURITY_CONFIG] action=update_call_admission actor=%r target=%r "
             "previous=%s decision=%s risk=%s revision=%d",
@@ -184,7 +222,7 @@ _TOOL_BASELINES: dict[str, Baseline] = {
     "submit_to_agent": Baseline("high", "向另一智能体提交异步任务。"),
     "spawn_subagent": Baseline("high", "启动协同任务并传递上下文；不授权下游工具。"),
     "delegate_external_agent": Baseline("high", "向外部智能体委派，可能传递内部上下文。"),
-    "write_file": Baseline("high", "通用文件写入；受路径、沙箱及审批策略约束。"),
+    "write_file": Baseline("high", "生产守卫开启时，仅允许经管理员审批在当前工作区新建空 .txt；不覆盖已有文件。"),
     "edit_file": Baseline("high", "修改现有文件；受路径、沙箱及审批策略约束。"),
     "append_file": Baseline("high", "追加文件内容；受路径、沙箱及审批策略约束。"),
     "browser_use": Baseline("high", "浏览器交互可能读取数据或改变外部状态。"),
@@ -239,12 +277,14 @@ def describe(target: Target, rule: dict | None, baseline: Baseline | None) -> di
             baseline = Baseline("high", "按服务标识和原始工具名匹配；不授予上游数据权限。")
         else:
             baseline = Baseline("high", "按工具原始标识匹配；工作区、审批及用户授权仍独立生效。")
+    risk_source = rule.get("risk_source", "manual") if rule else "baseline"
     # Only expose bounded policy fields, never runtime arguments or credentials.
     return {
         "id": json.dumps(target, ensure_ascii=False),
         "kind": target.kind, "name": target.name, "service": target.service,
-        "risk": rule.get("risk", baseline.risk), "default_risk": baseline.risk,
-        "boundary": baseline.boundary, "risk_source": "manual" if rule else "baseline",
+        "risk": rule["risk"] if risk_source == "manual" else baseline.risk,
+        "default_risk": baseline.risk,
+        "boundary": baseline.boundary, "risk_source": risk_source,
         "decision": rule.get("decision", "inherit"), "revision": rule.get("revision", 0),
         "reason": rule.get("reason"), "updated_at": rule.get("updated_at"),
     }
