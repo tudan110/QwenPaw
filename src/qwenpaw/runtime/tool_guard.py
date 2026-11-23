@@ -157,14 +157,11 @@ def _check_fallback_file(tool_name: str, params: dict[str, Any]) -> None:
     from ..extensions.security.execution_policy import (
         enabled,
         empty_workspace_text_target,
-        workspace_file_approval_enabled,
     )
 
     if enabled() and tool_name == "write_file" and params.get("content") == "":
         empty_workspace_text_target(params)
-        if workspace_file_approval_enabled():
-            raise PermissionError("工作区受控模式要求管理员审批，当前审批流程不可用，未创建文件")
-        return
+        raise PermissionError("新建空文件需要执行前确认，当前审批流程不可用，未创建文件")
     require_controlled_export(tool_name, params.get("operation"))
 
 
@@ -200,17 +197,22 @@ async def _guarded_tool_check_permissions(
         PermissionDecision,
     )
 
-    from ..extensions.security.portal_capabilities import check_tool_skills
+    from fastapi import HTTPException
 
     from ..extensions.security.call_admission import require_agent_tool
+    from ..extensions.security.portal_capabilities import check_tool_skills
 
     try:
         _check_fallback_file(self.name, input_data or {})
         require_agent_tool(self.name)
         input_data = _check_fallback_shell(self.name, input_data or {})
+        await _check_fallback_production_admission(self.name, input_data)
         await check_tool_skills(self._qp_request_context, self.name, input_data)
-    except (OSError, ValueError) as exc:
-        return PermissionDecision(behavior=PermissionBehavior.DENY, message=str(exc))
+    except (OSError, ValueError, HTTPException) as exc:
+        return PermissionDecision(
+            behavior=PermissionBehavior.DENY,
+            message=str(getattr(exc, "detail", exc)),
+        )
 
     level = self._resolve_execution_level()  # pylint: disable=protected-access
 
@@ -360,8 +362,15 @@ def _check_fallback_shell(tool_name: str, params: dict[str, Any]) -> dict[str, A
         return params
     params = normalize_managed_shell(tool_name, params)
     if check_shell(str(params.get("command", "")), params.get("cwd")):
-        raise PermissionError("此脚本需要管理员审批，审批服务当前不可用")
+        raise PermissionError("此脚本需要执行前确认，审批服务当前不可用")
     return params
+
+
+async def _check_fallback_production_admission(tool_name: str, params: dict[str, Any]) -> None:
+    from ..extensions.security.execution_policy import check_tool
+
+    if await check_tool(tool_name, params):
+        raise PermissionError("此操作需要执行前确认，当前审批流程不可用。")
 
 
 def _format_guard_message(tool_name: str, guard_result: Any) -> str:
@@ -392,6 +401,7 @@ async def _guarded_tool_call(self: Any, *args: Any, **kwargs: Any) -> Any:
     await permissions.check_tool_skills(ctx, self.name, kwargs, dispatch=True, call_id=cmdb_call)
     require_agent_tool(self.name)
     kwargs = _check_fallback_shell(self.name, kwargs)
+    await _check_fallback_production_admission(self.name, kwargs)
     result = await FunctionTool.__call__(self, *args, **kwargs)
     if cmdb_call is not None:
         result = await permissions.track_cmdb_outcome(ctx, result, cmdb_call)
@@ -432,6 +442,17 @@ async def _ask_user_approval(
     channel = str(ctx.get("channel") or "")
     root_session_id = str(ctx.get("root_session_id") or session_id)
     owner_agent_id = str(ctx.get("root_agent_id") or agent_id or "unknown")
+
+    from ..extensions.api.access_session import CURRENT_IDENTITY
+    from ..extensions.security.execution_policy import enabled
+
+    if enabled():
+        identity = CURRENT_IDENTITY.get()
+        if identity is None or not identity.is_verified_human or not root_session_id:
+            return PermissionDecision(
+                behavior=PermissionBehavior.DENY,
+                message="缺少可信发起人或会话，无法确认本次操作，未执行。",
+            )
 
     svc = get_approval_service()
     tool_call_id = str(ctx.get("tool_call_id") or "")

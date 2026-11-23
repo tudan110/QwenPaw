@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -16,11 +16,16 @@ from ...security.tool_guard.approval import ApprovalDecision, ApprovalScope
 logger = logging.getLogger(__name__)
 
 
-def _require_approval_owner(request: Request, pending) -> None:
+def _require_approval_owner(request: Request, pending) -> str | None:
     from ...extensions.security.execution_policy import enabled
 
+    if pending.extra.get("requester_confirmation") is True:
+        identity = _requester_identity(request)
+        if identity.user_id != pending.extra.get("auth_user_id") or (enabled() and not identity.is_admin):
+            raise HTTPException(403, "仅允许授权管理员通过此入口处理自己的审批请求")
+        return identity.user_id
     if not enabled():
-        return
+        return None
     identity = getattr(request.state, "access_identity", None)
     if (
         identity is None
@@ -28,6 +33,21 @@ def _require_approval_owner(request: Request, pending) -> None:
         or pending.extra.get("auth_user_id") != identity.user_id
     ):
         raise HTTPException(403, "仅允许授权管理员处理自己的审批请求")
+    return None
+
+
+def _requester_identity(request: Request):
+    identity = getattr(request.state, "access_identity", None)
+    if identity is None or not identity.is_verified_human:
+        raise HTTPException(401, "请先通过智观认证")
+    return identity
+
+
+def _is_requester_confirmation(pending, user_id: str) -> bool:
+    return (
+        pending.extra.get("requester_confirmation") is True
+        and pending.extra.get("auth_user_id") == user_id
+    )
 
 
 router = APIRouter(prefix="/approval", tags=["approval"])
@@ -63,6 +83,12 @@ class ApprovalActionResponse(BaseModel):
     message: str
     tool_name: Optional[str] = None
     request_id: str
+
+
+class RequesterApprovalAction(BaseModel):
+    request_id: str
+    session_id: str = Field(min_length=1)
+    action: Literal["approve", "deny"]
 
 
 class ApprovalListResponse(BaseModel):
@@ -117,7 +143,7 @@ async def post_approval_approve(
             status_code=403,
             detail="Root session mismatch: cannot approve other session trees",
         )
-    _require_approval_owner(request, pending)
+    requester_id = _require_approval_owner(request, pending)
 
     # Parse the approval scope. Unknown / omitted values fall back to None,
     # which the governance consumer treats as EXACT (least-privilege).
@@ -136,8 +162,11 @@ async def post_approval_approve(
     resolved = await svc.resolve_request(
         body.request_id,
         ApprovalDecision.APPROVED,
-        scope=scope,
+        scope=None if requester_id else scope,
+        requester_id=requester_id,
     )
+    if resolved is None:
+        raise HTTPException(404, "Approval request not found")
 
     logger.info(
         "Approval approved: request_id=%s session=%s tool=%s",
@@ -202,13 +231,16 @@ async def post_approval_deny(
             status_code=403,
             detail="Root session mismatch: cannot approve other session trees",
         )
-    _require_approval_owner(request, pending)
+    requester_id = _require_approval_owner(request, pending)
 
     # Resolve the Future
     resolved = await svc.resolve_request(
         body.request_id,
         ApprovalDecision.DENIED,
+        requester_id=requester_id,
     )
+    if resolved is None:
+        raise HTTPException(404, "Approval request not found")
 
     logger.info(
         "Approval denied: request_id=%s session=%s tool=%s",
@@ -264,26 +296,70 @@ async def get_approval_list(
     for pending in pending_list:
         if strict and pending.extra.get("auth_user_id") != identity.user_id:
             continue
-        result.append(
-            {
-                "request_id": pending.request_id,
-                "session_id": pending.session_id,
-                "root_session_id": pending.root_session_id,
-                "owner_agent_id": pending.owner_agent_id,
-                "agent_id": pending.agent_id,
-                "tool_name": pending.tool_name,
-                **approval_display_fields(pending),
-                "severity": pending.severity,
-                "findings_count": pending.findings_count,
-                "created_at": pending.created_at,
-                "timeout_seconds": pending.timeout_seconds,
-                "result_summary": pending.result_summary,
-            },
-        )
+        if not strict and pending.extra.get("requester_confirmation") is True:
+            if identity is None or not _is_requester_confirmation(pending, identity.user_id):
+                continue
+        result.append(_approval_payload(pending))
 
     logger.info("Listed %d pending approvals", len(result))
 
     return ApprovalListResponse(
         pending_approvals=result,
         count=len(result),
+    )
+
+
+def _approval_payload(pending) -> dict:
+    return {
+        "request_id": pending.request_id,
+        "session_id": pending.session_id,
+        "root_session_id": pending.root_session_id,
+        "owner_agent_id": pending.owner_agent_id,
+        "agent_id": pending.agent_id,
+        "tool_name": pending.tool_name,
+        **approval_display_fields(pending),
+        "severity": pending.severity,
+        "findings_count": pending.findings_count,
+        "created_at": pending.created_at,
+        "timeout_seconds": pending.timeout_seconds,
+        "result_summary": pending.result_summary,
+    }
+
+
+@router.get("/self/list", response_model=ApprovalListResponse)
+async def list_requester_approvals(request: Request, session_id: str) -> ApprovalListResponse:
+    identity = _requester_identity(request)
+    service = get_approval_service()
+    pending = await service.get_pending_by_root_session(session_id) if session_id else []
+    items = [_approval_payload(item) for item in pending if _is_requester_confirmation(item, identity.user_id)]
+    return ApprovalListResponse(pending_approvals=items, count=len(items))
+
+
+@router.post("/self/resolve", response_model=ApprovalActionResponse)
+async def resolve_requester_approval(request: Request, body: RequesterApprovalAction) -> ApprovalActionResponse:
+    from ...extensions.api.access_policy import require_browser_origin
+
+    identity = _requester_identity(request)
+    require_browser_origin(request)
+    service = get_approval_service()
+    pending = await service.get_request(body.request_id)
+    if (
+        pending is None
+        or pending.root_session_id != body.session_id
+        or not _is_requester_confirmation(pending, identity.user_id)
+    ):
+        raise HTTPException(404, "Approval request not found")
+    approved = body.action == "approve"
+    result = await service.resolve_request(
+        body.request_id,
+        ApprovalDecision.APPROVED if approved else ApprovalDecision.DENIED,
+        requester_id=identity.user_id,
+    )
+    if result is None:
+        raise HTTPException(404, "Approval request not found")
+    return ApprovalActionResponse(
+        success=True,
+        message="已确认本次操作" if approved else "已拒绝本次操作",
+        tool_name=result.tool_name,
+        request_id=body.request_id,
     )

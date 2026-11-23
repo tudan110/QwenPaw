@@ -828,7 +828,8 @@ async def get_push_messages(
     async with approval_svc._lock:
         all_pending = list(approval_svc._pending.values())
 
-    # Serialize approval data with root_session_id for frontend filtering
+    identity = CURRENT_IDENTITY.get()
+    # Serialize approval data with root_session_id for frontend filtering.
     approvals_data = [
         {
             "request_id": p.request_id,
@@ -848,6 +849,8 @@ async def get_push_messages(
             "timeout_seconds": p.timeout_seconds,
         }
         for p in all_pending
+        if p.extra.get("requester_confirmation") is not True
+        or (identity is not None and identity.is_verified_human and identity.user_id == p.extra.get("auth_user_id"))
     ]
 
     return {"messages": messages, "pending_approvals": approvals_data}

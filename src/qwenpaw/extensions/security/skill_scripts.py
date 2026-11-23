@@ -1,7 +1,7 @@
 """Reviewed argument contracts for bundled business skill entrypoints.
 
 Integrity is checked by execution_policy before these contracts are used.
-The boolean result means a real administrator approval is mandatory.
+The boolean result means a bound human confirmation is mandatory.
 """
 
 from __future__ import annotations
@@ -435,7 +435,7 @@ def check_arguments(
             _json_file(local(opts["--brief-file"]))
         if action == "discard" and "--yes" not in opts:
             raise PermissionError(
-                "删除 staged 技能需要 --yes 并通过管理员审批"
+                "删除 staged 技能需要 --yes 并由有权限的发起人确认"
             )
         return action in {"scaffold", "discard", "create-agent"}
     raise PermissionError("技能尚未声明执行契约")

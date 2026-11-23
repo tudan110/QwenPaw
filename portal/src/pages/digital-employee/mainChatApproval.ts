@@ -10,6 +10,7 @@ export interface MainChatApproval {
   tool_name: string;
   tool_display_name?: string;
   tool_source?: string;
+  requester_confirmation?: boolean;
   severity: string;
   findings_count: number;
   result_summary: string;

@@ -49,14 +49,14 @@ export function callAdmissionRows(evidence?: AdmissionEvidence): CallAdmissionRo
       key: "scripts", channel: "工具 / Skill", target: "受管脚本",
       mode: "固定脚本准入",
       detail: "执行前校验脚本路径、哈希和参数；通用 Shell、未获准脚本及禁止语法不能通过审批放开。",
-      boundary: "仅允许通过校验的入口和操作；受控写入需管理员强制审批。候选入口不等于已启用或已通过校验。",
+      boundary: "仅允许通过校验的入口和操作；有权限的发起人须在原对话确认受控写入。候选入口不等于已启用或已通过校验。",
       link: "details",
     },
     {
       key: "unclassified-tools", channel: "工具 / Skill", target: "高危或未分类工具",
       mode: "普通用户拒绝",
       detail: "未分类不会自动放行，也不等于一律拒绝。",
-      boundary: "可信 AI 管理员需复核身份并完成强制审批；审批不能覆盖硬性拒绝规则。",
+      boundary: "当前仅具备后台执行权限的账号可发起；需复核身份并由发起人在对话内逐次确认，不能覆盖硬性拒绝规则。",
     },
     {
       key: "cmdb", channel: "业务 API", target: "智观 CMDB 资产精确查询",

@@ -96,6 +96,7 @@ _SECURITY_KEYS = {
     "CONTROLLED_DOCUMENTS",
     "CONTROLLED_WORKSPACE_FILES",
     "ALLOWED_SCRIPT_HASHES",
+    "CHAT_SCRIPT_DELEGATIONS",
     "INTERNAL_API_ORIGINS",
     "SKILL_SEED_PATH",
     "DELETE_OPS_DISABLED",
@@ -164,6 +165,11 @@ def requires_admin(method: str, path: str) -> bool:
     ):
         return True
     path = resource_path(path)
+    if (method, path) in {
+        ("GET", "/api/approval/self/list"),
+        ("POST", "/api/approval/self/resolve"),
+    }:
+        return False  # The router only exposes that verified human's own requests.
     if any(
         path == prefix or path.startswith(prefix + "/")
         for prefix in _ADMIN_PREFIXES

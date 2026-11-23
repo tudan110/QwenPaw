@@ -44,6 +44,16 @@ test("main-chat approval API scopes requests and preserves approval semantics", 
       request_id: "child-request", session_id: "root",
     });
 
+    result = { pending_approvals: [] };
+    await api.listMainChatApprovals("agent-a", "root", signal, true);
+    assert.equal(lastRequest()?.url, "/copaw-api/api/approval/self/list?session_id=root");
+    result = { success: true };
+    await api.resolveMainChatApproval("agent-a", "root", "own-request", "approve", signal, "similar", true);
+    assert.equal(lastRequest()?.url, "/copaw-api/api/approval/self/resolve");
+    assert.deepEqual(JSON.parse(String(lastRequest()?.init?.body)), {
+      request_id: "own-request", session_id: "root", action: "approve",
+    });
+
     result = { success: false, message: "already resolved" };
     await assert.rejects(
       api.resolveMainChatApproval("agent-a", "root", "request", "approve", signal),

@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """Approval service for sensitive tool execution.
 
-The ``ApprovalService`` is the single central store for pending /
-completed approval records.  Approval is granted exclusively via
-the ``/daemon approve`` command in the chat interface.
+The ``ApprovalService`` tracks pending confirmations. Production chat
+confirmations are bound to the verified requester, not a client user ID.
 """
 
 from __future__ import annotations
@@ -67,6 +66,20 @@ class PendingApproval:
 # ------------------------------------------------------------------
 # Service
 # ------------------------------------------------------------------
+
+
+def _bind_verified_requester(pending: PendingApproval) -> None:
+    from ...extensions.api.access_session import CURRENT_IDENTITY
+    from ...extensions.security.execution_policy import enabled
+
+    identity = CURRENT_IDENTITY.get()
+    # Client metadata must never confer requester access.
+    pending.extra.pop("requester_confirmation", None)
+    pending.extra.pop("auth_user_id", None)
+    if identity is not None:
+        pending.extra["auth_user_id"] = identity.user_id
+        if enabled() and identity.is_verified_human and pending.root_session_id:
+            pending.extra["requester_confirmation"] = True
 
 
 class ApprovalService:
@@ -159,10 +172,7 @@ class ApprovalService:
             severity=result.max_severity.value,
             extra=dict(extra or {}),
         )
-        from ...extensions.api.access_session import CURRENT_IDENTITY
-        identity = CURRENT_IDENTITY.get()
-        if identity is not None:
-            pending.extra["auth_user_id"] = identity.user_id
+        _bind_verified_requester(pending)
 
         async with self._lock:
             self._pending[request_id] = pending
@@ -230,6 +240,7 @@ class ApprovalService:
             severity=summary.severity,
             extra=merged_extra,
         )
+        _bind_verified_requester(pending)
         async with self._lock:
             self._pending[request_id] = pending
             self._gc_pending_locked()
@@ -261,6 +272,8 @@ class ApprovalService:
         request_id: str,
         decision: ApprovalDecision,
         scope: ApprovalScope | None = None,
+        *,
+        requester_id: str | None = None,
     ) -> PendingApproval | None:
         """Resolve pending approval by setting Future result.
 
@@ -269,9 +282,10 @@ class ApprovalService:
                 (EXACT vs SIMILAR). Stashed on ``pending.scope`` so the
                 governance consumer can pick the rule target. ``None`` is
                 treated as EXACT. Ignored for non-APPROVED decisions.
+            requester_id: Server-verified human ID for requester confirmations.
         """
         async with self._lock:
-            pending = self._pending.pop(request_id, None)
+            pending = self._pending.get(request_id)
             if pending is None:
                 logger.warning(
                     "Approval request %s not found (already resolved?)",
@@ -279,6 +293,16 @@ class ApprovalService:
                 )
                 return None
 
+            if pending.extra.get("requester_confirmation") is True:
+                if decision != ApprovalDecision.TIMEOUT and (
+                    not requester_id
+                    or requester_id != pending.extra.get("auth_user_id")
+                    or pending.future.done()
+                    or time.time() >= pending.created_at + pending.timeout_seconds
+                ):
+                    return None
+                scope = None
+            self._pending.pop(request_id)
             pending.status = decision.value
             pending.resolved_at = time.time()
             pending.scope = scope

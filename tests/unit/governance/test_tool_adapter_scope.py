@@ -10,6 +10,8 @@ from __future__ import annotations
 
 # pylint: disable=protected-access
 
+import pytest
+
 from qwenpaw.governance.policy import ToolCallSpec
 from qwenpaw.security.tool_guard.approval import (
     ApprovalDecision,
@@ -85,10 +87,13 @@ def _tc(target: str = "git status") -> ToolCallSpec:
     )
 
 
-async def _run_approval(scope: ApprovalScope | None, monkeypatch, *, source="No rule hit"):
+async def _run_approval(scope: ApprovalScope | None, monkeypatch, *, source="No rule hit", production=False):
     """Drive ``_ask_user_approval`` with fakes; return (governor, pending)."""
     from qwenpaw.governance import tool_adapter
 
+    from qwenpaw.extensions.api.access_session import AccessIdentity, CURRENT_IDENTITY
+
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", str(production).lower())
     fake_svc = _FakeApprovalService(scope)
     monkeypatch.setattr(
         tool_adapter,
@@ -130,18 +135,22 @@ async def _run_approval(scope: ApprovalScope | None, monkeypatch, *, source="No 
     )
 
     tc = _tc()
-    await tool_adapter._ask_user_approval(
-        governor=governor,
-        tc_spec=tc,
-        request_context={
-            "user_id": "u",
-            "channel": "console",
-            "root_session_id": "session-1",
-            "root_agent_id": "agent-1",
-            "tool_call_id": "tc-1",
-        },
-        source=source,
-    )
+    token = CURRENT_IDENTITY.set(AccessIdentity(user={"userId": "u"}, inoe_token="token"))
+    try:
+        await tool_adapter._ask_user_approval(
+            governor=governor,
+            tc_spec=tc,
+            request_context={
+                "user_id": "u",
+                "channel": "console",
+                "root_session_id": "session-1",
+                "root_agent_id": "agent-1",
+                "tool_call_id": "tc-1",
+            },
+            source=source,
+        )
+    finally:
+        CURRENT_IDENTITY.reset(token)
     return governor, fake_svc._pending
 
 
@@ -188,9 +197,10 @@ class TestApprovalScopeConsumer:
         assert display["exact_target"] == "git status"
         assert display["similar_target"] == "git *"
 
-    async def test_production_approval_is_exact_and_never_saved_as_an_allow_rule(self, monkeypatch):
+    @pytest.mark.parametrize("source", ["production_boundary", "user_rules"])
+    async def test_production_approval_is_exact_and_never_saved_as_an_allow_rule(self, monkeypatch, source):
         governor, pending = await _run_approval(
-            ApprovalScope.SIMILAR, monkeypatch, source="production_boundary",
+            ApprovalScope.SIMILAR, monkeypatch, source=source, production=True,
         )
         assert not governor.added
         assert "exact" in governor.audits[-1][1].reason

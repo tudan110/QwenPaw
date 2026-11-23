@@ -180,9 +180,15 @@ async def test_inherit_cannot_grant_unknown_production_tool(client, monkeypatch)
     async def unknown_operation():
         pytest.fail("Unclassified tool must not run")
 
-    decision = await PolicyGuardedTool(unknown_operation).check_permissions({})
+    from qwenpaw.extensions.api.access_session import AccessIdentity, CURRENT_IDENTITY
+
+    token = CURRENT_IDENTITY.set(AccessIdentity(user={"userId": "not-an-admin"}, inoe_token="token"))
+    try:
+        decision = await PolicyGuardedTool(unknown_operation).check_permissions({})
+    finally:
+        CURRENT_IDENTITY.reset(token)
     assert decision.behavior == PermissionBehavior.DENY
-    assert "可信 AI 管理员" in decision.message
+    assert "没有执行此操作的权限" in decision.message
 
 
 @pytest.mark.asyncio

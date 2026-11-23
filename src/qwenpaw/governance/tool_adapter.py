@@ -158,10 +158,11 @@ def _policy_tool_init(
     self._qp_raw_params = {}  # Set per-call by check_permissions
 
 
-def _build_tc_spec(self: Any) -> ToolCallSpec:
+def _build_tc_spec(self: Any, params: dict[str, Any] | None = None) -> ToolCallSpec:
     """Build ToolCallSpec from instance fields + dynamic target."""
     governor = self._qp_governor
-    params = getattr(self, "_qp_raw_params", {})
+    if params is None:
+        params = getattr(self, "_qp_raw_params", {})
     tool_name = DEFAULT_REGISTRY.python_to_policy_name(
         getattr(self, "name", "Unknown"),
     )
@@ -177,6 +178,17 @@ def _build_tc_spec(self: Any) -> ToolCallSpec:
         session_id=request_ctx.get("session_id", ""),
         raw_params=params,
     )
+
+
+def _require_registered_tool_policy(governor: ResourceGovernor, tc_spec: ToolCallSpec) -> None:
+    # Dynamically exposed tools outside this registry still have to satisfy
+    # production admission, owner capability, and Driver checks.
+    if DEFAULT_REGISTRY.get_type(tc_spec.tool_name) == "unknown":
+        return
+    decision = governor.assert_policy(tc_spec)
+    if decision.action == GovernanceAction.DENY:
+        governor.audit(tc_spec, decision)
+        raise PermissionError("当前工具规则禁止本次操作，未执行。")
 
 
 # pylint: disable=too-many-return-statements
@@ -300,14 +312,15 @@ async def _policy_tool_check_permissions(
         # Capture files before presenting approval; changes while the user
         # is reviewing the request invalidate it, just like changed params.
         try:
+            _require_registered_tool_policy(governor, tc_spec)
             approved_binding = approval_binding(tool_name, input_data or {})
         except (OSError, ValueError) as exc:
             return PermissionDecision(
                 behavior=PermissionBehavior.DENY, message=str(exc),
             )
-        reason = "生产受控操作必须管理员审批"
+        reason = "请发起人确认本次受控操作。"
         if workspace_target := approved_binding.get("workspace_target"):
-            reason = f"工作区受控模式要求管理员审批。仅新建空文件，不覆盖：{workspace_target}"
+            reason = f"请发起人确认本次文件创建。仅新建空文件，不覆盖：{workspace_target}"
         files = approved_binding.get("files", {})
         if files:
             preview = "\n".join(
@@ -426,6 +439,8 @@ async def _policy_tool_call(
     from agentscope.message import ToolResultState
 
     require_agent_tool(self.name)
+    if actual_binding is not None:
+        _require_registered_tool_policy(self._qp_governor, self._build_tc_spec(params))
     if self.name == "execute_shell_command" and enabled():
         # Skill authorization above may await storage after check_tool.
         # Recheck the script deny and integrity without making another auth call.
@@ -632,19 +647,23 @@ async def _ask_user_approval(
     root_session_id = str(ctx.get("root_session_id") or session_id)
     root_agent_id = str(ctx.get("root_agent_id") or agent_id or "unknown")
 
+    from ..extensions.api.access_session import CURRENT_IDENTITY
+    from ..extensions.security.execution_policy import enabled
     from .generalize import generalize_target_for_approval
 
-    production_one_shot = source == "production_boundary"
-    workspace_file_approval = (
-        production_one_shot
-        and tool_name == DEFAULT_REGISTRY.python_to_policy_name("write_file")
-    )
-    generalized_target = target if production_one_shot else await generalize_target_for_approval(
-        tool_name,
-        target,
-        source,
-        agent_id=agent_id,
-    )
+    one_shot = source == "production_boundary" or enabled()
+    if one_shot:
+        identity = CURRENT_IDENTITY.get()
+        if identity is None or not identity.is_verified_human or not root_session_id:
+            return PermissionDecision(
+                behavior=PermissionBehavior.DENY,
+                message="缺少可信发起人或会话，无法确认本次操作，未执行。" + _NO_RETRY_INSTRUCTION,
+            )
+        generalized_target = target
+    else:
+        generalized_target = await generalize_target_for_approval(
+            tool_name, target, source, agent_id=agent_id,
+        )
     display_target = generalized_target or target
 
     # Construct a ToolGuardResult for ApprovalService.
@@ -777,12 +796,12 @@ async def _ask_user_approval(
             },
         )
     except Exception:
-        if not workspace_file_approval:
+        if not one_shot:
             raise
-        logger.exception("Could not submit workspace file approval")
+        logger.exception("Could not submit requester confirmation")
         return PermissionDecision(
             behavior=PermissionBehavior.DENY,
-            message="工作区受控模式要求管理员审批；未能提交审批请求，未创建文件。" + _NO_RETRY_INSTRUCTION,
+            message="未能提交本次确认请求，未执行。" + _NO_RETRY_INSTRUCTION,
         )
 
     logger.info(
@@ -813,7 +832,7 @@ async def _ask_user_approval(
     approved = decision == ApprovalDecision.APPROVED
     # The scope the user chose (set by resolve_request on the same pending
     # object). None = no choice offered → EXACT.
-    scope = None if production_one_shot else getattr(pending, "scope", None)
+    scope = None if one_shot else getattr(pending, "scope", None)
     scope_label = scope.value if scope else "exact"
     if approved:
         audit_reason = f"User Approve ({scope_label})"
@@ -837,7 +856,7 @@ async def _ask_user_approval(
         rule_target = (
             generalized_target if scope == ApprovalScope.SIMILAR else target
         )
-        if not production_one_shot:
+        if not one_shot:
             await governor.add_approved_rule(
                 tc_spec,
                 generalized_target=rule_target,
@@ -847,16 +866,16 @@ async def _ask_user_approval(
             message=f"Approved by user ({scope_label}).\n{summary}",
         )
 
-    if workspace_file_approval:
+    if one_shot:
         if wait_failed:
-            detail = "审批服务未能返回结果"
+            detail = "确认服务未能返回结果"
         elif decision == ApprovalDecision.DENIED:
-            detail = "管理员已拒绝本次审批"
+            detail = "发起人已拒绝本次确认"
         else:
-            detail = f"本次审批等待超时（{int(TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS)} 秒）"
+            detail = f"本次确认等待超时（{int(TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS)} 秒）"
         return PermissionDecision(
             behavior=PermissionBehavior.DENY,
-            message=f"工作区受控模式要求管理员审批；{detail}，未创建文件。" + _NO_RETRY_INSTRUCTION,
+            message=f"{detail}，未执行。" + _NO_RETRY_INSTRUCTION,
         )
 
     denial_msg = (

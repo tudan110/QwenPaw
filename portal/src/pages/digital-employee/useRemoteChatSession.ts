@@ -1045,6 +1045,7 @@ export function useRemoteChatSession({
     agentId: remoteAgentId,
     sessionId: currentSessionId,
     enabled: approvalEnabled && isRemoteEmployee,
+    requesterOnly: !canManageAi,
     onCancelTask: cancelApprovalTask,
   });
   const isWaitingForApproval = approvals.items.length > 0;

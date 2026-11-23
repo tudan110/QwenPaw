@@ -33,6 +33,7 @@ def approval(monkeypatch, tmp_path):
     monkeypatch.delenv("COPAW_CONTROLLED_WORKSPACE_FILES", raising=False)
     monkeypatch.setenv("QWENPAW_ADMIN_INOE_USER_IDS", "1")
     monkeypatch.delenv("QWENPAW_READONLY_TOOL_NAMES", raising=False)
+    monkeypatch.delenv("QWENPAW_CHAT_SCRIPT_DELEGATIONS", raising=False)
     monkeypatch.setattr(execution_policy, "WORKING_DIR", tmp_path)
     monkeypatch.setattr(execution_policy, "SECRET_DIR", tmp_path / "secrets")
     monkeypatch.setattr(execution_policy, "BACKUP_DIR", tmp_path / "backups")
@@ -145,7 +146,7 @@ async def _approve(approval):
     assert result.behavior == PermissionBehavior.ALLOW
 
 
-async def test_mandatory_admin_approval_ignores_disabled_approval_level(
+async def test_mandatory_confirmation_ignores_disabled_approval_level(
     approval,
 ):
     task = await _start_approval(approval)
@@ -160,7 +161,7 @@ async def test_mandatory_admin_approval_ignores_disabled_approval_level(
     assert hashlib.sha256(approval.context.read_bytes()).hexdigest() in (
         request["governance_reason"]
     )
-    approval.governor.assert_policy.assert_not_called()
+    approval.governor.assert_policy.assert_called_once()
 
     approval.respond.set()
     assert (await task).behavior == PermissionBehavior.ALLOW
@@ -271,7 +272,7 @@ async def test_changed_import_attachment_invalidates_approval(
     assert approval.executing == []
 
 
-async def test_ordinary_user_cannot_request_import_approval(approval):
+async def test_ordinary_user_cannot_request_undelegated_import(approval):
     token = CURRENT_IDENTITY.set(
         AccessIdentity(user={"userId": 2}, inoe_token="fixture")
     )
@@ -407,28 +408,7 @@ async def test_web_mcp_list_without_id_remains_readable(ordinary_web):
 
 
 @pytest.mark.parametrize("filename", ["tmp.txt", "tmp.md"])
-async def test_create_empty_file_defaults_to_normal_flow(approval, tmp_path, filename):
-    from qwenpaw.governance.policy import load_governance_policy
-
-    approval.governor.policy = load_governance_policy(str(tmp_path), str(tmp_path))
-    approval.governor.assert_policy = approval.governor.policy.evaluate
-    tool = tool_adapter.PolicyGuardedTool(
-        write_file, governor=approval.governor,
-        request_context={"approval_level": "auto"},
-    )
-    params = {"file_path": filename, "content": ""}
-    assert not execution_policy.workspace_file_approval_enabled()
-    approval.respond.set()  # Fail the no-approval assertion rather than hang on regression.
-    assert (await tool.check_permissions(params)).behavior == PermissionBehavior.ALLOW
-    assert (await tool(**params)).state == ToolResultState.SUCCESS
-    assert (tmp_path / filename).read_bytes() == b""
-    assert not approval.requests
-    approval.validate.assert_not_awaited()
-
-
-@pytest.mark.parametrize("filename", ["tmp.txt", "tmp.md"])
-async def test_create_empty_file_uses_existing_approval(approval, tmp_path, monkeypatch, filename):
-    monkeypatch.setenv("QWENPAW_CONTROLLED_WORKSPACE_FILES", "true")
+async def test_create_empty_file_is_bound_to_one_confirmation(approval, tmp_path, filename):
     approval.tool = tool_adapter.PolicyGuardedTool(
         write_file, governor=approval.governor,
         request_context={"approval_level": "off", "agent_id": "gateway", "session_id": "empty-file"},
@@ -450,10 +430,13 @@ async def test_create_empty_file_uses_existing_approval(approval, tmp_path, monk
     with pytest.raises(PermissionError, match="不允许覆盖"):
         await approval.tool(**approval.params)
     assert target.read_text() == "existing content"
+    target.unlink()
+    with pytest.raises(PermissionError, match="已审批"):
+        await approval.tool(**approval.params)
+    assert not target.exists()
 
 
-async def test_file_created_while_approval_pending_cannot_be_overwritten(approval, tmp_path, monkeypatch):
-    monkeypatch.setenv("QWENPAW_CONTROLLED_WORKSPACE_FILES", "true")
+async def test_file_created_while_approval_pending_cannot_be_overwritten(approval, tmp_path):
     from qwenpaw.agents.tools.file_io import _create_empty_file
 
     approval.tool = tool_adapter.PolicyGuardedTool(
@@ -509,6 +492,59 @@ async def test_registered_custom_script_requires_bound_approval(approval, tmp_pa
     assert len(approval.executing) == 1
 
 
+async def test_governor_denial_after_script_confirmation_blocks_dispatch(approval):
+    from qwenpaw.governance.policy import GovernanceAction, GovernanceDecision
+
+    await _approve(approval)
+    approval.governor.assert_policy.return_value = GovernanceDecision(
+        action=GovernanceAction.DENY, reason="fixture deny",
+    )
+    with pytest.raises(PermissionError, match="工具规则禁止"):
+        await approval.tool(**approval.params)
+    assert not approval.executing
+    result = await approval.tool.check_permissions(approval.params)
+    assert result.behavior == PermissionBehavior.DENY
+    assert len(approval.requests) == 1
+
+
+@pytest.mark.parametrize("revoke", [False, True])
+async def test_only_delegated_invocation_reaches_requester_confirmation(
+    approval, tmp_path, monkeypatch, revoke,
+):
+    script = tmp_path / "delegated.py"
+    script.write_bytes(b"# fixture; never executed\n")
+    digest = hashlib.sha256(script.read_bytes()).hexdigest()
+    monkeypatch.setenv("QWENPAW_ALLOWED_SCRIPT_HASHES", json.dumps({str(script.resolve()): digest}))
+    command = "python delegated.py"
+    approval.params = {"command": command, "cwd": str(tmp_path)}
+    grant = {"user_id": "2", "cwd": str(tmp_path.resolve()), "command": command, "sha256": digest}
+    token = CURRENT_IDENTITY.set(AccessIdentity(user={"userId": 2}, inoe_token="token"))
+    approval.validate.return_value = {"userId": 2}
+    try:
+        for overrides in ({"user_id": "3"}, {"command": command + " argument"}, {"sha256": "0" * 64}):
+            monkeypatch.setenv("QWENPAW_CHAT_SCRIPT_DELEGATIONS", json.dumps([{**grant, **overrides}]))
+            result = await approval.tool.check_permissions(approval.params)
+            assert result.behavior == PermissionBehavior.DENY
+        assert not approval.requests
+        monkeypatch.setenv("QWENPAW_CHAT_SCRIPT_DELEGATIONS", json.dumps([grant]))
+        task = await _start_approval(approval)
+        assert not approval.executing
+        assert approval.requests[0]["source"] == "production_boundary"
+        if revoke:
+            monkeypatch.delenv("QWENPAW_CHAT_SCRIPT_DELEGATIONS")
+        approval.respond.set()
+        assert (await task).behavior == PermissionBehavior.ALLOW
+        if revoke:
+            with pytest.raises(PermissionError, match="没有执行此操作的权限"):
+                await approval.tool(**approval.params)
+            assert not approval.executing
+        else:
+            assert (await approval.tool(**approval.params)).state == ToolResultState.SUCCESS
+            assert len(approval.executing) == 1
+    finally:
+        CURRENT_IDENTITY.reset(token)
+
+
 @pytest.mark.parametrize("mode", ["false", "true"])
 async def test_explicit_tool_denial_still_overrides_file_approval(approval, tmp_path, monkeypatch, mode):
     monkeypatch.setenv("QWENPAW_CONTROLLED_WORKSPACE_FILES", mode)
@@ -547,51 +583,68 @@ async def test_fallback_cannot_run_custom_script_without_approval(approval, tmp_
         await tool(**params)
 
 
-async def test_fallback_preserves_file_controls(approval, tmp_path, monkeypatch):
+@pytest.mark.parametrize("controlled", [False, True])
+async def test_fallback_requires_preexecution_confirmation(approval, tmp_path, monkeypatch, controlled):
     from qwenpaw.runtime.tool_guard import GuardedFunctionTool
 
+    if controlled:
+        monkeypatch.setenv("QWENPAW_CONTROLLED_WORKSPACE_FILES", "true")
     tool = GuardedFunctionTool(write_file)
     monkeypatch.setattr(type(tool), "_resolve_execution_level", lambda self: "bypass")
-    params = {"file_path": "normal.md", "content": ""}
-    assert (await tool.check_permissions(params)).behavior == PermissionBehavior.ALLOW
-    assert (await tool(**params)).state == ToolResultState.SUCCESS
-    assert (tmp_path / "normal.md").read_bytes() == b""
+    params = {"file_path": "empty.md", "content": ""}
+    decision = await tool.check_permissions(params)
+    assert decision.behavior == PermissionBehavior.DENY
+    reason = "禁止通过对话新建" if controlled else "当前审批流程不可用"
+    assert reason in decision.message
+    with pytest.raises(PermissionError, match=reason):
+        await tool(**params)
+    assert not (tmp_path / "empty.md").exists()
     assert (await tool.check_permissions({**params, "file_path": "../skip.txt"})).behavior == PermissionBehavior.DENY
     assert (await tool.check_permissions({**params, "content": "nonempty"})).behavior == PermissionBehavior.DENY
 
+
+async def test_switch_to_controlled_mode_invalidates_pending_user_confirmation(approval, tmp_path, monkeypatch):
+    approval.tool = tool_adapter.PolicyGuardedTool(write_file, governor=approval.governor, request_context={})
+    approval.params = {"file_path": "toggle.txt", "content": ""}
+    task = await _start_approval(approval)
     monkeypatch.setenv("QWENPAW_CONTROLLED_WORKSPACE_FILES", "true")
-    params["file_path"] = "controlled.txt"
-    decision = await tool.check_permissions(params)
-    assert decision.behavior == PermissionBehavior.DENY
-    assert "当前审批流程不可用" in decision.message
-    with pytest.raises(PermissionError, match="当前审批流程不可用"):
-        await tool(**params)
-    assert not (tmp_path / "controlled.txt").exists()
+    approval.respond.set()
+    assert (await task).behavior == PermissionBehavior.ALLOW
+    with pytest.raises(PermissionError, match="禁止通过对话新建"):
+        await approval.tool(**approval.params)
+    assert not (tmp_path / "toggle.txt").exists()
+    result = await approval.tool.check_permissions(approval.params)
+    assert result.behavior == PermissionBehavior.DENY
+    assert len(approval.requests) == 1
 
 
 @pytest.mark.parametrize("action", ["approve", "deny"])
-async def test_controlled_file_approval_visible_to_requesting_admin(approval, tmp_path, monkeypatch, action):
+@pytest.mark.parametrize("user_id", ["2", "1"])
+async def test_file_confirmation_via_current_chat(approval, tmp_path, monkeypatch, action, user_id):
     import httpx
-    from fastapi import FastAPI, Request
+    from fastapi import FastAPI
     from qwenpaw.app import approvals
     from qwenpaw.app.routers import approval as approval_api
+    from qwenpaw.extensions.api.sso_token_middleware import SsoTokenMiddleware
+    from qwenpaw.governance.policy import load_governance_policy
+    from qwenpaw.security.tool_guard.approval import ApprovalDecision
 
-    monkeypatch.setenv("QWENPAW_CONTROLLED_WORKSPACE_FILES", "true")
+    monkeypatch.setenv("QWENPAW_ADMIN_INOE_USER_IDS", "1,3")
+    monkeypatch.setenv("QWENPAW_SSO_TOKEN_REQUIRED", "true")
     monkeypatch.setattr(tool_adapter, "_ask_user_approval", approval.real_ask)
     service = approvals.ApprovalService()
     monkeypatch.setattr(approvals, "get_approval_service", lambda: service)
     monkeypatch.setattr(approval_api, "get_approval_service", lambda: service)
     app = FastAPI()
-    app.include_router(approval_api.router)
-    identity = CURRENT_IDENTITY.get()
+    app.include_router(approval_api.router, prefix="/api")
 
-    @app.middleware("http")
-    async def bind_test_identity(request: Request, call_next):
-        request.state.access_identity = SimpleNamespace(
-            is_admin=True,
-            user_id=identity.user_id if not request.headers.get("X-Other-Admin") else "other",
-        )
-        return await call_next(request)
+    async def validate(token, *_args, **_kwargs):
+        return {"userId": token.removeprefix("user-")}
+
+    app.add_middleware(SsoTokenMiddleware, validator=SimpleNamespace(validate=validate))
+    approval.validate.side_effect = lambda _url, token: {"userId": token.removeprefix("user-")}
+    approval.governor.policy = load_governance_policy(str(tmp_path), str(tmp_path))
+    approval.governor.assert_policy = approval.governor.policy.evaluate
 
     ready = asyncio.Event()
     real_create = service.create_pending
@@ -604,38 +657,59 @@ async def test_controlled_file_approval_visible_to_requesting_admin(approval, tm
     monkeypatch.setattr(service, "create_pending", create_pending)
     tool = tool_adapter.PolicyGuardedTool(
         write_file, governor=approval.governor,
-        request_context={"agent_id": "gateway", "session_id": "active-chat", "channel": "console"},
+        request_context={"agent_id": "gateway", "session_id": "active-chat", "channel": "console", "approval_level": "auto"},
     )
     params = {"file_path": "example.md", "content": ""}
     target = tmp_path / "example.md"
+    identity = AccessIdentity(user={"userId": user_id}, inoe_token=f"user-{user_id}")
+    token = CURRENT_IDENTITY.set(identity)
     task = asyncio.create_task(tool.check_permissions(params))
     try:
-        await asyncio.wait_for(ready.wait(), timeout=2)
+        await asyncio.wait_for(ready.wait(), timeout=3)
         assert not target.exists()
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            for session, headers in [("another-chat", {}), ("active-chat", {"X-Other-Admin": "yes"})]:
-                response = await client.get("/approval/list", params={"session_id": session}, headers=headers)
+            legacy_list = "/api/approval/list"
+            self_list = "/api/approval/self/list"
+            self_resolve = "/api/approval/self/resolve"
+            session = {"session_id": "active-chat"}
+            owner = {"X-Inoe-Token": identity.inoe_token}
+            other_admin = {"X-Inoe-Token": "user-3"}
+            assert (await client.get(self_list, params=session)).status_code == 401
+            if not identity.is_admin:
+                assert (await client.get(legacy_list, params=session, headers=owner)).status_code == 403
+            for params_, headers in [({"session_id": "another-chat"}, owner), (session, other_admin)]:
+                response = await client.get(self_list, params=params_, headers=headers)
                 assert response.status_code == 200 and response.json()["pending_approvals"] == []
-            response = await client.get("/approval/list", params={"session_id": "active-chat"})
+            response = await client.get(self_list, params=session, headers=owner)
             assert response.status_code == 200
             [pending] = response.json()["pending_approvals"]
             assert pending["tool_name"] == "Write"
-            assert pending["owner_agent_id"] == "gateway"
+            assert pending["owner_agent_id"] == "gateway" and not pending["is_generalized"]
             assert pending["tool_source"] == "production_boundary"
-            decision = await client.post(f"/approval/{action}", json={
-                "request_id": pending["request_id"], "session_id": "active-chat",
-            })
+            assert pending["requester_confirmation"] is True
+            body = {"request_id": pending["request_id"], **session}
+            self_body = {**body, "action": action}
+            assert await service.resolve_request(pending["request_id"], ApprovalDecision.APPROVED) is None
+            assert (await client.post(self_resolve, json=self_body, headers=other_admin)).status_code == 404
+            assert (await client.post("/api/approval/approve", json=body, headers=other_admin)).status_code == 403
+            assert (await client.post(self_resolve, json={**self_body, "session_id": "wrong"}, headers=owner)).status_code == 404
+            assert (await client.post(self_resolve, json=self_body, headers={**owner, "Origin": "https://foreign.invalid"})).status_code == 403
+            assert not task.done()
+            assert not target.exists()
+            decision = await client.post(self_resolve, json=self_body, headers=owner)
             assert decision.status_code == 200
-        result = await asyncio.wait_for(task, timeout=2)
+            assert (await client.post(self_resolve, json=self_body, headers=owner)).status_code == 404
+        result = await asyncio.wait_for(task, timeout=3)
         if action == "approve":
             assert result.behavior == PermissionBehavior.ALLOW
             assert (await tool(**params)).state == ToolResultState.SUCCESS
             assert target.read_bytes() == b""
         else:
             assert result.behavior == PermissionBehavior.DENY
-            assert "管理员已拒绝本次审批" in result.message
+            assert "发起人已拒绝" in result.message
             assert not target.exists()
     finally:
         if not task.done():
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+        CURRENT_IDENTITY.reset(token)

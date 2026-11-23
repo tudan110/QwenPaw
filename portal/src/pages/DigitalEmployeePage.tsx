@@ -592,7 +592,7 @@ export default function DigitalEmployeePage({
     isRemoteEmployee,
     remoteAgentId,
     setMessages,
-    approvalEnabled: canManageAi === true && currentView === "chat" && !activeAdvancedPanel,
+    approvalEnabled: canManageAi !== null && currentView === "chat" && !activeAdvancedPanel,
     canManageAi: canManageAi === true,
   });
   const isRemoteConversationRunning = isStreaming || currentChatStatus === "running";
@@ -1581,7 +1581,7 @@ export default function DigitalEmployeePage({
   ) : null;
   const approvalPanel = (
     <>
-      {canManageAi === true ? <MainChatApprovalPanel controls={approvals} /> : null}
+      {canManageAi !== null ? <MainChatApprovalPanel controls={approvals} /> : null}
       {recallError ? <p className="main-chat-approval-error" role="alert">{recallError}</p> : null}
       {stopFeedback ? (
         <MainChatStopNotice

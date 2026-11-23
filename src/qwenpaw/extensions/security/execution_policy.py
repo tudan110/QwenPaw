@@ -103,7 +103,7 @@ def enabled() -> bool:
     }
 
 
-def workspace_file_approval_enabled() -> bool:
+def workspace_file_creation_blocked() -> bool:
     from ...config.runtime_boundary_policy import flag_enabled
 
     return enabled() and flag_enabled("controlled_workspace_files")
@@ -111,6 +111,8 @@ def workspace_file_approval_enabled() -> bool:
 
 def empty_workspace_text_target(params: dict[str, Any]) -> Path:
     """Only create a new, zero-byte .txt or .md in the active agent workspace."""
+    if workspace_file_creation_blocked():
+        raise PermissionError("后台安全策略已禁止通过对话新建文件，未创建文件。")
     name = params.get("file_path")
     if not isinstance(name, str) or params.get("content") != "":
         raise PermissionError("仅支持新建空的工作区文本文件")
@@ -395,7 +397,7 @@ def normalize_managed_shell(name: str, params: dict[str, Any]) -> dict[str, Any]
 
 
 def check_shell(command: str, cwd: Any = None) -> bool:
-    """Return True for actions requiring administrator approval."""
+    """Return True for actions requiring execution-time confirmation."""
     if sys.platform == "win32" and any(char in command for char in ";|&<>%^!"):
         raise PermissionError("Windows 生产命令不允许 shell 元字符")
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
@@ -531,11 +533,45 @@ def check_shell(command: str, cwd: Any = None) -> bool:
     return path.name not in _READ_SCRIPT_NAMES
 
 
+def _script_delegated_to_user(params: dict[str, Any], user_id: str) -> bool:
+    """Hash registration is integrity policy, not an implicit user grant.
+
+    Delegation is operator-only and bound to one account and exact invocation.
+    check_shell has already checked command syntax, script, and arguments.
+    """
+    args = shlex.split(str(params.get("command", "")))
+    if len(args) < 2 or Path(args[0]).name not in _PYTHON_NAMES:
+        return False
+    cwd = Path(params.get("cwd") or get_current_workspace_dir() or WORKING_DIR).resolve()
+    script = (cwd / args[1]).resolve()
+    try:
+        pins = json.loads(EnvVarLoader.get_str("QWENPAW_ALLOWED_SCRIPT_HASHES", "{}"))
+        grants = json.loads(EnvVarLoader.get_str("QWENPAW_CHAT_SCRIPT_DELEGATIONS", "[]"))
+    except ValueError:
+        return False
+    if not isinstance(pins, dict) or not isinstance(grants, list):
+        return False
+    digest = pins.get(str(script))
+    if not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest):
+        return False
+    invocation = {
+        "user_id": user_id,
+        "cwd": str(cwd),
+        "command": str(params.get("command", "")),
+        "sha256": digest,
+    }
+    return invocation in grants
+
+
 def approval_binding(name: str, params: dict[str, Any]) -> dict[str, Any]:
     """Freeze indirect JSON inputs along with the displayed command."""
     from copy import deepcopy
 
-    binding = {"params": deepcopy(params)}
+    identity = CURRENT_IDENTITY.get()
+    binding = {
+        "params": deepcopy(params),
+        "requester_id": identity.user_id if identity else None,
+    }
     if name == "execute_shell_command":
         directory = Path(
             params.get("cwd") or get_current_workspace_dir() or WORKING_DIR
@@ -590,7 +626,7 @@ def managed_script_entries() -> list[str]:
 
 
 async def check_tool(name: str, params: dict[str, Any]) -> bool:
-    """Return whether this call needs mandatory administrator approval."""
+    """Return whether this call needs a bound, one-shot approval."""
     from .agent_export import require_controlled_export
 
     if not enabled():
@@ -598,8 +634,6 @@ async def check_tool(name: str, params: dict[str, Any]) -> bool:
     empty_create = name == "write_file" and params.get("content") == ""
     if empty_create:
         empty_workspace_text_target(params)
-        if not workspace_file_approval_enabled():
-            return False
     else:
         require_controlled_export(name, params.get("operation"))
     if name in {"grep_search", "glob_search"}:
@@ -622,10 +656,10 @@ async def check_tool(name: str, params: dict[str, Any]) -> bool:
     if not (empty_create or shell_write) and name in known_tool_admissions():
         return False
     identity = CURRENT_IDENTITY.get()
-    if identity is None or not identity.is_admin:
-        if empty_create:
-            raise PermissionError("工作区受控模式要求可信 AI 管理员提交审批，当前会话未通过管理员身份验证，未创建文件")
-        raise PermissionError("高危或未分类工具仅允许可信 AI 管理员调用")
+    if identity is None or not identity.is_verified_human:
+        raise PermissionError("此操作需要由发起人确认，请先通过智观认证。")
+    if not (empty_create or identity.is_admin or (shell_write and _script_delegated_to_user(params, identity.user_id))):
+        raise PermissionError("当前账号没有执行此操作的权限，不能通过对话确认放行。")
     if identity.access_token:
         get_access_store().resolve(identity.access_token)
     user = await _validate_inoe_token(

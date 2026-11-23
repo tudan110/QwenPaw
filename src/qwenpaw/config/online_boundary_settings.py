@@ -162,7 +162,7 @@ def _validate_change(key: Key, value) -> None:
     if key == "controlled_documents" and value is True and not enabled():
         raise PolicyConflict("开启受控资料前，须先开启生产执行守卫。")
     if key == "controlled_workspace_files" and value is True and not enabled():
-        raise PolicyConflict("开启工作区受控模式前，须先开启生产执行守卫。")
+        raise PolicyConflict("设置对话文件限制前，须先开启生产执行守卫。")
 
 
 def configure(key: Key, value, expected) -> bool:

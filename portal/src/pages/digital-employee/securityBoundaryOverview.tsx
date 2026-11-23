@@ -24,7 +24,7 @@ const POLICY_IMPACT: Record<BoundaryKey, string> = {
   chat_isolation: "会话将按已验证身份隔离，旧共享会话不会自动迁移或重新分配。开启后不能在线关闭。",
   text_guard: "开启要求生产执行守卫和会话主体隔离均开启；受约束的入口将拒绝非文本内容及命中规则的输入。",
   controlled_documents: "开启要求生产执行守卫已开启；资料的授权、复核和审批仍按「受控资料」中的规则执行。",
-  controlled_workspace_files: "开启后，在当前工作区根目录新建空 .txt 或 .md 须由可信管理员在发起会话中逐次审批。关闭后不额外要求该项审批，工具准入、风险守卫、脚本和其他生产限制仍然有效。",
+  controlled_workspace_files: "禁止后，所有账号都不能通过对话新建文件。允许后，具备权限的发起人仍须逐次确认；已有禁用规则、脚本和其他生产限制不变。",
   mcp_remote: "只允许部署已信任主机上的精确远程端点。空列表拒绝全部远程端点；本配置不放行本地子进程，也不授予工具权限。",
 };
 type PolicyDraft = { key: BoundaryKey; label: string; previous: BoundaryValue | null; value: BoundaryValue | null; lines: string; confirmation: string };
@@ -54,11 +54,11 @@ function boundaryRows(data: BoundarySnapshot): BoundaryRow[] {
       management: SOURCE[deletion.source] },
     { id: "execution", label: "生产执行守卫", status: guards ? "开启" : "关闭", tone: guards ? "success" : "danger",
       detail: "限制受管脚本、命令参数及敏感路径；受控操作执行前校验身份与审批。", management: "部署安全基线" },
-    { id: "workspaceFiles", label: "工作区受控模式",
-      status: !guards ? "未启用生产执行守卫" : workspaceFileMode === true ? "开启 · 需管理员审批"
-        : workspaceFileMode === false ? "关闭 · 沿用常规流程" : "当前后端不支持",
+    { id: "workspaceFiles", label: "对话新建工作区空文件",
+      status: !guards ? "未启用生产执行守卫" : workspaceFileMode === true ? "禁止"
+        : workspaceFileMode === false ? "允许 · 发起人确认" : "当前后端不支持",
       tone: guards && workspaceFileMode === true ? "success" : "neutral",
-      detail: "仅控制在当前工作区根目录新建空 .txt 或 .md 时是否额外要求管理员审批。开启后请在发起会话的输入框上方处理审批。",
+      detail: "在后台决定是否允许在当前工作区根目录新建空 .txt 或 .md；允许时才可在发起会话中确认执行。",
       management: CONFIG_ENTRY },
     { id: "tools", label: "工具风险守卫", status: data.tool_guard.enabled ? "开启" : "关闭", tone: data.tool_guard.enabled ? "success" : "warning",
       detail: `已加载 ${data.tool_guard.auto_deny_rule_count} 条自动拒绝规则。适用范围依工具及工作区配置，不代表所有工具均被覆盖。`, management: CONFIG_ENTRY },
@@ -206,7 +206,7 @@ export function SecurityBoundaryOverview({ openProtection, openAdmission }: {
       if (key === "controlled_workspace_files" && control && !control.locked_reason && typeof control.value === "boolean") {
         const previous = control.value;
         return { main: {
-          label: previous ? "关闭工作区受控模式" : "开启工作区受控模式",
+          label: previous ? "允许新建（需确认）" : "禁止对话新建",
           onClick: () => setPolicy({ key, label: row.label, previous, value: !previous, lines: "", confirmation: "" }),
         }, note: "保存后对后续调用生效" };
       }
@@ -349,7 +349,7 @@ export function SecurityBoundaryOverview({ openProtection, openAdmission }: {
             onChange={(event) => setPolicy({ ...policy, lines: event.target.value })} />
           {!Array.isArray(policyValue) && <span role="alert">请按「sse 或 streamable_http + 空格 + URL」逐行填写。</span>}
         </Flex> : policy.key === "chat_isolation" ? <div>保存后的状态：<strong>按已验证身份隔离</strong></div>
-          : isWorkspaceFileMode ? <div>保存后的状态：<strong>{policyValue ? "开启 · 需管理员审批" : "关闭 · 沿用常规流程"}</strong></div>
+          : isWorkspaceFileMode ? <div>保存后的状态：<strong>{policyValue ? "禁止" : "允许 · 发起人确认"}</strong></div>
           : <Radio.Group aria-label="保存后的策略状态" disabled={busy}
             value={typeof policy.value === "boolean" ? String(policy.value) : policy.value}
             onChange={(event) => {

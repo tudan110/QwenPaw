@@ -50,7 +50,13 @@ class QwenPawDriverApprovalGate:
                 f"is missing: {context.subject} -> {context.driver_name}",
             )
 
+        from ...extensions.api.access_session import CURRENT_IDENTITY
+        from ...extensions.security.execution_policy import enabled
         from . import get_approval_service
+
+        identity = CURRENT_IDENTITY.get()
+        if enabled() and (identity is None or not identity.is_verified_human):
+            raise ApprovalRequiredError("缺少可信发起人，无法确认本次操作，未执行。")
 
         svc = get_approval_service()
         tool_call_id = str(ctx.get("tool_call_id") or "")

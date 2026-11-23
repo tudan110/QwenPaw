@@ -222,7 +222,7 @@ _TOOL_BASELINES: dict[str, Baseline] = {
     "submit_to_agent": Baseline("high", "向另一智能体提交异步任务。"),
     "spawn_subagent": Baseline("high", "启动协同任务并传递上下文；不授权下游工具。"),
     "delegate_external_agent": Baseline("high", "向外部智能体委派，可能传递内部上下文。"),
-    "write_file": Baseline("high", "生产守卫开启时，仅可在当前工作区新建空 .txt 或 .md；开启工作区受控模式后需管理员审批。不覆盖已有文件。"),
+    "write_file": Baseline("high", "生产守卫开启时，仅可在当前工作区新建空 .txt 或 .md；后台允许时须由发起人逐次确认；后台禁止时不发起确认。不覆盖已有文件。"),
     "edit_file": Baseline("high", "修改现有文件；受路径、沙箱及审批策略约束。"),
     "append_file": Baseline("high", "追加文件内容；受路径、沙箱及审批策略约束。"),
     "browser_use": Baseline("high", "浏览器交互可能读取数据或改变外部状态。"),

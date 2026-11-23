@@ -101,6 +101,8 @@ class ApprovalCommandHandler(BaseControlCommandHandler):
             ApprovalDecision.APPROVED,
             scope=scope,
         )
+        if resolved is None:
+            return "该审批已失效或需在发起会话的确认卡片中处理。"
 
         # Show cross-session hint if applicable
         cross_session_hint = ""
@@ -159,6 +161,8 @@ class ApprovalCommandHandler(BaseControlCommandHandler):
             request_id,
             ApprovalDecision.DENIED,
         )
+        if resolved is None:
+            return "该审批已失效或需在发起会话的确认卡片中处理。"
 
         # Show cross-session hint if applicable
         cross_session_hint = ""
@@ -205,6 +209,7 @@ class ApprovalCommandHandler(BaseControlCommandHandler):
             )
             header = "📋 **待审批工具列表** (当前会话)\n"
 
+        pending_list = [p for p in pending_list if p.extra.get("requester_confirmation") is not True]
         if not pending_list:
             return "✅ **无待审批工具**\n\n当前无需要审批的工具调用。"
 

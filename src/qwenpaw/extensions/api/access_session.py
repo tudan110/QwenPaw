@@ -44,6 +44,10 @@ class AccessIdentity:
         return str(value).strip() if value is not None else ""
 
     @property
+    def is_verified_human(self) -> bool:
+        return bool(self.user_id and self.source in {"inoe", "qwenpaw", "mixed"})
+
+    @property
     def is_admin(self) -> bool:
         allowed = {
             value.strip()

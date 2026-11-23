@@ -72,14 +72,16 @@ export function useMainChatApprovals({
   agentId,
   sessionId,
   enabled,
+  requesterOnly = false,
   onCancelTask,
 }: {
   agentId: string | null;
   sessionId: string;
   enabled: boolean;
+  requesterOnly?: boolean;
   onCancelTask: (signal: AbortSignal) => Promise<void>;
 }) {
-  const key = approvalStorageKey(getChatUserId(), agentId || "", sessionId);
+  const key = `${approvalStorageKey(getChatUserId(), agentId || "", sessionId)}:${requesterOnly ? "self" : "admin"}`;
   const [state, setState] = useState<ApprovalState>({
     key: "", items: [], pollError: "", actionError: "", notice: "", busy: {},
   });
@@ -113,7 +115,7 @@ export function useMainChatApprovals({
       const revision = revisionRef.current;
       const timeout = window.setTimeout(() => controller.abort(), 15000);
       try {
-        const response = await listMainChatApprovals(agentId, sessionId, controller.signal);
+        const response = await listMainChatApprovals(agentId, sessionId, controller.signal, requesterOnly);
         if (disposed || revision !== revisionRef.current) return;
         setState((previous) => {
           if (contextRef.current.key !== key || !contextRef.current.enabled
@@ -154,7 +156,7 @@ export function useMainChatApprovals({
       controller?.abort();
       clearTimeout(timer);
     };
-  }, [agentId, enabled, key, sessionId, refresh]);
+  }, [agentId, enabled, key, sessionId, refresh, requesterOnly]);
 
   const act = async (approval: MainChatApproval, action: ApprovalAction) => {
     if (!enabled || !agentId || !contextRef.current.enabled || contextRef.current.key !== key) return;
@@ -188,6 +190,7 @@ export function useMainChatApprovals({
           action === "deny" ? "deny" : "approve",
           controller.signal,
           action === "similar" ? "similar" : "exact",
+          requesterOnly || approval.requester_confirmation === true,
         );
       }
       if (contextRef.current.key !== key || !contextRef.current.enabled) return;

@@ -12,6 +12,7 @@ from qwenpaw.drivers.credentials.store import AsyncCredentialStore
 from qwenpaw.drivers.handlers.mcp import MCPDriverHandler
 from qwenpaw.drivers.manager import DriverManager
 from qwenpaw.drivers.storage import card_path, dump_card
+from qwenpaw.extensions.api.access_session import AccessIdentity, CURRENT_IDENTITY
 from qwenpaw.security.tool_guard.approval import ApprovalDecision
 from tests.integration.driver_mcp_fakes import (
     FakeStdIOClient,
@@ -94,6 +95,7 @@ async def test_driver_mcp_policy_ask_approve_resumes_client_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     patch_mcp_runtime_clients(monkeypatch)
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
     service = ApprovalService()
     monkeypatch.setattr(
         "qwenpaw.app.approvals.get_approval_service",
@@ -108,6 +110,7 @@ async def test_driver_mcp_policy_ask_approve_resumes_client_call(
         for item in await manager.list_capabilities(kind="tool")
         if item.name == "echo"
     )
+    identity_token = CURRENT_IDENTITY.set(AccessIdentity(user={"userId": "alice"}, inoe_token="token"))
     task = asyncio.create_task(
         manager.invoke_capability(
             DriverInvocation(
@@ -118,6 +121,7 @@ async def test_driver_mcp_policy_ask_approve_resumes_client_call(
         ),
     )
 
+    CURRENT_IDENTITY.reset(identity_token)
     pending = await _next_pending_request(service, task)
     assert pending.result_summary == (
         "Tool 'echo' from 'mcp:policy_echo' requires approval for invoke."
@@ -126,9 +130,12 @@ async def test_driver_mcp_policy_ask_approve_resumes_client_call(
         "tool_name": "echo",
         "tool_source": "mcp:policy_echo",
     }
+    assert pending.extra["requester_confirmation"] is True
+    assert await service.resolve_request(pending.request_id, ApprovalDecision.APPROVED) is None
     await service.resolve_request(
         pending.request_id,
         ApprovalDecision.APPROVED,
+        requester_id="alice",
     )
     result = await task
 

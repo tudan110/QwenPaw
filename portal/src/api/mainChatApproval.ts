@@ -59,12 +59,13 @@ export async function listMainChatApprovals(
   agentId: string,
   sessionId: string,
   signal: AbortSignal,
+  requesterOnly = false,
 ): Promise<MainChatApproval[]> {
   if (!agentId || !sessionId) {
     throw new Error("缺少智能体或会话信息，无法获取审批请求。");
   }
   const response = await approvalRequest<{ pending_approvals: MainChatApproval[] }>(
-    `/approval/list?session_id=${encodeURIComponent(sessionId)}`,
+    `/approval/${requesterOnly ? "self/" : ""}list?session_id=${encodeURIComponent(sessionId)}`,
     agentId,
     signal,
   );
@@ -81,15 +82,16 @@ export async function resolveMainChatApproval(
   action: "approve" | "deny",
   signal: AbortSignal,
   scope: ApprovalScope = "exact",
+  requesterOnly = false,
 ): Promise<void> {
   const response = await approvalRequest<{ success: boolean; message?: string }>(
-    `/approval/${action}`,
+    requesterOnly ? "/approval/self/resolve" : `/approval/${action}`,
     agentId,
     signal,
     {
       request_id: requestId,
       session_id: sessionId,
-      ...(action === "approve" ? { scope } : {}),
+      ...(requesterOnly ? { action } : action === "approve" ? { scope } : {}),
     },
   );
   if (response.success !== true) {

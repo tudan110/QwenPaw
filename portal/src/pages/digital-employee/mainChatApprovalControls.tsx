@@ -143,6 +143,7 @@ const SOURCE_LABELS: Record<string, string> = {
   shell_danger_keywords: "危险命令检测",
   sandbox: "沙箱",
   fallback: "默认策略",
+  production_boundary: "生产安全策略",
 };
 
 type ApprovalControls = ReturnType<typeof useMainChatApprovals>;
@@ -165,7 +166,8 @@ function ApprovalCard({
   const canceling = Object.values(controls.busy).includes("cancel");
   const severity = approval.severity.toLowerCase();
   const source = approval.tool_source || "";
-  const generalized = approval.is_generalized && Boolean(approval.similar_target);
+  const requesterConfirmation = approval.requester_confirmation === true;
+  const generalized = !requesterConfirmation && approval.is_generalized && Boolean(approval.similar_target);
   const subAgent = approval.session_id !== approval.root_session_id;
   const run = (action: "exact" | "similar" | "deny" | "cancel") => {
     void controls.act(approval, action);
@@ -176,7 +178,7 @@ function ApprovalCard({
       <header>
         <div className="main-chat-approval-heading">
           <i className="fas fa-shield-halved" aria-hidden="true" />
-          <strong>等待安全审批</strong>
+          <strong>{requesterConfirmation ? "请确认本次操作" : "等待安全审批"}</strong>
           <span className={`main-chat-approval-severity ${severity}`}>
             {SEVERITY_LABELS[severity] || approval.severity}
           </span>
@@ -219,7 +221,7 @@ function ApprovalCard({
             {busy === "deny" ? "正在拒绝…" : "拒绝"}
           </button>
           <button type="button" className={`main-chat-approval-button ${generalized ? "" : "primary"}`} disabled={expired || Boolean(busy) || canceling} onClick={() => run("exact")}>
-            {busy === "exact" ? "正在批准…" : generalized ? "批准精确目标" : "批准"}
+            {busy === "exact" ? "正在批准…" : generalized ? "批准精确目标" : requesterConfirmation ? "确认执行" : "批准"}
           </button>
           {generalized ? (
             <button type="button" className="main-chat-approval-button primary" disabled={expired || Boolean(busy) || canceling} onClick={() => run("similar")}>

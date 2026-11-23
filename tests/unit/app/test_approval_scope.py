@@ -12,7 +12,9 @@ from __future__ import annotations
 import asyncio
 
 from qwenpaw.app.approvals.display import approval_display_fields
+from qwenpaw.app.approvals.models import ApprovalRequestSummary
 from qwenpaw.app.approvals.service import ApprovalService, PendingApproval
+from qwenpaw.extensions.api.access_session import AccessIdentity, CURRENT_IDENTITY
 from qwenpaw.security.tool_guard.approval import (
     ApprovalDecision,
     ApprovalScope,
@@ -117,6 +119,48 @@ class TestResolveRequestStashesScope:
             scope=ApprovalScope.SIMILAR,
         )
         assert resolved.future.result() is ApprovalDecision.DENIED
+
+
+async def test_summary_requester_identity_is_server_bound_and_expires(monkeypatch):
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
+    service = ApprovalService()
+    arguments = dict(
+        session_id="subsession",
+        root_session_id="root",
+        owner_agent_id="root-agent",
+        user_id="untrusted-context-user",
+        channel="console",
+        agent_id="subagent",
+        summary=ApprovalRequestSummary(source_type="driver_policy", name="Driver"),
+        timeout_seconds=30,
+        extra={"auth_user_id": "forged", "requester_confirmation": True},
+    )
+    unowned = await service.create_pending_summary(**arguments)
+    assert "auth_user_id" not in unowned.extra
+    assert "requester_confirmation" not in unowned.extra
+
+    token = CURRENT_IDENTITY.set(AccessIdentity(user={"userId": "verified"}, inoe_token="token"))
+    try:
+        pending = await service.create_pending_summary(**arguments)
+        expired = await service.create_pending_summary(**arguments)
+    finally:
+        CURRENT_IDENTITY.reset(token)
+    assert pending.extra["auth_user_id"] == "verified"
+    assert pending.extra["requester_confirmation"] is True
+    assert await service.resolve_request(
+        pending.request_id, ApprovalDecision.APPROVED, requester_id="forged",
+    ) is None
+    result = await service.resolve_request(
+        pending.request_id, ApprovalDecision.APPROVED,
+        scope=ApprovalScope.SIMILAR, requester_id="verified",
+    )
+    assert result is pending and pending.scope is None
+    expired.created_at -= expired.timeout_seconds + 1
+    assert await service.resolve_request(
+        expired.request_id, ApprovalDecision.APPROVED, requester_id="verified",
+    ) is None
+    assert not expired.future.done()
+    assert await service.wait_for_approval(expired.request_id, timeout_seconds=0) is ApprovalDecision.TIMEOUT
 
 
 class _FakePending:
