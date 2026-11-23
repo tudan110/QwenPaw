@@ -90,6 +90,9 @@ async def test_stop_then_continue_text_without_replaying_agent(portal, monkeypat
         assert stop.json() == {"stopped": True, "status": "cancelled", "text_continuation": True}
         result = await client.post("/console/chat/continue", json=body)
     assert result.status_code == 200
+    assert result.headers["content-type"].startswith("text/event-stream")
+    assert result.headers["x-accel-buffering"] == "no"
+    assert "no-transform" in result.headers["cache-control"]
     assert _events(result) == [
         {"object": "text_continuation", "text": "\n第二项：对比日志。"},
         {"object": "text_continuation", "text": "\n第二项：对比日志。\n第三项：复查。"},

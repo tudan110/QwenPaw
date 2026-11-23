@@ -160,6 +160,13 @@ class TestReadFile:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture
+def native_file_writes(monkeypatch):
+    """Exercise the original non-production write/edit implementation."""
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "false")
+
+
+@pytest.mark.usefixtures("native_file_writes")
 class TestWriteFile:
     """Tests for write_file."""
 
@@ -207,6 +214,7 @@ class TestWriteFile:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("native_file_writes")
 class TestEditFile:
     """Tests for edit_file."""
 

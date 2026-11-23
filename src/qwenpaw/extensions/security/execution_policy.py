@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shlex
 import sys
 import unicodedata
@@ -100,6 +101,27 @@ def enabled() -> bool:
         "off",
         "no",
     }
+
+
+def empty_workspace_text_target(params: dict[str, Any]) -> Path:
+    """Only create a new, zero-byte .txt in the active agent workspace."""
+    name = params.get("file_path")
+    if not isinstance(name, str) or params.get("content") != "":
+        raise PermissionError("仅支持新建空的工作区文本文件")
+    name = name[2:] if name.startswith(("./", ".\\")) else name
+    match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9_-]{0,95})\.txt", name, re.ASCII | re.IGNORECASE)
+    if not match or re.fullmatch(r"aux|con|nul|prn|com[0-9]|lpt[0-9]", match[1].lower()):
+        raise PermissionError("请提供当前工作区中的普通 .txt 文件名，不支持目录或设备名")
+    workspace = get_current_workspace_dir()
+    if workspace is None or not workspace.is_dir():
+        raise PermissionError("没有可用的当前工作区，未创建文件")
+    path = workspace.resolve() / name
+    check_path(str(path))
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return path
+    raise PermissionError("目标文件已存在，不允许覆盖或通过链接写入")
 
 
 def check_path(path_value: str) -> None:
@@ -493,7 +515,9 @@ def check_shell(command: str, cwd: Any = None) -> bool:
                 else (args[index + 1] if index + 1 < len(args) else "")
             )
             check_path(str(directory / file_value))
-    return False
+    # Non-built-in scripts only reach this point via a deployment hash pin.
+    # A pinned custom script is not an automatically trusted read operation.
+    return path.name not in _READ_SCRIPT_NAMES
 
 
 def approval_binding(name: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -505,10 +529,14 @@ def approval_binding(name: str, params: dict[str, Any]) -> dict[str, Any]:
         directory = Path(
             params.get("cwd") or get_current_workspace_dir() or WORKING_DIR
         ).resolve()
-        binding["files"] = approval_files(
-            str(params.get("command", "")),
-            directory,
-        )
+        command = str(params.get("command", ""))
+        binding["files"] = approval_files(command, directory)
+        args = shlex.split(command)
+        if len(args) > 1 and Path(args[0]).name in _PYTHON_NAMES:
+            script = (directory / args[1]).resolve()
+            binding["files"][str(script)] = hashlib.sha256(script.read_bytes()).hexdigest()
+    elif name == "write_file":
+        binding["workspace_target"] = empty_workspace_text_target(params)
     return binding
 
 
@@ -554,9 +582,13 @@ async def check_tool(name: str, params: dict[str, Any]) -> bool:
     """Return whether this call needs mandatory administrator approval."""
     from .agent_export import require_controlled_export
 
-    require_controlled_export(name, params.get("operation"))
     if not enabled():
         return False
+    empty_create = name == "write_file" and params.get("content") == ""
+    if empty_create:
+        empty_workspace_text_target(params)
+    else:
+        require_controlled_export(name, params.get("operation"))
     if name in {"grep_search", "glob_search"}:
         check_search(name, params)
         return False
@@ -574,7 +606,7 @@ async def check_tool(name: str, params: dict[str, Any]) -> bool:
         )
         if not shell_write:
             return False
-    if not shell_write and name in known_tool_admissions():
+    if not (empty_create or shell_write) and name in known_tool_admissions():
         return False
     identity = CURRENT_IDENTITY.get()
     if identity is None or not identity.is_admin:

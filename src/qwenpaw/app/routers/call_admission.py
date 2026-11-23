@@ -44,7 +44,7 @@ class TargetInput(BaseModel):
 class RuleUpdate(TargetInput):
     revision: int = Field(ge=0)
     decision: Literal["inherit", "deny"]
-    risk: policy.Risk
+    risk: policy.Risk | None  # null changes admission without reassessing risk
     reason: str = Field(max_length=240)
 
     @field_validator("reason")
@@ -79,16 +79,18 @@ def update_rule(request: Request, body: RuleUpdate) -> dict:
     if not actor:
         raise HTTPException(403, "无法确认配置变更主体。")
     target = body.target()
+    baseline = policy.catalog().get(target)
     try:
         rule = policy.save_rule(
             target, revision=body.revision, decision=body.decision,
             risk=body.risk, reason=body.reason, actor=actor,
+            baseline_risk=baseline.risk if baseline else "high",
         )
     except policy.PolicyConflict as exc:
         raise HTTPException(409, "策略已被其他管理员修改，请刷新后再操作。") from exc
     except policy.PolicyUnavailable as exc:
         raise HTTPException(503, "未能写入调用准入策略，请核对后端存储。") from exc
-    return policy.describe(target, rule, policy.catalog().get(target))
+    return policy.describe(target, rule, baseline)
 
 
 @router.post("/check")

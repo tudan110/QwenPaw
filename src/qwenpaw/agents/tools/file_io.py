@@ -2,6 +2,7 @@
 # flake8: noqa: E501
 # pylint: disable=line-too-long
 import os
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Optional
 
@@ -20,6 +21,24 @@ from ...config.context import (
 )
 from ...constant import WORKING_DIR, TRUNCATION_NOTICE_MARKER
 from ...runtime.tool_registry import tool_descriptor
+
+
+_APPROVED_EMPTY_FILE: ContextVar[Path | None] = ContextVar(
+    "approved_empty_workspace_file", default=None,
+)
+
+
+def _create_empty_file(target: Path) -> None:
+    """Create exclusively; never follow an existing link or truncate a file."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    if os.open not in os.supports_dir_fd:
+        os.close(os.open(target, flags, 0o600))
+        return
+    directory = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.close(os.open(target.name, flags, 0o600, dir_fd=directory))
+    finally:
+        os.close(directory)
 
 
 def _path_to_file_url(path: str) -> str:
@@ -251,7 +270,10 @@ async def write_file(
     file_path: str,
     content: str,
 ) -> ToolChunk:
-    """Create or overwrite a file. Relative paths resolve from WORKING_DIR.
+    """Create or overwrite a file. Relative paths resolve from the workspace.
+
+    With production guards only a new empty .txt in the current workspace is
+    supported, and requires administrator approval. Use content="" for this.
 
     Args:
         file_path (`str`):
@@ -270,6 +292,28 @@ async def write_file(
                     text="Error: No `file_path` provided.",
                 ),
             ],
+        )
+
+    from ...extensions.security.execution_policy import enabled, empty_workspace_text_target
+
+    if enabled():
+        from ...extensions.security.agent_export import require_controlled_export
+
+        try:
+            if content != "":
+                require_controlled_export("write_file")
+            target = empty_workspace_text_target({"file_path": file_path, "content": content})
+            if _APPROVED_EMPTY_FILE.get() != target:
+                raise PermissionError("新建空文件需要管理员审批")
+            _create_empty_file(target)
+        except (OSError, ValueError) as exc:
+            return ToolChunk(
+                is_last=True, state=ToolResultState.ERROR,
+                content=[TextBlock(text=f"Error: 未创建文件：{exc}")],
+            )
+        return ToolChunk(
+            is_last=True, state=ToolResultState.SUCCESS,
+            content=[TextBlock(text=f"已创建空文件 {target.name}。")],
         )
 
     file_path = _resolve_file_path(file_path)

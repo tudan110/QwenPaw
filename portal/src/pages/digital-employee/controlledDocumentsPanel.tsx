@@ -16,6 +16,7 @@ const STATES: Record<string, string> = {
 const date = (value: number) => new Date(value * 1000).toLocaleString();
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : "请求失败";
 const idPattern = /^[a-f0-9]{32}$/;
+const publishingEnabled = (workspace: Workspace) => workspace.admin && !workspace.policy.emergency && !workspace.security_hold;
 
 export function ControlledDocumentsPanel() {
   const [workspace, setWorkspace] = useState<Workspace>();
@@ -51,6 +52,8 @@ export function ControlledDocumentsPanel() {
         lastActor.current = snapshot.actor;
       }
       setWorkspace(snapshot);
+      setPublishPreview((current) => current && publishingEnabled(snapshot)
+        && snapshot.documents.some((doc) => doc.id === current.id && doc.owner && !doc.archived) ? current : undefined);
       if (tab === "oversight" && snapshot.admin) {
         const admin = await readControlled<Oversight>("/admin/state");
         if (sequence === latestRead.current) setOversight(admin);
@@ -74,11 +77,11 @@ export function ControlledDocumentsPanel() {
     setPreview((last) => last && workspace?.documents.some((doc) => doc.id === last.id && !doc.archived) ? last : undefined);
   }, [workspace?.documents]);
 
-  async function perform(fn: () => Promise<unknown>, text: string) {
+  async function perform(fn: () => Promise<unknown>, text?: string) {
     if (pending.current) return;
     pending.current = true;
     setLoading(true); setNotice(undefined);
-    try { await fn(); setNotice({ error: false, text }); }
+    try { await fn(); if (text) setNotice({ error: false, text }); }
     catch (error) { setNotice({ error: true, text: errorMessage(error) }); }
     finally { await refresh(); pending.current = false; setLoading(false); }
   }
@@ -88,6 +91,18 @@ export function ControlledDocumentsPanel() {
     setPreview(undefined);
     setLookup(id);
     void perform(async () => setPreview(await readControlled<Preview>(`/documents/${id}`)), "已通过后端校验并读取资料预览");
+  }
+
+  function openPublish(id: string) {
+    const actor = lastActor.current;
+    void perform(async () => {
+      const freshPreview = await readControlled<Preview>(`/documents/${id}`);
+      if (actor !== lastActor.current) return;
+      if (freshPreview.id !== id || !freshPreview.owner || freshPreview.archived) {
+        throw new Error("只能发布本人未归档的资料，请刷新后重试。");
+      }
+      setPublishPreview(freshPreview);
+    });
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -132,28 +147,29 @@ export function ControlledDocumentsPanel() {
   return <div className="controlled-documents">
     <header>
       <h3>受控资料</h3>
-      <p>保存后仅本人可见。AI 管理员可先检查脱敏预览，再把本人资料发布到共享知识库，供智能体检索。</p>
+      <p>保存后仅本人可见。AI 管理员可对本人资料点击「发布到知识库」，检查脱敏预览后确认发布。</p>
       <p>管理个人文本资料、限时共享和需要复核的资料操作。该工作区和聊天附件分开保存。</p>
       {workspace?.admin && <p>已发布副本在知识库中单独管理；归档个人原件不会撤回共享副本。</p>}
       {workspace && <p>当前智观账号：<strong>{workspace.actor}</strong> <Tag>{workspace.admin ? "AI 管理员" : "普通用户"}</Tag>
         <Tag color={workspace.policy.emergency ? "red" : "green"}>{workspace.policy.emergency ? "紧急关停中" : "受控操作开放"}</Tag></p>}
       <Button onClick={() => void refresh()} disabled={loading}>刷新状态</Button>
-      {workspace?.security_hold && <p role="alert" className="controlled-error">安全告警待处置：本账号的导出、共享和批量归档已冻结。</p>}
+      {workspace?.security_hold && <p role="alert" className="controlled-error">安全告警待处置：本账号的发布、导出、共享和批量归档已冻结。</p>}
     </header>
     <Modal
       open={!!publishPreview}
       title="发布到共享知识库"
       okText="确认已检查并发布"
       cancelText="取消"
+      okButtonProps={{ disabled: loading }}
       onCancel={() => setPublishPreview(undefined)}
       onOk={() => {
-        if (!publishPreview) return;
+        if (!publishPreview || pending.current) return;
         const { id } = publishPreview;
         setPublishPreview(undefined);
         void perform(async () => {
           await writeControlled(`/admin/documents/${id}/publish`, { reviewed_for_sharing: true });
           emitKnowledgeBaseChanged("controlled-documents", "manual-entry-created");
-        }, "脱敏版本已发布，可在知识库检索。原件仍保留在受控资料中。");
+        }, "脱敏版本已发布。可在知识库按标题查看，或按正文关键词检索。原件仍保留在受控资料中。");
       }}
     >
       <p>将发布「{publishPreview?.title}」的当前脱敏预览。可访问企业共享知识库的用户和智能体均可检索；请检查预览中是否仍有不宜公开的内容。</p>
@@ -186,6 +202,7 @@ export function ControlledDocumentsPanel() {
         </section>
         <section>
           <h4>本人资料与收到的共享</h4>
+          {!workspace.admin && <p>只有 AI 管理员可以将本人资料发布到共享知识库。</p>}
           <div className="controlled-line">
             <Input aria-label="资料编号" placeholder="粘贴资料编号核验读取权限" value={lookup} onChange={(e) => setLookup(e.target.value.trim())} />
             <Button disabled={loading || !idPattern.test(lookup)} onClick={() => openDocument(lookup)}>读取资料</Button>
@@ -197,7 +214,7 @@ export function ControlledDocumentsPanel() {
             {doc.labels.map((label) => <Tag color="orange" key={label}>{label}</Tag>)}
             <code>{doc.id}</code>
             {!doc.archived && <Button size="small" disabled={loading} onClick={() => openDocument(doc.id)}>查看脱敏预览</Button>}
-            {workspace.admin && !workspace.policy.emergency && !workspace.security_hold && doc.owner && !doc.archived && preview?.id === doc.id && <Button size="small" disabled={loading} onClick={() => setPublishPreview(preview)}>发布到知识库</Button>}
+            {workspace.admin && doc.owner && !doc.archived && <Button size="small" disabled={loading || !publishingEnabled(workspace)} onClick={() => openPublish(doc.id)}>发布到知识库</Button>}
           </div>)}
           {preview && <div className="controlled-record"><strong>{preview.title} · {preview.masked ? "已遮蔽命中内容" : "未命中已配置规则"}</strong>
             <code>{preview.id}</code><pre>{preview.content}</pre></div>}
