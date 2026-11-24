@@ -623,6 +623,8 @@ export default function DigitalEmployeePage({
     switching: modelsSwitching,
     submitting: modelsSubmitting,
     notice: modelNotice,
+    defaultModelSuggestion,
+    dismissDefaultModelSuggestion,
     fetchModelState,
     handleSelectModel,
     handleSelectDefaultModel,
@@ -1805,6 +1807,8 @@ export default function DigitalEmployeePage({
                 submitting={modelsSubmitting}
                 disabled={isInteractionLocked}
                 notice={modelNotice}
+                defaultModelSuggestion={defaultModelSuggestion}
+                onDismissDefaultModelSuggestion={dismissDefaultModelSuggestion}
                 onRefresh={() => void fetchModelState()}
                 onSelectDefaultModel={handleSelectDefaultModel}
                 onSubmitProvider={handleSaveProvider}

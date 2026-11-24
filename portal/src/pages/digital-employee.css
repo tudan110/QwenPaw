@@ -10640,6 +10640,12 @@
   line-height: 1.6;
 }
 
+.portal-digital-employee .portal-default-llm-setup-copy {
+  display: block;
+  margin-top: 4px;
+  line-height: 1.6;
+}
+
 @media (max-width: 900px) {
   .portal-digital-employee .portal-default-llm-row {
     grid-template-columns: 1fr;

@@ -15,6 +15,12 @@ export interface ModelNoticeState {
   text: string;
 }
 
+export interface DefaultModelSuggestion {
+  providerId: string;
+  providerName: string;
+  modelId: string;
+}
+
 export interface EligibleProvider {
   id: string;
   name: string;
@@ -175,6 +181,7 @@ export function usePortalModels({
   const [switching, setSwitching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<ModelNoticeState | null>(null);
+  const [defaultModelSuggestion, setDefaultModelSuggestion] = useState<DefaultModelSuggestion | null>(null);
 
   const providersRef = useRef<ProviderInfo[]>([]);
   const noticeTimerRef = useRef<number>(0);
@@ -245,6 +252,13 @@ export function usePortalModels({
       setActiveModels(effectiveActive);
       setGlobalActiveModels(globalActive?.active_llm ? globalActive : null);
       setUsesGlobalDefault(!agentActive?.active_llm);
+      if (globalActive?.active_llm?.provider_id && globalActive.active_llm.model) {
+        setDefaultModelSuggestion(null);
+      }
+      return {
+        providers: nextAllProviders,
+        globalModel: globalActive?.active_llm || null,
+      };
     } catch (error: any) {
       pushNotice("error", error?.message || "模型配置加载失败");
     } finally {
@@ -252,9 +266,30 @@ export function usePortalModels({
     }
   }, [enabled, pushNotice, resolvedAgentId]);
 
+  const dismissDefaultModelSuggestion = useCallback(() => {
+    setDefaultModelSuggestion(null);
+  }, []);
+
+  const offerGlobalDefault = useCallback((
+    state: Awaited<ReturnType<typeof fetchModelState>>,
+    providerId: string,
+    modelId: string,
+  ) => {
+    if (!state || (state.globalModel?.provider_id && state.globalModel.model)) {
+      return false;
+    }
+    const provider = state.providers.find((item) => item.id === providerId);
+    if (!provider || !isProviderAvailable(provider)) {
+      return false;
+    }
+    setDefaultModelSuggestion({ providerId, providerName: provider.name, modelId });
+    return true;
+  }, []);
+
   useEffect(() => {
     setActiveModels(null);
     setGlobalActiveModels(null);
+    setDefaultModelSuggestion(null);
     void fetchModelState();
   }, [fetchModelState, resolvedAgentId]);
 
@@ -423,10 +458,11 @@ export function usePortalModels({
       };
 
       setGlobalActiveModels(fallbackActive);
+      setDefaultModelSuggestion(null);
       if (usesGlobalDefault) {
         setActiveModels(fallbackActive);
       }
-      pushNotice("success", `默认 LLM 已更新为 ${modelId}`);
+      pushNotice("success", `全局默认 LLM 已设为 ${modelId}，未单独配置模型的 Agent 将使用此模型`);
       return true;
     } catch (error: any) {
       pushNotice("error", error?.message || "默认 LLM 更新失败");
@@ -523,11 +559,14 @@ export function usePortalModels({
         );
       }
 
-      await fetchModelState();
+      const state = await fetchModelState();
+      const offeredDefault = initialModelId && offerGlobalDefault(state, providerId, initialModelId);
       pushNotice(
-        "success",
+        offeredDefault ? "info" : "success",
         initialModelId
-          ? `模型 ${initialModelId} 已添加到 ${providerName}，全局默认 LLM 保持不变`
+          ? offeredDefault
+            ? `模型 ${initialModelId} 已添加，尚未设置全局默认 LLM`
+            : `模型 ${initialModelId} 已添加到 ${providerName}，全局默认 LLM 保持不变`
           : payload.mode === "create"
           ? `${providerName} 已创建，可稍后补充地址、密钥和模型`
           : `${providerName} 设置已保存`,
@@ -548,7 +587,7 @@ export function usePortalModels({
     } finally {
       setSubmitting(false);
     }
-  }, [fetchModelState, pushNotice]);
+  }, [fetchModelState, offerGlobalDefault, pushNotice]);
 
   const handleAddModel = useCallback(async (payload: AddProviderModelPayload) => {
     const providerId = payload.providerId.trim();
@@ -590,8 +629,14 @@ export function usePortalModels({
         });
       }
 
-      await fetchModelState();
-      pushNotice("success", `模型 ${modelName || modelId} 已添加，可在数字员工页面切换使用`);
+      const state = await fetchModelState();
+      const offeredDefault = offerGlobalDefault(state, providerId, modelId);
+      pushNotice(
+        offeredDefault ? "info" : "success",
+        offeredDefault
+          ? `模型 ${modelName || modelId} 已添加，尚未设置全局默认 LLM`
+          : `模型 ${modelName || modelId} 已添加，可在数字员工页面切换使用`,
+      );
       return true;
     } catch (error: any) {
       pushNotice("error", error?.message || "添加模型失败");
@@ -599,7 +644,7 @@ export function usePortalModels({
     } finally {
       setSubmitting(false);
     }
-  }, [fetchModelState, pushNotice]);
+  }, [fetchModelState, offerGlobalDefault, pushNotice]);
 
   const handleDeleteProvider = useCallback(async (providerId: string) => {
     if (!providerId) {
@@ -871,6 +916,8 @@ export function usePortalModels({
     switching,
     submitting,
     notice,
+    defaultModelSuggestion,
+    dismissDefaultModelSuggestion,
     clearNotice,
     fetchModelState,
     handleSelectModel,

@@ -17,7 +17,7 @@ test("one-step model setup preserves provider cards and global defaults", async 
     root: fileURLToPath(new URL("../../..", import.meta.url)),
     configFile: false,
     optimizeDeps: { noDiscovery: true, include: [] },
-    server: { middlewareMode: true, hmr: false },
+    server: { host: "127.0.0.1", middlewareMode: true, hmr: false },
     appType: "custom",
   });
   try {
@@ -76,10 +76,10 @@ test("one-step model setup preserves provider cards and global defaults", async 
       providers.delete(id);
       return [...providers.values()];
     });
-    const setup = () => {
+    const setup = (enabled = false) => {
       let hook: ReturnType<typeof usePortalModels>;
       function Harness() {
-        hook = useModels({ enabled: false });
+        hook = useModels({ enabled });
         return null;
       }
       renderToStaticMarkup(createElement(Harness));
@@ -190,7 +190,7 @@ test("one-step model setup preserves provider cards and global defaults", async 
       assert.equal(providers.has("ct-cnos"), false);
     });
 
-    await t.test("custom provider cards have no key acquisition or deletion exemptions", async () => {
+    await t.test("model page preserves provider actions and guides global default setup", async (pageTest) => {
       const { ModelConfigModal: ModelPage } = await server.ssrLoadModule(
         "/src/pages/digital-employee/modelControls.tsx",
       );
@@ -233,6 +233,128 @@ test("one-step model setup preserves provider cards and global defaults", async 
       assert.match(html, />模型<\/button>/);
       assert.match(html, />设置<\/button>/);
       assert.doesNotMatch(html, /获取 API Key|builtin-api-key|portal-demo-account/);
+
+      const renderPage = (overrides: Partial<typeof props> = {}) =>
+        renderToStaticMarkup(createElement(ModelPage, { ...props, ...overrides }));
+      const suggestion = {
+        providerId: "custom-first",
+        providerName: "测试服务",
+        modelId: "claude-test",
+      };
+
+      await pageTest.test("empty configuration explains both setup steps and never claims it is saved", () => {
+        assert.match(html, /尚未设置全局默认模型/);
+        assert.match(html, /请先点击“添加模型”接入私有化或云端模型/);
+        assert.match(html, /未单独配置模型的 Agent/);
+        assert.doesNotMatch(html, /已保存/);
+        assert.doesNotMatch(html, /模型已添加，是否设为全局默认？/);
+
+        const withAvailableModel = renderPage({
+          eligibleProviders: [{
+            id: "custom-first", name: "测试服务", isCustom: true,
+            description: "", models: [{ id: "claude-test", name: "Claude Test" }],
+          }],
+        });
+        assert.match(withAvailableModel, /还需在此选择提供商和模型/);
+        assert.match(withAvailableModel, /再点击“设为全局默认”/);
+        assert.doesNotMatch(withAvailableModel, /已保存/);
+      });
+
+      await pageTest.test("loading does not falsely report an unconfigured global default", () => {
+        const loading = renderPage({ loading: true });
+        assert.match(loading, /正在加载全局默认模型配置/);
+        assert.doesNotMatch(loading, /尚未设置全局默认模型|已保存/);
+      });
+
+      await pageTest.test("first model suggestion offers an explicit global choice and states its scope", () => {
+        const offered = renderPage({ defaultModelSuggestion: suggestion });
+        assert.match(offered, /role="dialog" aria-modal="true" aria-label="模型已添加，是否设为全局默认？"/);
+        assert.match(offered, /测试服务 \/ claude-test/);
+        assert.match(offered, /尚未设置全局默认 LLM/);
+        assert.match(offered, /未单独配置模型的 Agent 将使用它进行对话和协作/);
+        assert.match(offered, /已单独配置模型的 Agent 保持原设置/);
+        assert.match(offered, />稍后设置<\/button>/);
+        assert.match(offered, /class="portal-model-btn"><i class="fas fa-check"><\/i>设为全局默认<\/button>/);
+      });
+
+      await pageTest.test("activation failure stays visible in the suggestion for retry", () => {
+        const failed = renderPage({
+          defaultModelSuggestion: suggestion,
+          notice: { tone: "error", text: "默认模型保存失败，请重试" },
+        });
+        assert.match(failed, /role="dialog"/);
+        assert.match(failed, /role="alert">默认模型保存失败，请重试/);
+        assert.match(failed, />稍后设置<\/button>/);
+      });
+
+      await pageTest.test("existing global default suppresses onboarding even with a stale suggestion", () => {
+        const configured = renderPage({
+          globalActiveProviderId: "existing-provider",
+          globalActiveModelId: "existing-model",
+          defaultModelSuggestion: suggestion,
+        });
+        assert.doesNotMatch(configured, /尚未设置全局默认模型|模型已添加，是否设为全局默认？/);
+        assert.doesNotMatch(configured, />稍后设置<\/button>/);
+        assert.match(configured, /已单独配置模型的 Agent 保持各自设置/);
+      });
+    });
+
+    await t.test("first and later model additions refresh actual global state without selecting a default", async () => {
+      let globalSlot: { provider_id: string; model: string } | null = null;
+      const scopes: string[] = [];
+      const listMock = t.mock.method(modelsApi, "listProviders", async () => [...providers.values()]);
+      const activeMock = t.mock.method(modelsApi, "getActiveModels", async ({ scope }) => {
+        scopes.push(scope);
+        return { active_llm: scope === "agent" ? null : globalSlot };
+      });
+      try {
+        const first = setup(true);
+        assert.equal(await first.handleSaveProvider({
+          ...payload, providerId: "fresh-global-setup",
+        }), true);
+        assert.deepEqual(calls.splice(0), ["create", "configure", "add"]);
+        assert.deepEqual(scopes.splice(0), ["effective", "global", "agent"]);
+        const initialState = await first.fetchModelState();
+        assert.equal(initialState?.globalModel, null);
+        assert.equal(initialState?.providers.find((provider) => provider.id === "fresh-global-setup")?.extra_models?.[0]?.id, "claude-test");
+        scopes.splice(0);
+
+        globalSlot = { provider_id: "existing-provider", model: "existing-model" };
+        const later = setup(true);
+        assert.equal(await later.handleSaveProvider({
+          ...payload, providerId: "later-global-setup",
+        }), true);
+        assert.deepEqual(calls.splice(0), ["create", "configure", "add"]);
+        assert.deepEqual(scopes.splice(0), ["effective", "global", "agent"]);
+        const laterState = await later.fetchModelState();
+        assert.deepEqual(laterState?.globalModel, globalSlot);
+      } finally {
+        listMock.mock.restore();
+        activeMock.mock.restore();
+      }
+    });
+
+    await t.test("explicit default selection uses global scope and reports failure without readding the model", async () => {
+      const selections: unknown[] = [];
+      let failActivation = true;
+      const activationMock = t.mock.method(modelsApi, "setActiveLlm", async (body) => {
+        selections.push(body);
+        if (failActivation) throw new Error("Default save failed");
+        return { active_llm: { provider_id: body.provider_id, model: body.model } };
+      });
+      try {
+        const hook = setup();
+        assert.equal(await hook.handleSelectDefaultModel("fresh-global-setup", "claude-test"), false);
+        failActivation = false;
+        assert.equal(await hook.handleSelectDefaultModel("fresh-global-setup", "claude-test"), true);
+        assert.deepEqual(selections, [
+          { provider_id: "fresh-global-setup", model: "claude-test", scope: "global" },
+          { provider_id: "fresh-global-setup", model: "claude-test", scope: "global" },
+        ]);
+        assert.deepEqual(calls.splice(0), []);
+      } finally {
+        activationMock.mock.restore();
+      }
     });
 
     await t.test("provider IDs work on HTTPS, HTTP and browsers without Web Crypto", async () => {

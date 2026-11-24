@@ -5,6 +5,7 @@ import PortalConfirmDialog from "../../components/PortalConfirmDialog";
 import type {
   AddProviderModelPayload,
   DisplayProvider,
+  DefaultModelSuggestion,
   EligibleProvider,
   ModelNoticeState,
   SaveProviderPayload,
@@ -1757,8 +1758,8 @@ function ProviderConfigDialog({
               <i className="fas fa-circle-info" />
               {mode === "add-model"
                 ? selectedProviderId
-                  ? "模型将添加到所选提供商；连接设置的修改对该提供商下所有模型生效。不会更改全局默认 LLM。"
-                  : "一次保存提供商和首个模型，不会更改全局默认 LLM。之后可在提供商卡片的“模型”中继续添加。"
+                  ? "模型将添加到所选提供商；连接设置的修改对该提供商下所有模型生效。尚无全局默认时，保存后可选择设为默认。"
+                  : "一次保存提供商和首个模型。尚无全局默认时，保存后会提示是否设为默认；已有默认不会自动更改。"
                 : mode === "create"
                 ? "创建提供商时 Base URL、API Key 都可先留空，模型请到“模型管理”里单独添加。"
                 : "设置时需要填写 Base URL；API Key 留空则保持当前密钥。模型请到“模型管理”里单独添加。"}
@@ -1951,6 +1952,8 @@ export function ModelConfigModal({
   submitting,
   disabled,
   notice,
+  defaultModelSuggestion,
+  onDismissDefaultModelSuggestion,
   onRefresh,
   onSelectDefaultModel,
   onSubmitProvider,
@@ -1980,6 +1983,8 @@ export function ModelConfigModal({
   submitting: boolean;
   disabled?: boolean;
   notice: ModelNoticeState | null;
+  defaultModelSuggestion?: DefaultModelSuggestion | null;
+  onDismissDefaultModelSuggestion?: () => void;
   onRefresh: () => void;
   onSelectDefaultModel: (providerId: string, modelId: string) => Promise<boolean>;
   onSubmitProvider: (payload: SaveProviderPayload) => Promise<boolean>;
@@ -2093,6 +2098,7 @@ export function ModelConfigModal({
   }));
   const defaultDirty =
     defaultProviderId !== globalActiveProviderId || defaultModelId !== globalActiveModelId;
+  const hasGlobalDefault = Boolean(globalActiveProviderId && globalActiveModelId);
   const defaultSaveDisabled =
     disabled
     || switching
@@ -2142,6 +2148,29 @@ export function ModelConfigModal({
       setDefaultProviderId(defaultProviderId);
       setDefaultModelId(defaultModelId);
     }
+  };
+
+  const handleConfirmGlobalDefault = async () => {
+    if (!defaultModelSuggestion || disabled || switching || submitting) {
+      return;
+    }
+    const { providerId, modelId } = defaultModelSuggestion;
+    if (await onSelectDefaultModel(providerId, modelId)) {
+      setDefaultProviderId(providerId);
+      setDefaultModelId(modelId);
+      onDismissDefaultModelSuggestion?.();
+    }
+  };
+
+  const handleDeferGlobalDefault = () => {
+    if (switching || submitting) {
+      return;
+    }
+    if (defaultModelSuggestion) {
+      setDefaultProviderId(defaultModelSuggestion.providerId);
+      setDefaultModelId(defaultModelSuggestion.modelId);
+    }
+    onDismissDefaultModelSuggestion?.();
   };
 
   const handleDelete = async (provider: DisplayProvider) => {
@@ -2223,9 +2252,21 @@ export function ModelConfigModal({
             <section className="portal-form-section portal-default-llm-card">
               <div className="portal-model-block-head">
                 <div>
-                  <h4>默认LLM</h4>
+                  <h4>全局默认 LLM</h4>
                 </div>
               </div>
+              {loading ? (
+                <div className="model-inline-notice info" role="status">正在加载全局默认模型配置…</div>
+              ) : !hasGlobalDefault ? (
+                <div className="model-inline-notice info" role="status">
+                  <strong>尚未设置全局默认模型</strong>
+                  <span className="portal-default-llm-setup-copy">
+                    {eligibleProviders.length
+                      ? "添加模型后，还需在此选择提供商和模型，再点击“设为全局默认”。未单独配置模型的 Agent 才能使用它进行对话和协作。"
+                      : "请先点击“添加模型”接入私有化或云端模型，再将其设为全局默认，供未单独配置模型的 Agent 使用。"}
+                  </span>
+                </div>
+              ) : null}
               <div className="portal-default-llm-row">
                 <div className="portal-form-group">
                   <label>提供商</label>
@@ -2234,7 +2275,7 @@ export function ModelConfigModal({
                     options={defaultProviderOptions}
                     placeholder="请选择提供商"
                     emptyText="当前没有可用提供商"
-                    disabled={disabled || switching || eligibleProviders.length === 0}
+                    disabled={disabled || loading || switching || eligibleProviders.length === 0}
                     onChange={handleDefaultProviderChange}
                   />
                 </div>
@@ -2245,7 +2286,7 @@ export function ModelConfigModal({
                     options={defaultModelOptions}
                     placeholder="请选择模型"
                     emptyText="请先选择提供商"
-                    disabled={disabled || switching || !selectedDefaultModels.length}
+                    disabled={disabled || loading || switching || !selectedDefaultModels.length}
                     onChange={setDefaultModelId}
                   />
                 </div>
@@ -2254,16 +2295,16 @@ export function ModelConfigModal({
                   <button
                     type="button"
                     className={defaultDirty ? "portal-model-btn" : "portal-model-btn secondary compact"}
-                    disabled={defaultSaveDisabled}
+                    disabled={defaultSaveDisabled || loading}
                     onClick={() => void handleSaveDefaultModel()}
                   >
                     <i className={`fas ${switching ? "fa-spinner fa-spin" : "fa-floppy-disk"}`} />
-                    {defaultDirty ? "保存" : "已保存"}
+                    {switching ? "正在保存…" : !hasGlobalDefault ? "设为全局默认" : defaultDirty ? "保存更改" : "已保存"}
                   </button>
                 </div>
               </div>
               <p className="portal-default-llm-help">
-                在这里设置全局默认的 LLM 模型。你也可以在聊天页面为具体 Agent 单独选择使用的模型。
+                未单独配置模型的 Agent 会使用全局默认模型，包括智能体协作。已单独配置模型的 Agent 保持各自设置。
               </p>
             </section>
             <section>
@@ -2345,6 +2386,19 @@ export function ModelConfigModal({
           onClose={() => setModelDialogOpen(false)}
           onSubmit={handleSubmitModel}
           onChange={(updater) => setModelForm((prev) => updater(prev))}
+        />
+        <PortalConfirmDialog
+          open={Boolean(defaultModelSuggestion) && !hasGlobalDefault}
+          title="模型已添加，是否设为全局默认？"
+          message={`“${defaultModelSuggestion?.providerName || ""} / ${defaultModelSuggestion?.modelId || ""}”已添加成功，但尚未设置全局默认 LLM。设置后，未单独配置模型的 Agent 将使用它进行对话和协作；已单独配置模型的 Agent 保持原设置。`}
+          confirmLabel="设为全局默认"
+          cancelLabel="稍后设置"
+          confirmIconClass="fa-check"
+          danger={false}
+          submitting={switching || submitting || disabled}
+          notice={notice?.tone === "error" ? notice.text : undefined}
+          onClose={handleDeferGlobalDefault}
+          onConfirm={() => void handleConfirmGlobalDefault()}
         />
         <PortalConfirmDialog
           open={Boolean(deleteConfirmState)}
