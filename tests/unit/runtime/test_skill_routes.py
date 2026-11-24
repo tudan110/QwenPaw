@@ -96,6 +96,29 @@ async def test_mixed_capabilities_and_partial_tool_visibility():
     assert "tool whitelist exclusions must not be bypassed" in hint
 
 
+@pytest.mark.parametrize(
+    "discovery,tools,expected_route,expected_reason",
+    [
+        (None, ["resource__querySyslogLogs", "resource__getSyslogLogDetail"], "mcp", "mcp_ready"),
+        (None, [], "blocked", "no_exposed_tools"),
+        ("mcp_transport_unavailable", [], "unavailable", "mcp_transport_unavailable"),
+    ],
+)
+async def test_alarm_analyst_resolves_syslog_route(
+    discovery, tools, expected_route, expected_reason,
+):
+    hint = await build_skill_route_hint(
+        _manager(_info("resource")),
+        ["alarm-analyst"],
+        [_tool("resource", name) for name in tools],
+        discovery_states={"resource": discovery} if discovery else {},
+    )
+    route = next(row for row in _routes(hint) if row["driver"] == "resource")
+    assert route["route"] == expected_route
+    assert route["reason"] == expected_reason
+    assert route["tools"] == sorted(tools)
+
+
 async def test_workspace_state_is_not_cached_between_requests():
     first = _manager(_info(enabled=False))
     second = _manager(_info())

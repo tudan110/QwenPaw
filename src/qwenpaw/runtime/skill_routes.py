@@ -21,7 +21,7 @@ SKILL_DRIVERS: dict[str, tuple[str, ...]] = {
     "resource-insight-query": ("resource",),
     "monitoring-overview-query": ("resource",),
     "web-availability-monitor": ("web-check-app",),
-    "alarm-analyst": ("cmdb-query", "alarm", "inspection"),
+    "alarm-analyst": ("cmdb-query", "alarm", "inspection", "resource"),
 }
 
 _RULES = """# Skill execution routes
