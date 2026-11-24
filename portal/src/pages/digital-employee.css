@@ -546,6 +546,10 @@
   margin: 0;
 }
 
+.portal-digital-employee.theme-dark .logo-text h1 {
+  color: #fff;
+}
+
 .portal-digital-employee .logo-text span {
   font-size: 11px;
   color: var(--text-secondary);
@@ -6995,6 +6999,157 @@
 .portal-digital-employee .alarm-analyst-raw-report-body .portal-x-markdown th,
 .portal-digital-employee .alarm-analyst-raw-report-body .portal-x-markdown td {
   white-space: pre;
+}
+
+.portal-digital-employee.theme-dark .alarm-analyst-card {
+  background-color: #182235;
+  border-color: #2a3b56;
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .alarm-analyst-summary-card {
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.14), transparent 36%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.12), rgba(59, 130, 246, 0.06)),
+    #182235;
+}
+
+.portal-digital-employee.theme-dark .alarm-analyst-spotlight-card,
+.portal-digital-employee.theme-dark .alarm-analyst-candidate-strip,
+.portal-digital-employee.theme-dark .alarm-analyst-automation-card,
+.portal-digital-employee.theme-dark .alarm-analyst-decision-item,
+.portal-digital-employee.theme-dark .alarm-analyst-recommendation,
+.portal-digital-employee.theme-dark .alarm-analyst-evidence-item,
+.portal-digital-employee.theme-dark .alarm-analyst-status-board {
+  background: #202d43;
+  border-color: #354761;
+  color: #e2e8f0;
+  box-shadow: none;
+}
+
+.portal-digital-employee.theme-dark .alarm-analyst-status-item.alert .alarm-analyst-status-content strong,
+.portal-digital-employee.theme-dark .alarm-analyst-status-item.alert .alarm-analyst-status-content span,
+.portal-digital-employee.theme-dark .alarm-analyst-status-item.success .alarm-analyst-status-content strong,
+.portal-digital-employee.theme-dark .alarm-analyst-status-item.success .alarm-analyst-status-content span {
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .alarm-analyst-spotlight-card.primary,
+.portal-digital-employee.theme-dark .alarm-analyst-spotlight-card.action,
+.portal-digital-employee.theme-dark .alarm-analyst-spotlight-card.status,
+.portal-digital-employee.theme-dark .alarm-analyst-spotlight-card.warning,
+.portal-digital-employee.theme-dark .alarm-analyst-automation-card.workorder,
+.portal-digital-employee.theme-dark .alarm-analyst-automation-card.notification {
+  background: #202d43;
+}
+
+.portal-digital-employee.theme-dark .alarm-analyst-card h3,
+.portal-digital-employee.theme-dark .alarm-analyst-card h4,
+.portal-digital-employee.theme-dark .alarm-analyst-card p,
+.portal-digital-employee.theme-dark .alarm-analyst-spotlight-value,
+.portal-digital-employee.theme-dark .alarm-analyst-candidate-main,
+.portal-digital-employee.theme-dark .alarm-analyst-decision-item strong {
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .alarm-analyst-candidate-resource {
+  background: #182235;
+  border-color: #354761;
+  color: #cbd5e1;
+}
+
+.portal-digital-employee.theme-dark .alarm-analyst-decision-card {
+  background: linear-gradient(180deg, #252b38, #182235);
+  border-color: rgba(251, 146, 60, 0.3);
+}
+
+.portal-digital-employee.theme-dark .alarm-analyst-raw-report-body .portal-x-markdown,
+.portal-digital-employee.theme-dark .alarm-analyst-raw-report-body .portal-x-markdown p,
+.portal-digital-employee.theme-dark .alarm-analyst-raw-report-body .portal-x-markdown li {
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .alarm-analyst-raw-report-body .portal-x-markdown table {
+  background: #182235;
+  border-color: #354761;
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .alarm-analyst-raw-report-body .portal-x-markdown th,
+.portal-digital-employee.theme-dark .alarm-analyst-raw-report-body .portal-x-markdown td {
+  background: #202d43;
+  border-color: #354761;
+  color: #e2e8f0;
+}
+
+.portal-digital-employee.theme-dark .alarm-analyst-raw-report-body .portal-x-markdown th {
+  background: #293950;
+  color: #f8fafc;
+}
+
+.theme-dark .manual-operation-guide .portal-qwenpaw-markdown-host .x-markdown :not(pre) > code {
+  background: #293950;
+  border-color: #526783;
+  color: #fff !important;
+}
+
+.theme-dark .alarm-analyst-raw-report-body .portal-qwenpaw-markdown-host .x-markdown :not(pre) > code {
+  background: #293950;
+  border-color: #526783;
+  color: #fff !important;
+}
+
+.theme-dark .manual-operation-guide .portal-qwenpaw-markdown-host .x-markdown pre code {
+  background: transparent;
+  border-color: transparent;
+  color: inherit;
+}
+
+/* AgentScope renders fenced code as an outer pre plus a Prism pre with inline colors. */
+.portal-digital-employee :is(.alarm-analyst-raw-report-body, .manual-operation-guide, .alarm-analyst-tier-list)
+  .x-markdown pre:has(> .ant-codeHighlighter) {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.portal-digital-employee :is(.alarm-analyst-raw-report-body, .manual-operation-guide, .alarm-analyst-tier-list)
+  .ant-codeHighlighter {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-white);
+  color: var(--text-primary);
+}
+
+.portal-digital-employee :is(.alarm-analyst-raw-report-body, .manual-operation-guide, .alarm-analyst-tier-list)
+  .ant-codeHighlighter > .ant-code-header {
+  background: var(--bg-gray);
+  border-bottom-color: var(--border);
+  color: var(--text-primary);
+}
+
+.portal-digital-employee :is(.alarm-analyst-raw-report-body, .manual-operation-guide, .alarm-analyst-tier-list)
+  .ant-codeHighlighter-code {
+  background: var(--bg-white);
+  border: 0;
+}
+
+.portal-digital-employee :is(.alarm-analyst-raw-report-body, .manual-operation-guide, .alarm-analyst-tier-list)
+  .ant-codeHighlighter-code > pre {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+}
+
+/* The installed Prism renderer inlines One Light colors and may omit token type classes. */
+.portal-digital-employee.theme-dark :is(.alarm-analyst-raw-report-body, .manual-operation-guide, .alarm-analyst-tier-list)
+  .ant-codeHighlighter-code code {
+  color: var(--text-primary) !important;
+}
+
+.portal-digital-employee.theme-dark :is(.alarm-analyst-raw-report-body, .manual-operation-guide, .alarm-analyst-tier-list)
+  .ant-codeHighlighter-code .token {
+  color: #bfdbfe !important;
 }
 
 @media (max-width: 768px) {
