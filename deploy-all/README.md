@@ -2,12 +2,21 @@
 
 一体化部署配置，包含 digital-workforce-portal 和 qwenpaw 两个子应用。
 
+前端双架构镜像的构建、导出和上传流程见 [Portal 部署说明](portal/README.md#docker-构建)：
+正式镜像包统一放到 `deploy-all/images/`，覆盖同名旧包，再上传到文件服务器对应的
+`amd64/`、`arm64/` 子目录并核对 SHA-256。服务器密码不写入仓库。
+
+后端也遵循相同的导出目录约定：`deploy-all/images/qwenpaw-amd64.tar.gz`
+和 `deploy-all/images/qwenpaw-arm64.tar.gz`，重新打包覆盖同名旧包。
+后端单独打包命令见 [QwenPaw 部署说明](qwenpaw/README.md#按架构构建并导出)。
+
 > **已有 PVC 的 Agent/Skill 更新**：不要使用旧 `/app/.working.backup` 或全目录 rsync/delete 操作。当前 Helm qwenpaw chart 通过 `managed-seed-sync` initContainer 从 `/app/share/qwenpaw-seed` 自动更新 `working/workspaces` 中受管的 Agent 静态文件和 Skills，并保护 jobs、secret、知识库 data、运行状态和用户自装 Skill。同步脚本位于镜像内 `/usr/local/bin/sync_managed_seed.py`。
 
 ## 目录结构
 
 ```
 deploy-all/
+├── images/                     # 双架构离线镜像包，重新打包覆盖同名旧包
 ├── docker/                     # docker run 方式部署说明
 ├── helm/
 │   └── cnos-inoe-agent/
@@ -20,7 +29,8 @@ deploy-all/
 │   ├── Dockerfile
 │   ├── docker-compose.yml
 │   ├── nginx.conf
-│   ├── build-arm.sh
+│   ├── build-amd64.sh
+│   ├── build-arm64.sh
 │   └── helm/digital-workforce-portal/
 └── qwenpaw/                    # QwenPaw 应用部署配置
     ├── Dockerfile

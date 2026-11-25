@@ -99,6 +99,13 @@ cd deploy-all/qwenpaw && ./build-arm64.sh
 构建并交付的镜像压缩包统一保存在仓库根目录的 `deploy-all/images/`。
 使用固定文件名；新版本通过临时文件校验后原子替换旧包：
 
+**此约定也适用于以后单独要求的后端打包**：AMD64 导出为
+`deploy-all/images/qwenpaw-amd64.tar.gz`，ARM64 导出为
+`deploy-all/images/qwenpaw-arm64.tar.gz`，覆盖各自同名旧包。
+不能只导出到当前目录、Downloads 或会话临时目录；仅打包后端时无需构建 Portal。
+后端独立构建和导出的完整命令见
+[`qwenpaw/README.md`](qwenpaw/README.md#按架构构建并导出)。
+
 ```text
 deploy-all/images/digital-workforce-portal-amd64.tar.gz
 deploy-all/images/digital-workforce-portal-arm64.tar.gz

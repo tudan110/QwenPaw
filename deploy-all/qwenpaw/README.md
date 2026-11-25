@@ -8,7 +8,8 @@ QwenPaw 应用的容器化部署配置，包含前后端一体化镜像，支持
 deploy-all/qwenpaw/
 ├── Dockerfile                  # 多阶段构建配置
 ├── entrypoint.sh               # 容器入口脚本
-├── build-arm.sh                # ARM64 版本构建脚本
+├── build-amd64.sh              # AMD64 版本构建脚本
+├── build-arm64.sh              # ARM64 版本构建脚本
 ├── config/
 │   └── supervisord.conf.template  # Supervisor 配置模板
 └── helm/
@@ -34,32 +35,61 @@ QwenPaw 是一个前后端一体化应用：
 
 ## Docker 构建
 
+完整构建原则和归档说明见
+[`QWENPAW_IMAGE_BUILD.md`](../QWENPAW_IMAGE_BUILD.md)。
+**以后后端镜像也统一导出到仓库根目录的 `deploy-all/images/`，覆盖同名旧包**：
+
+- AMD64：`deploy-all/images/qwenpaw-amd64.tar.gz`
+- ARM64：`deploy-all/images/qwenpaw-arm64.tar.gz`
+
+不要把正式产物仅留在当前目录、Downloads 或会话临时目录。压缩包不提交 Git。
+
 在项目根目录执行：
 
 ```bash
 docker build -f deploy-all/qwenpaw/Dockerfile -t qwenpaw:latest .
 ```
 
-### ARM64 版本构建
+### 按架构构建并导出
 
-用于 ARM 架构设备（如树莓派、AWS Graviton 等）：
+以下 Bash 命令在仓库根目录执行。两个架构复用 `qwenpaw:latest`，
+应逐个构建并立即导出，防止下一个构建覆盖 tag 后导出错误架构。
+现有脚本负责构建和镜像内依赖检查，不自动导出压缩包。
 
-```bash
-cd deploy-all/qwenpaw
-./build-arm.sh
-```
-
-导出镜像用于传输：
+只打包某个架构时，将循环列表改为 `amd64` 或 `arm64`；后端打包不要求同时打包 Portal。
 
 ```bash
-docker save -o qwenpaw-arm64.tar qwenpaw:latest
+set -euo pipefail
+mkdir -p deploy-all/images
+
+for ARCH in amd64 arm64; do
+  (cd deploy-all/qwenpaw && bash "./build-$ARCH.sh")
+
+  ACTUAL=$(docker image inspect qwenpaw:latest --format '{{.Os}}/{{.Architecture}}')
+  test "$ACTUAL" = "linux/$ARCH"
+
+  PACKAGE="deploy-all/images/qwenpaw-$ARCH.tar.gz"
+  docker save qwenpaw:latest | gzip > "$PACKAGE.partial"
+  gzip -t "$PACKAGE.partial"
+  chmod 644 "$PACKAGE.partial"
+  mv -f "$PACKAGE.partial" "$PACKAGE"
+done
+
+shasum -a 256 deploy-all/images/qwenpaw-*.tar.gz
 ```
 
-在目标设备上加载：
+新包导出并通过校验后才覆盖旧包；构建或导出失败时保留旧包。
+上传后核对远程文件与本地 SHA-256 一致。打包本身不自动上传、导入或部署，
+这些操作以当次明确要求为准。
+
+在目标 Docker 设备上加载对应架构的包（示例为 ARM64）：
 
 ```bash
-docker load -i qwenpaw-arm64.tar
+docker load -i qwenpaw-arm64.tar.gz
 ```
+
+k3s/containerd 的导入与部署方式见
+[`deploy-all/README.md`](../README.md#离线一键部署--升级k3s--k8s)。
 
 ## Helm 部署 (k3s)
 
