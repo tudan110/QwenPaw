@@ -1,3 +1,4 @@
+import { message as antdMessage } from "antd";
 import { memo, Suspense, useEffect, useRef, useState, type ComponentProps } from "react";
 import { employeeStepDescriptions } from "../../data/portalData";
 import { DeferredEChartsBlock } from "../../components/DeferredVisualizationBlocks";
@@ -15,6 +16,7 @@ import {
   type KnowledgeEvidence,
   type KnowledgeQueryResponse,
 } from "../../api/knowledgeBase";
+import { copyText } from "../../utils/copyText";
 import { lazyNamed } from "../../utils/lazyNamed";
 import { traceStepDisplay, getToolActionCategory } from "../../lib/traceStepLabels";
 import {
@@ -1486,7 +1488,7 @@ function CopyActionButton({
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyText(text);
       setCopied(true);
       if (resetTimerRef.current) {
         window.clearTimeout(resetTimerRef.current);
@@ -1496,6 +1498,8 @@ function CopyActionButton({
         resetTimerRef.current = null;
       }, 1600);
     } catch (error) {
+      setCopied(false);
+      void antdMessage.error("复制失败，请选中要复制的内容后手动复制。");
       console.error("Failed to copy content:", error);
     }
   };
