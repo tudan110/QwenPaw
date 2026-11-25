@@ -1,2 +1,4 @@
 allowBuilds:
+  # Static assets are shipped in the package; postinstall only prints attribution.
+  '@fortawesome/fontawesome-free': false
   esbuild: true

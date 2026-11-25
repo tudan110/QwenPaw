@@ -16,6 +16,7 @@
     "@ant-design/icons": "^6.1.1",
     "@ant-design/x": "^2.5.0",
     "@ant-design/x-markdown": "^2.5.0",
+    "@fortawesome/fontawesome-free": "6.4.0",
     "antd": "^6.3.5",
     "echarts": "^6.0.0",
     "echarts-for-react": "^3.0.6",

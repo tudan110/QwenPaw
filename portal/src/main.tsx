@@ -6,6 +6,8 @@ import { ensureSsoLogin, triggerSsoRelogin } from "./auth/ssoConfig";
 import { createSsoFetch } from "./auth/ssoFetch";
 import { getSession, isAuthenticated, syncSsoTokenCookie } from "./auth/ssoSession";
 import { applyPortalDocumentTitle } from "./config/portalBranding";
+// Bundle the icon stylesheet and its webfonts for deployments without CDN access.
+import "@fortawesome/fontawesome-free/css/all.min.css";
 import "./styles.css";
 
 const rootElement = document.getElementById("root");
