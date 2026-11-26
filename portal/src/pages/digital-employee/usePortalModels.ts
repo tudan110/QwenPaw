@@ -275,7 +275,23 @@ export function usePortalModels({
     providerId: string,
     modelId: string,
   ) => {
-    if (!state || (state.globalModel?.provider_id && state.globalModel.model)) {
+    if (!state) {
+      return false;
+    }
+    const configuredDefault = state.globalModel;
+    const defaultProvider = configuredDefault?.provider_id
+      ? state.providers.find((item) => item.id === configuredDefault.provider_id)
+      : undefined;
+    const hasAvailableGlobalDefault = Boolean(
+      configuredDefault?.provider_id
+      && configuredDefault.model
+      && defaultProvider
+      && isProviderAvailable(defaultProvider)
+      && getPortalProviderModels(defaultProvider).some(
+        (item) => item.id === configuredDefault.model,
+      ),
+    );
+    if (hasAvailableGlobalDefault) {
       return false;
     }
     const provider = state.providers.find((item) => item.id === providerId);

@@ -2098,7 +2098,14 @@ export function ModelConfigModal({
   }));
   const defaultDirty =
     defaultProviderId !== globalActiveProviderId || defaultModelId !== globalActiveModelId;
-  const hasGlobalDefault = Boolean(globalActiveProviderId && globalActiveModelId);
+  const hasGlobalDefault = Boolean(
+    globalActiveProviderId
+    && globalActiveModelId
+    && eligibleProviders.some(
+      (provider) => provider.id === globalActiveProviderId
+        && provider.models.some((model) => model.id === globalActiveModelId),
+    ),
+  );
   const defaultSaveDisabled =
     disabled
     || switching
