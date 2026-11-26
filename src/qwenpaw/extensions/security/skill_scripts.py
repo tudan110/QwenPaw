@@ -21,6 +21,7 @@ SCRIPT_SKILLS = {
     "private_line_business_monitor.py": "private-line-business-monitor",
     "web_monitor.py": "web-availability-monitor",
     "score_root_cause.py": "alarm-analyst",
+    "query_syslog.py": "alarm-analyst",
     "send_analysis_report.py": "alarm-analyst",
     "query_alarm_class_count.py": "real-alarm",
     "find_op.py": "page-operator",
@@ -174,6 +175,16 @@ def check_arguments(
             args, query_flags, "--refresh" if name == "find_page.py" else "", 1
         )
         return False
+    if name == "query_syslog.py":
+        if not args or args[0] not in {"list", "detail"}:
+            raise PermissionError("Syslog 仅允许 list 和 detail 只读查询")
+        flags = (
+            "--device-ip --start-time --end-time --page-size"
+            if args[0] == "list"
+            else "--log-id"
+        )
+        _parse(args[1:], flags)
+        return False
     if name == "score_root_cause.py":
         _parse(
             args,
@@ -199,7 +210,8 @@ def check_arguments(
             "--chat-id --res-id --output",
             repeat="--suggestion",
         )
-        return True
+        # The managed reporter sends only to configured notification channels.
+        return False
     if name == "emit_action.py":
         # Only the integrity-checked catalog is used. Cards still require
         # confirmation in the UI, and producing them requires approval too.

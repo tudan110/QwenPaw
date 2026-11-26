@@ -137,10 +137,6 @@ async def test_reviewed_reads_do_not_require_admin(scripts, name, args):
     "name,args",
     [
         ("resource_import_bridge.py", ["import"]),
-        (
-            "send_analysis_report.py",
-            ["--alarm-id", "1", "--alarm-title", "fixture"],
-        ),
         ("web_monitor.py", ["trigger", "--monitor-id", "1"]),
         ("web_monitor.py", ["delete-runs", "--run-ids", "run-1", "run-2"]),
         ("emit_action.py", ["workflow.category.add"]),

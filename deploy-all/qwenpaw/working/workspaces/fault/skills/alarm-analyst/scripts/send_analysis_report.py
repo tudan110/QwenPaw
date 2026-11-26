@@ -871,7 +871,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--abnormal-metrics-json",
         default="",
-        help='JSON 数组格式的异常指标，例如 [{"name":"CPU IO等待","code":"cpu_iowait","value":"85.3","unit":"%","reason":"远超正常水平"}]',
+        help='JSON 数组格式的异常指标，例如 [{"name":"CPU IO等待","code":"cpu_iowait","value":"85.3","unit":"%%","reason":"远超正常水平"}]',
     )
     parser.add_argument("--metric-type", default="mysql", help="资源类型，例如 mysql")
     parser.add_argument("--chat-id", default="", help="当前故障会话 ID（可选）")

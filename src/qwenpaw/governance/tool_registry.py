@@ -171,6 +171,7 @@ def _register_builtin_tools(r: ToolRegistry) -> None:
         ("SpawnSubagent", ""),
         ("DelegateExternalAgent", "runner"),
         ("MemorySearch", ""),
+        ("SummarizeAlarmMetricHistory", ""),
     ]:
         r.register(name, "internal", param)
 
@@ -185,6 +186,7 @@ def _register_python_name_mappings(
         "write_file": "Write",
         "edit_file": "Edit",
         "memory_search": "MemorySearch",
+        "summarize_alarm_metric_history": "SummarizeAlarmMetricHistory",
         "append_file": "Append",
         "grep_search": "Grep",
         "glob_search": "Glob",

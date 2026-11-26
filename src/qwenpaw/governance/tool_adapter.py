@@ -197,7 +197,10 @@ async def _policy_tool_check_permissions(
     """
     from agentscope.permission import PermissionBehavior, PermissionDecision
     from fastapi import HTTPException
-    from ..extensions.security.execution_policy import check_tool
+    from ..extensions.security.execution_policy import (
+        check_tool,
+        is_automatic_alarm_call,
+    )
 
     self._qp_p0_approved_params = None
     self._qp_sandbox_mode = False
@@ -205,6 +208,12 @@ async def _policy_tool_check_permissions(
     try:
         mandatory_approval = await check_tool(
             getattr(self, "name", ""), input_data or {}
+        )
+        automatic_alarm_call = (
+            not mandatory_approval
+            and is_automatic_alarm_call(
+                getattr(self, "name", ""), input_data or {},
+            )
         )
     except (PermissionError, ValueError, HTTPException) as exc:
         return PermissionDecision(
@@ -295,6 +304,17 @@ async def _policy_tool_check_permissions(
         return result
 
     decision = governor.assert_policy(tc_spec)
+    # A validated alarm script can run without an approval or a sandbox
+    # fallback. A policy denial is still final.
+    if automatic_alarm_call and decision.action in {
+        GovernanceAction.ASK,
+        GovernanceAction.SANDBOX_FALLBACK,
+    }:
+        decision = GovernanceDecision(
+            action=GovernanceAction.ALLOW,
+            source="automatic_alarm_analysis",
+            reason="Validated automatic alarm analysis script",
+        )
     governor.audit(tc_spec, decision)
 
     # Cache the decision + tc_spec for __call__ to use

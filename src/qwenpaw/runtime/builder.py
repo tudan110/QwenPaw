@@ -274,6 +274,25 @@ class AgentBuilder:
                     governor,
                 ),
             )
+            if (
+                "alarm-analyst" in effective_skills
+                and workspace_dir
+                and getattr(ctx, "session_id", None)
+            ):
+                from ..extensions.runtime.alarm_metric_history import (
+                    make_alarm_metric_history_tool,
+                )
+
+                config = agent_config.running.light_context_config
+                tool = make_alarm_metric_history_tool(
+                    Path(workspace_dir),
+                    config.scroll_config.db_filename,
+                    ctx.session_id,
+                    agent_id,
+                )
+                extra_tools.append(
+                    self._wrap_tool(tool, agent_id, request_context, governor),
+                )
 
         toolkit = await self.build_toolkit(
             agent_config,

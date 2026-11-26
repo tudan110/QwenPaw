@@ -34,6 +34,8 @@ from .skill_scripts import (
 
 _READ_TOOLS = {
     "read_file",
+    "memory_search",
+    "summarize_alarm_metric_history",
     "list_agents",
     "chat_with_agent",
     "submit_to_agent",
@@ -69,6 +71,20 @@ _READ_SCRIPT_NAMES = {
     "analyze_cmdb.py",
     "inoe_cmdb_stats.py",
     "order_workflow.py",
+}
+
+# Only the reviewed entrypoints used by automatic alarm analysis are exempt
+# from interactive Bash approval. The history summarizer has its own tool.
+_AUTOMATIC_ALARM_SCRIPTS = {
+    "analyze_alarm_context.py": "alarm-analyst",
+    "get_metric_definitions.py": "alarm-analyst",
+    "query_knowledge.py": "alarm-analyst",
+    "query_syslog.py": "alarm-analyst",
+    "score_root_cause.py": "alarm-analyst",
+    "send_analysis_report.py": "alarm-analyst",
+    "cmdb_read.py": "zgops-cmdb",
+    "find_project.py": "zgops-cmdb",
+    "get_alarms.py": "real-alarm",
 }
 
 # Bounded artifact creation: text input only, fixed renderer and report root.
@@ -426,6 +442,34 @@ def check_shell(command: str, cwd: Any = None) -> bool:
 def approval_binding(name: str, params: dict[str, Any]) -> dict[str, Any]:
     """Freeze indirect JSON inputs along with the displayed command."""
     from copy import deepcopy
+def is_automatic_alarm_call(name: str, params: dict[str, Any]) -> bool:
+    """Recognize a validated alarm-analysis script in the fault workspace."""
+    if name != "execute_shell_command" or not enabled():
+        return False
+    context_dir = get_current_workspace_dir()
+    if context_dir is None:
+        return False
+    workspaces = Path(WORKING_DIR).resolve() / "workspaces"
+    fault = workspaces / "fault"
+    if Path(context_dir).resolve() != fault:
+        return False
+    command = str(params.get("command", ""))
+    args = shlex.split(command)
+    if len(args) < 2:
+        return False
+    directory = Path(params.get("cwd") or fault).resolve()
+    script = (directory / args[1]).resolve()
+    skill = _AUTOMATIC_ALARM_SCRIPTS.get(script.name)
+    if skill is None or script not in {
+        workspace / "skills" / skill / "scripts" / script.name
+        for workspace in (fault, workspaces / "query")
+    }:
+        return False
+    # Keep the approval exemption tied to the exact executable and parameters
+    # that would pass the production execution boundary.
+    return not check_shell(command, directory)
+
+
 
     binding = {"params": deepcopy(params)}
     if name == "execute_shell_command":
