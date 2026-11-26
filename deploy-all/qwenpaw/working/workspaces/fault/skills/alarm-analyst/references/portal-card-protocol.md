@@ -478,8 +478,10 @@
 
 优先执行固定算分脚本（下面仅是条件充分的触发原因示例，不直接照抄支持等级）：
 
+`cwd` 单独设为 `alarm-analyst` 的实际目录。
+
 ```bash
-python <实际技能目录>/scripts/score_root_cause.py --claim "CPU采样命中配置阈值而触发告警" --object-match 1 --mechanism 1 --time-match 1 --independent 0
+python3 scripts/score_root_cause.py --claim "CPU采样命中配置阈值而触发告警" --object-match 1 --mechanism 1 --time-match 1 --independent 0
 ```
 
 该示例返回四项20、50、20、0及90分；只有额外独立佐证确实取得且支持结论时，才能将最后一项提升至10。脚本只核算等级与限制，不自动获取证据、决定等级或判断故障；无文件/网络访问、无配置更改。执行工具不可用/拒绝时说明按同一规则核算，不换身份、改权限或重新查询数据。

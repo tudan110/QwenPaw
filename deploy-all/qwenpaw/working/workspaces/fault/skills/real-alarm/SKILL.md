@@ -49,18 +49,7 @@ description: 实时告警管理系统查询和统计分析。支持获取告警�
 - 回退到 `scripts/get_alarms.py` 或 `scripts/analyze_alarms.py` 时，也显式传入同一组 `--begin_time` / `--end_time`，不依赖脚本默认窗口，避免环境配置改变 24 小时口径。
 - 使用默认窗口时，回复摘要显示“查询范围：最近 24 小时（实际开始时间 ～ 实际结束时间，时区）”以及返回总数；用户指定时段时显示其实际时段。无结果也说明该范围内未找到匹配告警，不自动扩大时间范围。
 
-没有可信运行时时间且告警服务使用系统本地时区时，可用标准库读取时钟并计算默认范围（只计算时间，不访问告警接口）：
-
-```bash
-python3 - <<'PY'
-from datetime import datetime, timedelta
-
-now = datetime.now().astimezone()
-print("beginTime:", (now - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S"))
-print("endTime:", now.strftime("%Y-%m-%d %H:%M:%S"))
-print("timezone:", now.strftime("%Z %z"))
-PY
-```
+没有可信的运行时时间时，调用内置 `get_current_time` 获取当前时刻及明确的时区；换算为告警服务使用的时区后再确定查询窗口。时区口径无法确认就说明限制，不通过 Shell 执行临时 Python 来取时间。
 
 ## 告警 MCP 调用
 
@@ -303,7 +292,7 @@ MCP 返回的 `rows` 中每条告警包含以下关键字段：
 
 ## 旧脚本回退路径
 
-在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才执行以下命令。脚本自动从环境变量读取 `INOE_API_TOKEN` 和 `INOE_API_BASE_URL`（由设置页热加载），无需手动配置 `.env`。
+在对应能力为 `script`，或 `mcp` 路由满足上文只读故障回退条件时，才执行以下命令。工具的 `cwd` 单独填 `real-alarm` 实际绝对目录，每次只传一条命令。脚本自动从环境变量读取 `INOE_API_TOKEN` 和 `INOE_API_BASE_URL`（由设置页热加载），无需手动配置 `.env`。
 
 **场景 A：简单列表**
 

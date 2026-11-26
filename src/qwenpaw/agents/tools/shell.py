@@ -458,8 +458,9 @@ async def execute_shell_command(
     """Execute a shell command and return its output.
 
     Each call runs in a fresh subprocess — `cd`, `export`, `source`,
-    etc. do NOT persist. Pass `cwd=` or chain in one call
-    (`cd /repo && pytest`).
+    etc. do NOT persist. Pass the working directory in `cwd`.
+    In production, pass one approved command. Do not use `cd &&`,
+    pipelines, redirection, expansion, or shell line continuations.
 
     IMPORTANT: Check the 'Default Shell' field to
     determine which shell is active, and generate commands using the

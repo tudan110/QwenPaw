@@ -312,7 +312,10 @@ def check_shell(command: str, cwd: Any = None) -> bool:
     if any(char in command for char in ("`", "$", "\n", "\r")) or any(
         token and all(char in ";|&<>()" for char in token) for token in lexer
     ):
-        raise PermissionError("生产环境禁止 shell 拼接、管道、重定向或展开")
+        raise PermissionError(
+            "生产环境禁止 shell 拼接、管道、重定向或展开；"
+            "请单独传 cwd 指定目录，command 只传一行受管命令"
+        )
     args = shlex.split(command)
     if not args:
         raise PermissionError("空命令不可执行")

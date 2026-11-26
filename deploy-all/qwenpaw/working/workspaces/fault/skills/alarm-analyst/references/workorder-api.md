@@ -2,22 +2,10 @@
 
 ## 脚本入口
 
+`cwd` 单独设为 `alarm-analyst` 的实际目录。以下是单条受管命令；通过脚本完整性和参数校验后，可向已配置的渠道推送，无需逐次管理员审批。
+
 ```bash
-cd skills/alarm-analyst && python scripts/send_analysis_report.py \
-  --alarm-id <alarmId> \
-  --alarm-title "<告警标题>" \
-  --visible-content "<用户可见告警摘要>" \
-  --device-name <deviceName> \
-  --manage-ip <manageIp> \
-  --asset-id <assetId> \
-  --level <alarmLevel> \
-  --status <alarmStatus> \
-  --event-time "<eventTime>" \
-  --analysis-summary "AI 已完成根因分析" \
-  --root-cause "<根因方向>" \
-  --suggestion "<处置建议1>" \
-  --suggestion "<处置建议2>" \
-  --output markdown
+python3 scripts/send_analysis_report.py --alarm-id "<alarmId>" --alarm-title "<告警标题>" --visible-content "<用户可见告警摘要>" --device-name "<deviceName>" --manage-ip "<manageIp>" --asset-id "<assetId>" --level "<alarmLevel>" --status "<alarmStatus>" --event-time "<eventTime>" --analysis-summary "AI 已完成根因分析" --root-cause "<根因方向>" --suggestion "<处置建议1>" --suggestion "<处置建议2>" --output markdown
 ```
 
 ## 字段要求

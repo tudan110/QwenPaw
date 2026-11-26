@@ -70,7 +70,9 @@ def test_real_alarm_credentials_reach_all_five_seed_workspaces(tmp_path):
         )
 
 
-def test_full_release_seed_and_upgrade_keep_fixes_and_user_model(tmp_path):
+def test_full_release_seed_and_upgrade_keep_fixes_and_user_model(
+    tmp_path, monkeypatch
+):
     root = BUILDER_PATH.parents[3]
     seed = tmp_path / "release-seed"
     seed_builder.build_seed(seed_builder.argparse.Namespace(
@@ -121,6 +123,75 @@ def test_full_release_seed_and_upgrade_keep_fixes_and_user_model(tmp_path):
     assert manifest["managed_files"][str(knowledge_query)]["sha256"] == (
         seed_builder.sha256(target / knowledge_query)
     )
+
+    from qwenpaw.extensions.security import execution_policy
+
+    workspace = target / "workspaces/fault"
+    monkeypatch.setattr(execution_policy, "WORKING_DIR", target)
+    monkeypatch.setattr(
+        execution_policy, "get_current_workspace_dir", lambda: workspace
+    )
+    monkeypatch.setenv("QWENPAW_PRODUCTION_GUARDS", "true")
+    monkeypatch.setenv("QWENPAW_SKILL_SEED_PATH", str(seed))
+    monkeypatch.setenv("QWENPAW_ALLOWED_SCRIPT_HASHES", "{}")
+    analyst = workspace / "skills/alarm-analyst"
+    alarms = workspace / "skills/real-alarm"
+    cmdb = workspace / "skills/zgops-cmdb"
+    assert "get_current_time" in (alarms / "SKILL.md").read_text()
+    for cwd, command in (
+        (cmdb, 'cmdb_read.py fetch "/api/v0.1/ci/9796"'),
+        (
+            cmdb,
+            'cmdb_read.py fetch "/api/v0.1/ci_relations/s?root_id=9796'
+            '&level=1,2,3&count=10000&page=1&reverse=1"',
+        ),
+        (alarms, "get_alarms.py --ci_id 9796 --page_num 1 --page_size 20"),
+        (alarms, "analyze_alarms.py --mode summary --output markdown"),
+        (alarms, "query_alarm_class_count.py --alarm_status 1"),
+        (analyst, "analyze_alarm_context.py --res-id 9796"),
+        (analyst, "get_metric_definitions.py --metric-type mysql --res-id 9796"),
+        (analyst, 'query_knowledge.py --query "CPU 利用率告警"'),
+        (
+            analyst,
+            'query_syslog.py list --device-ip 192.0.2.10 '
+            '--start-time "2026-11-25 10:00:00" '
+            '--end-time "2026-11-25 10:20:00" --page-size 20',
+        ),
+        (analyst, "query_syslog.py detail --log-id sample-id"),
+        (
+            analyst,
+            "score_root_cause.py --claim threshold --object-match 1 "
+            "--mechanism 1 --time-match 1 --independent 0",
+        ),
+    ):
+        assert (
+            execution_policy.check_shell(f"python3 scripts/{command}", cwd)
+            is False
+        )
+
+    assert (
+        execution_policy.check_shell(
+            'python3 scripts/send_analysis_report.py --alarm-id a1 '
+            '--alarm-title "示例"',
+            analyst,
+        )
+        is False
+    )
+    with pytest.raises(PermissionError, match="cwd"):
+        execution_policy.check_shell(
+            "cd skills/alarm-analyst && python3 scripts/query_knowledge.py",
+            workspace,
+        )
+    for args in ("delete --log-id sample-id", "detail --log sample-id"):
+        with pytest.raises(PermissionError, match="Syslog|参数未获准"):
+            execution_policy.check_shell(
+                f"python3 scripts/query_syslog.py {args}", analyst
+            )
+    (analyst / "scripts/legacy_tmp.py").write_text("# legacy")
+    with pytest.raises(PermissionError, match="UNDECLARED_CODE"):
+        execution_policy.check_shell(
+            "python3 scripts/query_syslog.py detail --log-id sample-id", analyst
+        )
 
 
 def write_json(path: Path, payload: dict) -> None:
