@@ -40,6 +40,8 @@ deploy-all/portal/
   不是源码包或容器文件系统导出包。
 - 两个架构可以使用相同镜像 tag，但必须分别构建、立即导出，再构建下一个架构，
   避免导出时拿错架构。现有 `build-*.sh` 只构建和加载镜像，不会自动导出压缩包。
+- 本机打包机为 Intel 芯片 macOS，双架构打包固定先完成 **amd64**，再构建
+  **arm64**；ARM64 模拟构建明显较慢，不要让它阻塞 AMD64 正式包的生成和交付。
 
 ### 双架构构建并导出
 
@@ -78,8 +80,9 @@ shasum -a 256 deploy-all/images/digital-workforce-portal-*.tar.gz
 ### ARM64 模拟编译过慢时的替代方式
 
 Portal 的 Vite 构建结果是架构无关的静态 HTML、CSS、JavaScript 和字体资源，
-无需在两个 CPU 架构下重复编译。若 ARM64 模拟环境长期停留在
-`vite ... transforming...`，可以：
+无需在两个 CPU 架构下重复编译。按 amd64 优先的顺序，先用原 Dockerfile
+完成 amd64 镜像，并从这次构建取得静态资源。若 ARM64 模拟环境长时间停留在
+`vite ... transforming...`、尚未报错，不要继续等待它重复编译；可以：
 
 1. 在本机原生架构完成一次前端构建，或从同一工作区已构建好的前端镜像中提取
    `/usr/share/nginx/html/`。
@@ -90,7 +93,8 @@ Portal 的 Vite 构建结果是架构无关的静态 HTML、CSS、JavaScript 和
 4. 按上述文件名导出到 `deploy-all/images/`，覆盖旧包，并核对归档中的镜像架构。
 
 2026-11-25 的交付采用此方式：AMD64 按原 Dockerfile 完整构建，
-ARM64 复用该次构建的静态资源，使用 ARM64 nginx 运行时。
+ARM64 复用该次构建的同一份静态资源，使用 ARM64 nginx 运行时，避免在模拟环境
+重复编译前端。
 两个架构均已验证镜像可加载、nginx 可启动、`/health` 和首页可访问。
 此替代方式无需修改仓库原有 Dockerfile。
 

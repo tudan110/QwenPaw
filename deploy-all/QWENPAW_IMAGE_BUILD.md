@@ -93,6 +93,8 @@ cd deploy-all/qwenpaw && ./build-arm64.sh
 ```
 
 同一版本的 amd64 与 arm64 镜像必须使用相同镜像 tag；导出的 tar 文件名可用架构区分。
+本机打包机为 Intel 芯片 macOS，双架构构建固定先完成 amd64，再构建 arm64，
+以免 ARM64 模拟构建拖慢 AMD64 正式包交付。
 
 ## 镜像压缩包归档
 
@@ -113,7 +115,9 @@ deploy-all/images/qwenpaw-amd64.tar.gz
 deploy-all/images/qwenpaw-arm64.tar.gz
 ```
 
-前后端构建脚本复用各自的固定 Docker tag。若要生成两个架构，必须串行构建并在每次构建后立即导出，不能并行构建不同架构：
+前后端构建脚本复用各自的固定 Docker tag。若要生成两个架构，必须按
+**amd64、arm64** 的顺序串行构建，并在每次构建后立即导出，不能并行构建不同架构。
+此顺序适用于前后端整套打包，也适用于单独打包后端：
 
 ```bash
 set -euo pipefail
@@ -127,7 +131,7 @@ package_image() {
   mv -f "$output.partial" "$output"
 }
 
-for arch in arm64 amd64; do
+for arch in amd64 arm64; do
   (cd deploy-all/qwenpaw && "./build-$arch.sh")
   package_image qwenpaw:latest "deploy-all/images/qwenpaw-$arch.tar.gz"
 

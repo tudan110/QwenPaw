@@ -52,8 +52,10 @@ docker build -f deploy-all/qwenpaw/Dockerfile -t qwenpaw:latest .
 
 ### 按架构构建并导出
 
-以下 Bash 命令在仓库根目录执行。两个架构复用 `qwenpaw:latest`，
-应逐个构建并立即导出，防止下一个构建覆盖 tag 后导出错误架构。
+以下 Bash 命令在仓库根目录执行。本机打包机为 Intel 芯片 macOS，双架构打包
+固定先完成 **amd64**，再构建 **arm64**，避免 ARM64 模拟构建拖慢 AMD64 交付。
+两个架构复用 `qwenpaw:latest`，应逐个构建并立即导出，防止下一个构建覆盖 tag
+后导出错误架构。
 现有脚本负责构建和镜像内依赖检查，不自动导出压缩包。
 
 只打包某个架构时，将循环列表改为 `amd64` 或 `arm64`；后端打包不要求同时打包 Portal。
