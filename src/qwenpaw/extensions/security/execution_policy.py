@@ -439,9 +439,6 @@ def check_shell(command: str, cwd: Any = None) -> bool:
     return False
 
 
-def approval_binding(name: str, params: dict[str, Any]) -> dict[str, Any]:
-    """Freeze indirect JSON inputs along with the displayed command."""
-    from copy import deepcopy
 def is_automatic_alarm_call(name: str, params: dict[str, Any]) -> bool:
     """Recognize a validated alarm-analysis script in the fault workspace."""
     if name != "execute_shell_command" or not enabled():
@@ -470,6 +467,9 @@ def is_automatic_alarm_call(name: str, params: dict[str, Any]) -> bool:
     return not check_shell(command, directory)
 
 
+def approval_binding(name: str, params: dict[str, Any]) -> dict[str, Any]:
+    """Freeze indirect JSON inputs along with the displayed command."""
+    from copy import deepcopy
 
     binding = {"params": deepcopy(params)}
     if name == "execute_shell_command":
